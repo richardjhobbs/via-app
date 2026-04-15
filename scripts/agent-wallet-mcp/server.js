@@ -61,12 +61,12 @@ function toUsdcBase(amountUsd) {
   return parsed;
 }
 
-async function sendMcpCall({ url, tool, arguments: args, timeout_ms = 30000 }) {
+async function postJsonRpc(url, method, params, timeout_ms = 30000) {
   const body = {
     jsonrpc: '2.0',
     id: Math.floor(Math.random() * 1_000_000),
-    method: 'tools/call',
-    params: { name: tool, arguments: args ?? {} },
+    method,
+    params: params ?? {},
   };
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeout_ms);
@@ -90,6 +90,14 @@ async function sendMcpCall({ url, tool, arguments: args, timeout_ms = 30000 }) {
   } finally {
     clearTimeout(timer);
   }
+}
+
+async function sendMcpCall({ url, tool, arguments: args, timeout_ms = 30000 }) {
+  return postJsonRpc(url, 'tools/call', { name: tool, arguments: args ?? {} }, timeout_ms);
+}
+
+async function listRemoteTools({ url, timeout_ms = 30000 }) {
+  return postJsonRpc(url, 'tools/list', {}, timeout_ms);
 }
 
 // ──────────────────────────────────────────────────────────────────────
@@ -132,7 +140,7 @@ const TOOLS = [
   },
   {
     name: 'mcp_call',
-    description: `POST an MCP tool call to any remote MCP server over HTTP (JSON-RPC 2.0). Use when browsing, buying, or interacting with another agent's MCP endpoint — e.g. url='https://realrealgenuine.com/mcp', tool='list_drops', arguments={brand_slug:'clooudie'}.`,
+    description: `POST an MCP tool call to any remote MCP server over HTTP (JSON-RPC 2.0). Use when browsing, buying, or interacting with another agent's MCP endpoint — e.g. url='https://realrealgenuine.com/mcp', tool='list_drops', arguments={brand_slug:'clooudie'}. BEFORE calling a tool you don't know exists on the remote, call list_remote_tools first to enumerate what's available.`,
     inputSchema: {
       type: 'object',
       required: ['url', 'tool'],
@@ -140,6 +148,19 @@ const TOOLS = [
         url:        { type: 'string', description: 'Target MCP endpoint URL.' },
         tool:       { type: 'string', description: 'Tool name to invoke on that server.' },
         arguments:  { type: 'object', description: 'Arguments object for the tool.', additionalProperties: true },
+        timeout_ms: { type: 'number', description: 'Optional request timeout in ms. Default 30000.' },
+      },
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'list_remote_tools',
+    description: `Enumerate every tool exposed by a remote MCP server over HTTP. Returns the full tools/list response — each tool's name, description, and input schema. Use this as your FIRST move when exploring a new MCP endpoint (e.g. https://realrealgenuine.com/mcp) — do not assume a tool doesn't exist based on other surfaces like landing pages or search engines.`,
+    inputSchema: {
+      type: 'object',
+      required: ['url'],
+      properties: {
+        url:        { type: 'string', description: 'Target MCP endpoint URL (e.g. https://realrealgenuine.com/mcp).' },
         timeout_ms: { type: 'number', description: 'Optional request timeout in ms. Default 30000.' },
       },
       additionalProperties: false,
@@ -196,6 +217,11 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
         if (typeof args.url !== 'string' || !/^https?:\/\//.test(args.url)) throw new Error('url must be an http(s) URL');
         if (typeof args.tool !== 'string' || !args.tool) throw new Error('tool must be a non-empty string');
         const result = await sendMcpCall(args);
+        return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
+      }
+      case 'list_remote_tools': {
+        if (typeof args.url !== 'string' || !/^https?:\/\//.test(args.url)) throw new Error('url must be an http(s) URL');
+        const result = await listRemoteTools(args);
         return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
       }
       default:
