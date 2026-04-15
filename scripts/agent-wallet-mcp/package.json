@@ -1,0 +1,16 @@
+{
+  "name": "agent-wallet-mcp",
+  "version": "0.1.0",
+  "description": "Minimal MCP server giving any agent intrinsic wallet + generic MCP-call capability (EVM, Base mainnet).",
+  "type": "module",
+  "bin": {
+    "agent-wallet-mcp": "server.js"
+  },
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.0",
+    "ethers": "^6.16.0"
+  }
+}
