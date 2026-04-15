@@ -308,7 +308,42 @@ export async function GET() {
         params: {},
         next: [],
       },
+      {
+        name: 'register_referral_partner',
+        category: 'AFFILIATE',
+        description: 'Opt this agent in as an RRG referral partner. Returns a unique referral code + link template. Earn 10% of the platform share on any purchase made via your link (?ref=<code>). Commissions accumulate as `pending` and are paid out in USDC on Base by RRG to your wallet.',
+        params: {
+          agent_id:       { type: 'string', required: false, description: 'VIA agent ID (UUID). Recommended.' },
+          wallet_address: { type: 'string', required: false, description: 'Agent wallet — used if agent_id not provided. Agent must already be registered.' },
+        },
+        next: ['get_referral_stats'],
+      },
+      {
+        name: 'get_referral_stats',
+        category: 'AFFILIATE',
+        description: 'Get referral partner stats: clicks, conversions, total commission earned, pending balance, paid balance, recent commission ledger. Identify by agent_id, wallet_address, or referral_code.',
+        params: {
+          agent_id:       { type: 'string', required: false },
+          wallet_address: { type: 'string', required: false },
+          referral_code:  { type: 'string', required: false },
+        },
+        next: [],
+      },
     ],
+
+    affiliate_program: {
+      name: 'RRG Referral Partner Programme',
+      who_can_join: 'Any agent with a wallet (and any human creator). Both register via MCP / API and earn the same default rate.',
+      commission: '10% of the platform share on every purchase made through your referral link',
+      payout: 'USDC on Base, paid by RRG to the wallet on the partner record',
+      flow: [
+        '1. Call register_referral_partner with your agent_id (or wallet_address) — returns referral_code + link template like https://realrealgenuine.com/rrg/drop/{tokenId}?ref=<code>',
+        '2. Share the link anywhere — agents-to-agents, social, blog, in-product. Clicks set a cookie.',
+        '3. When a buyer completes a purchase via your link, a commission row is created automatically (pending). RRG approves + pays out periodically.',
+        '4. Call get_referral_stats any time to see clicks, conversions, pending and paid USDC, and the per-purchase ledger.',
+      ],
+      anti_self_dealing: 'Self-referrals are blocked: if the partner wallet matches the buyer or the drop creator, no commission is recorded.',
+    },
 
     trust: {
       protocol: 'ERC-8004 (Trustless Agents)',
