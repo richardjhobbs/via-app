@@ -24,7 +24,7 @@ import { getAgentStanding } from '@/lib/rrg/agent-trust';
 import { uploadSubmissionFile, jpegStoragePath, getSignedUrl } from '@/lib/rrg/storage';
 import { buildPermitPayload, splitSignature } from '@/lib/rrg/permit';
 import { getRRGContract, getRRGReadOnly, toUsdc6dp } from '@/lib/rrg/contract';
-import { calculateSplit, getBrandPct, computeSplit } from '@/lib/rrg/splits';
+import { calculateSplit, computeSplit } from '@/lib/rrg/splits';
 import { insertDistributionAndPay } from '@/lib/rrg/auto-payout';
 import { fireSubmitAttribution, fireBrandAttribution } from '@/lib/rrg/marketing-attribution';
 import { fireMemoryAdd, searchMemory, getAgentMemories } from '@/lib/rrg/mem0';
@@ -311,6 +311,19 @@ function createRRGServer() {
       }
       const drops = await getApprovedDrops(brandId);
 
+      // Look up per-brand split overrides for any brands referenced in this list
+      const distinctBrandIds = Array.from(new Set(drops.map(d => d.brand_id).filter((b): b is string => !!b)));
+      const overrideByBrandId = new Map<string, number | null>();
+      if (distinctBrandIds.length > 0) {
+        const { data: brandRows } = await db
+          .from('rrg_brands')
+          .select('id, brand_pct_override')
+          .in('id', distinctBrandIds);
+        for (const b of brandRows ?? []) {
+          overrideByBrandId.set(b.id, b.brand_pct_override ?? null);
+        }
+      }
+
       // Enrich with on-chain minted count where possible
       const enriched = await Promise.all(
         drops.map(async (drop) => {
@@ -325,12 +338,27 @@ function createRRGServer() {
               remaining = drop.edition_size ?? null;
             }
           }
-          // Compute revenue split data for agent transparency
-          const price      = parseFloat(drop.price_usdc ?? '0');
-          const dropType   = drop.is_brand_product ? 'brand_created' : 'co_created';
-          const splitData  = computeSplit(price, dropType as 'brand_created' | 'co_created');
-          const brandPct   = drop.is_brand_product ? getBrandPct(price) : 35;
-          const platPct    = drop.is_brand_product ? (100 - brandPct) : 30;
+          // Revenue split disclosure:
+          //   • Co-created drops: publish the 35% creator share publicly — that's
+          //     part of the offer to creators and they need to see it.
+          //   • Brand-owned drops: the wholesale split is a private commercial
+          //     term between the brand and the platform. Do NOT expose it.
+          const price    = parseFloat(drop.price_usdc ?? '0');
+          const dropType = drop.is_brand_product ? 'brand_created' : 'co_created';
+
+          let revenueSplit: Record<string, unknown> | undefined = undefined;
+          if (!drop.is_brand_product) {
+            const splitData = computeSplit(price, 'co_created');
+            revenueSplit = {
+              model:        'fixed_co_created',
+              creatorPct:   35,
+              brandPct:     35,
+              platformPct:  30,
+              creatorUsdc:  splitData.creator,
+              brandUsdc:    splitData.brand,
+              platformUsdc: splitData.platform,
+            };
+          }
 
           return {
             tokenId:     drop.token_id,
@@ -342,14 +370,7 @@ function createRRGServer() {
             ipfsUrl:     drop.ipfs_url,
             brandId:     drop.brand_id ?? RRG_BRAND_ID,
             dropType,
-            revenueSplit: {
-              model:        drop.is_brand_product ? 'tiered_brand' : 'fixed_co_created',
-              brandPct:     parseFloat(brandPct.toFixed(2)),
-              platformPct:  parseFloat(platPct.toFixed(2)),
-              brandUsdc:    splitData.brand,
-              platformUsdc: splitData.platform,
-              ...(splitData.creator > 0 ? { creatorPct: 35, creatorUsdc: splitData.creator } : {}),
-            },
+            ...(revenueSplit ? { revenueSplit } : {}),
             isPhysicalProduct: drop.is_physical_product ?? false,
             ...(drop.is_physical_product ? {
               physicalDetails: {
@@ -883,16 +904,19 @@ function createRRGServer() {
       if (dbError) throw dbError;
 
       // Record distribution + auto-payout (non-fatal)
+      let brandPctOverride: number | null = null;
       try {
         const brandId = drop.brand_id ?? RRG_BRAND_ID;
         const brand   = brandId !== RRG_BRAND_ID ? await getBrandById(brandId) : null;
+        brandPctOverride = brand?.brand_pct_override ?? null;
         const split   = calculateSplit({
-          totalUsdc:      parseFloat(drop.price_usdc ?? '0'),
+          totalUsdc:        parseFloat(drop.price_usdc ?? '0'),
           brandId,
-          creatorWallet:  drop.creator_wallet,
-          brandWallet:    brand?.wallet_address ?? null,
-          isBrandProduct: drop.is_brand_product ?? false,
-          isLegacy:       false,
+          creatorWallet:    drop.creator_wallet,
+          brandWallet:      brand?.wallet_address ?? null,
+          isBrandProduct:   drop.is_brand_product ?? false,
+          isLegacy:         false,
+          brandPctOverride,
         });
         await insertDistributionAndPay({
           purchaseId: purchase.id,
@@ -906,11 +930,23 @@ function createRRGServer() {
       const siteUrl     = process.env.NEXT_PUBLIC_SITE_URL!;
       const downloadUrl = `${siteUrl}/rrg/download?token=${downloadToken}`;
 
-      // Compute split info for the response
-      const purchasePrice = parseFloat(drop.price_usdc ?? '0');
-      const purchaseDropType = drop.is_brand_product ? 'brand_created' : 'co_created';
-      const purchaseSplit = computeSplit(purchasePrice, purchaseDropType as 'brand_created' | 'co_created');
-      const purchaseBrandPct = drop.is_brand_product ? getBrandPct(purchasePrice) : 35;
+      // Split disclosure: only publish for co-created drops (35/35/30 is
+      // a public creator-facing offer). Brand-owned drops keep the
+      // wholesale split private.
+      let purchaseRevenueSplit: Record<string, unknown> | undefined = undefined;
+      if (!drop.is_brand_product) {
+        const purchasePrice = parseFloat(drop.price_usdc ?? '0');
+        const purchaseSplit = computeSplit(purchasePrice, 'co_created');
+        purchaseRevenueSplit = {
+          model:        'fixed_co_created',
+          creatorPct:   35,
+          brandPct:     35,
+          platformPct:  30,
+          creatorUsdc:  purchaseSplit.creator,
+          brandUsdc:    purchaseSplit.brand,
+          platformUsdc: purchaseSplit.platform,
+        };
+      }
 
       return {
         content: [{
@@ -921,14 +957,7 @@ function createRRGServer() {
             tokenId,
             downloadUrl,
             downloadToken,
-            revenueSplit: {
-              model:        drop.is_brand_product ? 'tiered_brand' : 'fixed_co_created',
-              brandPct:     parseFloat(purchaseBrandPct.toFixed(2)),
-              platformPct:  parseFloat((100 - purchaseBrandPct).toFixed(2)),
-              brandUsdc:    purchaseSplit.brand,
-              platformUsdc: purchaseSplit.platform,
-              ...(purchaseSplit.creator > 0 ? { creatorPct: 35, creatorUsdc: purchaseSplit.creator } : {}),
-            },
+            ...(purchaseRevenueSplit ? { revenueSplit: purchaseRevenueSplit } : {}),
             message:       'NFT minted. Use downloadUrl to access your files (valid 24 hours).',
           }, null, 2),
         }],

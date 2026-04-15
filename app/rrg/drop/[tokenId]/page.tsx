@@ -2,7 +2,6 @@ import React, { Suspense } from 'react';
 import { getDropByTokenId, db } from '@/lib/rrg/db';
 import { getSignedUrl } from '@/lib/rrg/storage';
 import { getRRGReadOnly } from '@/lib/rrg/contract';
-import { getBrandPct } from '@/lib/rrg/splits';
 import { notFound } from 'next/navigation';
 import PurchaseFlow from './PurchaseFlow';
 import PhysicalProductButton from './PhysicalProductButton';
@@ -129,21 +128,13 @@ export default async function DropPage({ params }: Props) {
   const priceUsdc  = parseFloat(drop.price_usdc || '0');
   const scanBase   = 'https://basescan.org';
 
-  // Per-brand split override (e.g. wholesale partners with a flat % deal)
-  let brandPctOverride: number | null = null;
-  if (drop.is_brand_product && drop.brand_id) {
-    const { data: brandRow } = await db
-      .from('rrg_brands')
-      .select('brand_pct_override')
-      .eq('id', drop.brand_id)
-      .maybeSingle();
-    brandPctOverride = brandRow?.brand_pct_override ?? null;
-  }
-
-  // Revenue share display
-  const brandPct   = drop.is_brand_product ? getBrandPct(priceUsdc, brandPctOverride) : null;
-  const shareLabel = brandPct !== null
-    ? `${brandPct % 1 === 0 ? brandPct.toFixed(0) : brandPct.toFixed(1)}% of purchase price goes to the brand`
+  // Revenue share display.
+  // For brand-owned drops we DO NOT publish the wholesale split — it's
+  // a private commercial term between the brand and the platform.
+  // Only co-created drops (where a creator earns a known 35% share)
+  // surface a share label, since that's part of the creator-facing offer.
+  const shareLabel = drop.is_brand_product
+    ? null
     : '35% of purchase price goes to the creator';
 
   return (
@@ -307,7 +298,7 @@ export default async function DropPage({ params }: Props) {
               {drop.additional_files_path && <li>· Source files / additional assets</li>}
               {drop.is_physical_product && <li>· Physical product shipped by the brand</li>}
               {voucherTemplate && <li>· {voucherTemplate.title} (redeemable voucher)</li>}
-              <li>· {shareLabel}</li>
+              {shareLabel && <li>· {shareLabel}</li>}
             </ul>
           </div>
         </div>
