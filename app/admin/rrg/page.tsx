@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, Fragment } from 'react';
 
 // ── Copy-to-clipboard wallet button ────────────────────────────────────
 function CopyWallet({ address }: { address: string }) {
@@ -74,6 +74,8 @@ interface Drop {
   submission_channel?: string | null;
   brief_id?: string | null;
   brand_id?: string | null;
+  is_physical_product?: boolean;
+  has_voucher?: boolean;
 }
 
 interface Brand {
@@ -127,7 +129,7 @@ interface Contributor {
   brands_contributed: string[];
 }
 
-type Tab = 'briefs' | 'submissions' | 'drops' | 'brands' | 'distributions' | 'contributors';
+type Tab = 'briefs' | 'submissions' | 'drops' | 'brands' | 'distributions' | 'contributors' | 'referrals';
 
 // ── Main component ─────────────────────────────────────────────────────
 export default function AdminPage() {
@@ -205,19 +207,19 @@ export default function AdminPage() {
     <div className="min-h-screen bg-black text-white">
       {/* Header */}
       <header className="border-b border-white/10 px-6 py-4 flex justify-between items-center">
-        <span className="font-mono text-sm uppercase tracking-[0.3em] text-white/80">
+        <span className="font-mono text-xs uppercase tracking-[0.3em] text-white/80">
           RRG Admin
         </span>
         <div className="flex items-center gap-4">
           <a
             href="/admin/rrg/marketing"
-            className="text-sm text-white/50 hover:text-white transition-colors font-mono"
+            className="text-xs text-white/50 hover:text-white transition-colors font-mono"
           >
             Agent Marketing →
           </a>
           <button
             onClick={handleLogout}
-            className="text-sm text-white/50 hover:text-white transition-colors font-mono"
+            className="text-xs text-white/50 hover:text-white transition-colors font-mono"
           >
             Logout
           </button>
@@ -226,17 +228,17 @@ export default function AdminPage() {
 
       {/* Tabs */}
       <div className="border-b border-white/10 px-6 flex gap-6">
-        {(['submissions', 'briefs', 'drops', 'brands', 'distributions', 'contributors'] as Tab[]).map((t) => (
+        {(['submissions', 'briefs', 'drops', 'brands', 'distributions', 'contributors', 'referrals'] as Tab[]).map((t) => (
           <button
             key={t}
             onClick={() => setTab(t)}
-            className={`py-3 text-sm font-mono uppercase tracking-widest transition-colors border-b-2 -mb-px
+            className={`py-3 text-xs font-mono uppercase tracking-wider transition-colors border-b-2 -mb-px
               ${tab === t
                 ? 'text-white border-white'
                 : 'text-white/50 border-transparent hover:text-white/80'
               }`}
           >
-            {t}
+            {t === 'drops' ? 'Listings' : t}
           </button>
         ))}
       </div>
@@ -249,6 +251,7 @@ export default function AdminPage() {
         {tab === 'brands'        && <BrandsTab />}
         {tab === 'distributions' && <DistributionsTab />}
         {tab === 'contributors' && <ContributorsTab />}
+        {tab === 'referrals'    && <ReferralsTab />}
       </div>
     </div>
   );
@@ -879,6 +882,7 @@ function SubmissionsTab() {
 // ── Drops Tab (Superadmin) ─────────────────────────────────────────────
 function DropsTab() {
   const [drops,   setDrops]   = useState<Drop[]>([]);
+  const [brands,  setBrands]  = useState<Brand[]>([]);
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState<string | null>(null);
   const [editForm, setEditForm] = useState({
@@ -890,12 +894,19 @@ function DropsTab() {
   const [acting,  setActing]  = useState(false);
   const [msg,     setMsg]     = useState('');
   const [lightbox, setLightbox] = useState<string | null>(null);
+  const [brandFilter, setBrandFilter] = useState<string>('all');
+  const [typeFilter, setTypeFilter]   = useState<'all' | 'digital' | 'physical' | 'voucher'>('all');
 
   const load = useCallback(async () => {
     setLoading(true);
-    const res = await fetch('/api/rrg/admin/drops');
-    const d = await res.json();
+    const [dropsRes, brandsRes] = await Promise.all([
+      fetch('/api/rrg/admin/drops'),
+      fetch('/api/rrg/admin/brands'),
+    ]);
+    const d = await dropsRes.json();
+    const b = await brandsRes.json();
     setDrops(d.drops || []);
+    setBrands(b.brands || []);
     setLoading(false);
   }, []);
 
@@ -976,15 +987,54 @@ function DropsTab() {
   const inputClass = 'w-full bg-transparent border border-white/20 px-3 py-1.5 text-base focus:border-white outline-none';
   const labelClass = 'text-sm font-mono text-white/60 block mb-1';
 
+  // Apply filters
+  const filteredDrops = drops.filter((d) => {
+    if (brandFilter !== 'all' && (d.brand_id || '') !== brandFilter) return false;
+    if (typeFilter === 'physical' && !d.is_physical_product) return false;
+    if (typeFilter === 'voucher' && !d.has_voucher) return false;
+    if (typeFilter === 'digital' && (d.is_physical_product || d.has_voucher)) return false;
+    return true;
+  });
+
+  const filterSelectClass = 'bg-black border border-white/20 px-2 py-1.5 text-xs font-mono uppercase tracking-wider focus:border-white outline-none';
+
   return (
     <div>
       <div className="flex justify-between items-center mb-6">
-        <h2 className="text-sm font-mono uppercase tracking-widest text-white/60">
-          Approved Drops — Superadmin
+        <h2 className="text-xs font-mono uppercase tracking-widest text-white/60">
+          Approved Listings — Superadmin
         </h2>
-        <button onClick={load} className="text-sm text-white/50 hover:text-white transition-colors font-mono">
+        <button onClick={load} className="text-xs text-white/50 hover:text-white transition-colors font-mono">
           ↻ Refresh
         </button>
+      </div>
+
+      {/* Filters */}
+      <div className="flex flex-wrap gap-3 items-center mb-6">
+        <span className="text-xs font-mono uppercase tracking-wider text-white/40">Filter:</span>
+        <select
+          value={brandFilter}
+          onChange={(e) => setBrandFilter(e.target.value)}
+          className={filterSelectClass}
+        >
+          <option value="all">All Brands</option>
+          {brands.map((b) => (
+            <option key={b.id} value={b.id}>{b.name}</option>
+          ))}
+        </select>
+        <select
+          value={typeFilter}
+          onChange={(e) => setTypeFilter(e.target.value as 'all' | 'digital' | 'physical' | 'voucher')}
+          className={filterSelectClass}
+        >
+          <option value="all">All Types</option>
+          <option value="digital">Digital Only (Co-Creation)</option>
+          <option value="physical">Physical Product</option>
+          <option value="voucher">Vouchers</option>
+        </select>
+        <span className="text-xs font-mono text-white/40 ml-auto">
+          {filteredDrops.length} of {drops.length}
+        </span>
       </div>
 
       {msg && (
@@ -995,11 +1045,13 @@ function DropsTab() {
 
       {loading ? (
         <p className="text-white/40 text-sm font-mono">Loading…</p>
-      ) : drops.length === 0 ? (
-        <p className="text-white/40 text-sm font-mono">No approved drops yet.</p>
+      ) : filteredDrops.length === 0 ? (
+        <p className="text-white/40 text-sm font-mono">
+          {drops.length === 0 ? 'No approved listings yet.' : 'No listings match the current filters.'}
+        </p>
       ) : (
         <div className="space-y-4">
-          {drops.map((d) => (
+          {filteredDrops.map((d) => (
             <div key={d.id} className={`border border-white/10 ${d.hidden ? 'opacity-40' : ''}`}>
               <div className="p-4 flex gap-4">
                 {/* Image thumbnail */}
@@ -1922,20 +1974,20 @@ function ContributorsTab() {
       {stats && (
         <div className="grid grid-cols-4 gap-4">
           <div className="border border-white/10 p-4">
-            <p className="text-sm text-white/60 font-mono uppercase tracking-wider">Total</p>
-            <p className="text-xl font-mono mt-1">{stats.total}</p>
+            <p className="text-xs text-white/60 font-mono uppercase tracking-wider">Total</p>
+            <p className="text-base font-mono mt-1">{stats.total}</p>
           </div>
           <div className="border border-white/10 p-4">
-            <p className="text-sm text-white/60 font-mono uppercase tracking-wider">Human</p>
-            <p className="text-xl font-mono mt-1">{stats.humans}</p>
+            <p className="text-xs text-white/60 font-mono uppercase tracking-wider">Human</p>
+            <p className="text-base font-mono mt-1">{stats.humans}</p>
           </div>
           <div className="border border-white/10 p-4">
-            <p className="text-sm text-white/60 font-mono uppercase tracking-wider">AI Agent</p>
-            <p className="text-xl font-mono mt-1">{stats.agents}</p>
+            <p className="text-xs text-white/60 font-mono uppercase tracking-wider">AI Agent</p>
+            <p className="text-base font-mono mt-1">{stats.agents}</p>
           </div>
           <div className="border border-white/10 p-4">
-            <p className="text-sm text-white/60 font-mono uppercase tracking-wider">Revenue Dist.</p>
-            <p className="text-xl font-mono mt-1">${stats.totalRevenue.toFixed(2)}</p>
+            <p className="text-xs text-white/60 font-mono uppercase tracking-wider">Revenue Dist.</p>
+            <p className="text-base font-mono mt-1">${stats.totalRevenue.toFixed(2)}</p>
           </div>
         </div>
       )}
@@ -1946,7 +1998,7 @@ function ContributorsTab() {
           <button
             key={f}
             onClick={() => setFilter(f)}
-            className={`px-3 py-1.5 text-sm font-mono uppercase tracking-wider border transition-all
+            className={`px-3 py-1.5 text-xs font-mono uppercase tracking-wider border transition-all
               ${filter === f
                 ? 'text-white border-white'
                 : 'text-white/50 border-white/10 hover:text-white/80'
@@ -1959,12 +2011,12 @@ function ContributorsTab() {
 
       {/* Table */}
       {filtered.length === 0 ? (
-        <p className="text-white/50 text-base font-mono py-4">No contributors found.</p>
+        <p className="text-white/50 text-sm font-mono py-4">No contributors found.</p>
       ) : (
         <div className="border border-white/10">
-          <table className="w-full text-sm font-mono">
+          <table className="w-full text-xs font-mono">
             <thead>
-              <tr className="border-b border-white/10 text-white/60 uppercase tracking-wider text-sm">
+              <tr className="border-b border-white/10 text-white/60 uppercase tracking-wider text-xs">
                 <th className="text-left p-3 w-10"></th>
                 <th className="text-left p-3">Wallet</th>
                 <th className="text-left p-3">Type</th>
@@ -1998,7 +2050,7 @@ function ContributorsTab() {
                       <CopyWallet address={c.wallet_address} />
                     </td>
                     <td className="p-3">
-                      <span className={`px-2 py-0.5 text-sm uppercase
+                      <span className={`px-2 py-0.5 text-[10px] uppercase
                         ${c.creator_type === 'agent'
                           ? 'bg-purple-400/20 text-purple-300 border border-purple-400/30'
                           : 'bg-blue-400/20 text-blue-300 border border-blue-400/30'
@@ -2022,6 +2074,272 @@ function ContributorsTab() {
                   </tr>
                 );
               })}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Referrals Tab ────────────────────────────────────────────────────────
+interface ReferralCommissionRow {
+  id: string;
+  date: string;
+  purchase_id: string;
+  revenue_usdc: number;
+  commission_usdc: number;
+  status: 'pending' | 'approved' | 'paid' | 'rejected';
+  paid_at: string | null;
+  tx_hash: string | null;
+  notes: string | null;
+}
+
+interface ReferralPartnerRow {
+  id: string;
+  partner_type: 'creator' | 'agent';
+  display_name: string;
+  referral_code: string;
+  wallet_address: string;
+  status: 'active' | 'paused' | 'suspended';
+  commission_bps: number;
+  total_clicks: number;
+  total_conversions: number;
+  total_commission_usdc: number;
+  pending_usdc: number;
+  approved_usdc: number;
+  paid_usdc: number;
+  rejected_usdc: number;
+  commission_count: number;
+  created_at: string;
+  updated_at: string;
+  commissions: ReferralCommissionRow[];
+}
+
+interface ReferralTotals {
+  partner_count: number;
+  agent_partner_count: number;
+  creator_partner_count: number;
+  pending_usdc: number;
+  approved_usdc: number;
+  paid_usdc: number;
+}
+
+function ReferralsTab() {
+  const [partners, setPartners] = useState<ReferralPartnerRow[]>([]);
+  const [totals,   setTotals]   = useState<ReferralTotals | null>(null);
+  const [loading,  setLoading]  = useState(true);
+  const [filter,   setFilter]   = useState<'all' | 'agent' | 'creator'>('all');
+  const [openId,   setOpenId]   = useState<string | null>(null);
+  const [acting,   setActing]   = useState<string | null>(null);
+  const [msg,      setMsg]      = useState('');
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    const res = await fetch('/api/rrg/admin/referrals');
+    const data = await res.json();
+    setPartners(data.partners || []);
+    setTotals(data.totals || null);
+    setLoading(false);
+  }, []);
+
+  useEffect(() => { load(); }, [load]);
+
+  const updateCommission = async (commissionId: string, action: 'approve' | 'mark_paid' | 'reject' | 'reset', txHash?: string) => {
+    setActing(commissionId);
+    setMsg('');
+    const res = await fetch('/api/rrg/admin/referrals', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ commission_id: commissionId, action, tx_hash: txHash || null }),
+    });
+    const data = await res.json();
+    if (res.ok) {
+      setMsg(`Commission ${action.replace('_', ' ')} ✓`);
+      load();
+    } else {
+      setMsg(`Error: ${data.error}`);
+    }
+    setActing(null);
+  };
+
+  const filtered = filter === 'all' ? partners : partners.filter(p => p.partner_type === filter);
+  const fmtUsd = (n: number) => `$${n.toFixed(2)}`;
+  const fmtDate = (s: string) => new Date(s).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+
+  return (
+    <div>
+      <div className="flex justify-between items-center mb-6">
+        <h2 className="text-sm font-mono uppercase tracking-widest text-white/60">Referral Partners</h2>
+        <div className="flex gap-2 text-xs font-mono">
+          {(['all', 'agent', 'creator'] as const).map(f => (
+            <button
+              key={f}
+              onClick={() => setFilter(f)}
+              className={`px-3 py-1 border rounded ${filter === f ? 'border-white text-white' : 'border-white/20 text-white/50 hover:text-white/80'}`}
+            >
+              {f.toUpperCase()}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {totals && (
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
+          <div className="border border-white/10 rounded p-4">
+            <div className="text-xs font-mono uppercase tracking-wider text-white/40 mb-1">Partners</div>
+            <div className="text-xl">{totals.partner_count}</div>
+            <div className="text-xs font-mono text-white/40 mt-1">{totals.agent_partner_count} agents · {totals.creator_partner_count} creators</div>
+          </div>
+          <div className="border border-yellow-500/20 rounded p-4">
+            <div className="text-xs font-mono uppercase tracking-wider text-yellow-400/60 mb-1">Pending</div>
+            <div className="text-xl text-yellow-400">{fmtUsd(totals.pending_usdc)}</div>
+          </div>
+          <div className="border border-blue-500/20 rounded p-4">
+            <div className="text-xs font-mono uppercase tracking-wider text-blue-400/60 mb-1">Approved</div>
+            <div className="text-xl text-blue-400">{fmtUsd(totals.approved_usdc)}</div>
+          </div>
+          <div className="border border-green-500/20 rounded p-4">
+            <div className="text-xs font-mono uppercase tracking-wider text-green-400/60 mb-1">Paid</div>
+            <div className="text-xl text-green-400">{fmtUsd(totals.paid_usdc)}</div>
+          </div>
+        </div>
+      )}
+
+      {msg && <div className="mb-4 text-xs font-mono text-white/70">{msg}</div>}
+
+      {loading ? (
+        <div className="text-white/50 font-mono text-sm">Loading…</div>
+      ) : filtered.length === 0 ? (
+        <div className="text-white/50 font-mono text-sm py-12 text-center">No referral partners yet.</div>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead className="text-xs font-mono uppercase tracking-wider text-white/40 border-b border-white/10">
+              <tr>
+                <th className="text-left py-2 pr-4">Type</th>
+                <th className="text-left py-2 pr-4">Partner</th>
+                <th className="text-left py-2 pr-4">Code</th>
+                <th className="text-left py-2 pr-4">Wallet</th>
+                <th className="text-right py-2 pr-4">Clicks</th>
+                <th className="text-right py-2 pr-4">Conv.</th>
+                <th className="text-right py-2 pr-4">Pending</th>
+                <th className="text-right py-2 pr-4">Paid</th>
+                <th className="text-left py-2 pr-2">Status</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              {filtered.map(p => (
+                <Fragment key={p.id}>
+                  <tr className="border-b border-white/5 hover:bg-white/5">
+                    <td className="py-2 pr-4 font-mono text-xs uppercase">
+                      <span className={p.partner_type === 'agent' ? 'text-purple-400' : 'text-cyan-400'}>{p.partner_type}</span>
+                    </td>
+                    <td className="py-2 pr-4">{p.display_name}</td>
+                    <td className="py-2 pr-4 font-mono text-xs text-white/70">{p.referral_code}</td>
+                    <td className="py-2 pr-4"><CopyWallet address={p.wallet_address} /></td>
+                    <td className="py-2 pr-4 text-right tabular-nums">{p.total_clicks}</td>
+                    <td className="py-2 pr-4 text-right tabular-nums">{p.total_conversions}</td>
+                    <td className="py-2 pr-4 text-right tabular-nums text-yellow-400">{fmtUsd(p.pending_usdc)}</td>
+                    <td className="py-2 pr-4 text-right tabular-nums text-green-400">{fmtUsd(p.paid_usdc)}</td>
+                    <td className="py-2 pr-2 font-mono text-xs">
+                      <span className={p.status === 'active' ? 'text-green-400' : p.status === 'paused' ? 'text-yellow-400' : 'text-red-400'}>{p.status}</span>
+                    </td>
+                    <td className="py-2 pr-2 text-right">
+                      <button
+                        onClick={() => setOpenId(openId === p.id ? null : p.id)}
+                        className="text-xs font-mono text-white/50 hover:text-white"
+                      >
+                        {openId === p.id ? '▾' : '▸'} {p.commission_count}
+                      </button>
+                    </td>
+                  </tr>
+                  {openId === p.id && (
+                    <tr>
+                      <td colSpan={10} className="bg-white/5 py-3 px-4">
+                        {p.commissions.length === 0 ? (
+                          <div className="text-xs font-mono text-white/40">No commissions yet.</div>
+                        ) : (
+                          <table className="w-full text-xs">
+                            <thead className="text-white/40 font-mono uppercase">
+                              <tr>
+                                <th className="text-left py-1 pr-3">Date</th>
+                                <th className="text-left py-1 pr-3">Purchase</th>
+                                <th className="text-right py-1 pr-3">Platform $</th>
+                                <th className="text-right py-1 pr-3">Commission $</th>
+                                <th className="text-left py-1 pr-3">Status</th>
+                                <th className="text-left py-1 pr-3">Tx</th>
+                                <th className="text-right py-1">Actions</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {p.commissions.map(c => (
+                                <tr key={c.id} className="border-t border-white/10">
+                                  <td className="py-1 pr-3 font-mono text-white/70">{fmtDate(c.date)}</td>
+                                  <td className="py-1 pr-3 font-mono text-white/50">{c.purchase_id.slice(0, 8)}…</td>
+                                  <td className="py-1 pr-3 text-right tabular-nums">{fmtUsd(c.revenue_usdc)}</td>
+                                  <td className="py-1 pr-3 text-right tabular-nums">{fmtUsd(c.commission_usdc)}</td>
+                                  <td className="py-1 pr-3 font-mono">
+                                    <span className={
+                                      c.status === 'paid'     ? 'text-green-400' :
+                                      c.status === 'approved' ? 'text-blue-400'  :
+                                      c.status === 'rejected' ? 'text-red-400'   :
+                                                                'text-yellow-400'
+                                    }>{c.status}</span>
+                                  </td>
+                                  <td className="py-1 pr-3">
+                                    {c.tx_hash ? (
+                                      <a href={`https://basescan.org/tx/${c.tx_hash}`} target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:underline font-mono">
+                                        {c.tx_hash.slice(0, 8)}…
+                                      </a>
+                                    ) : '—'}
+                                  </td>
+                                  <td className="py-1 text-right">
+                                    <div className="flex gap-1 justify-end">
+                                      {c.status === 'pending' && (
+                                        <>
+                                          <button
+                                            disabled={acting === c.id}
+                                            onClick={() => updateCommission(c.id, 'approve')}
+                                            className="px-2 py-0.5 text-xs border border-blue-500/40 text-blue-400 rounded hover:bg-blue-500/10 disabled:opacity-50"
+                                          >Approve</button>
+                                          <button
+                                            disabled={acting === c.id}
+                                            onClick={() => updateCommission(c.id, 'reject')}
+                                            className="px-2 py-0.5 text-xs border border-red-500/40 text-red-400 rounded hover:bg-red-500/10 disabled:opacity-50"
+                                          >Reject</button>
+                                        </>
+                                      )}
+                                      {c.status === 'approved' && (
+                                        <button
+                                          disabled={acting === c.id}
+                                          onClick={() => {
+                                            const tx = window.prompt('Optional tx hash (leave blank if not yet on-chain):') || '';
+                                            updateCommission(c.id, 'mark_paid', tx || undefined);
+                                          }}
+                                          className="px-2 py-0.5 text-xs border border-green-500/40 text-green-400 rounded hover:bg-green-500/10 disabled:opacity-50"
+                                        >Mark Paid</button>
+                                      )}
+                                      {(c.status === 'paid' || c.status === 'rejected') && (
+                                        <button
+                                          disabled={acting === c.id}
+                                          onClick={() => updateCommission(c.id, 'reset')}
+                                          className="px-2 py-0.5 text-xs border border-white/30 text-white/60 rounded hover:bg-white/10 disabled:opacity-50"
+                                        >Reset</button>
+                                      )}
+                                    </div>
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        )}
+                      </td>
+                    </tr>
+                  )}
+                </Fragment>
+              ))}
             </tbody>
           </table>
         </div>

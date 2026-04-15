@@ -11,11 +11,17 @@ import { db } from './db';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
+export type PartnerType = 'creator' | 'agent';
+
 export interface ReferralPartner {
   id: string;
   created_at: string;
   updated_at: string;
-  creator_id: string;
+  partner_type: PartnerType;
+  /** Set when partner_type='creator', null otherwise. */
+  creator_id: string | null;
+  /** Set when partner_type='agent', null otherwise. */
+  agent_id: string | null;
   wallet_address: string;
   referral_code: string;
   status: 'active' | 'paused' | 'suspended';
@@ -48,6 +54,20 @@ function generateReferralCode(): string {
   return randomBytes(6).toString('base64url').slice(0, 8);
 }
 
+async function uniqueReferralCode(): Promise<string> {
+  let code = generateReferralCode();
+  for (let i = 0; i < 5; i++) {
+    const { data: collision } = await db
+      .from('rrg_referral_partners')
+      .select('id')
+      .eq('referral_code', code)
+      .maybeSingle();
+    if (!collision) return code;
+    code = generateReferralCode();
+  }
+  return code;
+}
+
 /**
  * Register a creator as a referral partner.
  * Returns the existing partner if already registered.
@@ -56,37 +76,22 @@ export async function registerPartner(
   creatorId: string,
   walletAddress: string,
 ): Promise<ReferralPartner | null> {
-  // Check for existing registration
   const { data: existing } = await db
     .from('rrg_referral_partners')
     .select('*')
     .eq('creator_id', creatorId)
     .maybeSingle();
-
   if (existing) return existing as ReferralPartner;
-
-  // Generate a unique code (retry on collision)
-  let code = generateReferralCode();
-  let attempts = 0;
-  while (attempts < 5) {
-    const { data: collision } = await db
-      .from('rrg_referral_partners')
-      .select('id')
-      .eq('referral_code', code)
-      .maybeSingle();
-
-    if (!collision) break;
-    code = generateReferralCode();
-    attempts++;
-  }
 
   const { data, error } = await db
     .from('rrg_referral_partners')
     .insert({
-      creator_id: creatorId,
+      partner_type:   'creator',
+      creator_id:     creatorId,
+      agent_id:       null,
       wallet_address: walletAddress.toLowerCase(),
-      referral_code: code,
-      status: 'active',
+      referral_code:  await uniqueReferralCode(),
+      status:         'active',
       commission_bps: 1000, // 10% of platform share
     })
     .select()
@@ -96,7 +101,55 @@ export async function registerPartner(
     console.error('[referral] registerPartner error:', error);
     return null;
   }
+  return data as ReferralPartner;
+}
 
+/**
+ * Register an AI agent as a referral partner.
+ * Returns the existing partner if already registered (by agent_id OR by wallet).
+ *
+ * Agents earn the same default commission (10% of platform share) as human
+ * creators. The partner is keyed by `agent_id` (agent_agents.id) and uses
+ * the agent's wallet for payouts via auto-payout.ts.
+ */
+export async function registerAgentPartner(
+  agentId: string,
+  walletAddress: string,
+): Promise<ReferralPartner | null> {
+  // Look up by agent_id first, then by wallet (handles wallet-only callers)
+  const wallet = walletAddress.toLowerCase();
+  const { data: byAgent } = await db
+    .from('rrg_referral_partners')
+    .select('*')
+    .eq('agent_id', agentId)
+    .maybeSingle();
+  if (byAgent) return byAgent as ReferralPartner;
+
+  const { data: byWallet } = await db
+    .from('rrg_referral_partners')
+    .select('*')
+    .eq('wallet_address', wallet)
+    .maybeSingle();
+  if (byWallet) return byWallet as ReferralPartner;
+
+  const { data, error } = await db
+    .from('rrg_referral_partners')
+    .insert({
+      partner_type:   'agent',
+      creator_id:     null,
+      agent_id:       agentId,
+      wallet_address: wallet,
+      referral_code:  await uniqueReferralCode(),
+      status:         'active',
+      commission_bps: 1000,
+    })
+    .select()
+    .single();
+
+  if (error) {
+    console.error('[referral] registerAgentPartner error:', error);
+    return null;
+  }
   return data as ReferralPartner;
 }
 
@@ -123,6 +176,31 @@ export async function getPartnerByCreatorId(creatorId: string): Promise<Referral
     .eq('creator_id', creatorId)
     .maybeSingle();
 
+  return data as ReferralPartner | null;
+}
+
+/**
+ * Look up a partner by their agent ID (for agent-typed partners).
+ */
+export async function getPartnerByAgentId(agentId: string): Promise<ReferralPartner | null> {
+  const { data } = await db
+    .from('rrg_referral_partners')
+    .select('*')
+    .eq('agent_id', agentId)
+    .maybeSingle();
+  return data as ReferralPartner | null;
+}
+
+/**
+ * Look up a partner by wallet address — useful for agents that authenticate
+ * by signing a message from their wallet.
+ */
+export async function getPartnerByWallet(walletAddress: string): Promise<ReferralPartner | null> {
+  const { data } = await db
+    .from('rrg_referral_partners')
+    .select('*')
+    .eq('wallet_address', walletAddress.toLowerCase())
+    .maybeSingle();
   return data as ReferralPartner | null;
 }
 

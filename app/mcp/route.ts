@@ -2412,6 +2412,113 @@ function createRRGServer() {
     }
   );
 
+  // ── Tool: register_referral_partner ──────────────────────────────────────
+  server.tool(
+    'register_referral_partner',
+    `[AFFILIATE] Opt this agent in as an RRG referral partner. Returns a unique referral_code and a link template. The agent earns 10% of the platform's share on any purchase made via its link (?ref=<code>). Commissions accumulate as 'pending' until paid out by RRG to the agent's wallet. Identify by agent_id (preferred — must exist in agent registry) OR by wallet_address (the agent must have been created via /agents flow first).`,
+    {
+      agent_id:       z.string().uuid().optional().describe('The VIA agent ID (UUID). Recommended.'),
+      wallet_address: z.string().regex(/^0x[a-fA-F0-9]{40}$/).optional().describe('Wallet address. Used if agent_id is not provided — the agent must already be registered.'),
+    },
+    async ({ agent_id, wallet_address }) => {
+      try {
+        const { registerAgentPartner } = await import('@/lib/rrg/referral');
+        let agentRow: { id: string; wallet_address: string } | null = null;
+        if (agent_id) {
+          const { data } = await db.from('agent_agents').select('id, wallet_address').eq('id', agent_id).maybeSingle();
+          agentRow = data;
+        } else if (wallet_address) {
+          const { data } = await db.from('agent_agents').select('id, wallet_address').eq('wallet_address', wallet_address.toLowerCase()).maybeSingle();
+          agentRow = data;
+        } else {
+          return { isError: true, content: [{ type: 'text', text: 'Provide either agent_id or wallet_address.' }] };
+        }
+        if (!agentRow) {
+          return { isError: true, content: [{ type: 'text', text: 'Agent not found. Create one first via the /agents flow or create_concierge.' }] };
+        }
+        if (!agentRow.wallet_address) {
+          return { isError: true, content: [{ type: 'text', text: 'Agent has no wallet_address — cannot receive payouts.' }] };
+        }
+        const partner = await registerAgentPartner(agentRow.id, agentRow.wallet_address);
+        if (!partner) {
+          return { isError: true, content: [{ type: 'text', text: 'Failed to register as partner (DB error).' }] };
+        }
+        const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://realrealgenuine.com';
+        return {
+          content: [{ type: 'text', text: JSON.stringify({
+            success:         true,
+            partner_id:      partner.id,
+            referral_code:   partner.referral_code,
+            commission_rate: `${partner.commission_bps / 100}% of platform share`,
+            wallet:          partner.wallet_address,
+            status:          partner.status,
+            link_template:   `${siteUrl}/rrg/drop/{tokenId}?ref=${partner.referral_code}`,
+            example_link:    `${siteUrl}/rrg/drop/45?ref=${partner.referral_code}`,
+            how_it_works:    'Share the link. When a buyer purchases through it, you earn 10% of the platform share (commissions land as `pending` and are paid in USDC on Base to your wallet by RRG.)',
+          }, null, 2) }],
+        };
+      } catch (err) {
+        return { isError: true, content: [{ type: 'text', text: `register_referral_partner failed: ${err instanceof Error ? err.message : String(err)}` }] };
+      }
+    }
+  );
+
+  // ── Tool: get_referral_stats ─────────────────────────────────────────────
+  server.tool(
+    'get_referral_stats',
+    `[AFFILIATE] Get this agent's referral partner stats: clicks, conversions, total commission earned, pending balance, paid balance, recent commissions. Identify by agent_id, wallet_address, or referral_code.`,
+    {
+      agent_id:       z.string().uuid().optional().describe('VIA agent ID.'),
+      wallet_address: z.string().regex(/^0x[a-fA-F0-9]{40}$/).optional().describe('Agent wallet address.'),
+      referral_code:  z.string().optional().describe('Referral code (8-char base64url).'),
+    },
+    async ({ agent_id, wallet_address, referral_code }) => {
+      try {
+        const { getPartnerByAgentId, getPartnerByWallet, getPartnerByCode, getPartnerStats } = await import('@/lib/rrg/referral');
+        let partner = null;
+        if (agent_id)            partner = await getPartnerByAgentId(agent_id);
+        else if (wallet_address) partner = await getPartnerByWallet(wallet_address);
+        else if (referral_code)  partner = await getPartnerByCode(referral_code);
+        else {
+          return { isError: true, content: [{ type: 'text', text: 'Provide one of: agent_id, wallet_address, referral_code.' }] };
+        }
+        if (!partner) {
+          return { content: [{ type: 'text', text: JSON.stringify({ registered: false, hint: 'Call register_referral_partner first.' }, null, 2) }] };
+        }
+        const stats = await getPartnerStats(partner.id);
+        if (!stats) {
+          return { isError: true, content: [{ type: 'text', text: 'Stats lookup failed.' }] };
+        }
+        const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://realrealgenuine.com';
+        return {
+          content: [{ type: 'text', text: JSON.stringify({
+            registered:        true,
+            partner_id:        stats.partner.id,
+            partner_type:      stats.partner.partner_type,
+            referral_code:     stats.partner.referral_code,
+            wallet:            stats.partner.wallet_address,
+            status:            stats.partner.status,
+            commission_rate:   `${stats.partner.commission_bps / 100}% of platform share`,
+            total_clicks:      stats.partner.total_clicks,
+            total_conversions: stats.partner.total_conversions,
+            total_commission_usdc: parseFloat(String(stats.partner.total_commission_usdc)),
+            pending_usdc:      stats.pendingUsdc,
+            paid_usdc:         stats.paidUsdc,
+            link_template:     `${siteUrl}/rrg/drop/{tokenId}?ref=${stats.partner.referral_code}`,
+            recent_commissions: stats.commissions.slice(0, 10).map(c => ({
+              date:           c.created_at,
+              revenue_usdc:   parseFloat(String(c.revenue_usdc)),
+              commission_usdc:parseFloat(String(c.commission_usdc)),
+              status:         c.status,
+            })),
+          }, null, 2) }],
+        };
+      } catch (err) {
+        return { isError: true, content: [{ type: 'text', text: `get_referral_stats failed: ${err instanceof Error ? err.message : String(err)}` }] };
+      }
+    }
+  );
+
   return server;
 }
 
