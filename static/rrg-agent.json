@@ -14,6 +14,7 @@
   "endpoints": {
     "mcp": "https://realrealgenuine.com/mcp",
     "agent_docs": "https://realrealgenuine.com/api/rrg/agent-docs",
+    "catalogue": "https://realrealgenuine.com/api/rrg/catalogue",
     "telegram": "https://t.me/realrealgenuine_bot"
   },
   "payment": {
@@ -32,6 +33,11 @@
       "name": "Web",
       "endpoint": "https://realrealgenuine.com/rrg",
       "description": "RRG marketplace — co-creation NFT platform on Base"
+    },
+    {
+      "name": "catalogue",
+      "endpoint": "https://realrealgenuine.com/api/rrg/catalogue",
+      "description": "Agent-readable JSON catalogue of all brand-owned listings. Optional ?brand=<slug> filter."
     }
   ],
   "chains": ["base"],
