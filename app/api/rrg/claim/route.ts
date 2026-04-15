@@ -415,12 +415,13 @@ export async function POST(req: NextRequest) {
       const isLegacy = brandId === RRG_BRAND_ID && !submission.is_brand_product;
 
       const split = calculateSplit({
-        totalUsdc:      parseFloat(submission.price_usdc ?? '0'),
+        totalUsdc:        parseFloat(submission.price_usdc ?? '0'),
         brandId,
-        creatorWallet:  submission.creator_wallet,
-        brandWallet:    brand?.wallet_address ?? null,
-        isBrandProduct: submission.is_brand_product ?? false,
+        creatorWallet:    submission.creator_wallet,
+        brandWallet:      brand?.wallet_address ?? null,
+        isBrandProduct:   submission.is_brand_product ?? false,
         isLegacy,
+        brandPctOverride: brand?.brand_pct_override ?? null,
       });
 
       await insertDistributionAndPay({

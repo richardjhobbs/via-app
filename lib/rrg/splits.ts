@@ -28,6 +28,8 @@ export interface SplitInput {
   isBrandProduct: boolean;
   /** True for drops that existed before multi-brand migration */
   isLegacy: boolean;
+  /** Optional per-brand override (0-100). When set, replaces tiered formula. */
+  brandPctOverride?: number | null;
 }
 
 export interface SplitResult {
@@ -71,8 +73,15 @@ function round2(n: number): number {
  * $100+:      97.5% (fixed cap)
  *
  * Physical channel: same scale, $10 minimum, card fee deducted from seller.
+ *
+ * If `brandPctOverride` is supplied (per-brand override on rrg_brands), it
+ * is returned directly and the tiered formula is bypassed. Use this for
+ * brands with a pre-negotiated flat split (e.g. a 97.5% wholesale deal).
  */
-export function getBrandPct(priceUsdc: number): number {
+export function getBrandPct(priceUsdc: number, brandPctOverride?: number | null): number {
+  if (brandPctOverride != null && brandPctOverride >= 0 && brandPctOverride <= 100) {
+    return brandPctOverride;
+  }
   if (priceUsdc < 10)  return 70;
   if (priceUsdc <= 100) return 70 + (priceUsdc - 10) / 90 * 27.5;
   return 97.5;
@@ -105,6 +114,7 @@ export function applyCardFeeDeduction(
 export function computeSplit(
   priceUsdc: number,
   dropType: 'brand_created' | 'co_created',
+  brandPctOverride?: number | null,
 ): { creator: number; brand: number; platform: number } {
   if (dropType !== 'brand_created') {
     // Co-created drop — fixed split
@@ -114,8 +124,8 @@ export function computeSplit(
       platform: round6(priceUsdc * 0.30),
     };
   }
-  // Brand-created drop — tiered split
-  const brandPct    = getBrandPct(priceUsdc);
+  // Brand-created drop — tiered split (or per-brand override)
+  const brandPct    = getBrandPct(priceUsdc, brandPctOverride);
   const platformPct = 100 - brandPct;
   return {
     creator:  0,
@@ -125,7 +135,7 @@ export function computeSplit(
 }
 
 export function calculateSplit(input: SplitInput): SplitResult {
-  const { totalUsdc, brandId, creatorWallet, brandWallet, isBrandProduct, isLegacy } = input;
+  const { totalUsdc, brandId, creatorWallet, brandWallet, isBrandProduct, isLegacy, brandPctOverride } = input;
 
   // ── Legacy drops: on-chain 70/30 stays, no off-chain distribution needed ──
   if (isLegacy) {
@@ -143,9 +153,9 @@ export function calculateSplit(input: SplitInput): SplitResult {
     };
   }
 
-  // ── Brand self-listed product: tiered sliding split ──
+  // ── Brand self-listed product: tiered sliding split (or per-brand override) ──
   if (isBrandProduct) {
-    const tiered       = computeSplit(totalUsdc, 'brand_created');
+    const tiered       = computeSplit(totalUsdc, 'brand_created', brandPctOverride);
     return {
       splitType:      'brand_product_tiered',
       totalUsdc,

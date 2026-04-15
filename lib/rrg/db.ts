@@ -57,6 +57,8 @@ export interface RrgBrand {
   self_listings_used: number;
   created_by: string | null;
   application_text: string | null;
+  /** Optional per-brand split override (0-100). Replaces tiered formula when set. */
+  brand_pct_override: number | null;
 }
 
 export interface RrgBrief {

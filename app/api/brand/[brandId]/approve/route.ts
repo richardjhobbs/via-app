@@ -54,12 +54,13 @@ export async function POST(
     const brand = brandId !== RRG_BRAND_ID ? await getBrandById(brandId) : null;
 
     const split = calculateSplit({
-      totalUsdc:      priceUsdc,
+      totalUsdc:        priceUsdc,
       brandId,
-      creatorWallet:  submission.creator_wallet,
-      brandWallet:    brand?.wallet_address ?? null,
-      isBrandProduct: false,
-      isLegacy:       false,
+      creatorWallet:    submission.creator_wallet,
+      brandWallet:      brand?.wallet_address ?? null,
+      isBrandProduct:   false,
+      isLegacy:         false,
+      brandPctOverride: brand?.brand_pct_override ?? null,
     });
 
     // ── Register drop on-chain ────────────────────────────────────────

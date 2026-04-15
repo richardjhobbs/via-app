@@ -129,8 +129,19 @@ export default async function DropPage({ params }: Props) {
   const priceUsdc  = parseFloat(drop.price_usdc || '0');
   const scanBase   = 'https://basescan.org';
 
+  // Per-brand split override (e.g. wholesale partners with a flat % deal)
+  let brandPctOverride: number | null = null;
+  if (drop.is_brand_product && drop.brand_id) {
+    const { data: brandRow } = await db
+      .from('rrg_brands')
+      .select('brand_pct_override')
+      .eq('id', drop.brand_id)
+      .maybeSingle();
+    brandPctOverride = brandRow?.brand_pct_override ?? null;
+  }
+
   // Revenue share display
-  const brandPct   = drop.is_brand_product ? getBrandPct(priceUsdc) : null;
+  const brandPct   = drop.is_brand_product ? getBrandPct(priceUsdc, brandPctOverride) : null;
   const shareLabel = brandPct !== null
     ? `${brandPct % 1 === 0 ? brandPct.toFixed(0) : brandPct.toFixed(1)}% of purchase price goes to the brand`
     : '35% of purchase price goes to the creator';

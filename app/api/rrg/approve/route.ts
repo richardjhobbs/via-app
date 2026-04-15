@@ -51,12 +51,13 @@ export async function POST(req: NextRequest) {
     const isLegacy = false; // New approvals are never legacy
 
     const split = calculateSplit({
-      totalUsdc:      priceUsdc,
+      totalUsdc:        priceUsdc,
       brandId,
-      creatorWallet:  submission.creator_wallet,
-      brandWallet:    brand?.wallet_address ?? null,
-      isBrandProduct: submission.is_brand_product ?? false,
+      creatorWallet:    submission.creator_wallet,
+      brandWallet:      brand?.wallet_address ?? null,
+      isBrandProduct:   submission.is_brand_product ?? false,
       isLegacy,
+      brandPctOverride: brand?.brand_pct_override ?? null,
     });
 
     // ── Register drop on-chain ────────────────────────────────────────

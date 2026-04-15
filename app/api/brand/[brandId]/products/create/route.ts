@@ -260,12 +260,13 @@ export async function POST(
 
     // ── Calculate split ───────────────────────────────────────────────
     const split = calculateSplit({
-      totalUsdc:      priceUsdc,
+      totalUsdc:        priceUsdc,
       brandId,
-      creatorWallet:  brand.wallet_address,
-      brandWallet:    brand.wallet_address,
-      isBrandProduct: true,
-      isLegacy:       false,
+      creatorWallet:    brand.wallet_address,
+      brandWallet:      brand.wallet_address,
+      isBrandProduct:   true,
+      isLegacy:         false,
+      brandPctOverride: brand.brand_pct_override ?? null,
     });
 
     // ── Claim token ID ────────────────────────────────────────────────

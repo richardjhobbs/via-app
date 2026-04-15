@@ -103,6 +103,16 @@ const RRG_ABI  = [
 ];
 const rrg = new ethers.Contract(RRG_ADDR, RRG_ABI, signer);
 
+// Explicit nonce tracking — Base public RPC sometimes reports stale nonce
+// for back-to-back tx, so we manage it ourselves after the initial fetch.
+let _nextNonce = null;
+async function nextNonce() {
+  if (_nextNonce === null) {
+    _nextNonce = await signer.getNonce('latest');
+  }
+  return _nextNonce++;
+}
+
 const toUsdc6dp = (n) => BigInt(Math.round(n * 1_000_000));
 const stripHtml = (h) => (h ?? '')
   .replace(/<[^>]*>/g, ' ').replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&')
@@ -279,13 +289,15 @@ async function importProduct(product, brand) {
   // Claim tokenId
   const tokenId = await claimNextTokenId();
 
-  // On-chain registerDrop
-  console.log(`  → registerDrop(${tokenId}, ${BRAND_WALLET}, ${toUsdc6dp(price)}, ${FIXED_EDITION})`);
+  // On-chain registerDrop with explicit nonce
+  const nonce = await nextNonce();
+  console.log(`  → registerDrop(${tokenId}, ${BRAND_WALLET}, ${toUsdc6dp(price)}, ${FIXED_EDITION})  [nonce=${nonce}]`);
   const tx = await rrg.registerDrop(
     tokenId,
     BRAND_WALLET,
     toUsdc6dp(price),
     FIXED_EDITION,
+    { nonce },
   );
   const receipt = await tx.wait(1);
   console.log(`  → mined ${receipt.hash}`);
