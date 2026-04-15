@@ -2464,6 +2464,23 @@ export async function GET(req: Request) {
 
   // If the caller wants JSON or has no specific preference (8004scan, curl, etc.)
   if (accept.includes('application/json') || !accept.includes('text/html')) {
+    // Pull active brands so agents can see what's buyable without any MCP call.
+    let brands: { slug: string; name: string; storefront: string; catalogue: string }[] = [];
+    try {
+      const { data } = await db
+        .from('rrg_brands')
+        .select('slug, name')
+        .eq('status', 'active')
+        .order('created_at', { ascending: false })
+        .limit(20);
+      brands = (data ?? []).map(b => ({
+        slug:       b.slug,
+        name:       b.name,
+        storefront: `${siteUrl}/brand/${b.slug}`,
+        catalogue:  `${siteUrl}/api/rrg/catalogue?brand=${b.slug}`,
+      }));
+    } catch { /* non-fatal */ }
+
     return Response.json({
       name: 'Real Real Genuine',
       description: 'Open co-creation commerce platform on Base. AI agents and humans design, buy, and sell physical and digital products.',
@@ -2474,6 +2491,20 @@ export async function GET(req: Request) {
       website: `${siteUrl}/rrg`,
       erc8004_agent_id: 33313,
       supported_protocols: ['MCP', 'x402', 'ERC-8004'],
+      // ─── Quick-discovery breadcrumbs for agents that can't (or didn't) POST MCP ───
+      hint: 'This is an MCP server. To browse products via JSON without MCP, GET /api/rrg/catalogue or /api/rrg/catalogue?brand=<slug>. To call MCP tools, POST to /mcp with JSON-RPC { method: "tools/call", params: { name: "list_drops", arguments: { brand_slug } } }.',
+      http_endpoints: {
+        catalogue_all:    `${siteUrl}/api/rrg/catalogue`,
+        catalogue_brand:  `${siteUrl}/api/rrg/catalogue?brand=<slug>`,
+        agent_docs:       `${siteUrl}/api/rrg/agent-docs`,
+        agent_identity:   `${siteUrl}/agent.json`,
+      },
+      mcp_tools: [
+        { name: 'list_drops',           description: 'Browse all active drops. Optional filter { brand_slug: string }.' },
+        { name: 'get_drop_details',     description: 'Full details for one drop by tokenId.' },
+        { name: 'initiate_agent_purchase', description: 'Buy a drop as an AI agent (operatorMint flow).' },
+      ],
+      brands,
     });
   }
 
@@ -2510,9 +2541,13 @@ export async function GET(req: Request) {
   <p>Your agent framework handles the connection. Just point it at the URL above.</p>
 
   <h2>If Your Agent Can't Speak MCP</h2>
-  <p>Read the full tool catalogue and workflow guides as plain JSON:</p>
+  <p>Browse the full product catalogue as plain JSON (no auth, no MCP handshake):</p>
+  <div class="endpoint"><span>GET</span> <a href="/api/rrg/catalogue">/api/rrg/catalogue</a> — all brand listings across RRG</div>
+  <div class="endpoint"><span>GET</span> <a href="/api/rrg/catalogue?brand=clooudie">/api/rrg/catalogue?brand=&lt;slug&gt;</a> — filter to one brand (e.g. <code>clooudie</code>)</div>
+  <p>Read the full tool catalogue and workflow guides:</p>
   <div class="endpoint"><span>GET</span> <a href="/api/rrg/agent-docs">/api/rrg/agent-docs</a></div>
-  <p>This returns everything your agent needs — tools, parameters, step-by-step workflows, and connection instructions.</p>
+  <p>For the equivalent MCP call, POST to <code>/mcp</code> with
+  <code>{"jsonrpc":"2.0","method":"tools/call","params":{"name":"list_drops","arguments":{"brand_slug":"clooudie"}}}</code>.</p>
 
   <h2>What Agents Can Do</h2>
   <ul>
