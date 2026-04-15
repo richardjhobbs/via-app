@@ -2082,11 +2082,12 @@ function ContributorsTab() {
   );
 }
 
-// ── Referrals Tab ────────────────────────────────────────────────────────
+// ── Referrals Tab (RRG Marketing Programme partners) ─────────────────────
 interface ReferralCommissionRow {
   id: string;
   date: string;
-  purchase_id: string;
+  candidate_id: string | null;
+  conversion_id: string | null;
   revenue_usdc: number;
   commission_usdc: number;
   status: 'pending' | 'approved' | 'paid' | 'rejected';
@@ -2095,15 +2096,25 @@ interface ReferralCommissionRow {
   notes: string | null;
 }
 
+interface RecentReferral {
+  id: string;
+  name: string | null;
+  wallet: string | null;
+  tier: string | null;
+  status: string | null;
+  date: string;
+}
+
 interface ReferralPartnerRow {
   id: string;
-  partner_type: 'creator' | 'agent';
-  display_name: string;
-  referral_code: string;
+  name: string;
   wallet_address: string;
-  status: 'active' | 'paused' | 'suspended';
+  erc8004_id: number | null;
+  status: string;
   commission_bps: number;
-  total_clicks: number;
+  total_candidates: number;
+  converted_candidates: number;
+  total_outreach: number;
   total_conversions: number;
   total_commission_usdc: number;
   pending_usdc: number;
@@ -2114,12 +2125,13 @@ interface ReferralPartnerRow {
   created_at: string;
   updated_at: string;
   commissions: ReferralCommissionRow[];
+  recent_referrals: RecentReferral[];
 }
 
 interface ReferralTotals {
   partner_count: number;
-  agent_partner_count: number;
-  creator_partner_count: number;
+  total_referrals: number;
+  converted_referrals: number;
   pending_usdc: number;
   approved_usdc: number;
   paid_usdc: number;
@@ -2129,7 +2141,6 @@ function ReferralsTab() {
   const [partners, setPartners] = useState<ReferralPartnerRow[]>([]);
   const [totals,   setTotals]   = useState<ReferralTotals | null>(null);
   const [loading,  setLoading]  = useState(true);
-  const [filter,   setFilter]   = useState<'all' | 'agent' | 'creator'>('all');
   const [openId,   setOpenId]   = useState<string | null>(null);
   const [acting,   setActing]   = useState<string | null>(null);
   const [msg,      setMsg]      = useState('');
@@ -2163,25 +2174,19 @@ function ReferralsTab() {
     setActing(null);
   };
 
-  const filtered = filter === 'all' ? partners : partners.filter(p => p.partner_type === filter);
   const fmtUsd = (n: number) => `$${n.toFixed(2)}`;
   const fmtDate = (s: string) => new Date(s).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
 
   return (
     <div>
       <div className="flex justify-between items-center mb-6">
-        <h2 className="text-sm font-mono uppercase tracking-widest text-white/60">Referral Partners</h2>
-        <div className="flex gap-2 text-xs font-mono">
-          {(['all', 'agent', 'creator'] as const).map(f => (
-            <button
-              key={f}
-              onClick={() => setFilter(f)}
-              className={`px-3 py-1 border rounded ${filter === f ? 'border-white text-white' : 'border-white/20 text-white/50 hover:text-white/80'}`}
-            >
-              {f.toUpperCase()}
-            </button>
-          ))}
-        </div>
+        <h2 className="text-sm font-mono uppercase tracking-widest text-white/60">Referral / Marketing Partners</h2>
+        <a
+          href="/admin/rrg/marketing"
+          className="text-xs font-mono text-white/50 hover:text-white"
+        >
+          Full pipeline view &rarr;
+        </a>
       </div>
 
       {totals && (
@@ -2189,7 +2194,7 @@ function ReferralsTab() {
           <div className="border border-white/10 rounded p-4">
             <div className="text-xs font-mono uppercase tracking-wider text-white/40 mb-1">Partners</div>
             <div className="text-xl">{totals.partner_count}</div>
-            <div className="text-xs font-mono text-white/40 mt-1">{totals.agent_partner_count} agents · {totals.creator_partner_count} creators</div>
+            <div className="text-xs font-mono text-white/40 mt-1">{totals.total_referrals} referrals · {totals.converted_referrals} converted</div>
           </div>
           <div className="border border-yellow-500/20 rounded p-4">
             <div className="text-xs font-mono uppercase tracking-wider text-yellow-400/60 mb-1">Pending</div>
@@ -2210,18 +2215,19 @@ function ReferralsTab() {
 
       {loading ? (
         <div className="text-white/50 font-mono text-sm">Loading…</div>
-      ) : filtered.length === 0 ? (
-        <div className="text-white/50 font-mono text-sm py-12 text-center">No referral partners yet.</div>
+      ) : partners.length === 0 ? (
+        <div className="text-white/50 font-mono text-sm py-12 text-center">
+          No referral partners yet. Any wallet holder (human or AI agent) can join via <code>join_marketing_program</code> on the MCP.
+        </div>
       ) : (
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead className="text-xs font-mono uppercase tracking-wider text-white/40 border-b border-white/10">
               <tr>
-                <th className="text-left py-2 pr-4">Type</th>
                 <th className="text-left py-2 pr-4">Partner</th>
-                <th className="text-left py-2 pr-4">Code</th>
                 <th className="text-left py-2 pr-4">Wallet</th>
-                <th className="text-right py-2 pr-4">Clicks</th>
+                <th className="text-left py-2 pr-4">VIA ID</th>
+                <th className="text-right py-2 pr-4">Refs</th>
                 <th className="text-right py-2 pr-4">Conv.</th>
                 <th className="text-right py-2 pr-4">Pending</th>
                 <th className="text-right py-2 pr-4">Paid</th>
@@ -2230,17 +2236,14 @@ function ReferralsTab() {
               </tr>
             </thead>
             <tbody>
-              {filtered.map(p => (
+              {partners.map(p => (
                 <Fragment key={p.id}>
                   <tr className="border-b border-white/5 hover:bg-white/5">
-                    <td className="py-2 pr-4 font-mono text-xs uppercase">
-                      <span className={p.partner_type === 'agent' ? 'text-purple-400' : 'text-cyan-400'}>{p.partner_type}</span>
-                    </td>
-                    <td className="py-2 pr-4">{p.display_name}</td>
-                    <td className="py-2 pr-4 font-mono text-xs text-white/70">{p.referral_code}</td>
+                    <td className="py-2 pr-4">{p.name}</td>
                     <td className="py-2 pr-4"><CopyWallet address={p.wallet_address} /></td>
-                    <td className="py-2 pr-4 text-right tabular-nums">{p.total_clicks}</td>
-                    <td className="py-2 pr-4 text-right tabular-nums">{p.total_conversions}</td>
+                    <td className="py-2 pr-4 font-mono text-xs text-white/50">{p.erc8004_id ? `#${p.erc8004_id}` : '—'}</td>
+                    <td className="py-2 pr-4 text-right tabular-nums">{p.total_candidates}</td>
+                    <td className="py-2 pr-4 text-right tabular-nums">{p.converted_candidates}</td>
                     <td className="py-2 pr-4 text-right tabular-nums text-yellow-400">{fmtUsd(p.pending_usdc)}</td>
                     <td className="py-2 pr-4 text-right tabular-nums text-green-400">{fmtUsd(p.paid_usdc)}</td>
                     <td className="py-2 pr-2 font-mono text-xs">
@@ -2257,7 +2260,21 @@ function ReferralsTab() {
                   </tr>
                   {openId === p.id && (
                     <tr>
-                      <td colSpan={10} className="bg-white/5 py-3 px-4">
+                      <td colSpan={9} className="bg-white/5 py-3 px-4">
+                        {p.recent_referrals.length > 0 && (
+                          <div className="mb-4">
+                            <div className="text-xs font-mono uppercase tracking-wider text-white/40 mb-2">Recent Referrals</div>
+                            <div className="flex flex-wrap gap-2">
+                              {p.recent_referrals.map(r => (
+                                <div key={r.id} className="text-xs font-mono border border-white/10 rounded px-2 py-1">
+                                  <span className="text-white/80">{r.name ?? '—'}</span>
+                                  {r.wallet && <span className="text-white/40 ml-2">{r.wallet.slice(0, 6)}…{r.wallet.slice(-4)}</span>}
+                                  <span className={`ml-2 ${r.status === 'converted' ? 'text-green-400' : 'text-white/50'}`}>{r.status}</span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
                         {p.commissions.length === 0 ? (
                           <div className="text-xs font-mono text-white/40">No commissions yet.</div>
                         ) : (
@@ -2265,7 +2282,7 @@ function ReferralsTab() {
                             <thead className="text-white/40 font-mono uppercase">
                               <tr>
                                 <th className="text-left py-1 pr-3">Date</th>
-                                <th className="text-left py-1 pr-3">Purchase</th>
+                                <th className="text-left py-1 pr-3">Candidate</th>
                                 <th className="text-right py-1 pr-3">Platform $</th>
                                 <th className="text-right py-1 pr-3">Commission $</th>
                                 <th className="text-left py-1 pr-3">Status</th>
@@ -2277,7 +2294,7 @@ function ReferralsTab() {
                               {p.commissions.map(c => (
                                 <tr key={c.id} className="border-t border-white/10">
                                   <td className="py-1 pr-3 font-mono text-white/70">{fmtDate(c.date)}</td>
-                                  <td className="py-1 pr-3 font-mono text-white/50">{c.purchase_id.slice(0, 8)}…</td>
+                                  <td className="py-1 pr-3 font-mono text-white/50">{c.candidate_id ? c.candidate_id.slice(0, 8) + '…' : '—'}</td>
                                   <td className="py-1 pr-3 text-right tabular-nums">{fmtUsd(c.revenue_usdc)}</td>
                                   <td className="py-1 pr-3 text-right tabular-nums">{fmtUsd(c.commission_usdc)}</td>
                                   <td className="py-1 pr-3 font-mono">

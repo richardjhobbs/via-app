@@ -178,10 +178,6 @@ export const creatorDashboard = {
     title: 'Earnings',
     content: 'Your total USDC earnings from all sales. The creator split is set per brief — typically 35-80% of the sale price. Earnings are sent directly to your wallet at point of sale.',
   },
-  referrals: {
-    title: 'Referral programme',
-    content: 'Share your unique referral link. When someone purchases through your link, you earn a referral commission on top of any creator earnings. Track clicks and conversions here.',
-  },
   profile: {
     title: 'Creator profile',
     content: 'Update your display name, bio, avatar, and social links. Your profile appears on drop pages next to your work. A complete profile builds trust with buyers.',

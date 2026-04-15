@@ -1,8 +1,13 @@
 /**
- * GET  /api/rrg/admin/referrals — List all referral partners with payout summary
- * POST /api/rrg/admin/referrals — Update commission status (approve / paid / rejected)
+ * GET  /api/rrg/admin/referrals — List RRG Marketing Programme members
+ *                                 (a.k.a. referral partners) with payout summary
+ * POST /api/rrg/admin/referrals — Update a commission row
+ *                                 (approve / mark_paid / reject / reset)
  *
- * Admin-only.
+ * Admin-only. Backed by the `mkt_*` tables (mkt_agents, mkt_candidates,
+ * mkt_conversions, mkt_commissions) — the single programme for BOTH humans
+ * and AI agents. There is no human/agent table split — identity is just a
+ * Base wallet.
  */
 
 import { NextResponse } from 'next/server';
@@ -14,92 +19,87 @@ export const dynamic = 'force-dynamic';
 export async function GET() {
   if (!await isAdminFromCookies()) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
-  const { data: partners, error: pErr } = await db
-    .from('rrg_referral_partners')
+  // 1. All marketing/referral partners
+  const { data: agents, error: aErr } = await db
+    .from('mkt_agents')
     .select('*')
     .order('created_at', { ascending: false });
-  if (pErr) return NextResponse.json({ error: pErr.message }, { status: 500 });
+  if (aErr) return NextResponse.json({ error: aErr.message }, { status: 500 });
 
-  // Pull all commissions in one query, group by partner_id
+  // 2. All commissions
   const { data: commissions, error: cErr } = await db
-    .from('rrg_referral_commissions')
+    .from('mkt_commissions')
     .select('*')
     .order('created_at', { ascending: false });
   if (cErr) return NextResponse.json({ error: cErr.message }, { status: 500 });
 
-  // Resolve display names — agents from agent_agents, creators from rrg_creators
-  const agentIds   = (partners ?? []).filter(p => p.partner_type === 'agent').map(p => p.agent_id).filter(Boolean) as string[];
-  const creatorIds = (partners ?? []).filter(p => p.partner_type === 'creator').map(p => p.creator_id).filter(Boolean) as string[];
-
-  const agentMap = new Map<string, { name: string; via_agent_id: number | null }>();
-  if (agentIds.length > 0) {
-    const { data: agents } = await db
-      .from('agent_agents')
-      .select('id, name, erc8004_agent_id')
-      .in('id', agentIds);
-    for (const a of agents ?? []) agentMap.set(a.id, { name: a.name, via_agent_id: a.erc8004_agent_id });
-  }
-
-  const creatorMap = new Map<string, { display_name: string | null; email: string | null }>();
-  if (creatorIds.length > 0) {
-    const { data: creators } = await db
-      .from('rrg_creators')
-      .select('id, display_name, email')
-      .in('id', creatorIds);
-    for (const c of creators ?? []) creatorMap.set(c.id, { display_name: c.display_name, email: c.email });
-  }
+  // 3. All candidates (to count referrals per partner)
+  const { data: candidates } = await db
+    .from('mkt_candidates')
+    .select('id, discovered_by, name, wallet_address, outreach_status, tier, created_at');
 
   const commsByPartner = new Map<string, typeof commissions>();
   for (const c of commissions ?? []) {
-    const arr = commsByPartner.get(c.partner_id) ?? [];
+    const arr = commsByPartner.get(c.marketing_agent_id) ?? [];
     arr.push(c);
-    commsByPartner.set(c.partner_id, arr);
+    commsByPartner.set(c.marketing_agent_id, arr);
+  }
+  const candsByPartner = new Map<string, typeof candidates>();
+  for (const cand of candidates ?? []) {
+    if (!cand.discovered_by) continue;
+    const arr = candsByPartner.get(cand.discovered_by) ?? [];
+    arr.push(cand);
+    candsByPartner.set(cand.discovered_by, arr);
   }
 
-  const enriched = (partners ?? []).map(p => {
-    const comms = commsByPartner.get(p.id) ?? [];
-    const pending = comms.filter(c => c.status === 'pending').reduce((s, c) => s + parseFloat(String(c.commission_usdc)), 0);
+  const enriched = (agents ?? []).map(a => {
+    const comms = commsByPartner.get(a.id) ?? [];
+    const pending  = comms.filter(c => c.status === 'pending').reduce((s, c) => s + parseFloat(String(c.commission_usdc)), 0);
     const approved = comms.filter(c => c.status === 'approved').reduce((s, c) => s + parseFloat(String(c.commission_usdc)), 0);
     const paid     = comms.filter(c => c.status === 'paid').reduce((s, c) => s + parseFloat(String(c.commission_usdc)), 0);
     const rejected = comms.filter(c => c.status === 'rejected').reduce((s, c) => s + parseFloat(String(c.commission_usdc)), 0);
 
-    let displayName = '—';
-    if (p.partner_type === 'agent' && p.agent_id) {
-      const a = agentMap.get(p.agent_id);
-      if (a) displayName = a.via_agent_id ? `${a.name} (VIA #${a.via_agent_id})` : a.name;
-    } else if (p.partner_type === 'creator' && p.creator_id) {
-      const c = creatorMap.get(p.creator_id);
-      if (c) displayName = c.display_name || c.email || `creator/${p.creator_id.slice(0, 8)}`;
-    }
+    const cands = candsByPartner.get(a.id) ?? [];
+    const converted = cands.filter(c => c.outreach_status === 'converted').length;
 
     return {
-      id:              p.id,
-      partner_type:    p.partner_type,
-      display_name:    displayName,
-      referral_code:   p.referral_code,
-      wallet_address:  p.wallet_address,
-      status:          p.status,
-      commission_bps:  p.commission_bps,
-      total_clicks:    p.total_clicks,
-      total_conversions: p.total_conversions,
-      total_commission_usdc: parseFloat(String(p.total_commission_usdc)),
-      pending_usdc:    pending,
-      approved_usdc:   approved,
-      paid_usdc:       paid,
-      rejected_usdc:   rejected,
-      commission_count: comms.length,
-      created_at:      p.created_at,
-      updated_at:      p.updated_at,
-      commissions:     comms.map(c => ({
+      id:                a.id,
+      name:              a.name,
+      wallet_address:    a.wallet_address,
+      erc8004_id:        a.erc8004_id,
+      status:            a.status,
+      commission_bps:    a.commission_bps,
+      total_candidates:  cands.length,
+      converted_candidates: converted,
+      total_outreach:    a.total_outreach_sent,
+      total_conversions: a.total_conversions,
+      total_commission_usdc: parseFloat(String(a.total_commission_usdc)),
+      pending_usdc:      pending,
+      approved_usdc:     approved,
+      paid_usdc:         paid,
+      rejected_usdc:     rejected,
+      commission_count:  comms.length,
+      created_at:        a.created_at,
+      updated_at:        a.updated_at,
+      commissions:       comms.map(c => ({
+        id:              c.id,
+        date:            c.created_at,
+        candidate_id:    c.candidate_id,
+        conversion_id:   c.conversion_id,
+        revenue_usdc:    parseFloat(String(c.revenue_usdc)),
+        commission_usdc: parseFloat(String(c.commission_usdc)),
+        status:          c.status,
+        paid_at:         c.paid_at,
+        tx_hash:         c.tx_hash,
+        notes:           c.notes,
+      })),
+      recent_referrals: cands.slice(0, 10).map(c => ({
         id:             c.id,
+        name:           c.name,
+        wallet:         c.wallet_address,
+        tier:           c.tier,
+        status:         c.outreach_status,
         date:           c.created_at,
-        purchase_id:    c.purchase_id,
-        revenue_usdc:   parseFloat(String(c.revenue_usdc)),
-        commission_usdc:parseFloat(String(c.commission_usdc)),
-        status:         c.status,
-        paid_at:        c.paid_at,
-        tx_hash:        c.tx_hash,
-        notes:          c.notes,
       })),
     };
   });
@@ -108,8 +108,8 @@ export async function GET() {
     partners: enriched,
     totals: {
       partner_count:        enriched.length,
-      agent_partner_count:  enriched.filter(p => p.partner_type === 'agent').length,
-      creator_partner_count:enriched.filter(p => p.partner_type === 'creator').length,
+      total_referrals:      enriched.reduce((s, p) => s + p.total_candidates, 0),
+      converted_referrals:  enriched.reduce((s, p) => s + p.converted_candidates, 0),
       pending_usdc:         enriched.reduce((s, p) => s + p.pending_usdc, 0),
       approved_usdc:        enriched.reduce((s, p) => s + p.approved_usdc, 0),
       paid_usdc:            enriched.reduce((s, p) => s + p.paid_usdc, 0),
@@ -136,7 +136,7 @@ export async function POST(req: Request) {
     default: return NextResponse.json({ error: 'unknown action' }, { status: 400 });
   }
 
-  const { error } = await db.from('rrg_referral_commissions').update(updates).eq('id', commission_id);
+  const { error } = await db.from('mkt_commissions').update(updates).eq('id', commission_id);
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
   return NextResponse.json({ success: true, commission_id, ...updates });

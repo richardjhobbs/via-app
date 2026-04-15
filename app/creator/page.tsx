@@ -12,12 +12,6 @@ const GoogleAuthEmbed = dynamic(
   { ssr: false, loading: () => <div className="h-12 border border-white/10 animate-pulse" /> },
 );
 
-// Lazy-load referral tab (client-only)
-const ReferralPartnerTab = dynamic(
-  () => import('@/components/rrg/ReferralPartnerTab'),
-  { ssr: false, loading: () => <p className="text-sm font-mono text-white/50">Loading...</p> },
-);
-
 // ── Types ──────────────────────────────────────────────────────────────
 interface CreatorProfile {
   id: string;
@@ -85,7 +79,7 @@ interface ContributorStats {
   brands_contributed: string[];
 }
 
-type Tab = 'submissions' | 'drops' | 'earnings' | 'referral' | 'profile';
+type Tab = 'submissions' | 'drops' | 'earnings' | 'profile';
 
 // ── Avatar Component ──────────────────────────────────────────────────
 function Avatar({
@@ -733,7 +727,7 @@ function DashboardPage({
 
         {/* Tabs */}
         <div className="flex gap-6 border-b border-white/10 mb-8">
-          {(['submissions', 'drops', 'earnings', 'referral', 'profile'] as Tab[]).map((t) => (
+          {(['submissions', 'drops', 'earnings', 'profile'] as Tab[]).map((t) => (
             <button
               key={t}
               onClick={() => setTab(t)}
@@ -752,8 +746,7 @@ function DashboardPage({
         {tab === 'submissions' && <><div className="flex items-center gap-2 mb-4"><h2 className="text-xs font-mono text-white/40 uppercase tracking-widest">My Submissions</h2><HelpTip {...creatorDashboard.submissions} /></div><SubmissionsTab wallet={profile.walletAddress} /></>}
         {tab === 'drops'       && <><div className="flex items-center gap-2 mb-4"><h2 className="text-xs font-mono text-white/40 uppercase tracking-widest">My Drops</h2><HelpTip {...creatorDashboard.drops} /></div><DropsTab wallet={profile.walletAddress} /></>}
         {tab === 'earnings'    && <><div className="flex items-center gap-2 mb-4"><h2 className="text-xs font-mono text-white/40 uppercase tracking-widest">Earnings</h2><HelpTip {...creatorDashboard.earnings} /></div><EarningsTab wallet={profile.walletAddress} /></>}
-        {tab === 'referral'    && <><div className="flex items-center gap-2 mb-4"><h2 className="text-xs font-mono text-white/40 uppercase tracking-widest">Referral Programme</h2><HelpTip {...creatorDashboard.referrals} /></div><ReferralPartnerTab wallet={profile.walletAddress} /></>}
-        {tab === 'profile'     && <><div className="flex items-center gap-2 mb-4"><h2 className="text-xs font-mono text-white/40 uppercase tracking-widest">Profile</h2><HelpTip {...creatorDashboard.profile} /></div><ProfileTab profile={profile} /></>}
+        {tab === 'profile'     &&<><div className="flex items-center gap-2 mb-4"><h2 className="text-xs font-mono text-white/40 uppercase tracking-widest">Profile</h2><HelpTip {...creatorDashboard.profile} /></div><ProfileTab profile={profile} /></>}
       </div>
     </div>
   );

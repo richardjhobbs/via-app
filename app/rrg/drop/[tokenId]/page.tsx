@@ -1,11 +1,10 @@
-import React, { Suspense } from 'react';
+import React from 'react';
 import { getDropByTokenId, db } from '@/lib/rrg/db';
 import { getSignedUrl } from '@/lib/rrg/storage';
 import { getRRGReadOnly } from '@/lib/rrg/contract';
 import { notFound } from 'next/navigation';
 import PurchaseFlow from './PurchaseFlow';
 import PhysicalProductButton from './PhysicalProductButton';
-import ReferralCapture from '@/components/rrg/ReferralCapture';
 import DropBadges from '@/components/rrg/DropBadges';
 import Link from 'next/link';
 
@@ -303,11 +302,6 @@ export default async function DropPage({ params }: Props) {
           </div>
         </div>
       </div>
-
-      {/* Referral tracking (invisible — reads ?ref= param, sets cookie) */}
-      <Suspense fallback={null}>
-        <ReferralCapture tokenId={tokenId} />
-      </Suspense>
     </div>
   );
 }

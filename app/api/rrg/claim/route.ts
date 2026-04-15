@@ -14,7 +14,6 @@ import { insertDistributionAndPay } from '@/lib/rrg/auto-payout';
 import { createVoucher, formatVoucherForDisplay } from '@/lib/rrg/vouchers';
 import { incrementTrust } from '@/lib/rrg/agent-trust';
 import { firePurchaseAttribution } from '@/lib/rrg/marketing-attribution';
-import { processReferralCommission } from '@/lib/rrg/referral';
 
 export const dynamic = 'force-dynamic';
 
@@ -40,8 +39,7 @@ export async function POST(req: NextRequest) {
             buyerAgentId,
             shipping_name, shipping_address_line1, shipping_address_line2,
             shipping_city, shipping_state, shipping_postal_code,
-            shipping_country, shipping_phone, physical_terms_accepted,
-            referralCode } = body as {
+            shipping_country, shipping_phone, physical_terms_accepted } = body as {
       txHash?:     string;
       buyerWallet: string;
       tokenId:     number;
@@ -56,7 +54,6 @@ export async function POST(req: NextRequest) {
       shipping_country?: string;
       shipping_phone?: string;
       physical_terms_accepted?: boolean;
-      referralCode?: string;
     };
 
     // ── Input validation ──────────────────────────────────────────────────
@@ -430,19 +427,10 @@ export async function POST(req: NextRequest) {
         split,
       });
 
-      // Marketing attribution — commission is on platform share only
+      // Marketing attribution — commission is on platform share only.
+      // This covers both organic candidates and referred wallets; there is
+      // no separate per-purchase `?ref=` layer.
       firePurchaseAttribution(buyerWallet.toLowerCase(), txHash, split.platformUsdc);
-
-      // Referral partner commission (fire-and-forget)
-      if (referralCode) {
-        processReferralCommission(
-          referralCode,
-          purchase.id,
-          split.platformUsdc,
-          buyerWallet.toLowerCase(),
-          submission.creator_wallet,
-        ).catch(() => {});
-      }
     } catch (distErr) {
       console.error('[claim] Distribution/payout failed:', distErr);
     }
