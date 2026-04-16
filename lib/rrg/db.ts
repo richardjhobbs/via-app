@@ -134,6 +134,14 @@ export interface RrgSubmission {
   ai_screen_reason: string | null;
   ai_screen_confidence: 'high' | 'medium' | 'low' | null;
   image_review_flags: string[] | null;
+  /** Category key for rrg_brand_sizing lookup (tops, bottoms, skirts, outerwear) */
+  sizing_category: string | null;
+  /** LLM-enhanced product description (null = not yet generated, uses base description) */
+  enhanced_description: string | null;
+  /** When enhanced_description was generated */
+  enhanced_at: string | null;
+  /** Structured extracted attributes (fabric, colors, fit, etc) from vision analysis */
+  product_attributes: Record<string, unknown> | null;
 }
 
 export interface RrgPurchase {

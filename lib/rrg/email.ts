@@ -279,7 +279,7 @@ ${escHtml(data.shippingAddress)}</div>
         <div class="meta-value"><a href="${scanBase}/tx/${data.txHash}" style="color:#65a30d; font-family:monospace; font-size:12px">${data.txHash.slice(0, 20)}…</a></div>
       </div>
     </div>
-    ${data.shippingType === 'quote_after_payment' ? '<p style="color:#fbbf24"><strong>Action required:</strong> Contact the buyer with a shipping quote.</p>' : '<p>Shipping is included in the purchase price. Please arrange delivery.</p>'}
+    <p>Please arrange delivery to the address above.</p>
   </div>
   <div class="footer">RRG — Real Real Genuine</div>
 </div>
@@ -328,9 +328,7 @@ export async function sendPhysicalPurchaseToBuyer(data: PhysicalPurchaseEmailDat
     <div class="physical">
       <div class="physical-title">Physical Product</div>
       <p style="margin:0 0 8px;font-size:13px;color:#ccc">This purchase includes a physical product from <strong>${escHtml(data.brandName)}</strong>.</p>
-      ${data.shippingType === 'quote_after_payment'
-        ? '<p style="margin:0;font-size:13px;color:#fbbf24">The brand will contact you with a shipping quote.</p>'
-        : '<p style="margin:0;font-size:13px;color:#ccc">Shipping is included in the purchase price.</p>'}
+      <p style="margin:0;font-size:13px;color:#ccc">The brand will arrange delivery to the address provided.</p>
     </div>
 
     <div class="meta">

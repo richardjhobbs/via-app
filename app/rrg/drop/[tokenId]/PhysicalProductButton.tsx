@@ -3,6 +3,15 @@
 import { useState } from 'react';
 import PhysicalProductModal from '@/components/rrg/PhysicalProductModal';
 
+interface SizeChartData {
+  chart: Array<{ size: string; [key: string]: string | number | undefined }>;
+  unit: string;
+  fitNotes: string | null;
+  brandName: string;
+  category: string;
+  availableSizes: string[];
+}
+
 interface Props {
   details: {
     physicalDescription: string | null;
@@ -14,6 +23,8 @@ interface Props {
     shippingIncludedRegions: string[] | null;
     refundCommitment: boolean;
     collectionInPerson: string | null;
+    sizeChart?: SizeChartData | null;
+    enhancedDescription?: string | null;
   };
 }
 

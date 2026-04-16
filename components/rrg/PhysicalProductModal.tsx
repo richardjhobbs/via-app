@@ -1,6 +1,16 @@
 'use client';
 
 import { useEffect, useRef, useState, useCallback } from 'react';
+import ProductSizeChart from './ProductSizeChart';
+
+interface SizeChartData {
+  chart: Array<{ size: string; [key: string]: string | number | undefined }>;
+  unit: string;
+  fitNotes: string | null;
+  brandName: string;
+  category: string;
+  availableSizes: string[];
+}
 
 interface PhysicalProductModalProps {
   open: boolean;
@@ -15,6 +25,10 @@ interface PhysicalProductModalProps {
     shippingIncludedRegions: string[] | null;
     refundCommitment: boolean;
     collectionInPerson: string | null;
+    /** Optional per-style size chart (garment products) */
+    sizeChart?: SizeChartData | null;
+    /** Optional LLM-enhanced description with construction/fit details */
+    enhancedDescription?: string | null;
   };
 }
 
@@ -92,11 +106,24 @@ export default function PhysicalProductModal({ open, onClose, details }: Physica
         {/* Scrollable content */}
         <div ref={scrollRef} className="px-6 py-5 space-y-5 overflow-y-auto max-h-[calc(85vh-60px)]"
              style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}>
-          {details.physicalDescription && (
+          {(details.enhancedDescription || details.physicalDescription) && (
             <div>
               <p className="text-sm font-mono text-white/50 mb-1.5">Description</p>
-              <p className="text-base text-white/80 leading-relaxed">{details.physicalDescription}</p>
+              <p className="text-base text-white/80 leading-relaxed whitespace-pre-line">
+                {details.enhancedDescription || details.physicalDescription}
+              </p>
             </div>
+          )}
+
+          {details.sizeChart && (
+            <ProductSizeChart
+              chart={details.sizeChart.chart}
+              unit={details.sizeChart.unit}
+              fitNotes={details.sizeChart.fitNotes}
+              brandName={details.sizeChart.brandName}
+              category={details.sizeChart.category}
+              availableSizes={details.sizeChart.availableSizes}
+            />
           )}
 
           {details.physicalImageUrls.length > 0 && (
@@ -142,7 +169,9 @@ export default function PhysicalProductModal({ open, onClose, details }: Physica
                 </div>
               </div>
             ) : (
-              <p className="text-sm text-white/70">Brand will quote shipping cost after payment</p>
+              <p className="text-sm text-white/70">
+                Shipping cost is calculated based on your delivery address and added to your total at checkout.
+              </p>
             )}
           </div>
 

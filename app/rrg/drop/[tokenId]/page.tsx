@@ -1,5 +1,6 @@
 import React from 'react';
-import { getDropByTokenId, getBrandById, getVariantsBySubmissionId, db } from '@/lib/rrg/db';
+import { getDropByTokenId, getBrandById, getVariantsBySubmissionId, getSizingByCategory, db } from '@/lib/rrg/db';
+import ProductSizeChart from '@/components/rrg/ProductSizeChart';
 import { getSignedUrl } from '@/lib/rrg/storage';
 import { getRRGReadOnly } from '@/lib/rrg/contract';
 import { notFound } from 'next/navigation';
@@ -163,6 +164,15 @@ export default async function DropPage({ params, searchParams }: Props) {
   const priceUsdc  = parseFloat(drop.price_usdc || '0');
   const scanBase   = 'https://basescan.org';
 
+  // Size chart for garment products — only shown if brand supports sizing
+  // AND the product has a sizing_category assigned. Filtered to in-stock sizes.
+  const sizingChart = (brand?.supports_sizing && drop.sizing_category && brand.id)
+    ? await getSizingByCategory(brand.id, drop.sizing_category)
+    : null;
+  const availableSizesForChart = Array.from(new Set(
+    variantsForUI.map(v => v.size).filter((s): s is string => !!s)
+  ));
+
   // Revenue share display.
   // For brand-owned drops we DO NOT publish the wholesale split — it's
   // a private commercial term between the brand and the platform.
@@ -232,6 +242,15 @@ export default async function DropPage({ params, searchParams }: Props) {
                 shippingIncludedRegions: drop.shipping_included_regions,
                 refundCommitment: drop.refund_commitment,
                 collectionInPerson: drop.collection_in_person,
+                enhancedDescription: drop.enhanced_description,
+                sizeChart: (sizingChart && availableSizesForChart.length > 0 && brand) ? {
+                  chart:          sizingChart.size_chart as Array<{ size: string; [key: string]: string | number | undefined }>,
+                  unit:           sizingChart.unit,
+                  fitNotes:       sizingChart.fit_notes,
+                  brandName:      brand.name,
+                  category:       sizingChart.category,
+                  availableSizes: availableSizesForChart,
+                } : null,
               }}
             />
           )}
