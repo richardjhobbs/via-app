@@ -53,9 +53,6 @@ export default async function BrandStorefront({
     drops.map(async (drop) => {
       let imageUrl: string | null = null;
       try { if (drop.jpeg_storage_path) imageUrl = await getSignedUrl(drop.jpeg_storage_path, 3600); } catch {}
-      const soldOut = drop.token_id != null
-        ? (purchaseCounts.get(drop.token_id) ?? 0) >= drop.edition_size
-        : false;
       const isBrandListing = drop.creator_wallet?.toLowerCase() === brand.wallet_address?.toLowerCase();
 
       // Fetch variants for garment brands
@@ -69,6 +66,11 @@ export default async function BrandStorefront({
           stock: v.cached_stock,
         }));
       }
+
+      // Sold out: for Shopify-backed brands use variant stock; otherwise use edition vs purchases
+      const soldOut = variants.length > 0
+        ? variants.every(v => !v.inStock)
+        : (drop.token_id != null ? (purchaseCounts.get(drop.token_id) ?? 0) >= drop.edition_size : false);
 
       return { ...drop, imageUrl, soldOut, isBrandListing, variants };
     })
@@ -113,7 +115,13 @@ export default async function BrandStorefront({
             </h3>
             <div className="flex justify-between text-sm text-white/50 font-mono">
               <span>${parseFloat(drop.price_usdc || '0').toFixed(2)} USDC</span>
-              <span>{drop.edition_size} ed.</span>
+              {drop.variants.length > 0 ? (
+                <span>{drop.variants.filter(v => v.inStock).length > 0
+                  ? `${drop.variants.reduce((s, v) => s + v.stock, 0)} in stock`
+                  : 'Out of stock'}</span>
+              ) : (
+                <span>{drop.edition_size} ed.</span>
+              )}
             </div>
           </Link>
           {drop.variants.length > 0 && (

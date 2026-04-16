@@ -1,5 +1,5 @@
 import React from 'react';
-import { getDropByTokenId, getBrandById, db } from '@/lib/rrg/db';
+import { getDropByTokenId, getBrandById, getVariantsBySubmissionId, db } from '@/lib/rrg/db';
 import { getSignedUrl } from '@/lib/rrg/storage';
 import { getRRGReadOnly } from '@/lib/rrg/contract';
 import { notFound } from 'next/navigation';
@@ -105,38 +105,53 @@ export default async function DropPage({ params }: Props) {
     voucherTemplate = vt ?? null;
   }
 
-  // On-chain live data — fall back to DB values when no on-chain drop exists
-  // (e.g. Shopify-mirrored products not yet registered on-chain)
-  let onChain = {
-    minted:    0,
-    maxSupply: drop.edition_size ?? 1,
-    active:    true,
-    soldOut:   false,
-  };
-  try {
-    const contract  = getRRGReadOnly();
-    const data      = await contract.getDrop(tokenId);
-    const chainMaxSupply = Number(data.maxSupply);
-    // If on-chain maxSupply is 0, the drop hasn't been registered on-chain yet.
-    // Fall back to DB values (common for Shopify-backed brand products).
-    if (chainMaxSupply > 0) {
-      onChain = {
-        minted:    Number(data.minted),
-        maxSupply: chainMaxSupply,
-        active:    Boolean(data.active),
-        soldOut:   Number(data.minted) >= chainMaxSupply,
-      };
-    }
-  } catch { /* non-fatal — show DB data */ }
-
-  const remaining  = onChain.maxSupply - onChain.minted;
-  const priceUsdc  = parseFloat(drop.price_usdc || '0');
-  const scanBase   = 'https://basescan.org';
-
-  // Look up brand for back-link (brand storefront vs main store)
+  // Look up brand for back-link + Shopify stock detection
   const brand = drop.brand_id ? await getBrandById(drop.brand_id) : null;
   const backHref  = brand?.slug ? `/brand/${brand.slug}` : '/rrg';
   const backLabel = brand?.name ? `← ${brand.name}` : '← Store';
+
+  // Stock & edition data — two paths:
+  // 1. Shopify-backed brands: stock = sum of variant cached_stock (source of truth is Shopify)
+  // 2. On-chain drops: stock = maxSupply - minted (source of truth is the contract)
+  const isShopifyBacked = !!brand?.shopify_domain;
+
+  let onChain = {
+    minted:    0,
+    maxSupply: drop.edition_size ?? 0,
+    active:    true,
+    soldOut:   false,
+  };
+
+  if (isShopifyBacked) {
+    // Shopify-backed: edition = total variant stock, remaining = current variant stock
+    const variants = await getVariantsBySubmissionId(drop.id);
+    const totalStock = variants.reduce((sum, v) => sum + Math.max(0, v.cached_stock), 0);
+    onChain = {
+      minted:    0,
+      maxSupply: totalStock,
+      active:    true,  // always active if the product exists
+      soldOut:   totalStock === 0,
+    };
+  } else {
+    // On-chain drop: read from contract
+    try {
+      const contract  = getRRGReadOnly();
+      const data      = await contract.getDrop(tokenId);
+      const chainMaxSupply = Number(data.maxSupply);
+      if (chainMaxSupply > 0) {
+        onChain = {
+          minted:    Number(data.minted),
+          maxSupply: chainMaxSupply,
+          active:    Boolean(data.active),
+          soldOut:   Number(data.minted) >= chainMaxSupply,
+        };
+      }
+    } catch { /* non-fatal — show DB data */ }
+  }
+
+  const remaining  = isShopifyBacked ? onChain.maxSupply : (onChain.maxSupply - onChain.minted);
+  const priceUsdc  = parseFloat(drop.price_usdc || '0');
+  const scanBase   = 'https://basescan.org';
 
   // Revenue share display.
   // For brand-owned drops we DO NOT publish the wholesale split — it's
@@ -242,24 +257,36 @@ export default async function DropPage({ params }: Props) {
           )}
 
           {/* Stats strip */}
-          <div className="grid grid-cols-3 gap-4 border-t border-b border-white/10 py-6 mb-8">
+          <div className={`grid ${isShopifyBacked ? 'grid-cols-2' : 'grid-cols-3'} gap-4 border-t border-b border-white/10 py-6 mb-8`}>
             <div>
               <p className="text-sm text-white/50 font-mono mb-1">Price</p>
               <p className="text-2xl font-mono">${priceUsdc.toFixed(2)}</p>
               <p className="text-sm text-white/40 mt-0.5">USDC</p>
             </div>
-            <div>
-              <p className="text-sm text-white/50 font-mono mb-1">Edition</p>
-              <p className="text-2xl font-mono">{onChain.maxSupply}</p>
-              <p className="text-sm text-white/40 mt-0.5">total copies</p>
-            </div>
-            <div>
-              <p className="text-sm text-white/50 font-mono mb-1">Remaining</p>
-              <p className={`text-2xl font-mono ${remaining === 0 ? 'text-red-400' : ''}`}>
-                {remaining}
-              </p>
-              <p className="text-sm text-white/40 mt-0.5">available</p>
-            </div>
+            {isShopifyBacked ? (
+              <div>
+                <p className="text-sm text-white/50 font-mono mb-1">Stock</p>
+                <p className={`text-2xl font-mono ${remaining === 0 ? 'text-red-400' : ''}`}>
+                  {remaining === 0 ? 'Out of Stock' : `${remaining} available`}
+                </p>
+                <p className="text-sm text-white/40 mt-0.5">across all sizes</p>
+              </div>
+            ) : (
+              <>
+                <div>
+                  <p className="text-sm text-white/50 font-mono mb-1">Edition</p>
+                  <p className="text-2xl font-mono">{onChain.maxSupply}</p>
+                  <p className="text-sm text-white/40 mt-0.5">total copies</p>
+                </div>
+                <div>
+                  <p className="text-sm text-white/50 font-mono mb-1">Remaining</p>
+                  <p className={`text-2xl font-mono ${remaining === 0 ? 'text-red-400' : ''}`}>
+                    {remaining}
+                  </p>
+                  <p className="text-sm text-white/40 mt-0.5">available</p>
+                </div>
+              </>
+            )}
           </div>
 
           {/* Creator / Brand */}

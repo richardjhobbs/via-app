@@ -35,7 +35,6 @@ const BRANDS = {
     website:         'https://shop.unknownunion.com',
     shopifyDomain:   'shop.unknownunion.com',
     supportsSizing:  true,
-    fixedEdition:    50,
     socialLinks:     { instagram: 'https://www.instagram.com/unknownunion/' },
     bannerLocal:     null, // upload via Supabase storage separately
     logoLocal:       null,
@@ -274,7 +273,10 @@ async function importProduct(product, brand) {
     return existing;
   }
 
-  console.log(`[import ${handle}] $${price.toFixed(2)} USDC, edition ${CFG.fixedEdition}, ${product.variants.length} variants, stock ${totalStock}`);
+  // Edition size = total stock across all variants at time of listing
+  const editionSize = Math.max(1, totalStock);
+
+  console.log(`[import ${handle}] $${price.toFixed(2)} USDC, edition ${editionSize} (from stock), ${product.variants.length} variants`);
 
   if (DRY_RUN) {
     console.log(`[import ${handle}] DRY — would upload image, claim tokenId, registerDrop, insert row + variants`);
@@ -305,7 +307,7 @@ async function importProduct(product, brand) {
       tokenId,
       CFG.wallet,
       toUsdc6dp(price),
-      CFG.fixedEdition,
+      editionSize,
       { nonce },
     );
     const receipt = await tx.wait(1);
@@ -331,7 +333,7 @@ async function importProduct(product, brand) {
     creator_type:        'human',
     is_brand_product:    true,
     token_id:            tokenId,
-    edition_size:        CFG.fixedEdition,
+    edition_size:        editionSize,
     price_usdc:          price.toFixed(2),
     approved_at:         new Date().toISOString(),
     network:             'base',
