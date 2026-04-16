@@ -387,6 +387,20 @@ function createBrandServer(brand: RrgBrand) {
     },
   );
 
+  // ── Mark tools as task-usable ─────────────────────────────────────────
+  // MCP SDK 1.27+ defaults every tool registered via McpServer.tool() to
+  // `execution: { taskSupport: 'forbidden' }`. Nanobot (and other task-
+  // context MCP clients) filter `forbidden` tools out of the function-
+  // calling schema, so the model literally does not see them. We want
+  // these tools usable by any brand concierge agent — patch them to
+  // `optional` after registration.
+  const registered = (server as unknown as { _registeredTools: Record<string, { execution?: { taskSupport?: string } }> })._registeredTools;
+  if (registered) {
+    for (const name of Object.keys(registered)) {
+      registered[name].execution = { taskSupport: 'optional' };
+    }
+  }
+
   return server;
 }
 
