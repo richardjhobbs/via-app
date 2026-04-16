@@ -3,7 +3,7 @@ import { getDropByTokenId, getBrandById, getVariantsBySubmissionId, db } from '@
 import { getSignedUrl } from '@/lib/rrg/storage';
 import { getRRGReadOnly } from '@/lib/rrg/contract';
 import { notFound } from 'next/navigation';
-import PurchaseFlow from './PurchaseFlow';
+import PurchaseBlock from './PurchaseBlock';
 import PhysicalProductButton from './PhysicalProductButton';
 import DropBadges from '@/components/rrg/DropBadges';
 import Link from 'next/link';
@@ -66,10 +66,12 @@ function renderBio(bio: string): React.ReactNode {
 
 interface Props {
   params: Promise<{ tokenId: string }>;
+  searchParams: Promise<{ size?: string }>;
 }
 
-export default async function DropPage({ params }: Props) {
+export default async function DropPage({ params, searchParams }: Props) {
   const { tokenId: tokenIdStr } = await params;
+  const { size: preSelectedSize } = await searchParams;
   const tokenId = parseInt(tokenIdStr, 10);
   if (isNaN(tokenId)) notFound();
 
@@ -115,6 +117,15 @@ export default async function DropPage({ params }: Props) {
   // 2. On-chain drops: stock = maxSupply - minted (source of truth is the contract)
   const isShopifyBacked = !!brand?.shopify_domain;
 
+  // Fetch variants for garment brands (used by size selector + stock display)
+  const rawVariants = brand?.supports_sizing ? await getVariantsBySubmissionId(drop.id) : [];
+  const variantsForUI = rawVariants.map(v => ({
+    size:    v.size,
+    color:   v.color,
+    inStock: v.cached_stock > 0,
+    stock:   v.cached_stock,
+  }));
+
   let onChain = {
     minted:    0,
     maxSupply: drop.edition_size ?? 0,
@@ -124,8 +135,7 @@ export default async function DropPage({ params }: Props) {
 
   if (isShopifyBacked) {
     // Shopify-backed: edition = total variant stock, remaining = current variant stock
-    const variants = await getVariantsBySubmissionId(drop.id);
-    const totalStock = variants.reduce((sum, v) => sum + Math.max(0, v.cached_stock), 0);
+    const totalStock = rawVariants.reduce((sum, v) => sum + Math.max(0, v.cached_stock), 0);
     onChain = {
       minted:    0,
       maxSupply: totalStock,
@@ -314,14 +324,17 @@ export default async function DropPage({ params }: Props) {
             )}
           </div>
 
-          {/* Purchase flow (client component) */}
-          <PurchaseFlow
+          {/* Size selector + purchase flow (client component) */}
+          <PurchaseBlock
             tokenId={tokenId}
             priceUsdc={priceUsdc}
             soldOut={onChain.soldOut}
             active={onChain.active}
             isPhysicalProduct={drop.is_physical_product}
             shippingType={drop.shipping_type}
+            variants={variantsForUI}
+            initialSize={preSelectedSize}
+            requireSize={variantsForUI.length > 0}
           />
 
           {/* What you get */}

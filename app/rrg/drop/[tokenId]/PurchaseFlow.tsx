@@ -24,6 +24,8 @@ interface Props {
   active:    boolean;
   isPhysicalProduct?: boolean;
   shippingType?: string | null;
+  /** Pre-selected size for garment products (passed through to order + shipping notes) */
+  selectedSize?: string;
 }
 
 type Step = 'idle' | 'connect' | 'email' | 'shipping' | 'signing' | 'confirming' | 'success' | 'error'

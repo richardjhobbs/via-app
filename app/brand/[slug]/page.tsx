@@ -125,7 +125,11 @@ export default async function BrandStorefront({
             </div>
           </Link>
           {drop.variants.length > 0 && (
-            <SizeSelector variants={drop.variants} productTitle={drop.title} />
+            <SizeSelector
+              variants={drop.variants}
+              productTitle={drop.title}
+              dropHref={`/rrg/drop/${drop.token_id}`}
+            />
           )}
         </div>
       ))}

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useRouter } from 'next/navigation';
 
 interface Variant {
   size: string | null;
@@ -12,12 +12,18 @@ interface Variant {
 interface SizeSelectorProps {
   variants: Variant[];
   productTitle: string;
+  /** Link to the product detail page — size will be appended as ?size= when clicked */
+  dropHref: string;
 }
 
-export default function SizeSelector({ variants, productTitle }: SizeSelectorProps) {
-  const [selected, setSelected] = useState<string | null>(null);
+/**
+ * Brand storefront size chips. Clicking a size navigates to the drop page
+ * with the size pre-selected via ?size= URL param.
+ */
+export default function SizeSelector({ variants, dropHref }: SizeSelectorProps) {
+  const router = useRouter();
 
-  // Only show sizes (dedupe by size name)
+  // Dedupe sizes (prefer in-stock variant for each size)
   const sizeMap = new Map<string, { inStock: boolean; stock: number }>();
   for (const v of variants) {
     if (!v.size) continue;
@@ -30,6 +36,11 @@ export default function SizeSelector({ variants, productTitle }: SizeSelectorPro
   const sizes = Array.from(sizeMap.entries());
   if (sizes.length === 0) return null;
 
+  const handleSizeClick = (size: string, inStock: boolean) => {
+    if (!inStock) return;
+    router.push(`${dropHref}?size=${encodeURIComponent(size)}`);
+  };
+
   return (
     <div className="mt-3">
       <p className="text-xs font-mono text-white/50 uppercase tracking-wider mb-2">Size</p>
@@ -37,27 +48,25 @@ export default function SizeSelector({ variants, productTitle }: SizeSelectorPro
         {sizes.map(([size, { inStock }]) => (
           <button
             key={size}
-            onClick={() => inStock && setSelected(selected === size ? null : size)}
+            type="button"
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              handleSizeClick(size, inStock);
+            }}
             disabled={!inStock}
             className={[
               'px-2.5 py-1 text-xs font-mono rounded border transition-all',
               inStock
-                ? selected === size
-                  ? 'border-green-500 bg-green-500/20 text-green-400'
-                  : 'border-white/20 text-white/70 hover:border-white/40'
+                ? 'border-white/20 text-white/80 hover:border-green-500 hover:bg-green-500/10 hover:text-green-400'
                 : 'border-white/5 text-white/20 line-through cursor-not-allowed',
             ].join(' ')}
-            title={inStock ? `${size} — in stock` : `${size} — out of stock`}
+            title={inStock ? `${size} — select to view product` : `${size} — out of stock`}
           >
             {size}
           </button>
         ))}
       </div>
-      {selected && (
-        <p className="text-xs text-green-400/80 font-mono mt-1.5">
-          {selected} selected
-        </p>
-      )}
     </div>
   );
 }
