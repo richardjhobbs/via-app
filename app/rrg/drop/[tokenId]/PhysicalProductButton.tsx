@@ -24,7 +24,6 @@ interface Props {
     refundCommitment: boolean;
     collectionInPerson: string | null;
     sizeChart?: SizeChartData | null;
-    enhancedDescription?: string | null;
   };
 }
 

@@ -220,12 +220,18 @@ function createBrandServer(brand: RrgBrand) {
       const result = {
         tokenId: drop.token_id,
         title: drop.title,
+        // Base description from the brand (what humans see)
         description: drop.description,
+        // Agent-only enhanced description + structured attributes (image-analysis based).
+        // Richer product data for shopping agents — null until enhance-descriptions.mjs has run.
+        enhancedDescription: drop.enhanced_description,
+        productAttributes:   drop.product_attributes,
         priceUsdc: drop.price_usdc,
         editionSize: drop.edition_size,
         sold,
         remaining: drop.edition_size - sold,
         isPhysical: drop.is_physical_product,
+        sizingCategory: drop.sizing_category,
         ecommerceUrl: drop.ecommerce_url,
         rrgUrl: `${siteUrl}/rrg/drop/${drop.token_id}`,
         variants: enrichedVariants,

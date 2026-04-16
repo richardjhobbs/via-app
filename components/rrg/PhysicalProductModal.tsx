@@ -27,8 +27,6 @@ interface PhysicalProductModalProps {
     collectionInPerson: string | null;
     /** Optional per-style size chart (garment products) */
     sizeChart?: SizeChartData | null;
-    /** Optional LLM-enhanced description with construction/fit details */
-    enhancedDescription?: string | null;
   };
 }
 
@@ -106,12 +104,10 @@ export default function PhysicalProductModal({ open, onClose, details }: Physica
         {/* Scrollable content */}
         <div ref={scrollRef} className="px-6 py-5 space-y-5 overflow-y-auto max-h-[calc(85vh-60px)]"
              style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}>
-          {(details.enhancedDescription || details.physicalDescription) && (
+          {details.physicalDescription && (
             <div>
               <p className="text-sm font-mono text-white/50 mb-1.5">Description</p>
-              <p className="text-base text-white/80 leading-relaxed whitespace-pre-line">
-                {details.enhancedDescription || details.physicalDescription}
-              </p>
+              <p className="text-base text-white/80 leading-relaxed">{details.physicalDescription}</p>
             </div>
           )}
 

@@ -82,35 +82,47 @@ if (!BRAND_SLUG) {
 }
 
 // ── Prompt ───────────────────────────────────────────────────────────
-const SYSTEM_PROMPT = `You are a product copy writer for a fashion e-commerce platform (Real Real Genuine).
-You write buyer-focused product descriptions that help shoppers make purchase decisions.
+//
+// IMPORTANT: enhanced descriptions are for AGENTS consuming the per-brand
+// MCP, NOT for human visitors. The drop page renders the brand's original
+// description for humans. Agents get the enhanced description + structured
+// attributes via `get_product` on /brand/{slug}/mcp.
+//
+// This prompt is deliberately tight: we want STRUCTURED attributes that
+// agents can filter on (fabric/fit/colors) plus a 3-5 sentence description
+// that preserves brand voice but adds physical facts.
+//
+// Cost target: ~$0.02-0.04 per product on Claude Sonnet 4.5. We will
+// evaluate cheaper vision-capable models (Haiku, Gemini Flash, etc) for
+// production scaling — the prompt is model-agnostic.
+//
+const SYSTEM_PROMPT = `You are a product data writer for Real Real Genuine, an agent-facing commerce platform.
 
 You will be given:
-1. An image of a garment
+1. An image of a garment (usually flat-lay or mannequin)
 2. The brand's original conceptual description (often abstract/thematic)
 3. The product title
+4. The sizing category (tops | bottoms | outerwear | skirts)
 
 Your job:
-A) Analyze the garment in the image. Extract STRUCTURED attributes in JSON.
-B) Rewrite the description to PRESERVE the brand's voice and concept, but ADD:
-   - Physical details you can see (fabric type guess, construction, silhouette, graphic details)
-   - Fit guidance (slim/relaxed/oversized based on the image)
-   - Styling notes where natural
-   Keep it under 120 words. Do NOT invent facts you can't see or infer. Do NOT add sizing info (that's elsewhere).
+A) Extract STRUCTURED attributes from the image (for agent filtering)
+B) Rewrite the description for agent consumption: preserves brand voice and concept
+   but adds physical specifics (fabric guess, fit, silhouette, graphic details).
+   3-5 sentences. No sizing advice (that's a separate chart). No invented facts.
 
-Return strict JSON:
+Return strict JSON (no prose around it):
 {
   "attributes": {
-    "fabric_guess":      "e.g. midweight cotton jersey",
-    "fit":               "slim | regular | relaxed | oversized | boxy",
-    "silhouette":        "e.g. crew-neck short-sleeve tee",
-    "primary_color":     "e.g. black",
-    "secondary_colors":  ["e.g. white", "grey"],
-    "graphic_details":   "description of any print/embroidery/graphics visible",
-    "construction":      "any visible construction details (seams, hems, reinforcement, labels)",
-    "styling_hints":     "how the garment might pair or layer"
+    "fabric_guess":     "material best guess (e.g. 'midweight cotton jersey', 'heavyweight wool/cotton knit')",
+    "fit":              "slim | regular | relaxed | oversized | boxy",
+    "silhouette":       "concrete shape (e.g. 'crew-neck short-sleeve boxy tee')",
+    "primary_color":    "dominant color word",
+    "secondary_colors": ["accent colors"],
+    "graphic_details":  "printed/embroidered graphics visible + approximate position",
+    "construction":     "visible construction details (seams, hems, trim, closures, reinforcement, labels)",
+    "styling_hints":    "how the garment might pair or layer"
   },
-  "enhanced_description": "The rewritten buyer-focused description. 2-3 short paragraphs or one tight paragraph. Preserves brand voice. Weaves in physical details naturally."
+  "enhanced_description": "3-5 sentences preserving brand voice and weaving in the physical details."
 }`;
 
 // ── Helpers ──────────────────────────────────────────────────────────
