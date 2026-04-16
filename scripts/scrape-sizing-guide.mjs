@@ -71,6 +71,33 @@ const SIZING_CONFIGS = {
       },
     ],
   },
+  'frey-tailored': {
+    sourceUrl: 'https://frey-tailored.com/pages/size-guide',
+    // Frey publishes a single unified chart (EU 32-46 / UK 6-20 / US 2-16, cm).
+    // We replicate it across each product category since measurements don't
+    // change — only the fit_notes per category. Variant sizes in Frey's feed
+    // arrive in a mix of EU numbers and letter aliases, so every row carries
+    // extensive aliases for SizeSelector/ProductSizeChart matching.
+    categories: (() => {
+      const freyRows = [
+        { size: '32', aliases: ['XS', 'EU32', 'UK6',  'US2',  'IT38', 'FR34'], chest_cm: 90,  waist_cm: 89,  hip_cm: 90  },
+        { size: '34', aliases: ['S',  'EU34', 'UK8',  'US4',  'IT40', 'FR36'], chest_cm: 94,  waist_cm: 93,  hip_cm: 94  },
+        { size: '36', aliases: ['S-M','EU36', 'UK10', 'US6',  'IT42', 'FR38'], chest_cm: 98,  waist_cm: 97,  hip_cm: 98  },
+        { size: '38', aliases: ['M',  'EU38', 'UK12', 'US8',  'IT44', 'FR40'], chest_cm: 102, waist_cm: 101, hip_cm: 102 },
+        { size: '40', aliases: ['M-L','EU40', 'UK14', 'US10', 'IT46', 'FR42'], chest_cm: 107, waist_cm: 106, hip_cm: 107 },
+        { size: '42', aliases: ['L',  'EU42', 'UK16', 'US12', 'IT48', 'FR44'], chest_cm: 112, waist_cm: 111, hip_cm: 112 },
+        { size: '44', aliases: ['XL', 'EU44', 'UK18', 'US14', 'IT50', 'FR46'], chest_cm: 118, waist_cm: 117, hip_cm: 118 },
+        { size: '46', aliases: ['XXL','EU46', 'UK20', 'US16', 'IT52', 'FR48'], chest_cm: 124, waist_cm: 123, hip_cm: 124 },
+      ];
+      return [
+        { category: 'tops',      unit: 'cm', fit_notes: 'Frey tops and blouses follow the unified body chart. Tailored silks run close to the body — size up one step if you prefer a relaxed shirt.', size_chart: freyRows },
+        { category: 'bottoms',   unit: 'cm', fit_notes: 'Trousers follow the hip/waist measurements. Tapered and tuxedo trousers run slim through the leg; wide-leg styles have a relaxed drape.',      size_chart: freyRows },
+        { category: 'outerwear', unit: 'cm', fit_notes: 'Jackets, waistcoats and coats are cut slightly fitted in the waist with room for a shirt underneath. If between sizes, size up for layering.',  size_chart: freyRows },
+        { category: 'dresses',   unit: 'cm', fit_notes: 'Tailored dresses follow the unified body chart. Short and midi styles are fitted through the bodice; shirt dresses have a relaxed cut.',         size_chart: freyRows },
+        { category: 'skirts',    unit: 'cm', fit_notes: 'Skirts reference the waist/hip measurements. High-waisted styles sit at or above the natural waist.',                                             size_chart: freyRows },
+      ];
+    })(),
+  },
 };
 
 // ── Load .env.local ──────────────────────────────────────────────────

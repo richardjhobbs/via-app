@@ -27,9 +27,16 @@
  *   node scripts/enhance-descriptions.mjs --brand unknown-union --dry-run
  *   node scripts/enhance-descriptions.mjs --brand unknown-union --force  (re-run even if enhanced exists)
  *
+ *   # Precomputed path — skip the API entirely (zero LLM spend). Expects a
+ *   # JSON array of { token_id, attributes, enhanced_description } matching
+ *   # the Claude output schema. Useful when the agent running this pipeline
+ *   # has already produced the enrichment in another context.
+ *   node scripts/enhance-descriptions.mjs --brand frey-tailored \
+ *     --use-precomputed tmp/frey-enrichment.json
+ *
  * Requires .env.local:
  *   NEXT_PUBLIC_SUPABASE_URL, SUPABASE_SERVICE_KEY
- *   ANTHROPIC_API_KEY (or CLAUDE_API_KEY)
+ *   ANTHROPIC_API_KEY (or CLAUDE_API_KEY)  -- NOT required when --use-precomputed
  */
 
 import Anthropic from '@anthropic-ai/sdk';
@@ -58,12 +65,6 @@ const SUPABASE_KEY  = process.env.SUPABASE_SERVICE_KEY;
 const ANTHROPIC_KEY = process.env.ANTHROPIC_API_KEY ?? process.env.CLAUDE_API_KEY;
 
 if (!SUPABASE_URL || !SUPABASE_KEY) { console.error('FATAL: Supabase env missing'); process.exit(1); }
-if (!ANTHROPIC_KEY) { console.error('FATAL: ANTHROPIC_API_KEY or CLAUDE_API_KEY required'); process.exit(1); }
-
-const db        = createClient(SUPABASE_URL, SUPABASE_KEY, { auth: { persistSession: false } });
-const anthropic = new Anthropic({ apiKey: ANTHROPIC_KEY });
-
-const BUCKET = 'rrg-submissions';
 
 // ── CLI flags ────────────────────────────────────────────────────────
 const args = process.argv.slice(2);
@@ -71,10 +72,22 @@ const flag = (name) => {
   const i = args.indexOf(name);
   return i >= 0 ? (args[i + 1] || true) : null;
 };
-const BRAND_SLUG = flag('--brand');
-const ONLY_TOKEN = flag('--token') ? parseInt(flag('--token'), 10) : null;
-const DRY_RUN    = args.includes('--dry-run');
-const FORCE      = args.includes('--force');
+const BRAND_SLUG       = flag('--brand');
+const ONLY_TOKEN       = flag('--token') ? parseInt(flag('--token'), 10) : null;
+const DRY_RUN          = args.includes('--dry-run');
+const FORCE            = args.includes('--force');
+const PRECOMPUTED_PATH = flag('--use-precomputed'); // path to JSON array of { token_id, attributes, enhanced_description }
+
+// Anthropic key is required ONLY when we're actually calling the API.
+if (!PRECOMPUTED_PATH && !ANTHROPIC_KEY) {
+  console.error('FATAL: ANTHROPIC_API_KEY or CLAUDE_API_KEY required (or pass --use-precomputed <file>)');
+  process.exit(1);
+}
+
+const db        = createClient(SUPABASE_URL, SUPABASE_KEY, { auth: { persistSession: false } });
+const anthropic = ANTHROPIC_KEY ? new Anthropic({ apiKey: ANTHROPIC_KEY }) : null;
+
+const BUCKET = 'rrg-submissions';
 
 if (!BRAND_SLUG) {
   console.error('Usage: node scripts/enhance-descriptions.mjs --brand <slug> [--token <N>] [--dry-run] [--force]');
@@ -193,11 +206,30 @@ Analyze the image and return the JSON structure specified in the system prompt.`
   };
 }
 
+// Load precomputed enrichment keyed by token_id when --use-precomputed <file> is set.
+function loadPrecomputed(pathArg) {
+  const p = resolve(process.cwd(), pathArg);
+  const arr = JSON.parse(readFileSync(p, 'utf8'));
+  if (!Array.isArray(arr)) throw new Error(`precomputed file must be a JSON array`);
+  const map = new Map();
+  for (const row of arr) {
+    if (row.token_id == null) throw new Error(`precomputed row missing token_id: ${JSON.stringify(row).slice(0,120)}`);
+    if (!row.attributes || !row.enhanced_description) {
+      throw new Error(`precomputed row ${row.token_id} missing attributes or enhanced_description`);
+    }
+    map.set(Number(row.token_id), row);
+  }
+  return map;
+}
+
 // ── Main ─────────────────────────────────────────────────────────────
 (async () => {
   console.log(`──── Enhance descriptions: ${BRAND_SLUG} ────`);
-  console.log(`Dry run: ${DRY_RUN ? 'YES' : 'no'} | Force: ${FORCE ? 'YES' : 'no'} | Token filter: ${ONLY_TOKEN ?? 'all'}`);
+  console.log(`Dry run: ${DRY_RUN ? 'YES' : 'no'} | Force: ${FORCE ? 'YES' : 'no'} | Token filter: ${ONLY_TOKEN ?? 'all'}${PRECOMPUTED_PATH ? ` | Precomputed: ${PRECOMPUTED_PATH}` : ''}`);
   console.log();
+
+  const precomputed = PRECOMPUTED_PATH ? loadPrecomputed(PRECOMPUTED_PATH) : null;
+  if (precomputed) console.log(`[precomputed] loaded ${precomputed.size} enrichment record(s)\n`);
 
   const brand = await getBrand();
   const products = await getProducts(brand.id);
@@ -216,7 +248,7 @@ Analyze the image and return the JSON structure specified in the system prompt.`
       skipped++;
       continue;
     }
-    if (!p.jpeg_storage_path) {
+    if (!p.jpeg_storage_path && !precomputed) {
       console.log(`[skip ${label}] no image`);
       skipped++;
       continue;
@@ -225,8 +257,25 @@ Analyze the image and return the JSON structure specified in the system prompt.`
     console.log(`[analyze ${label}]`);
 
     try {
-      const image = await getImageBase64(p.jpeg_storage_path);
-      const result = await analyzeProduct(p, image);
+      let result;
+      if (precomputed) {
+        const pre = precomputed.get(p.token_id);
+        if (!pre) {
+          console.log(`  [skip] no precomputed row for token ${p.token_id}`);
+          skipped++;
+          continue;
+        }
+        result = {
+          attributes:          pre.attributes,
+          enhancedDescription: pre.enhanced_description,
+          tokensIn:            0,
+          tokensOut:           0,
+        };
+        console.log(`  [precomputed] using enrichment from ${PRECOMPUTED_PATH}`);
+      } else {
+        const image = await getImageBase64(p.jpeg_storage_path);
+        result = await analyzeProduct(p, image);
+      }
       totalTokensIn  += result.tokensIn;
       totalTokensOut += result.tokensOut;
 

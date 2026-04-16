@@ -6,11 +6,17 @@
  * into rrg_product_variants and supports garment brands with sizing.
  *
  * Usage:
- *   node scripts/brand-mirror.mjs --brand unknown-union          # full import
+ *   node scripts/brand-mirror.mjs --brand unknown-union                  # DB + images only (safe default)
+ *   node scripts/brand-mirror.mjs --brand unknown-union --commit-chain   # DB + images + registerDrop on Base
  *   node scripts/brand-mirror.mjs --brand unknown-union --only seven-society-rugby-shirt
  *   node scripts/brand-mirror.mjs --brand unknown-union --dry-run
  *   node scripts/brand-mirror.mjs --brand unknown-union --seed-only
- *   node scripts/brand-mirror.mjs --brand unknown-union --skip-chain  # DB only, no registerDrop
+ *
+ * Chain registration is OPT-IN since April 2026. Running without --commit-chain
+ * will upload images and seed rrg_submissions / rrg_product_variants but will
+ * NOT call registerDrop on the RRG contract. The on-chain step is a deliberate
+ * commitment (costs gas + makes the drop publicly addressable) and must be
+ * requested explicitly. `--skip-chain` remains accepted as a no-op alias.
  *
  * Requires .env.local with:
  *   NEXT_PUBLIC_SUPABASE_URL, SUPABASE_SERVICE_KEY
@@ -37,6 +43,24 @@ const BRANDS = {
     supportsSizing:  true,
     socialLinks:     { instagram: 'https://www.instagram.com/unknownunion/' },
     bannerLocal:     null, // upload via Supabase storage separately
+    logoLocal:       null,
+  },
+  'frey-tailored': {
+    slug:            'frey-tailored',
+    name:            'Frey Tailored',
+    wallet:          '0x734a25fB869ab6415b78bbe9a39f1f99dab349E7',
+    email:           'richard@entrepot.asia',
+    headline:        'Savile Row techniques, made for her.',
+    description:     'Frey Tailored — a Hong Kong womenswear label specialising in tailoring. Half canvas construction, surgeon\u2019s cuffs, satin peak lapels and jetted pockets applied to contemporary feminine silhouettes. Mirror of frey-tailored.com — checkout in USDC on Base, ships from Frey HK.',
+    website:         'https://frey-tailored.com',
+    shopifyDomain:   'frey-tailored.com',
+    supportsSizing:  true,
+    // HKD is USD-pegged (7.75-7.85 band since 1983). Lock a fixed rate for
+    // the mirror run; drift is ~0.1%. Documented in Notion Phase 22 entry.
+    sourceCurrency:  'HKD',
+    priceToUsdcRate: 1 / 7.78, // locked 2026-04-16
+    socialLinks:     { instagram: 'https://www.instagram.com/frey.tailored/' },
+    bannerLocal:     null,
     logoLocal:       null,
   },
 };
@@ -81,7 +105,15 @@ const ONLY       = flag('--only');
 const HANDLES    = flag('--handles');
 const DRY_RUN    = args.includes('--dry-run');
 const SEED_ONLY  = args.includes('--seed-only');
-const SKIP_CHAIN = args.includes('--skip-chain');
+// Chain registration is now OPT-IN (safer default for pilots, onboarding
+// agents, and re-runs). Pass --commit-chain to actually call registerDrop on
+// Base mainnet. `--skip-chain` is still accepted as a no-op alias.
+const COMMIT_CHAIN = args.includes('--commit-chain');
+const SKIP_CHAIN   = !COMMIT_CHAIN; // inverted — chain is skipped unless explicitly committed
+if (args.includes('--skip-chain') && COMMIT_CHAIN) {
+  console.error('FATAL: cannot pass both --skip-chain and --commit-chain');
+  process.exit(1);
+}
 
 if (!BRAND_KEY || !BRANDS[BRAND_KEY]) {
   console.error(`Usage: node scripts/brand-mirror.mjs --brand <slug>`);
@@ -98,7 +130,7 @@ console.log(`──── Brand Mirror: ${CFG.name} ────`);
 console.log(`Shopify:   ${CFG.shopifyDomain}`);
 console.log(`Sizing:    ${CFG.supportsSizing ? 'YES' : 'no'}`);
 console.log(`Dry run:   ${DRY_RUN ? 'YES' : 'no'}`);
-console.log(`Skip chain:${SKIP_CHAIN ? 'YES' : 'no'}`);
+console.log(`Chain:     ${SKIP_CHAIN ? 'SKIP (pass --commit-chain to register on-chain)' : 'COMMIT (on-chain registerDrop enabled)'}`);
 console.log(`Filter:    ${handleFilter ? Array.from(handleFilter).join(', ') : '<all>'}`);
 console.log();
 
@@ -197,13 +229,35 @@ async function ensureBrand() {
 // ────────────────────────────────────────────────────────────────────
 
 async function fetchShopify() {
-  const url = `https://${CFG.shopifyDomain}/products.json?limit=50`;
-  console.log(`[shopify] GET ${url}`);
-  const res = await fetch(url, { headers: { 'User-Agent': 'RRG-Mirror/2.0' }, cache: 'no-store' });
-  if (!res.ok) throw new Error(`Shopify ${res.status}`);
-  const json = await res.json();
-  console.log(`[shopify] received ${json.products?.length ?? 0} products`);
-  return json.products ?? [];
+  // Shopify caps products.json at 250 per page; walk pages until the response
+  // is short (end of catalogue) or a safety cap is hit.
+  //
+  // NB: Shopify's multi-currency routing will return localised prices if the
+  // request carries an Accept-Language header (Node's fetch adds a default).
+  // We force Accept-Language: "" so Shopify serves the shop's BASE currency
+  // (the one defined in the Shopify admin) — that's what CFG.priceToUsdcRate
+  // expects when converting to USDC.
+  const MAX_PAGES = 10; // up to 2,500 products — generous for any single brand
+  const all = [];
+  for (let page = 1; page <= MAX_PAGES; page++) {
+    const url = `https://${CFG.shopifyDomain}/products.json?limit=250&page=${page}`;
+    console.log(`[shopify] GET ${url}`);
+    const res = await fetch(url, {
+      headers: {
+        'User-Agent':      'RRG-Mirror/2.0',
+        'Accept':          'application/json',
+        'Accept-Language': '', // critical — see note above
+      },
+      cache: 'no-store',
+    });
+    if (!res.ok) throw new Error(`Shopify ${res.status} on page ${page}`);
+    const json = await res.json();
+    const batch = json.products ?? [];
+    all.push(...batch);
+    if (batch.length < 250) break; // last page
+  }
+  console.log(`[shopify] received ${all.length} products (across pages)`);
+  return all;
 }
 
 async function claimNextTokenId() {
@@ -254,9 +308,12 @@ async function importProduct(product, brand) {
   if (!variant) { console.warn(`[skip ${handle}] no variant`); return null; }
   if (!image)   { console.warn(`[skip ${handle}] no image`); return null; }
 
-  const price = parseFloat(variant.price);
+  // Convert shop-currency price → USDC (1:1 for USD brands, scaled for HKD etc.)
+  const rawPrice = parseFloat(variant.price);
+  const rate     = Number.isFinite(CFG.priceToUsdcRate) && CFG.priceToUsdcRate > 0 ? CFG.priceToUsdcRate : 1;
+  const price    = Math.round(rawPrice * rate * 100) / 100;
   if (!Number.isFinite(price) || price < 0.01 || price > 1000) {
-    console.warn(`[skip ${handle}] price out of range: ${variant.price}`);
+    console.warn(`[skip ${handle}] price out of range: ${variant.price} ${CFG.sourceCurrency ?? 'USD'} → ${price} USDC`);
     return null;
   }
 
@@ -292,7 +349,7 @@ async function importProduct(product, brand) {
     return null;
   }
 
-  // Download + upload image
+  // Download + upload hero image
   const imgBuf = await downloadImage(image.src);
   const fmt = detectImage(imgBuf);
   if (!fmt) throw new Error(`${handle} image not jpeg/png/webp`);
@@ -304,6 +361,32 @@ async function importProduct(product, brand) {
     contentType: fmt.mime, upsert: false,
   });
   if (upErr) throw new Error(`image upload: ${upErr.message}`);
+
+  // Upload up to 5 additional product images for the PPD modal gallery.
+  // Shopify `product.images` includes the hero as images[0] — skip it.
+  const EXTRA_IMAGE_CAP = 5;
+  const physicalImagesPaths = [];
+  const extraImages = (product.images ?? []).slice(1, 1 + EXTRA_IMAGE_CAP);
+  for (let i = 0; i < extraImages.length; i++) {
+    const extra = extraImages[i];
+    try {
+      const buf = await downloadImage(extra.src);
+      const f   = detectImage(buf);
+      if (!f) { console.warn(`  [extra-img ${i+1}] not jpeg/png/webp, skipping`); continue; }
+      const fn  = `${CFG.slug}-${handle}-aux-${i+1}-${Date.now()}.${f.ext}`;
+      const p   = `submissions/${submissionId}/jpeg/${fn}`;
+      const { error: e } = await db.storage.from(BUCKET).upload(p, buf, {
+        contentType: f.mime, upsert: false,
+      });
+      if (e) { console.warn(`  [extra-img ${i+1}] upload failed: ${e.message}`); continue; }
+      physicalImagesPaths.push(p);
+    } catch (err) {
+      console.warn(`  [extra-img ${i+1}] error: ${err.message}`);
+    }
+  }
+  if (physicalImagesPaths.length > 0) {
+    console.log(`  [extra-imgs] uploaded ${physicalImagesPaths.length} additional image(s)`);
+  }
 
   // Claim tokenId
   const tokenId = await claimNextTokenId();
@@ -347,6 +430,7 @@ async function importProduct(product, brand) {
     approved_at:         new Date().toISOString(),
     network:             'base',
     is_physical_product: true,
+    physical_images_paths: physicalImagesPaths.length > 0 ? physicalImagesPaths : null,
     ecommerce_url:       `https://${CFG.shopifyDomain}/products/${handle}`,
     shipping_type:       'quote_after_payment',
     refund_commitment:   true,
@@ -422,7 +506,11 @@ async function syncVariants(submissionId, product) {
       cached_stock:       stock,
       cached_stock_at:    now,
       sku:                v.sku || null,
-      price_override:     parseFloat(v.price) !== parseFloat(variants[0].price) ? parseFloat(v.price) : null,
+      price_override:     (() => {
+        if (parseFloat(v.price) === parseFloat(variants[0].price)) return null;
+        const r = Number.isFinite(CFG.priceToUsdcRate) && CFG.priceToUsdcRate > 0 ? CFG.priceToUsdcRate : 1;
+        return Math.round(parseFloat(v.price) * r * 100) / 100;
+      })(),
       sort_order:         i,
       updated_at:         now,
     };
