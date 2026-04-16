@@ -503,7 +503,7 @@ export async function GET(req: Request) {
           priceUsdc: 'string — price in USDC (Base mainnet)',
           priceEur: 'number | null — original EUR price for curated resale items',
           conditionGrade: 'string | null — Pristine | Excellent | Very Good | Good | Fair',
-          authenticationStatus: 'string | null — provenance/authentication signal (e.g. "Vestiaire Verified")',
+          authenticationStatus: 'string | null — provenance/authentication signal set per brand (e.g. third-party authentication, in-house verification)',
           styleTags: 'string[] — short tags like minimal, structured, monogram, archival',
           occasionFit: 'string[] — contexts like work, evening, weekend, travel',
           buyerIntentSignals: 'string[] — phrases a buyer-agent might match (e.g. "investment piece", "classic silhouette")',

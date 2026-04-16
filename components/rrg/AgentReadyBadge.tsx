@@ -6,8 +6,8 @@
  * via the per-brand MCP). Two variants:
  *
  *   - <AgentReadyBadge />          → "AGENT READY" (cyan)
- *   - <AgentReadyBadge label={x} /> → arbitrary label (e.g. authentication
- *                                     status like "Vestiaire Verified")
+ *   - <AgentReadyBadge label={x} /> → arbitrary label (e.g. an
+ *                                     authentication-status pill set per brand)
  *
  * Server-renderable, no client-side JS needed.
  */
