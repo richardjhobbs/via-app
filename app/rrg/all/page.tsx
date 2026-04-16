@@ -1,4 +1,4 @@
-import { getApprovedDropsPaginated, getPurchaseCountsByTokenIds, getAllActiveBrands, RRG_BRAND_ID } from '@/lib/rrg/db';
+import { getApprovedListingsPaginated, getPurchaseCountsByTokenIds, getAllActiveBrands, RRG_BRAND_ID } from '@/lib/rrg/db';
 import { getSignedUrlsBatch } from '@/lib/rrg/storage';
 import { getVerifiedWallets } from '@/lib/rrg/worldid';
 import { getBadgesForDrops } from '@/lib/rrg/platforms';
@@ -33,7 +33,7 @@ export default async function AllDropsPage({
     ? brands.find(b => b.slug === brandParam)?.id
     : undefined;
 
-  const { drops, totalCount } = await getApprovedDropsPaginated(page, DROPS_PER_PAGE, undefined, selectedBrandId);
+  const { drops, totalCount } = await getApprovedListingsPaginated(page, DROPS_PER_PAGE, undefined, selectedBrandId);
   const totalPages = Math.max(1, Math.ceil(totalCount / DROPS_PER_PAGE));
 
   const tokenIds = drops.map(d => d.token_id).filter((id): id is number => id != null);

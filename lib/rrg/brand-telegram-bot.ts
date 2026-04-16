@@ -11,8 +11,8 @@
 import {
   db,
   getBrandBySlug,
-  getApprovedDrops,
-  getDropByTokenId,
+  getApprovedListings,
+  getListingByTokenId,
   getVariantsBySubmissionId,
   getSizingByBrand,
   getSizingByCategory,
@@ -156,7 +156,7 @@ function parseCommand(msg: TgMessage): { command: string | null; args: string; q
 // ── Knowledge retrieval ──────────────────────────────────────────────
 
 async function getProductsSummary(brand: RrgBrand): Promise<string> {
-  const drops = await getApprovedDrops(brand.id);
+  const drops = await getApprovedListings(brand.id);
   if (drops.length === 0) return 'No products listed yet.';
 
   const lines = await Promise.all(drops.slice(0, 15).map(async (d) => {
@@ -171,7 +171,7 @@ async function getProductsSummary(brand: RrgBrand): Promise<string> {
 }
 
 async function getProductDetail(brand: RrgBrand, tokenId: number): Promise<string> {
-  const drop = await getDropByTokenId(tokenId);
+  const drop = await getListingByTokenId(tokenId);
   if (!drop || drop.brand_id !== brand.id) return `Product #${tokenId} not found.`;
 
   const variants = await getVariantsBySubmissionId(drop.id);
@@ -220,7 +220,7 @@ async function getSizingSummary(brand: RrgBrand, category?: string): Promise<str
 }
 
 async function getStockCheck(brand: RrgBrand, query: string): Promise<string> {
-  const drops = await getApprovedDrops(brand.id);
+  const drops = await getApprovedListings(brand.id);
   // Try to match product by name
   const q = query.toLowerCase();
   const match = drops.find(d => d.title.toLowerCase().includes(q));
@@ -305,7 +305,7 @@ async function handleBrandCommand(
  * Falls back gracefully when those fields are null.
  */
 async function getAgentReadyProductContext(brand: RrgBrand): Promise<string> {
-  const drops = await getApprovedDrops(brand.id);
+  const drops = await getApprovedListings(brand.id);
   if (drops.length === 0) return 'No products listed yet.';
 
   const lines: string[] = [];

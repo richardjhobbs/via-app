@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { db, getDropByTokenId, getCurrentNetwork, getBrandById, RRG_BRAND_ID } from '@/lib/rrg/db';
+import { db, getListingByTokenId, getCurrentNetwork, getBrandById, RRG_BRAND_ID } from '@/lib/rrg/db';
 import { getRRGContract } from '@/lib/rrg/contract';
 import { splitSignature } from '@/lib/rrg/permit';
 import { getSignedUrl } from '@/lib/rrg/storage';
@@ -35,7 +35,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const drop = await getDropByTokenId(parseInt(tokenId));
+    const drop = await getListingByTokenId(parseInt(tokenId));
     if (!drop) {
       return NextResponse.json({ error: 'Drop not found' }, { status: 404 });
     }

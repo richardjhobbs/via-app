@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getApprovedDrops, getDropByTokenId, getCurrentBrief, getAllActiveBrands } from '@/lib/rrg/db';
+import { getApprovedListings, getListingByTokenId, getCurrentBrief, getAllActiveBrands } from '@/lib/rrg/db';
 import { getRRGReadOnly } from '@/lib/rrg/contract';
 
 export const dynamic = 'force-dynamic';
@@ -18,7 +18,7 @@ export async function GET(req: NextRequest) {
         return NextResponse.json({ error: 'Invalid tokenId' }, { status: 400 });
       }
 
-      const drop = await getDropByTokenId(tokenId);
+      const drop = await getListingByTokenId(tokenId);
       if (!drop) {
         return NextResponse.json({ error: 'Drop not found' }, { status: 404 });
       }
@@ -43,7 +43,7 @@ export async function GET(req: NextRequest) {
 
     // All drops + brands for enrichment
     const [drops, brief, brands] = await Promise.all([
-      getApprovedDrops(),
+      getApprovedListings(),
       getCurrentBrief(),
       getAllActiveBrands(),
     ]);

@@ -8,8 +8,8 @@
 
 import {
   db,
-  getApprovedDrops,
-  getDropByTokenId,
+  getApprovedListings,
+  getListingByTokenId,
   getPurchaseCountsByTokenIds,
   getAllActiveBrands,
   getOpenBriefs,
@@ -140,7 +140,7 @@ export function parseCommand(msg: TgMessage): ParsedCommand {
 // ── Knowledge retrieval ───────────────────────────────────────────────────
 
 async function getDropsSummary(): Promise<string> {
-  const drops = await getApprovedDrops();
+  const drops = await getApprovedListings();
   if (drops.length === 0) return 'No drops listed yet.';
 
   const tokenIds = drops.map(d => d.token_id!).filter(Boolean);
@@ -162,7 +162,7 @@ async function getDropsSummary(): Promise<string> {
 }
 
 async function getDropDetail(tokenId: number): Promise<string> {
-  const drop = await getDropByTokenId(tokenId);
+  const drop = await getListingByTokenId(tokenId);
   if (!drop) return `Drop #${tokenId} not found.`;
 
   const counts = await getPurchaseCountsByTokenIds([tokenId]);
@@ -208,7 +208,7 @@ async function getBriefsSummary(): Promise<string> {
 }
 
 async function getPlatformStats(): Promise<string> {
-  const drops = await getApprovedDrops();
+  const drops = await getApprovedListings();
   const brands = await getAllActiveBrands();
   const stats = await getContributorStats();
 
@@ -230,7 +230,7 @@ async function getPlatformStats(): Promise<string> {
 async function buildContext(): Promise<string> {
   const [briefs, drops, stats] = await Promise.all([
     getOpenBriefs(),
-    getApprovedDrops(),
+    getApprovedListings(),
     getContributorStats(),
   ]);
 

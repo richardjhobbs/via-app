@@ -1,5 +1,5 @@
 import { ImageResponse } from 'next/og';
-import { getDropByTokenId } from '@/lib/rrg/db';
+import { getListingByTokenId } from '@/lib/rrg/db';
 import { getSignedUrl } from '@/lib/rrg/storage';
 
 export const runtime = 'nodejs';
@@ -14,7 +14,7 @@ export default async function OGImage({
   params: Promise<{ tokenId: string }>;
 }) {
   const { tokenId } = await params;
-  const drop = await getDropByTokenId(Number(tokenId)).catch(() => null);
+  const drop = await getListingByTokenId(Number(tokenId)).catch(() => null);
 
   // Fallback: plain branded card if drop not found
   if (!drop) {

@@ -1,4 +1,4 @@
-import { getApprovedDropsPaginated, getPurchaseCountsByTokenIds, getCurrentBrief, getOpenBriefs, getAllActiveBrands, getBrandsForDirectory, RRG_BRAND_ID } from '@/lib/rrg/db';
+import { getApprovedListingsPaginated, getPurchaseCountsByTokenIds, getCurrentBrief, getOpenBriefs, getAllActiveBrands, getBrandsForDirectory, RRG_BRAND_ID } from '@/lib/rrg/db';
 import type { BrandDirectoryItem } from '@/lib/rrg/db';
 import { getSignedUrl, getSignedUrlsBatch } from '@/lib/rrg/storage';
 import { getVerifiedWallets } from '@/lib/rrg/worldid';
@@ -112,7 +112,7 @@ export default async function RRGGallery({
   const brandMap = new Map(brands.map(b => [b.id, b]));
 
   // Fetch most recent drops for carousel
-  const { drops } = await getApprovedDropsPaginated(1, CAROUSEL_LIMIT, undefined, selectedBrandId);
+  const { drops } = await getApprovedListingsPaginated(1, CAROUSEL_LIMIT, undefined, selectedBrandId);
 
   // Get purchase counts + signed URLs
   const tokenIds = drops.map(d => d.token_id).filter((id): id is number => id != null);

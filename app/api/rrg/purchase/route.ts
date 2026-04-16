@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getDropByTokenId } from '@/lib/rrg/db';
+import { getListingByTokenId } from '@/lib/rrg/db';
 import { buildPermitPayload } from '@/lib/rrg/permit';
 import { toUsdc6dp } from '@/lib/rrg/contract';
 
@@ -18,7 +18,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Valid buyer wallet required' }, { status: 400 });
     }
 
-    const drop = await getDropByTokenId(parseInt(tokenId));
+    const drop = await getListingByTokenId(parseInt(tokenId));
     if (!drop) {
       return NextResponse.json({ error: 'Drop not found' }, { status: 404 });
     }

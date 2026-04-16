@@ -11,11 +11,11 @@ export const brandLogin = {
   },
   brandName: {
     title: 'Brand name',
-    content: 'Enter the name your brand will be known by on the platform. This appears on your storefront, in drop listings, and on social posts. You can update it later in your brand settings.',
+    content: 'Enter the name your brand will be known by on the platform. This appears on your storefront, in listing pages, and on social posts. You can update it later in your brand settings.',
   },
   walletChoice: {
     title: 'Wallet setup',
-    content: 'Your wallet receives USDC payments when your drops sell.\n\nUse your own wallet: If you already have an Ethereum-compatible wallet (MetaMask, Coinbase Wallet, etc.), paste the address here. You keep full control.\n\nCreate a new wallet: We\'ll generate an embedded wallet linked to your Google account. Simple, but you can switch to your own wallet later.',
+    content: 'Your wallet receives USDC payments when your listings sell.\n\nUse your own wallet: If you already have an Ethereum-compatible wallet (MetaMask, Coinbase Wallet, etc.), paste the address here. You keep full control.\n\nCreate a new wallet: We\'ll generate an embedded wallet linked to your Google account. Simple, but you can switch to your own wallet later.',
   },
   applicationText: {
     title: 'Application',
@@ -31,11 +31,11 @@ export const brandLogin = {
 export const brandAdmin = {
   submissions: {
     title: 'Submissions',
-    content: 'View and manage all submissions from creators responding to your briefs. You can approve, reject, or request changes. Approved submissions become live drops on your storefront.',
+    content: 'View and manage all submissions from creators responding to your briefs. You can approve, reject, or request changes. Approved submissions become live listings on your storefront.',
   },
   drops: {
-    title: 'Live drops',
-    content: 'Your approved drops that are live on the storefront. Each drop shows sales, remaining editions, and revenue. Drops are purchasable by both humans and AI agents.',
+    title: 'Live listings',
+    content: 'Your approved listings that are live on the storefront. Each listing shows sales, remaining editions, and revenue. Listings are purchasable by both humans and AI agents.',
   },
   briefs: {
     title: 'Briefs',
@@ -47,7 +47,7 @@ export const brandAdmin = {
   },
   logo: {
     title: 'Brand logo',
-    content: 'Square image, JPEG or PNG, max 2 MB. This appears next to your brand name on the storefront, in drop listings, and in social posts. A simple, recognisable mark works best.',
+    content: 'Square image, JPEG or PNG, max 2 MB. This appears next to your brand name on the storefront, in listing pages, and in social posts. A simple, recognisable mark works best.',
   },
   banner: {
     title: 'Brand banner',
@@ -63,7 +63,7 @@ export const brandAdmin = {
   },
   cardPayments: {
     title: 'Card payments',
-    content: 'Enable credit/debit card payments on your drops. When enabled, buyers can pay by card in addition to USDC. Card processing fees (~3%) are deducted from the seller\'s share.\n\nThis opens your drops to buyers who don\'t have crypto wallets.',
+    content: 'Enable credit/debit card payments on your listings. When enabled, buyers can pay by card in addition to USDC. Card processing fees (~3%) are deducted from the seller\'s share.\n\nThis opens your listings to buyers who don\'t have crypto wallets.',
   },
   offRamp: {
     title: 'Fiat off-ramp',
@@ -72,7 +72,7 @@ export const brandAdmin = {
   // Field-level
   name: {
     title: 'Brand name',
-    content: 'Your brand\'s display name. This appears on your storefront, in drop listings, and social posts. Keep it recognisable and consistent with your existing branding.',
+    content: 'Your brand\'s display name. This appears on your storefront, in listing pages, and social posts. Keep it recognisable and consistent with your existing branding.',
   },
   headline: {
     title: 'Headline',
@@ -116,11 +116,11 @@ export const briefFields = {
 export const productFields = {
   physicalToggle: {
     title: 'Physical product',
-    content: 'Enable this if the drop includes a real physical product (clothing, prints, accessories). Buyers will be asked for a shipping address. Fulfilment is arranged directly between you and the buyer.',
+    content: 'Enable this if the listing includes a real physical product (clothing, prints, accessories). Buyers will be asked for a shipping address. Fulfilment is arranged directly between you and the buyer.',
   },
   physicalTitle: {
     title: 'Physical product title',
-    content: 'Name of the physical product included with the digital drop. This appears in the product details section on the drop page.',
+    content: 'Name of the physical product included with the digital listing. This appears in the product details section on the listing page.',
   },
   physicalDescription: {
     title: 'Physical description',
@@ -128,7 +128,7 @@ export const productFields = {
   },
   physicalImages: {
     title: 'Product images',
-    content: 'Add photos of the physical product. Multiple angles recommended. JPEG or PNG, max 5 MB each. These appear in a carousel on the drop page.',
+    content: 'Add photos of the physical product. Multiple angles recommended. JPEG or PNG, max 5 MB each. These appear in a carousel on the listing page.',
   },
 };
 
@@ -168,11 +168,11 @@ export const voucherFields = {
 export const creatorDashboard = {
   submissions: {
     title: 'My submissions',
-    content: 'All your submitted designs and their current status. Pending submissions are awaiting brand review. Approved submissions become live drops. Rejected submissions include feedback if provided.',
+    content: 'All your submitted designs and their current status. Pending submissions are awaiting brand review. Approved submissions become live listings. Rejected submissions include feedback if provided.',
   },
   drops: {
-    title: 'My drops',
-    content: 'Your approved drops that are live on the storefront. Track sales, editions remaining, and your earnings from each drop.',
+    title: 'My listings',
+    content: 'Your approved listings that are live on the storefront. Track sales, editions remaining, and your earnings from each listing.',
   },
   earnings: {
     title: 'Earnings',
@@ -180,7 +180,7 @@ export const creatorDashboard = {
   },
   profile: {
     title: 'Creator profile',
-    content: 'Update your display name, bio, avatar, and social links. Your profile appears on drop pages next to your work. A complete profile builds trust with buyers.',
+    content: 'Update your display name, bio, avatar, and social links. Your profile appears on listing pages next to your work. A complete profile builds trust with buyers.',
   },
   googleAuth: {
     title: 'Google sign-in',
@@ -203,8 +203,8 @@ export const superAdmin = {
     content: 'Review submissions across all brands. Approve, reject, set pricing, edition counts, and token IDs. Approved submissions are minted as ERC-1155 tokens on Base.',
   },
   drops: {
-    title: 'All drops',
-    content: 'View and manage all live drops across the platform. Track sales, editions, and revenue. Edit pricing or edition counts if needed.',
+    title: 'All listings',
+    content: 'View and manage all live listings across the platform. Track sales, editions, and revenue. Edit pricing or edition counts if needed.',
   },
   brands: {
     title: 'Manage brands',
@@ -232,7 +232,7 @@ export const submitForm = {
   },
   description: {
     title: 'Description',
-    content: 'Describe your design — the concept, materials, inspiration, or story behind it. This appears on the drop page. Buyers and AI agents use this to understand your work.',
+    content: 'Describe your design — the concept, materials, inspiration, or story behind it. This appears on the listing page. Buyers and AI agents use this to understand your work.',
   },
   price: {
     title: 'Price (USDC)',

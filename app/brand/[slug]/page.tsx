@@ -1,6 +1,6 @@
 import {
   getBrandBySlug,
-  getApprovedDropsPaginated,
+  getApprovedListingsPaginated,
   getPurchaseCountsByTokenIds,
   getCurrentBrief,
   getVariantsBySubmissionId,
@@ -43,7 +43,7 @@ export default async function BrandStorefront({
 
   const [brief, { drops, totalCount }] = await Promise.all([
     getCurrentBrief(brand.id),
-    getApprovedDropsPaginated(page, DROPS_PER_PAGE, undefined, brand.id),
+    getApprovedListingsPaginated(page, DROPS_PER_PAGE, undefined, brand.id),
   ]);
 
   const totalPages = Math.max(1, Math.ceil(totalCount / DROPS_PER_PAGE));

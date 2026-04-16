@@ -9,6 +9,16 @@ const nextConfig: NextConfig = {
   output: process.env.NODE_ENV === 'production' ? 'standalone' : undefined,
   turbopack: {},
   serverExternalPackages: ['agentmail', 'ethers'],
+  async redirects() {
+    return [
+      // Backward-compat: old /rrg/drop/:tokenId → /rrg/listing/:tokenId
+      {
+        source: '/rrg/drop/:tokenId',
+        destination: '/rrg/listing/:tokenId',
+        permanent: true,
+      },
+    ];
+  },
 };
 
 export default nextConfig;
