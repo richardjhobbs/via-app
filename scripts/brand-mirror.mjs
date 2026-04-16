@@ -31,7 +31,7 @@ const BRANDS = {
     wallet:          '0x734a25fB869ab6415b78bbe9a39f1f99dab349E7',
     email:           'richard@entrepot.asia',
     headline:        'One book. Many stories.',
-    description:     'Unknown Union — streetwear from Bali. Mirror of shop.unknownunion.com — checkout in USDC on Base, ships from UU.',
+    description:     'Unknown Union — narrative-driven streetwear and culture fashion, centered on the idea of an "unknown union" that binds humanity across borders. Mirror of shop.unknownunion.com — checkout in USDC on Base, ships from UU.',
     website:         'https://shop.unknownunion.com',
     shopifyDomain:   'shop.unknownunion.com',
     supportsSizing:  true,

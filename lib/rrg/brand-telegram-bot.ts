@@ -50,23 +50,28 @@ const BRAND_BOTS: Record<string, BrandBotConfig> = {
     brandSlug: 'unknown-union',
     botUsername: 'via_unknownunion_bot',
     envTokenKey: 'UU_TG_BOT_TOKEN',
-    llmSystemPrompt: `You are the Unknown Union Bot — the official AI concierge for Unknown Union, a streetwear brand from Bali.
+    llmSystemPrompt: `You are the Unknown Union Concierge — the official AI shopping assistant for Unknown Union (UU) on Real Real Genuine.
+
+About Unknown Union:
+- Narrative-driven streetwear and culture fashion, built around the idea of an "unknown union" that binds humanity across borders
+- Sub-brand FO[REIGN] — "Everything is FO[REIGN] until it's [FAM]ILAR"
+- Product lines include Seven Society, Elemental Chapter, FO[REIGN], and limited-edition collabs (e.g. Malik Yusef MOON-GLYPH tee)
+- Themes touch African-diaspora heritage (Fleetwood Walker, Jackie Robinson references), cultural exchange, and craft
 
 Your role:
-- Help customers browse UU products, check sizes, and find what's in stock
-- Answer questions about sizing, fit, and materials
-- Guide users through purchasing on RRG (Real Real Genuine)
-- Be knowledgeable about UU's aesthetic: modern streetwear with cultural storytelling
+- Help shoppers browse UU products, check sizes, and find what's currently in stock
+- Answer questions about fabric, fit, construction, styling — use the physical details from the product context (don't invent)
+- Guide sizing using the actual size chart (UU universal 0-6 numeric, also aliased to S/M/L/XL/XXL)
+- Tell the story behind a product when asked — marry the brand concept with the physical facts
 
 Personality:
-- Cool but helpful — like a knowledgeable store assistant, not a pushy salesperson
-- Concise — this is Telegram, keep responses short
-- Know the current products, sizes, and stock (provided in context)
+- Knowledgeable, grounded, like a well-informed in-store advisor — not pushy
+- Concise for Telegram. 2-4 short paragraphs max for free-text chat. Use bullet lists for stock/size checks.
+- Never invent products, prices, or stock. If you don't know, say so and point to /products or the storefront.
 
-IMPORTANT:
-- Only reference data from context. Don't invent products or prices.
-- For purchases, direct users to the RRG platform or suggest they use the /buy command
-- Size recommendations should always reference the actual size chart data`,
+Actions:
+- For purchases, direct users to the storefront (${''}https://realrealgenuine.com/brand/unknown-union) or the specific product page
+- For size questions, reference the actual chart — don't guess measurements`,
   },
 };
 
@@ -264,6 +269,36 @@ async function handleBrandCommand(
 
 // ── LLM fallback ─────────────────────────────────────────────────────
 
+/**
+ * Build a rich per-product context block using enhanced_description +
+ * product_attributes (agent-ready fields populated by enhance-descriptions.mjs).
+ * Falls back gracefully when those fields are null.
+ */
+async function getAgentReadyProductContext(brand: RrgBrand): Promise<string> {
+  const drops = await getApprovedDrops(brand.id);
+  if (drops.length === 0) return 'No products listed yet.';
+
+  const lines: string[] = [];
+  for (const d of drops) {
+    const variants = await getVariantsBySubmissionId(d.id);
+    const sizes = variants.filter(v => v.size).map(v => `${v.size}${v.cached_stock > 0 ? '' : '(OOS)'}`);
+    const price = parseFloat(d.price_usdc ?? '0').toFixed(2);
+    const attrs = (d.product_attributes ?? {}) as Record<string, unknown>;
+
+    const block: string[] = [
+      `#${d.token_id} ${d.title} — $${price} USDC`,
+      d.enhanced_description ? `  Details: ${d.enhanced_description}` : null,
+      attrs.fabric_guess ? `  Fabric: ${attrs.fabric_guess}` : null,
+      attrs.fit ? `  Fit: ${attrs.fit}` : null,
+      attrs.primary_color ? `  Color: ${attrs.primary_color}${Array.isArray(attrs.secondary_colors) && attrs.secondary_colors.length > 0 ? ` (+ ${(attrs.secondary_colors as string[]).join(', ')})` : ''}` : null,
+      sizes.length > 0 ? `  Sizes: ${sizes.join(', ')}` : null,
+    ].filter((l): l is string => l !== null);
+
+    lines.push(block.join('\n'));
+  }
+  return lines.join('\n\n');
+}
+
 async function callBrandLLM(
   query: string,
   brand: RrgBrand,
@@ -275,13 +310,13 @@ async function callBrandLLM(
     return `Try /products or /sizes for quick info about ${brand.name}!`;
   }
 
-  // Build context from products and sizing
-  const [products, sizing] = await Promise.all([
-    getProductsSummary(brand),
+  // Rich context: agent-ready product details (enhanced description + structured attributes) + sizing chart
+  const [productCtx, sizing] = await Promise.all([
+    getAgentReadyProductContext(brand),
     getSizingSummary(brand),
   ]);
 
-  const context = `PRODUCTS:\n${products}\n\nSIZING GUIDE:\n${sizing}`;
+  const context = `PRODUCTS (agent-ready details — fabric, fit, colors, sizes):\n${productCtx}\n\nSIZING CHART:\n${sizing}`;
 
   const resp = await fetch('https://api.together.xyz/v1/chat/completions', {
     method: 'POST',
