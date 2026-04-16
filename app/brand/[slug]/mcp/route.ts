@@ -56,7 +56,10 @@ async function fetchShopifyStock(shopifyDomain: string): Promise<Map<string, num
   const map = new Map<string, number>();
   for (const product of json.products ?? []) {
     for (const variant of product.variants ?? []) {
-      map.set(String(variant.id), Math.max(0, parseInt(variant.inventory_quantity, 10) || 0));
+      // Use inventory_quantity if present and > 0; otherwise use `available` boolean
+      const rawQty = parseInt(variant.inventory_quantity, 10);
+      const stock = (!isNaN(rawQty) && rawQty > 0) ? rawQty : (variant.available === true ? 1 : 0);
+      map.set(String(variant.id), stock);
     }
   }
   return map;

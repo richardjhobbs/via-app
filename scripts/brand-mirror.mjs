@@ -226,14 +226,23 @@ async function downloadImage(url) {
 }
 
 /**
- * Check total in-stock quantity across all variants.
- * Only import products where total stock > 1.
+ * Count available variants. Shopify's public products.json exposes
+ * `available` (boolean) reliably but often hides `inventory_quantity`.
+ * Use `available` as the source of truth.
  */
+function getAvailableCount(product) {
+  return (product.variants ?? []).filter(v => v.available === true).length;
+}
+
 function getTotalStock(product) {
-  return (product.variants ?? []).reduce((sum, v) => {
+  // If inventory_quantity is available and > 0, use it; otherwise count available variants
+  const qtySum = (product.variants ?? []).reduce((sum, v) => {
     const q = parseInt(v.inventory_quantity, 10);
     return sum + (isNaN(q) ? 0 : Math.max(0, q));
   }, 0);
+  if (qtySum > 0) return qtySum;
+  // Fallback: count each available variant as 1 unit of stock
+  return getAvailableCount(product);
 }
 
 async function importProduct(product, brand) {
@@ -372,7 +381,9 @@ async function syncVariants(submissionId, product) {
   for (let i = 0; i < variants.length; i++) {
     const v = variants[i];
     const shopifyId = String(v.id);
-    const stock = Math.max(0, parseInt(v.inventory_quantity, 10) || 0);
+    // Use inventory_quantity if available and > 0; otherwise use `available` boolean (1 or 0)
+    const rawQty = parseInt(v.inventory_quantity, 10);
+    const stock = (!isNaN(rawQty) && rawQty > 0) ? rawQty : (v.available === true ? 1 : 0);
 
     // Parse size from option1 (Shopify convention for apparel)
     const size = v.option1 || null;
