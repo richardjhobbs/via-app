@@ -50,3 +50,7 @@ hardhat.config.js.bak
 next-env.d.ts
 .claude/settings.local.json
 .gstack/
+
+# Maison Archive demo data — large image binaries kept local, JSON committed
+data/maison-archive-images/
+data/*-images/

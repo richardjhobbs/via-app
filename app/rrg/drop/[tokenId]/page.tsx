@@ -7,6 +7,7 @@ import { notFound } from 'next/navigation';
 import PurchaseBlock from './PurchaseBlock';
 import PhysicalProductButton from './PhysicalProductButton';
 import DropBadges from '@/components/rrg/DropBadges';
+import AgentReadyBadge from '@/components/rrg/AgentReadyBadge';
 import Link from 'next/link';
 
 const VOUCHER_TYPE_LABELS: Record<string, string> = {
@@ -228,11 +229,67 @@ export default async function DropPage({ params, searchParams }: Props) {
           </p>
           <h1 className="text-4xl font-light leading-tight mb-4">{drop.title}</h1>
 
+          {/* Agent-readiness + provenance badges (universal — render only when populated) */}
+          {(() => {
+            const attrs = (drop.product_attributes ?? {}) as Record<string, unknown>;
+            const authStatus = typeof attrs.authentication_status === 'string' ? attrs.authentication_status : null;
+            const hasAgent = !!drop.enhanced_description;
+            if (!hasAgent && !authStatus) return null;
+            return (
+              <div className="flex flex-wrap gap-2 mb-5">
+                {hasAgent && <AgentReadyBadge size="md" />}
+                {authStatus && <AgentReadyBadge label={authStatus} tone="amber" size="md" />}
+              </div>
+            );
+          })()}
+
           {drop.description && (
             <p className="text-white/70 text-base leading-relaxed mb-8">
               {drop.description.replace(/\n?\[Suggested:[^\]]*\]/g, '').trim()}
             </p>
           )}
+
+          {/* Agent Context — what an AI buyer's agent actually reads */}
+          {drop.enhanced_description && (() => {
+            const attrs = (drop.product_attributes ?? {}) as Record<string, unknown>;
+            const toStringArray = (v: unknown): string[] =>
+              Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : [];
+            const styleTags = toStringArray(attrs.style_tags);
+            const occasionFit = toStringArray(attrs.occasion_fit);
+            return (
+              <div className="mb-8 p-5 border border-cyan-400/30 bg-cyan-400/5 rounded-md">
+                <div className="flex items-center gap-2 mb-3 flex-wrap">
+                  <span className="text-[10px] font-mono uppercase tracking-widest text-cyan-300/80">
+                    Agent Context
+                  </span>
+                  <span className="text-[10px] font-mono text-cyan-400/40">
+                    — what an AI buyer's agent reads
+                  </span>
+                </div>
+                <p className="text-sm text-white/80 leading-relaxed mb-4">
+                  {drop.enhanced_description}
+                </p>
+                {styleTags.length > 0 && (
+                  <div className="flex flex-wrap gap-1.5 mb-2">
+                    {styleTags.map((tag) => (
+                      <span key={tag} className="text-[10px] px-2 py-0.5 border border-white/15 text-white/60 font-mono uppercase rounded">
+                        {tag}
+                      </span>
+                    ))}
+                  </div>
+                )}
+                {occasionFit.length > 0 && (
+                  <div className="flex flex-wrap gap-1.5">
+                    {occasionFit.map((o) => (
+                      <span key={o} className="text-[10px] px-2 py-0.5 border border-cyan-400/20 text-cyan-300/70 font-mono uppercase rounded">
+                        {o}
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </div>
+            );
+          })()}
 
           {/* Physical product details button */}
           {drop.is_physical_product && (

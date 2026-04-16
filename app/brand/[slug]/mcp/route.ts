@@ -128,7 +128,7 @@ function createBrandServer(brand: RrgBrand) {
 
   server.tool(
     'list_products',
-    `List all products from ${brand.name}. Returns title, price, available sizes, and stock status.`,
+    `List all products from ${brand.name}. Returns full agent-facing payload per item — including agentDescription (full, not truncated), styleTags, occasionFit, conditionGrade, authenticationStatus, priceUsdc/priceEur, and provenance — so a buyer's agent can filter and reason without per-item fan-out calls. Fields populated only for listings whose vision-enrichment has run; otherwise null/empty.`,
     {},
     async () => {
       const drops = await getApprovedDrops(brand.id);
@@ -144,7 +144,7 @@ function createBrandServer(brand: RrgBrand) {
         const sold = purchaseCounts.get(drop.token_id!) ?? 0;
         const remaining = drop.edition_size - sold;
 
-        // Enrich variants with live stock
+        // Enrich variants with live stock (Shopify-backed brands only)
         const enrichedVariants = await Promise.all(
           variants.map(async (v) => {
             const stock = await getVariantStock(brand.shopify_domain, v);
@@ -163,16 +163,45 @@ function createBrandServer(brand: RrgBrand) {
           .map(v => v.size)
           .filter(Boolean);
 
+        // Pull agent-facing fields out of product_attributes (curated brands only)
+        const attrs = (drop.product_attributes ?? {}) as Record<string, unknown>;
+        const asString = (k: string): string | null =>
+          typeof attrs[k] === 'string' ? attrs[k] as string : null;
+        const asArray = (k: string): string[] =>
+          Array.isArray(attrs[k]) ? attrs[k] as string[] : [];
+
+        // For curated single-SKU brands (no variants), inStock is derived from edition vs sold
+        const inStock = variants.length > 0
+          ? enrichedVariants.some(v => v.inStock)
+          : remaining > 0;
+
         return {
           tokenId: drop.token_id,
           title: drop.title,
-          description: drop.description?.slice(0, 200),
+          brand: asString('brand') ?? brand.name,
+          category: asString('category'),
+          // Pricing (both currencies when present)
           priceUsdc: drop.price_usdc,
+          priceEur: typeof attrs.price_eur === 'number' ? attrs.price_eur : null,
+          // Luxury-resale signals
+          conditionGrade: asString('condition_grade'),
+          authenticationStatus: asString('authentication_status'),
+          // Filter signals
+          styleTags: asArray('style_tags'),
+          occasionFit: asArray('occasion_fit'),
+          buyerIntentSignals: asArray('buyer_intent_signals'),
+          // Reasoning payload — full, not truncated
+          agentDescription: drop.enhanced_description,
+          brandContext: asString('brand_context'),
+          resaleValueContext: asString('resale_value_context'),
+          // Stock + edition
           editionSize: drop.edition_size,
           remaining,
+          inStock,
           availableSizes,
           totalVariants: variants.length,
           inStockVariants: enrichedVariants.filter(v => v.inStock).length,
+          // Physical / provenance
           isPhysical: drop.is_physical_product,
           ecommerceUrl: drop.ecommerce_url,
           rrgUrl: `${siteUrl}/rrg/drop/${drop.token_id}`,
@@ -189,7 +218,7 @@ function createBrandServer(brand: RrgBrand) {
 
   server.tool(
     'get_product',
-    `Get full product details including live stock per size/color variant. Use this to check availability before purchasing.`,
+    `Get full product details for one item. Returns flattened agent-facing fields at the top level (agentDescription, styleTags, occasionFit, conditionGrade, authenticationStatus, brandContext, resaleValueContext, buyerIntentSignals) plus the complete productAttributes JSON, plus live stock per size/color variant. Use this when you need every detail about a single item before purchasing.`,
     {
       token_id: z.number().describe('The RRG token ID of the product'),
     },
@@ -217,16 +246,38 @@ function createBrandServer(brand: RrgBrand) {
         })
       );
 
+      // Flatten high-value product_attributes keys to top level for agent ergonomics
+      const attrs = (drop.product_attributes ?? {}) as Record<string, unknown>;
+      const asString = (k: string): string | null =>
+        typeof attrs[k] === 'string' ? attrs[k] as string : null;
+      const asArray = (k: string): string[] =>
+        Array.isArray(attrs[k]) ? attrs[k] as string[] : [];
+
       const result = {
         tokenId: drop.token_id,
         title: drop.title,
-        // Base description from the brand (what humans see)
+        // Base description from the brand (what humans see on the listing page)
         description: drop.description,
-        // Agent-only enhanced description + structured attributes (image-analysis based).
-        // Richer product data for shopping agents — null until enhance-descriptions.mjs has run.
-        enhancedDescription: drop.enhanced_description,
-        productAttributes:   drop.product_attributes,
+        // Agent-facing 150-200 word reasoning payload (null until enrichment has run)
+        agentDescription: drop.enhanced_description,
+        // Flattened high-value attributes — promoted from productAttributes for ease of use
+        brand: asString('brand') ?? brand.name,
+        category: asString('category'),
+        conditionGrade: asString('condition_grade'),
+        conditionDetail: asString('condition_detail'),
+        visualDescription: asString('visual_description'),
+        styleTags: asArray('style_tags'),
+        occasionFit: asArray('occasion_fit'),
+        buyerIntentSignals: asArray('buyer_intent_signals'),
+        authenticationStatus: asString('authentication_status'),
+        brandContext: asString('brand_context'),
+        resaleValueContext: asString('resale_value_context'),
+        // Full structured attributes (everything, including any custom keys)
+        productAttributes: drop.product_attributes,
+        // Pricing
         priceUsdc: drop.price_usdc,
+        priceEur: typeof attrs.price_eur === 'number' ? attrs.price_eur : null,
+        // Edition + stock
         editionSize: drop.edition_size,
         sold,
         remaining: drop.edition_size - sold,
@@ -424,11 +475,49 @@ export async function GET(req: Request) {
     storefront: `${siteUrl}/brand/${brand.slug}`,
     website: brand.website_url,
     tools: [
-      'list_products',
-      'get_product',
-      ...(brand.supports_sizing ? ['get_sizing_guide'] : []),
-      'buy_product',
+      {
+        name: 'list_products',
+        description: `Browse all ${brand.name} listings. Returns full agent-facing payload per item — agentDescription, styleTags, occasionFit, conditionGrade, authenticationStatus, priceUsdc/priceEur — so an agent can filter without per-item fan-out.`,
+      },
+      {
+        name: 'get_product',
+        description: `Get every detail for one item, including flattened agent-facing fields and full productAttributes JSON.`,
+      },
+      ...(brand.supports_sizing ? [{
+        name: 'get_sizing_guide',
+        description: `Size charts and fit notes per category.`,
+      }] : []),
+      {
+        name: 'buy_product',
+        description: `Initiate a purchase. Returns USDC payment instructions on Base.`,
+      },
     ],
+    schemas: {
+      product: {
+        description: 'Shape returned by list_products items and get_product. Fields populated only after vision-enrichment has run; otherwise null/empty arrays.',
+        fields: {
+          tokenId: 'integer — RRG token ID, used as the listing identifier and in get_product / buy_product calls',
+          title: 'string — concise display title',
+          brand: 'string — the brand or maison',
+          category: 'string | null — e.g. handbag, ring, jacket, dress, jeans',
+          priceUsdc: 'string — price in USDC (Base mainnet)',
+          priceEur: 'number | null — original EUR price for curated resale items',
+          conditionGrade: 'string | null — Pristine | Excellent | Very Good | Good | Fair',
+          authenticationStatus: 'string | null — provenance/authentication signal (e.g. "Vestiaire Verified")',
+          styleTags: 'string[] — short tags like minimal, structured, monogram, archival',
+          occasionFit: 'string[] — contexts like work, evening, weekend, travel',
+          buyerIntentSignals: 'string[] — phrases a buyer-agent might match (e.g. "investment piece", "classic silhouette")',
+          agentDescription: 'string | null — 150-200 word natural-language paragraph for buyer-agent reasoning. The hero field for intent matching.',
+          brandContext: 'string | null — what this house represents in the luxury market',
+          resaleValueContext: 'string | null — secondary-market value notes',
+          inStock: 'boolean — derived: true if any variant has stock OR (no variants AND remaining > 0)',
+          editionSize: 'integer — total edition (1 for single-SKU resale items)',
+          remaining: 'integer — units still available',
+          ecommerceUrl: 'string | null — provenance link to the source listing',
+          rrgUrl: 'string — RRG listing page URL',
+        },
+      },
+    },
     connect: `POST ${siteUrl}/brand/${brand.slug}/mcp`,
   }, null, 2), {
     headers: {

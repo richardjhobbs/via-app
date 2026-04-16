@@ -10,6 +10,7 @@ import { notFound } from 'next/navigation';
 import Link from 'next/link';
 import BrandCTAs from '@/components/rrg/BrandCTAs';
 import SizeSelector from '@/components/rrg/SizeSelector';
+import AgentReadyBadge from '@/components/rrg/AgentReadyBadge';
 
 export const dynamic = 'force-dynamic';
 
@@ -108,6 +109,11 @@ export default async function BrandStorefront({
               {drop.is_physical_product && (
                 <span className="absolute top-2 left-2 px-2 py-0.5 bg-lime-500 text-black text-xs font-mono uppercase tracking-wider leading-tight rounded">
                   Physical
+                </span>
+              )}
+              {drop.enhanced_description && (
+                <span className="absolute bottom-2 left-2">
+                  <AgentReadyBadge />
                 </span>
               )}
               {drop.soldOut && (

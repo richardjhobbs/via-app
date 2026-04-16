@@ -1,0 +1,15 @@
+{
+  "slug": "maison-archive",
+  "name": "Maison Archive",
+  "wallet": "0x734a25fB869ab6415b78bbe9a39f1f99dab349E7",
+  "email": "richard@entrepot.asia",
+  "headline": "Curated luxury, agent-ready.",
+  "description": "Maison Archive is a curated pre-loved luxury house — authenticated, hand-selected pieces from heritage maisons. Every listing carries a complete agent-facing payload (provenance, condition, intent signals, resale value context) so an AI buyer's agent can evaluate, reason, and transact end-to-end on behalf of its principal. One item, one size, one chance.",
+  "website": "https://realrealgenuine.com/brand/maison-archive",
+  "supportsSizing": false,
+  "shopifyDomain": null,
+  "socialLinks": {},
+  "logo_local": "logo.png",
+  "banner_local": "banner.png",
+  "max_self_listings": 50
+}
