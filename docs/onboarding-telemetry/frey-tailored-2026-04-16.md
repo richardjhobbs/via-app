@@ -28,9 +28,9 @@
 | 7 | Post-mirror SQL backfill | 18:48 | 18:49 | **1m** | Node script updated `sizing_category` + `image_is_dark` per token. Tops=1, outerwear=5, dresses=1, bottoms=2, skirts=1. Dark=8, light=2 (Ravenna white blouse, Kalmar electric blue). |
 | 8 | Telegram bot wiring | 18:49 | 18:50 | **1m** | Token verified via `getMe` → bot is `@via_freytailored_bot`, id 8502490494, first_name "Frey Tailored". Matches pre-planned config. Added `FREY_TG_BOT_TOKEN` to local `.env.local`. Webhook set in Phase 10. |
 | 9 | Local build + preview QA | 18:50 | 18:52 | **2m** | Local dev + prod builds both blocked by pre-existing Windows turbopack/tailwind incompatibility (`RangeError: Invalid code point`). TypeScript check clean on all my edits. Pivoted: will validate on Vercel Linux preview build. |
-| 10 | Commit + push → Vercel + VPS deploy |  |  |  | In progress |
-| 11 | Notion Build Log + telemetry finalise |  |  |  |  |
-| | **Total so far** | | | **~24m** | |
+| 10 | Commit + push → Vercel + VPS deploy | 18:52 | 19:02 | **10m** | Commit `9786ebe`, pushed master (Vercel build triggered). Added `FREY_TG_BOT_TOKEN` to Vercel Production env via CLI. SCP'd 4 files to VPS, `git pull` on VPS, `npm run build` clean, copied static + public + env symlink, pm2 restart. Appended token to VPS `.env.local`. Local=GitHub=VPS parity confirmed at `9786ebe`. TG webhook set to `?brand=frey-tailored`. Smoke: storefront 200, MCP list_products returns 10 products with full agent payload, no `brand_pct_override` leak. Regression: UU + Clooudie both still 200. |
+| 11 | Notion Build Log + telemetry finalise | 19:02 | 19:07 | **~5m** | Phase 22 entry appended to Notion Build Log before `*Last updated:*`. This telemetry doc committed. |
+| | **Total** | | | **~39m** | |
 
 ---
 
