@@ -24,7 +24,8 @@ export async function POST(req: NextRequest) {
     const { tokenId, buyerWallet, buyerEmail, deadline, signature,
             shipping_name, shipping_address_line1, shipping_address_line2,
             shipping_city, shipping_state, shipping_postal_code,
-            shipping_country, shipping_phone, physical_terms_accepted } = body;
+            shipping_country, shipping_phone, physical_terms_accepted,
+            selected_size } = body;
 
     // ── Validate inputs ───────────────────────────────────────────────
     if (!tokenId || !buyerWallet || !deadline || !signature) {
@@ -112,6 +113,8 @@ export async function POST(req: NextRequest) {
           shipping_phone:          shipping_phone || null,
           physical_terms_accepted: physical_terms_accepted ?? false,
         } : {}),
+        // Size / variant (garment products)
+        ...(selected_size ? { selected_size } : {}),
       })
       .select()
       .single();
@@ -318,6 +321,7 @@ export async function POST(req: NextRequest) {
           shippingType:      drop.shipping_type || null,
           downloadUrl,
           ipfsMetadataUrl:   ipfsResult?.metadataUrl ?? null,
+          selectedSize:      selected_size || null,
         };
 
         if (brand?.contact_email) {

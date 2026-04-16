@@ -234,6 +234,8 @@ interface PhysicalPurchaseEmailData {
   shippingType: string | null;
   downloadUrl: string;
   ipfsMetadataUrl?: string | null;
+  /** Selected size for garment products (null for non-garment) */
+  selectedSize?: string | null;
 }
 
 /** Send to brand: new physical product order with buyer shipping address */
@@ -264,6 +266,7 @@ export async function sendPhysicalOrderToBrand(data: PhysicalPurchaseEmailData):
     <p>A buyer has purchased <strong style="color:#e5e5e5">"${escHtml(data.title)}"</strong> (Token #${data.tokenId}).</p>
     <p>This product includes a physical item. Please arrange shipping.</p>
     <div class="meta">
+      ${data.selectedSize ? `<div class="meta-row"><div class="meta-label">Size</div><div class="meta-value" style="font-size:18px; color:#d4ff22; font-weight:700">${escHtml(data.selectedSize)}</div></div>` : ''}
       <div class="meta-row">
         <div class="meta-label">Ship To</div>
         <div class="meta-value address">${escHtml(data.shippingName)}
@@ -331,6 +334,7 @@ export async function sendPhysicalPurchaseToBuyer(data: PhysicalPurchaseEmailDat
     </div>
 
     <div class="meta">
+      ${data.selectedSize ? `<div class="meta-row"><div class="meta-label">Size</div><div class="meta-value" style="font-size:16px; color:#d4ff22; font-weight:700">${escHtml(data.selectedSize)}</div></div>` : ''}
       <div class="meta-row">
         <div class="meta-label">Shipping To</div>
         <div class="meta-value address">${escHtml(data.shippingName)}

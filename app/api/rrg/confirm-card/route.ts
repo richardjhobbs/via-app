@@ -40,7 +40,7 @@ export async function POST(req: NextRequest) {
             shipping_name, shipping_address_line1, shipping_address_line2,
             shipping_city, shipping_state, shipping_postal_code,
             shipping_country, shipping_phone, physical_terms_accepted,
-            cardFeeUsdc } = body as {
+            cardFeeUsdc, selected_size } = body as {
       txHash:       string;
       buyerWallet:  string;
       tokenId:      number;
@@ -55,6 +55,7 @@ export async function POST(req: NextRequest) {
       shipping_phone?: string;
       physical_terms_accepted?: boolean;
       cardFeeUsdc?: number;
+      selected_size?: string;
     };
 
     // ── Input validation ──────────────────────────────────────────────────
@@ -230,6 +231,8 @@ export async function POST(req: NextRequest) {
           shipping_phone:          shipping_phone || null,
           physical_terms_accepted: physical_terms_accepted ?? false,
         } : {}),
+        // Size / variant (garment products)
+        ...(selected_size ? { selected_size } : {}),
       })
       .select()
       .single();
@@ -465,6 +468,7 @@ export async function POST(req: NextRequest) {
           shippingType:      submission.shipping_type || null,
           downloadUrl,
           ipfsMetadataUrl:   ipfsResult?.metadataUrl ?? null,
+          selectedSize:      selected_size || null,
         };
 
         if (brand?.contact_email) {

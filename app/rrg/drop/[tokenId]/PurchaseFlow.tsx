@@ -59,7 +59,7 @@ interface PurchaseResult {
   downloadUrl: string;
 }
 
-export default function PurchaseFlow({ tokenId, priceUsdc, soldOut, active, isPhysicalProduct, shippingType }: Props) {
+export default function PurchaseFlow({ tokenId, priceUsdc, soldOut, active, isPhysicalProduct, shippingType, selectedSize }: Props) {
   const { address, isConnected } = useAccount();
   const { connect }              = useConnect();
   const connectors               = useConnectors();
@@ -799,6 +799,7 @@ export default function PurchaseFlow({ tokenId, priceUsdc, soldOut, active, isPh
         confirmBody.shipping_phone = shipping.phone || null;
         confirmBody.physical_terms_accepted = shipping.termsAccepted;
       }
+      if (selectedSize) confirmBody.selected_size = selectedSize;
       if (referralCode) confirmBody.referralCode = referralCode;
 
       const res = await fetch('/api/rrg/confirm-card', {
@@ -917,6 +918,8 @@ export default function PurchaseFlow({ tokenId, priceUsdc, soldOut, active, isPh
         confirmBody.shipping_phone         = shipping.phone || null;
         confirmBody.physical_terms_accepted = shipping.termsAccepted;
       }
+      // Include selected size (garment products)
+      if (selectedSize) confirmBody.selected_size = selectedSize;
       // Include referral code if present (from cookie/localStorage)
       if (referralCode) {
         confirmBody.referralCode = referralCode;
