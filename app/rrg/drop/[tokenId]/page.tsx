@@ -195,8 +195,13 @@ export default async function DropPage({ params, searchParams }: Props) {
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-12 items-start">
 
-        {/* Image */}
-        <div className="aspect-square bg-white/5 border border-white/10 rounded-lg overflow-hidden md:sticky md:top-8 relative">
+        {/* Image — adaptive bg: dark subjects on light, light subjects on dark */}
+        <div className={[
+          'aspect-square border rounded-lg overflow-hidden md:sticky md:top-8 relative',
+          drop.image_is_dark === true
+            ? 'bg-white border-white/20'
+            : 'bg-white/5 border-white/10',
+        ].join(' ')}>
           {imageUrl ? (
             <img
               src={imageUrl}

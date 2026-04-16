@@ -89,8 +89,14 @@ export default async function BrandStorefront({
       {items.map((drop) => (
         <div key={drop.id} className="group">
           <Link href={`/rrg/drop/${drop.token_id}`} className="block">
-            <div className="relative aspect-square bg-white/5 border border-white/10 rounded-lg
-                            group-hover:border-green-500/30 transition-colors overflow-hidden mb-4">
+            <div className={[
+              'relative aspect-square border rounded-lg overflow-hidden mb-4 transition-colors',
+              // Adaptive: dark subjects on light card bg, light subjects on dark card bg.
+              // Null = unknown → default dark (existing behavior).
+              drop.image_is_dark === true
+                ? 'bg-white border-white/20 group-hover:border-green-500/50'
+                : 'bg-white/5 border-white/10 group-hover:border-green-500/30',
+            ].join(' ')}>
               {drop.imageUrl ? (
                 <img src={drop.imageUrl} alt={drop.title}
                   className="w-full h-full object-cover group-hover:scale-[1.03] transition-transform duration-700" />

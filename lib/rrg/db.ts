@@ -142,6 +142,8 @@ export interface RrgSubmission {
   enhanced_at: string | null;
   /** Structured extracted attributes (fabric, colors, fit, etc) from vision analysis */
   product_attributes: Record<string, unknown> | null;
+  /** True = product subject is dark (show on light card bg). False = light subject (dark card). */
+  image_is_dark: boolean | null;
 }
 
 export interface RrgPurchase {

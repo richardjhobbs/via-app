@@ -371,12 +371,35 @@ async function importProduct(product, brand) {
 }
 
 /**
+ * Determine which option position holds size vs color based on Shopify's
+ * product.options array. Some brands use option1=Size, others option1=Color.
+ * Returns { sizeIdx, colorIdx } where 0/1/2 map to option1/option2/option3.
+ */
+function detectOptionPositions(product) {
+  const options = product.options ?? [];
+  let sizeIdx = -1;
+  let colorIdx = -1;
+  for (let i = 0; i < options.length; i++) {
+    const name = String(options[i]?.name ?? '').toLowerCase().trim();
+    if (sizeIdx === -1 && (name === 'size' || name.includes('size'))) sizeIdx = i;
+    else if (colorIdx === -1 && (name === 'color' || name === 'colour' || name.includes('color') || name.includes('colour'))) colorIdx = i;
+  }
+  // Fallbacks: if only one option, treat as size. If neither matched, default size=0, color=1.
+  if (sizeIdx === -1 && colorIdx === -1) { sizeIdx = 0; colorIdx = 1; }
+  else if (sizeIdx === -1) sizeIdx = (colorIdx === 0 ? 1 : 0);
+  else if (colorIdx === -1) colorIdx = (sizeIdx === 0 ? 1 : 0);
+  return { sizeIdx, colorIdx };
+}
+
+/**
  * Sync Shopify variants → rrg_product_variants for a given submission.
  * Upserts by shopify_variant_id.
  */
 async function syncVariants(submissionId, product) {
   const variants = product.variants ?? [];
   const now = new Date().toISOString();
+
+  const { sizeIdx, colorIdx } = detectOptionPositions(product);
 
   for (let i = 0; i < variants.length; i++) {
     const v = variants[i];
@@ -385,9 +408,11 @@ async function syncVariants(submissionId, product) {
     const rawQty = parseInt(v.inventory_quantity, 10);
     const stock = (!isNaN(rawQty) && rawQty > 0) ? rawQty : (v.available === true ? 1 : 0);
 
-    // Parse size from option1 (Shopify convention for apparel)
-    const size = v.option1 || null;
-    const color = v.option2 || null;
+    // Resolve size/color from option positions (Shopify: option1/2/3 based on product.options order)
+    const sizeVal  = [v.option1, v.option2, v.option3][sizeIdx]  ?? null;
+    const colorVal = [v.option1, v.option2, v.option3][colorIdx] ?? null;
+    const size  = sizeVal || null;
+    const color = colorVal || null;
 
     const row = {
       submission_id:      submissionId,

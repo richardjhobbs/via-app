@@ -96,8 +96,12 @@ export default async function AllDropsPage({
           {dropsWithUrls.map((drop) => (
             <div key={drop.id}>
               <Link href={`/rrg/drop/${drop.token_id}`} className="group block">
-                <div className="relative aspect-square bg-white/5 border border-white/10 rounded-lg
-                                group-hover:border-green-500/30 transition-colors overflow-hidden mb-4">
+                <div className={[
+                  'relative aspect-square border rounded-lg overflow-hidden mb-4 transition-colors',
+                  drop.image_is_dark === true
+                    ? 'bg-white border-white/20 group-hover:border-green-500/50'
+                    : 'bg-white/5 border-white/10 group-hover:border-green-500/30',
+                ].join(' ')}>
                   {drop.imageUrl ? (
                     <img
                       src={drop.imageUrl}
