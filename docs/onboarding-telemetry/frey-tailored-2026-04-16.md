@@ -30,7 +30,8 @@
 | 9 | Local build + preview QA | 18:50 | 18:52 | **2m** | Local dev + prod builds both blocked by pre-existing Windows turbopack/tailwind incompatibility (`RangeError: Invalid code point`). TypeScript check clean on all my edits. Pivoted: will validate on Vercel Linux preview build. |
 | 10 | Commit + push → Vercel + VPS deploy | 18:52 | 19:02 | **10m** | Commit `9786ebe`, pushed master (Vercel build triggered). Added `FREY_TG_BOT_TOKEN` to Vercel Production env via CLI. SCP'd 4 files to VPS, `git pull` on VPS, `npm run build` clean, copied static + public + env symlink, pm2 restart. Appended token to VPS `.env.local`. Local=GitHub=VPS parity confirmed at `9786ebe`. TG webhook set to `?brand=frey-tailored`. Smoke: storefront 200, MCP list_products returns 10 products with full agent payload, no `brand_pct_override` leak. Regression: UU + Clooudie both still 200. |
 | 11 | Notion Build Log + telemetry finalise | 19:02 | 19:07 | **~5m** | Phase 22 entry appended to Notion Build Log before `*Last updated:*`. This telemetry doc committed. |
-| | **Total** | | | **~39m** | |
+| 12 | **Pivot to nanobot pattern on Box** | 19:15 | 19:30 | **~15m** | User correction: UU runs as a **nanobot on Box** (not a Vercel webhook). Reverted: deleted Frey TG webhook; cloned `.nanobot-uu-concierge` → `.nanobot-frey-tailored` on Box (config.json with Ollama via LLM Router port 5005, MCP bridge to `/brand/frey-tailored/mcp`, port 8088). Copied `mcp_bridge.py` verbatim, adapted `start.bat`, wrote Frey-specific `workspace/SOUL.md` (persona + tools + behaviour). Created `Nanobot Frey Concierge` scheduled task (At logon, Run As Richard) and started it. 7 nanobot processes now running on Box (was 6). Vercel + VPS env vars left in place for parity with UU (dormant). |
+| | **Total** | | | **~54m** | |
 
 ---
 
@@ -66,9 +67,10 @@
 
 ## Token Usage (session total)
 
-To be pasted from `/cost` at session end:
+`/cost` is not meaningful on a Claude Code subscription plan (returns only a generic "subscription" message). For future pricing analysis, the options are:
 
-- Input: _____ tokens
-- Output: _____ tokens
-- Cached: _____ tokens
-- Estimated cost (USD): $_____
+1. **Wall-clock is the load-bearing metric here** — subscription token cost is sunk; what scales with brand count is (a) my time per onboarding and (b) per-agent LLM token spend after hand-off (nanobot running on Box against Ollama + DeepSeek fallback, which IS metered).
+2. If a real token total is needed retrospectively, the Anthropic Console → Usage view for the workspace shows aggregate usage by day; subtract the delta between session start and end.
+3. A rough retrospective estimate for this session (from tool-call count): ~280 tool calls + ~11 AskUserQuestion / ExitPlanMode exchanges. Without exact per-turn token counts, order-of-magnitude is **~1M input tokens / ~50k output tokens** for the whole build. Treat as ±50% ballpark.
+
+Post-launch LLM cost (ongoing) is tracked in `C:\Users\Richard\api-gateway\usage.json` on Box per `box_nanobot_setup.md`.
