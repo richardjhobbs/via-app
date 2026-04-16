@@ -1,0 +1,251 @@
+/**
+ * scripts/enhance-descriptions.mjs
+ *
+ * LLM-enhanced product descriptions for garment brands.
+ *
+ * Purpose: brand marketing copy is often conceptual ("Beyond the Door Tee
+ * embodies seeking connections beyond borders"). Buyers want product
+ * specifics — fabric, fit, construction, colors.
+ *
+ * This script:
+ *   1. For each product: downloads the main image
+ *   2. Sends it to Claude 4.6 Sonnet vision with the brand's conceptual
+ *      copy as context
+ *   3. Gets back a structured analysis (fabric guess, fit, construction
+ *      details, color palette) + a rewritten buyer-focused description
+ *      that PRESERVES the brand voice but adds physical specifics
+ *   4. Stores enhanced_description + product_attributes in rrg_submissions
+ *
+ * The drop page prefers enhanced_description when present, falls back to
+ * the original physical_description otherwise.
+ *
+ * Cost: ~$0.02-0.04 per product (one Claude call per product).
+ *
+ * Usage:
+ *   node scripts/enhance-descriptions.mjs --brand unknown-union
+ *   node scripts/enhance-descriptions.mjs --brand unknown-union --token 68
+ *   node scripts/enhance-descriptions.mjs --brand unknown-union --dry-run
+ *   node scripts/enhance-descriptions.mjs --brand unknown-union --force  (re-run even if enhanced exists)
+ *
+ * Requires .env.local:
+ *   NEXT_PUBLIC_SUPABASE_URL, SUPABASE_SERVICE_KEY
+ *   ANTHROPIC_API_KEY (or CLAUDE_API_KEY)
+ */
+
+import Anthropic from '@anthropic-ai/sdk';
+import { createClient } from '@supabase/supabase-js';
+import { readFileSync } from 'fs';
+import { resolve } from 'path';
+
+// ── Load .env.local ──────────────────────────────────────────────────
+const envPath = resolve(process.cwd(), '.env.local');
+try {
+  for (const line of readFileSync(envPath, 'utf8').split('\n')) {
+    const m = line.match(/^([^#=]+)=(.*)$/);
+    if (m) {
+      const k = m[1].trim();
+      const v = m[2].trim().replace(/^["']|["']$/g, '');
+      if (!process.env[k]) process.env[k] = v;
+    }
+  }
+} catch {
+  console.error('FATAL: could not read .env.local');
+  process.exit(1);
+}
+
+const SUPABASE_URL  = process.env.NEXT_PUBLIC_SUPABASE_URL;
+const SUPABASE_KEY  = process.env.SUPABASE_SERVICE_KEY;
+const ANTHROPIC_KEY = process.env.ANTHROPIC_API_KEY ?? process.env.CLAUDE_API_KEY;
+
+if (!SUPABASE_URL || !SUPABASE_KEY) { console.error('FATAL: Supabase env missing'); process.exit(1); }
+if (!ANTHROPIC_KEY) { console.error('FATAL: ANTHROPIC_API_KEY or CLAUDE_API_KEY required'); process.exit(1); }
+
+const db        = createClient(SUPABASE_URL, SUPABASE_KEY, { auth: { persistSession: false } });
+const anthropic = new Anthropic({ apiKey: ANTHROPIC_KEY });
+
+const BUCKET = 'rrg-submissions';
+
+// ── CLI flags ────────────────────────────────────────────────────────
+const args = process.argv.slice(2);
+const flag = (name) => {
+  const i = args.indexOf(name);
+  return i >= 0 ? (args[i + 1] || true) : null;
+};
+const BRAND_SLUG = flag('--brand');
+const ONLY_TOKEN = flag('--token') ? parseInt(flag('--token'), 10) : null;
+const DRY_RUN    = args.includes('--dry-run');
+const FORCE      = args.includes('--force');
+
+if (!BRAND_SLUG) {
+  console.error('Usage: node scripts/enhance-descriptions.mjs --brand <slug> [--token <N>] [--dry-run] [--force]');
+  process.exit(1);
+}
+
+// ── Prompt ───────────────────────────────────────────────────────────
+const SYSTEM_PROMPT = `You are a product copy writer for a fashion e-commerce platform (Real Real Genuine).
+You write buyer-focused product descriptions that help shoppers make purchase decisions.
+
+You will be given:
+1. An image of a garment
+2. The brand's original conceptual description (often abstract/thematic)
+3. The product title
+
+Your job:
+A) Analyze the garment in the image. Extract STRUCTURED attributes in JSON.
+B) Rewrite the description to PRESERVE the brand's voice and concept, but ADD:
+   - Physical details you can see (fabric type guess, construction, silhouette, graphic details)
+   - Fit guidance (slim/relaxed/oversized based on the image)
+   - Styling notes where natural
+   Keep it under 120 words. Do NOT invent facts you can't see or infer. Do NOT add sizing info (that's elsewhere).
+
+Return strict JSON:
+{
+  "attributes": {
+    "fabric_guess":      "e.g. midweight cotton jersey",
+    "fit":               "slim | regular | relaxed | oversized | boxy",
+    "silhouette":        "e.g. crew-neck short-sleeve tee",
+    "primary_color":     "e.g. black",
+    "secondary_colors":  ["e.g. white", "grey"],
+    "graphic_details":   "description of any print/embroidery/graphics visible",
+    "construction":      "any visible construction details (seams, hems, reinforcement, labels)",
+    "styling_hints":     "how the garment might pair or layer"
+  },
+  "enhanced_description": "The rewritten buyer-focused description. 2-3 short paragraphs or one tight paragraph. Preserves brand voice. Weaves in physical details naturally."
+}`;
+
+// ── Helpers ──────────────────────────────────────────────────────────
+
+async function getBrand() {
+  const { data } = await db.from('rrg_brands').select('*').eq('slug', BRAND_SLUG).single();
+  if (!data) { console.error(`Brand not found: ${BRAND_SLUG}`); process.exit(1); }
+  return data;
+}
+
+async function getProducts(brandId) {
+  let query = db
+    .from('rrg_submissions')
+    .select('id, token_id, title, description, enhanced_description, jpeg_storage_path')
+    .eq('brand_id', brandId)
+    .eq('status', 'approved');
+  if (ONLY_TOKEN) query = query.eq('token_id', ONLY_TOKEN);
+  const { data } = await query.order('token_id', { ascending: true });
+  return data ?? [];
+}
+
+async function getImageBase64(path) {
+  const { data, error } = await db.storage.from(BUCKET).download(path);
+  if (error) throw new Error(`Image download failed: ${error.message}`);
+  const buf = Buffer.from(await data.arrayBuffer());
+  // Detect mime from magic bytes
+  let mime = 'image/jpeg';
+  if (buf[0] === 0x89 && buf[1] === 0x50) mime = 'image/png';
+  else if (buf.slice(0, 4).toString() === 'RIFF' && buf.slice(8, 12).toString() === 'WEBP') mime = 'image/webp';
+  return { base64: buf.toString('base64'), mime };
+}
+
+async function analyzeProduct(product, image) {
+  const userContent = [
+    {
+      type: 'image',
+      source: { type: 'base64', media_type: image.mime, data: image.base64 },
+    },
+    {
+      type: 'text',
+      text: `PRODUCT TITLE: ${product.title}
+
+BRAND'S ORIGINAL DESCRIPTION:
+${product.description ?? '(none provided)'}
+
+Analyze the image and return the JSON structure specified in the system prompt.`,
+    },
+  ];
+
+  const resp = await anthropic.messages.create({
+    model:       'claude-sonnet-4-5',
+    max_tokens:  1500,
+    system:      SYSTEM_PROMPT,
+    messages:    [{ role: 'user', content: userContent }],
+  });
+
+  // Extract JSON from response
+  const text = resp.content.filter(b => b.type === 'text').map(b => b.text).join('');
+  const jsonMatch = text.match(/\{[\s\S]*\}/);
+  if (!jsonMatch) throw new Error('No JSON found in Claude response');
+  const parsed = JSON.parse(jsonMatch[0]);
+
+  return {
+    attributes:           parsed.attributes ?? {},
+    enhancedDescription:  parsed.enhanced_description ?? '',
+    tokensIn:             resp.usage.input_tokens,
+    tokensOut:            resp.usage.output_tokens,
+  };
+}
+
+// ── Main ─────────────────────────────────────────────────────────────
+(async () => {
+  console.log(`──── Enhance descriptions: ${BRAND_SLUG} ────`);
+  console.log(`Dry run: ${DRY_RUN ? 'YES' : 'no'} | Force: ${FORCE ? 'YES' : 'no'} | Token filter: ${ONLY_TOKEN ?? 'all'}`);
+  console.log();
+
+  const brand = await getBrand();
+  const products = await getProducts(brand.id);
+  console.log(`Found ${products.length} product(s)\n`);
+
+  let totalTokensIn = 0;
+  let totalTokensOut = 0;
+  let processed = 0;
+  let skipped = 0;
+
+  for (const p of products) {
+    const label = `#${p.token_id} ${p.title}`;
+
+    if (!FORCE && p.enhanced_description) {
+      console.log(`[skip ${label}] already enhanced`);
+      skipped++;
+      continue;
+    }
+    if (!p.jpeg_storage_path) {
+      console.log(`[skip ${label}] no image`);
+      skipped++;
+      continue;
+    }
+
+    console.log(`[analyze ${label}]`);
+
+    try {
+      const image = await getImageBase64(p.jpeg_storage_path);
+      const result = await analyzeProduct(p, image);
+      totalTokensIn  += result.tokensIn;
+      totalTokensOut += result.tokensOut;
+
+      console.log(`  → attributes:`, JSON.stringify(result.attributes).slice(0, 120) + '...');
+      console.log(`  → description: ${result.enhancedDescription.slice(0, 140)}...`);
+      console.log(`  → tokens: ${result.tokensIn} in / ${result.tokensOut} out`);
+
+      if (!DRY_RUN) {
+        const { error } = await db.from('rrg_submissions').update({
+          enhanced_description: result.enhancedDescription,
+          product_attributes:   result.attributes,
+          enhanced_at:          new Date().toISOString(),
+        }).eq('id', p.id);
+        if (error) {
+          console.error(`  ERROR updating DB:`, error.message);
+        } else {
+          console.log(`  ✓ saved`);
+        }
+      }
+      processed++;
+    } catch (e) {
+      console.error(`  FAIL:`, e.message);
+    }
+    console.log();
+  }
+
+  // Cost estimate: claude-sonnet-4-5 is ~$3/M input, $15/M output
+  const estCost = (totalTokensIn * 3 + totalTokensOut * 15) / 1_000_000;
+
+  console.log(`──── Done ────`);
+  console.log(`Processed: ${processed} | Skipped: ${skipped}`);
+  console.log(`Tokens: ${totalTokensIn} in / ${totalTokensOut} out`);
+  console.log(`Est. cost: $${estCost.toFixed(4)}`);
+})().catch(e => { console.error('FATAL:', e); process.exit(1); });

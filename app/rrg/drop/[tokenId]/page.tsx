@@ -223,9 +223,9 @@ export default async function DropPage({ params, searchParams }: Props) {
           </p>
           <h1 className="text-4xl font-light leading-tight mb-4">{drop.title}</h1>
 
-          {drop.description && (
-            <p className="text-white/70 text-base leading-relaxed mb-8">
-              {drop.description.replace(/\n?\[Suggested:[^\]]*\]/g, '').trim()}
+          {(drop.enhanced_description || drop.description) && (
+            <p className="text-white/70 text-base leading-relaxed mb-8 whitespace-pre-line">
+              {(drop.enhanced_description || drop.description || '').replace(/\n?\[Suggested:[^\]]*\]/g, '').trim()}
             </p>
           )}
 
