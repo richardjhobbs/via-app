@@ -59,6 +59,12 @@ export interface RrgBrand {
   application_text: string | null;
   /** Optional per-brand split override (0-100). Replaces tiered formula when set. */
   brand_pct_override: number | null;
+  /** Shopify store domain for Storefront API calls */
+  shopify_domain: string | null;
+  /** Encrypted Shopify Storefront Access Token */
+  shopify_storefront_token_encrypted: string | null;
+  /** True if brand has garment sizing — enables size selector UI + sizing guide MCP tool */
+  supports_sizing: boolean;
 }
 
 export interface RrgBrief {
@@ -674,4 +680,81 @@ export async function getDistributions(
 
   const { data } = await query.order('created_at', { ascending: false });
   return data ?? [];
+}
+
+// ── Product variant helpers ──────────────────────────────────────────
+
+export interface RrgProductVariant {
+  id: string;
+  submission_id: string;
+  size: string | null;
+  color: string | null;
+  shopify_variant_id: string | null;
+  cached_stock: number;
+  cached_stock_at: string | null;
+  sku: string | null;
+  price_override: number | null;
+  sort_order: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export async function getVariantsBySubmissionId(submissionId: string): Promise<RrgProductVariant[]> {
+  const { data } = await db
+    .from('rrg_product_variants')
+    .select('*')
+    .eq('submission_id', submissionId)
+    .order('sort_order', { ascending: true });
+  return data ?? [];
+}
+
+export async function getVariantsByTokenId(tokenId: number): Promise<RrgProductVariant[]> {
+  // Look up submission first, then get variants
+  const sub = await getDropByTokenId(tokenId);
+  if (!sub) return [];
+  return getVariantsBySubmissionId(sub.id);
+}
+
+export async function updateVariantStock(
+  variantId: string,
+  stock: number,
+): Promise<void> {
+  await db
+    .from('rrg_product_variants')
+    .update({ cached_stock: stock, cached_stock_at: new Date().toISOString(), updated_at: new Date().toISOString() })
+    .eq('id', variantId);
+}
+
+// ── Brand sizing helpers ─────────────────────────────────────────────
+
+export interface RrgBrandSizing {
+  id: string;
+  brand_id: string;
+  category: string;
+  size_chart: Record<string, unknown>[];
+  fit_notes: string | null;
+  unit: string;
+  source_url: string | null;
+  scraped_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export async function getSizingByBrand(brandId: string): Promise<RrgBrandSizing[]> {
+  const { data } = await db
+    .from('rrg_brand_sizing')
+    .select('*')
+    .eq('brand_id', brandId)
+    .order('category', { ascending: true });
+  return data ?? [];
+}
+
+export async function getSizingByCategory(brandId: string, category: string): Promise<RrgBrandSizing | null> {
+  const { data } = await db
+    .from('rrg_brand_sizing')
+    .select('*')
+    .eq('brand_id', brandId)
+    .eq('category', category)
+    .maybeSingle();
+  return data ?? null;
 }

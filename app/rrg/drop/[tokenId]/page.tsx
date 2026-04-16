@@ -1,5 +1,5 @@
 import React from 'react';
-import { getDropByTokenId, db } from '@/lib/rrg/db';
+import { getDropByTokenId, getBrandById, db } from '@/lib/rrg/db';
 import { getSignedUrl } from '@/lib/rrg/storage';
 import { getRRGReadOnly } from '@/lib/rrg/contract';
 import { notFound } from 'next/navigation';
@@ -105,7 +105,8 @@ export default async function DropPage({ params }: Props) {
     voucherTemplate = vt ?? null;
   }
 
-  // On-chain live data
+  // On-chain live data — fall back to DB values when no on-chain drop exists
+  // (e.g. Shopify-mirrored products not yet registered on-chain)
   let onChain = {
     minted:    0,
     maxSupply: drop.edition_size ?? 1,
@@ -115,17 +116,27 @@ export default async function DropPage({ params }: Props) {
   try {
     const contract  = getRRGReadOnly();
     const data      = await contract.getDrop(tokenId);
-    onChain = {
-      minted:    Number(data.minted),
-      maxSupply: Number(data.maxSupply),
-      active:    Boolean(data.active),
-      soldOut:   Number(data.minted) >= Number(data.maxSupply),
-    };
+    const chainMaxSupply = Number(data.maxSupply);
+    // If on-chain maxSupply is 0, the drop hasn't been registered on-chain yet.
+    // Fall back to DB values (common for Shopify-backed brand products).
+    if (chainMaxSupply > 0) {
+      onChain = {
+        minted:    Number(data.minted),
+        maxSupply: chainMaxSupply,
+        active:    Boolean(data.active),
+        soldOut:   Number(data.minted) >= chainMaxSupply,
+      };
+    }
   } catch { /* non-fatal — show DB data */ }
 
   const remaining  = onChain.maxSupply - onChain.minted;
   const priceUsdc  = parseFloat(drop.price_usdc || '0');
   const scanBase   = 'https://basescan.org';
+
+  // Look up brand for back-link (brand storefront vs main store)
+  const brand = drop.brand_id ? await getBrandById(drop.brand_id) : null;
+  const backHref  = brand?.slug ? `/brand/${brand.slug}` : '/rrg';
+  const backLabel = brand?.name ? `← ${brand.name}` : '← Store';
 
   // Revenue share display.
   // For brand-owned drops we DO NOT publish the wholesale split — it's
@@ -141,10 +152,10 @@ export default async function DropPage({ params }: Props) {
 
       {/* Back */}
       <Link
-        href="/rrg"
+        href={backHref}
         className="text-sm font-mono text-white/50 hover:text-white transition-colors mb-10 inline-block"
       >
-        ← Store
+        {backLabel}
       </Link>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-12 items-start">

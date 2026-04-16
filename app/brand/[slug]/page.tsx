@@ -3,11 +3,13 @@ import {
   getApprovedDropsPaginated,
   getPurchaseCountsByTokenIds,
   getCurrentBrief,
+  getVariantsBySubmissionId,
 } from '@/lib/rrg/db';
 import { getSignedUrl } from '@/lib/rrg/storage';
 import { notFound } from 'next/navigation';
 import Link from 'next/link';
 import BrandCTAs from '@/components/rrg/BrandCTAs';
+import SizeSelector from '@/components/rrg/SizeSelector';
 
 export const dynamic = 'force-dynamic';
 
@@ -55,7 +57,20 @@ export default async function BrandStorefront({
         ? (purchaseCounts.get(drop.token_id) ?? 0) >= drop.edition_size
         : false;
       const isBrandListing = drop.creator_wallet?.toLowerCase() === brand.wallet_address?.toLowerCase();
-      return { ...drop, imageUrl, soldOut, isBrandListing };
+
+      // Fetch variants for garment brands
+      let variants: { size: string | null; color: string | null; inStock: boolean; stock: number }[] = [];
+      if (brand.supports_sizing) {
+        const rawVariants = await getVariantsBySubmissionId(drop.id);
+        variants = rawVariants.map(v => ({
+          size: v.size,
+          color: v.color,
+          inStock: v.cached_stock > 0,
+          stock: v.cached_stock,
+        }));
+      }
+
+      return { ...drop, imageUrl, soldOut, isBrandListing, variants };
     })
   );
 
@@ -70,36 +85,41 @@ export default async function BrandStorefront({
   const DropGrid = ({ items }: { items: typeof dropsWithUrls }) => (
     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-8">
       {items.map((drop) => (
-        <Link key={drop.id} href={`/rrg/drop/${drop.token_id}`} className="group block">
-          <div className="relative aspect-square bg-white/5 border border-white/10 rounded-lg
-                          group-hover:border-green-500/30 transition-colors overflow-hidden mb-4">
-            {drop.imageUrl ? (
-              <img src={drop.imageUrl} alt={drop.title}
-                className="w-full h-full object-cover group-hover:scale-[1.03] transition-transform duration-700" />
-            ) : (
-              <div className="w-full h-full flex items-center justify-center text-white/30 font-mono text-sm">
-                #{drop.token_id}
-              </div>
-            )}
-            {drop.is_physical_product && (
-              <span className="absolute top-2 left-2 px-2 py-0.5 bg-lime-500 text-black text-xs font-mono uppercase tracking-wider leading-tight rounded">
-                Physical
-              </span>
-            )}
-            {drop.soldOut && (
-              <span className="absolute top-2 right-2 px-2 py-0.5 bg-red-600 text-white text-xs font-mono uppercase tracking-wider leading-tight rounded">
-                Sold Out
-              </span>
-            )}
-          </div>
-          <h3 className="text-base font-medium truncate mb-1 group-hover:opacity-70 transition-opacity">
-            {drop.title}
-          </h3>
-          <div className="flex justify-between text-sm text-white/50 font-mono">
-            <span>${parseFloat(drop.price_usdc || '0').toFixed(2)} USDC</span>
-            <span>{drop.edition_size} ed.</span>
-          </div>
-        </Link>
+        <div key={drop.id} className="group">
+          <Link href={`/rrg/drop/${drop.token_id}`} className="block">
+            <div className="relative aspect-square bg-white/5 border border-white/10 rounded-lg
+                            group-hover:border-green-500/30 transition-colors overflow-hidden mb-4">
+              {drop.imageUrl ? (
+                <img src={drop.imageUrl} alt={drop.title}
+                  className="w-full h-full object-cover group-hover:scale-[1.03] transition-transform duration-700" />
+              ) : (
+                <div className="w-full h-full flex items-center justify-center text-white/30 font-mono text-sm">
+                  #{drop.token_id}
+                </div>
+              )}
+              {drop.is_physical_product && (
+                <span className="absolute top-2 left-2 px-2 py-0.5 bg-lime-500 text-black text-xs font-mono uppercase tracking-wider leading-tight rounded">
+                  Physical
+                </span>
+              )}
+              {drop.soldOut && (
+                <span className="absolute top-2 right-2 px-2 py-0.5 bg-red-600 text-white text-xs font-mono uppercase tracking-wider leading-tight rounded">
+                  Sold Out
+                </span>
+              )}
+            </div>
+            <h3 className="text-base font-medium truncate mb-1 group-hover:opacity-70 transition-opacity">
+              {drop.title}
+            </h3>
+            <div className="flex justify-between text-sm text-white/50 font-mono">
+              <span>${parseFloat(drop.price_usdc || '0').toFixed(2)} USDC</span>
+              <span>{drop.edition_size} ed.</span>
+            </div>
+          </Link>
+          {drop.variants.length > 0 && (
+            <SizeSelector variants={drop.variants} productTitle={drop.title} />
+          )}
+        </div>
       ))}
     </div>
   );

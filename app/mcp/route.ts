@@ -410,6 +410,46 @@ function createRRGServer() {
     }
   );
 
+  // ── Tool: get_brand ──────────────────────────────────────────────────────
+  server.tool(
+    'get_brand',
+    '[DISCOVER] Get detailed info about a specific brand, including its dedicated per-brand MCP endpoint URL for deeper product browsing, live stock checks, and sizing guides. Use this to connect directly to a brand for richer interaction.',
+    {
+      brand_slug: z.string().describe('The brand slug (e.g. "unknown-union", "clooudie")'),
+    },
+    async ({ brand_slug }) => {
+      const brand = await getBrandBySlug(brand_slug);
+      if (!brand || brand.status !== 'active') {
+        return { isError: true, content: [{ type: 'text', text: `Brand "${brand_slug}" not found or inactive` }] };
+      }
+
+      const siteUrl = (process.env.NEXT_PUBLIC_SITE_URL ?? 'https://realrealgenuine.com').replace(/\/$/, '');
+      const drops = await getApprovedDrops(brand.id);
+
+      const result: Record<string, unknown> = {
+        name: brand.name,
+        slug: brand.slug,
+        headline: brand.headline,
+        description: brand.description,
+        website: brand.website_url,
+        storefront: `${siteUrl}/brand/${brand.slug}`,
+        productCount: drops.length,
+        supportsSizing: brand.supports_sizing,
+        // Per-brand MCP endpoint — connect here for product-level tools
+        brandMcpUrl: `${siteUrl}/brand/${brand.slug}/mcp`,
+        brandMcpTools: [
+          'list_products',
+          'get_product (live stock per size)',
+          ...(brand.supports_sizing ? ['get_sizing_guide'] : []),
+          'buy_product',
+        ],
+        socialLinks: brand.social_links,
+      };
+
+      return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
+    },
+  );
+
   // ── Tool: get_current_brief ───────────────────────────────────────────────
   server.tool(
     'get_current_brief',
