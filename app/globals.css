@@ -1,5 +1,20 @@
 @import "tailwindcss";
 
+/* Exclude scratch/tooling dirs from Tailwind v4's auto source-scan. They
+   contain Python scripts, JSON blobs, and Windows path literals whose
+   backslash sequences (e.g. `\e9690f` in a path) trip Tailwind's CSS-escape
+   unescaper (`String.fromCodePoint` on >0x10FFFF). Keep this list in sync
+   with anything non-source that lands at the repo root. */
+@source not "../tmp";
+@source not "../scripts";
+@source not "../docs";
+@source not "../artifacts";
+@source not "../typechain-types";
+@source not "../cache";
+@source not "../contracts";
+@source not "../drhobbs-updates";
+@source not "../static";
+
 :root {
   --background: #0a0a0a;
   --foreground: #ededed;
