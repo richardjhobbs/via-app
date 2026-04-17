@@ -9,6 +9,17 @@ const nextConfig: NextConfig = {
   output: process.env.NODE_ENV === 'production' ? 'standalone' : undefined,
   turbopack: {},
   serverExternalPackages: ['agentmail', 'ethers'],
+  async rewrites() {
+    // Proxy brand onboarding at /brands/* to the standalone onboarding
+    // app. The onboarding app is configured with basePath: '/brands' so
+    // its routes, static assets, and API endpoints all serve under
+    // /brands/*.
+    const onboardingHost = 'https://via-brand-onboarding.vercel.app';
+    return [
+      { source: '/brands', destination: `${onboardingHost}/brands` },
+      { source: '/brands/:path*', destination: `${onboardingHost}/brands/:path*` },
+    ];
+  },
 };
 
 export default nextConfig;

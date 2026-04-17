@@ -7,6 +7,7 @@ import { getAgentIdsForWallets } from '@/lib/rrg/erc8004';
 import Link from 'next/link';
 // AgentTrustBadge moved to RRGFooter
 import BrandDirectory from '@/components/rrg/BrandDirectory';
+import BringYourStoreBlock from '@/components/rrg/BringYourStoreBlock';
 import HeroSplit from '@/components/rrg/HeroSplit';
 import LandingCTAs from '@/components/rrg/LandingCTAs';
 import StoreCarousel from '@/components/rrg/StoreCarousel';
@@ -237,6 +238,9 @@ export default async function RRGGallery({
         <h2 className="text-sm font-mono uppercase tracking-[0.3em] text-white/60 mb-4">Brands</h2>
         <BrandDirectory brands={brandsWithImages} />
       </div>
+
+      {/* ── Founding-merchant onboarding block ─────────────────────── */}
+      <BringYourStoreBlock />
 
       {/* ── CTA Row ─────────────────────────────────────────────────── */}
       <LandingCTAs latestBrief={enrichedLatest} openBriefs={enrichedBriefs} />

@@ -134,13 +134,20 @@ export default function BrandCTAs({ brandSlug }: Props) {
               <li>Physical product listings with shipping management</li>
               <li>Agent-accessible via MCP — AI agents can discover and purchase from your store</li>
             </ul>
-            <div className="pt-4">
+            <div className="pt-4 flex flex-wrap gap-3 items-center">
+              <Link
+                href="/brands"
+                onClick={() => setBrandsOpen(false)}
+                className="inline-flex items-center gap-1 bg-green-500 text-black rounded-full px-5 py-2.5 font-medium text-sm hover:bg-green-400 transition-colors"
+              >
+                Bring your store to RRG &rarr;
+              </Link>
               <Link
                 href="/brand/login"
                 onClick={() => setBrandsOpen(false)}
-                className="inline-flex items-center gap-1 text-green-400 hover:text-green-300 transition-colors"
+                className="inline-flex items-center gap-1 text-green-400 hover:text-green-300 transition-colors text-sm"
               >
-                Apply as a brand partner &rarr;
+                Already a brand partner? Sign in
               </Link>
             </div>
           </div>
