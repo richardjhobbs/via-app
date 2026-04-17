@@ -37,6 +37,14 @@ const BRANDS = {
     website:     'https://www.passportadv.com',
     categories:  ['streetwear', 'apparel', 'footwear', 'technical'],
   },
+  'nolo': {
+    name:        'Nolo',
+    description: 'UK decaf cold brew oat latte brand. Classic and Caramel Swirl in 12, 24, and 36 can packs, plus a Decaf Double Bundle. Mirror of wearenolo.com on Real Real Genuine — checkout in USDC on Base, ships from Nolo UK.',
+    storefront:  'https://realrealgenuine.com/brand/nolo',
+    mcpEndpoint: 'https://realrealgenuine.com/brand/nolo/mcp',
+    website:     'https://wearenolo.com',
+    categories:  ['coffee', 'beverage', 'decaf', 'cold-brew', 'oat-milk'],
+  },
 };
 
 // ── Load .env.local ──────────────────────────────────────────────────
