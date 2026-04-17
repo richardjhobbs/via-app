@@ -79,7 +79,7 @@ export async function GET() {
         description: 'Purchase using x402 HTTP 402 Payment Required (no MCP needed)',
         prerequisites: ['Base wallet with USDC balance', 'HTTP client with x402 support'],
         steps: [
-          '1. GET /api/rrg/drop/{tokenId}/content — returns 402 with payment requirements',
+          '1. GET /api/rrg/listing/{tokenId}/content — returns 402 with payment requirements',
           '2. Transfer specified USDC to the payTo address on Base',
           '3. Retry same GET with X-PAYMENT header containing signed payment proof',
           '4. Receive download links + NFT minted in background',

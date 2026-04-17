@@ -204,7 +204,7 @@ function createBrandServer(brand: RrgBrand) {
           // Physical / provenance
           isPhysical: drop.is_physical_product,
           ecommerceUrl: drop.ecommerce_url,
-          rrgUrl: `${siteUrl}/rrg/drop/${drop.token_id}`,
+          rrgUrl: `${siteUrl}/rrg/listing/${drop.token_id}`,
         };
       }));
 
@@ -284,7 +284,7 @@ function createBrandServer(brand: RrgBrand) {
         isPhysical: drop.is_physical_product,
         sizingCategory: drop.sizing_category,
         ecommerceUrl: drop.ecommerce_url,
-        rrgUrl: `${siteUrl}/rrg/drop/${drop.token_id}`,
+        rrgUrl: `${siteUrl}/rrg/listing/${drop.token_id}`,
         variants: enrichedVariants,
         sizesInStock: enrichedVariants.filter(v => v.inStock).map(v => v.size).filter(Boolean),
         sizesOutOfStock: enrichedVariants.filter(v => !v.inStock).map(v => v.size).filter(Boolean),

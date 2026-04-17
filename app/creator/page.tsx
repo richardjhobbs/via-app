@@ -837,7 +837,7 @@ function DropsTab({ wallet }: { wallet: string }) {
             <div className="flex justify-between items-start">
               <div>
                 <h3 className="text-base font-medium">
-                  <a href={`/rrg/drop/${d.token_id}`} className="hover:underline">
+                  <a href={`/rrg/listing/${d.token_id}`} className="hover:underline">
                     {d.title}
                   </a>
                 </h3>

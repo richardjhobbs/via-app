@@ -89,7 +89,7 @@ export default async function BrandStorefront({
     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-8">
       {items.map((drop) => (
         <div key={drop.id} className="group">
-          <Link href={`/rrg/drop/${drop.token_id}`} className="block">
+          <Link href={`/rrg/listing/${drop.token_id}`} className="block">
             <div className={[
               'relative aspect-square border rounded-lg overflow-hidden mb-4 transition-colors',
               // Adaptive: dark subjects on light card bg, light subjects on dark card bg.
@@ -140,7 +140,7 @@ export default async function BrandStorefront({
             <SizeSelector
               variants={drop.variants}
               productTitle={drop.title}
-              dropHref={`/rrg/drop/${drop.token_id}`}
+              dropHref={`/rrg/listing/${drop.token_id}`}
             />
           )}
         </div>

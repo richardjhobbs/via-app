@@ -856,7 +856,7 @@ function ProductsTab({ brandId }: { brandId: string }) {
                   </div>
                 </div>
                 <a
-                  href={`/rrg/drop/${d.token_id}`}
+                  href={`/rrg/listing/${d.token_id}`}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="text-sm text-white/50 hover:text-white transition-colors"

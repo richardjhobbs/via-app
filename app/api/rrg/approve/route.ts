@@ -148,7 +148,7 @@ export async function POST(req: NextRequest) {
       tokenId,
       txHash:           receipt.hash,
       notificationSent,
-      dropUrl:          `${process.env.NEXT_PUBLIC_SITE_URL}/rrg/drop/${tokenId}`,
+      dropUrl:          `${process.env.NEXT_PUBLIC_SITE_URL}/rrg/listing/${tokenId}`,
     });
 
   } catch (err) {

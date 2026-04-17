@@ -95,7 +95,7 @@ export default async function AllDropsPage({
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-8">
           {dropsWithUrls.map((drop) => (
             <div key={drop.id}>
-              <Link href={`/rrg/drop/${drop.token_id}`} className="group block">
+              <Link href={`/rrg/listing/${drop.token_id}`} className="group block">
                 <div className={[
                   'relative aspect-square border rounded-lg overflow-hidden mb-4 transition-colors',
                   drop.image_is_dark === true
