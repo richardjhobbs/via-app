@@ -63,6 +63,21 @@ const BRANDS = {
     bannerLocal:     null,
     logoLocal:       null,
   },
+  'passport-adv': {
+    slug:            'passport-adv',
+    name:            'PassportADV',
+    wallet:          '0x734a25fB869ab6415b78bbe9a39f1f99dab349E7',
+    email:           'richard@entrepot.asia',
+    headline:        'Footwear and apparel from Addis to LA.',
+    description:     'PassportADV — Ethiopian-inflected streetwear and technical apparel designed out of Los Angeles. Mirror of passportadv.com — checkout in USDC on Base, ships from PassportADV.',
+    website:         'https://www.passportadv.com',
+    sourcePlatform:  'squarespace',
+    squarespaceShopUrl: 'https://www.passportadv.com/shop-1',
+    supportsSizing:  true,
+    socialLinks:     {},
+    bannerLocal:     null,
+    logoLocal:       null,
+  },
 };
 
 // ── Load .env.local ──────────────────────────────────────────────────
@@ -126,8 +141,17 @@ const handleFilter = ONLY
   ? new Set([ONLY])
   : (HANDLES ? new Set(String(HANDLES).split(',').map(h => h.trim()).filter(Boolean)) : null);
 
+const PLATFORM = CFG.sourcePlatform || 'shopify';
+if (PLATFORM === 'shopify' && !CFG.shopifyDomain) {
+  console.error('FATAL: shopify brand missing shopifyDomain'); process.exit(1);
+}
+if (PLATFORM === 'squarespace' && !CFG.squarespaceShopUrl) {
+  console.error('FATAL: squarespace brand missing squarespaceShopUrl'); process.exit(1);
+}
+
 console.log(`──── Brand Mirror: ${CFG.name} ────`);
-console.log(`Shopify:   ${CFG.shopifyDomain}`);
+console.log(`Platform:  ${PLATFORM}`);
+console.log(`Source:    ${PLATFORM === 'shopify' ? CFG.shopifyDomain : CFG.squarespaceShopUrl}`);
 console.log(`Sizing:    ${CFG.supportsSizing ? 'YES' : 'no'}`);
 console.log(`Dry run:   ${DRY_RUN ? 'YES' : 'no'}`);
 console.log(`Chain:     ${SKIP_CHAIN ? 'SKIP (pass --commit-chain to register on-chain)' : 'COMMIT (on-chain registerDrop enabled)'}`);
@@ -183,8 +207,13 @@ async function ensureBrand() {
 
   if (!brand) {
     if (DRY_RUN) {
-      console.log('[seed] DRY: would insert brand row');
-      return null;
+      console.log('[seed] DRY: would insert brand row — continuing with in-memory stub');
+      return {
+        id: '00000000-0000-0000-0000-000000000000',
+        slug: CFG.slug,
+        name: CFG.name,
+        self_listings_used: 0,
+      };
     }
     const id = randomUUID();
     const insert = {
@@ -258,6 +287,118 @@ async function fetchShopify() {
   }
   console.log(`[shopify] received ${all.length} products (across pages)`);
   return all;
+}
+
+/**
+ * Fetch from Squarespace `?format=json` and normalize to the Shopify-compatible
+ * shape the rest of this script consumes (product.variants[].option1/2/3,
+ * product.options[], product.images[].src, etc).
+ *
+ * Squarespace's JSON endpoint is undocumented but stable — see
+ * lib/squarespace/products-json.ts for notes.
+ */
+async function fetchSquarespace() {
+  const parseShopUrl = (u) => {
+    const url = new URL(u);
+    return { origin: url.origin, path: url.pathname.replace(/\/$/, '') };
+  };
+  const { origin, path } = parseShopUrl(CFG.squarespaceShopUrl);
+
+  const all = [];
+  let offset;
+  for (let page = 0; page < 20; page++) {
+    const sep = path.includes('?') ? '&' : '?';
+    const offsetPart = offset ? `&offset=${offset}` : '';
+    const url = `${origin}${path}${sep}format=json${offsetPart}`;
+    console.log(`[squarespace] GET ${url}`);
+    const res = await fetch(url, {
+      headers: { 'User-Agent': 'RRG-Mirror/2.0', 'Accept': 'application/json' },
+      cache: 'no-store',
+    });
+    if (!res.ok) throw new Error(`Squarespace ${res.status} on ${url}`);
+    const data = await res.json();
+    const items = data.items ?? [];
+
+    for (const item of items) {
+      const sqsVariants = item.structuredContent?.variants ?? [];
+
+      // Derive option schema from the union of variant attribute keys, in the
+      // order Squarespace provides via variantOptionOrdering (if present).
+      const ordering = item.structuredContent?.variantOptionOrdering
+        ?? (sqsVariants[0]?.attributes ? Object.keys(sqsVariants[0].attributes) : []);
+      const options = ordering.map((name) => ({ name }));
+
+      const variants = sqsVariants.map((v, idx) => {
+        const attrs = v.attributes ?? {};
+        const opts = ordering.map((k) => attrs[k] ?? null);
+        return {
+          id: v.id, // Squarespace UUID string
+          title: Object.values(attrs).join(' / ') || 'Default',
+          price: (v.price / 100).toFixed(2),
+          compare_at_price: null,
+          sku: v.sku || null,
+          available: v.unlimited || (v.qtyInStock > 0),
+          // For `unlimited: true` Squarespace variants, treat stock as unknown
+          // and let getTotalStock() fall back to counting available variants
+          // (1 unit each). Using qtyInStock verbatim when a finite cap is set.
+          inventory_quantity: v.unlimited ? 0 : (v.qtyInStock ?? 0),
+          position: idx + 1,
+          option1: opts[0] ?? null,
+          option2: opts[1] ?? null,
+          option3: opts[2] ?? null,
+        };
+      });
+
+      // Single-variant fallback so `product.variants[0]` always exists.
+      if (variants.length === 0) {
+        variants.push({
+          id: `${item.id}-default`,
+          title: 'Default',
+          price: ((item.structuredContent?.priceCents ?? item.priceCents ?? 0) / 100).toFixed(2),
+          compare_at_price: null,
+          sku: null,
+          available: true,
+          inventory_quantity: 1,
+          position: 1,
+          option1: null, option2: null, option3: null,
+        });
+      }
+
+      const imageList = (item.items ?? []).filter(i => i.assetUrl);
+      const images = imageList.length
+        ? imageList
+            .slice()
+            .sort((a, b) => (a.displayIndex ?? 0) - (b.displayIndex ?? 0))
+            .map((img, idx) => ({ id: img.id, src: img.assetUrl, position: idx + 1 }))
+        : item.assetUrl
+          ? [{ id: item.id, src: item.assetUrl, position: 1 }]
+          : [];
+
+      all.push({
+        id: item.id,
+        title: item.title,
+        handle: item.urlId,
+        // Squarespace product URLs aren't `/products/<handle>` — keep the real path.
+        sourceUrl: `${origin}${item.fullUrl}`,
+        body_html: item.body ?? item.excerpt ?? null,
+        vendor: null,
+        product_type: null,
+        tags: item.tags ?? [],
+        options,
+        variants,
+        images,
+      });
+    }
+
+    if (!data.pagination?.nextPage || !data.pagination?.nextPageOffset) break;
+    offset = data.pagination.nextPageOffset;
+  }
+  console.log(`[squarespace] received ${all.length} products`);
+  return all;
+}
+
+async function fetchProducts() {
+  return PLATFORM === 'squarespace' ? fetchSquarespace() : fetchShopify();
 }
 
 async function claimNextTokenId() {
@@ -431,7 +572,8 @@ async function importProduct(product, brand) {
     network:             'base',
     is_physical_product: true,
     physical_images_paths: physicalImagesPaths.length > 0 ? physicalImagesPaths : null,
-    ecommerce_url:       `https://${CFG.shopifyDomain}/products/${handle}`,
+    ecommerce_url:       product.sourceUrl
+                          ?? `https://${CFG.shopifyDomain}/products/${handle}`,
     shipping_type:       'quote_after_payment',
     refund_commitment:   true,
     trust_behavior_accepted: true,
@@ -545,7 +687,7 @@ async function syncVariants(submissionId, product) {
   if (!brand) { console.log('[done] dry seed — exiting'); return; }
   if (SEED_ONLY) { console.log('[done] seed only — exiting'); return; }
 
-  const products = await fetchShopify();
+  const products = await fetchProducts();
   const filtered = handleFilter
     ? products.filter(p => handleFilter.has(p.handle))
     : products;

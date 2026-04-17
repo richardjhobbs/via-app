@@ -54,3 +54,6 @@ next-env.d.ts
 # Maison Archive demo data — large image binaries kept local, JSON committed
 data/maison-archive-images/
 data/*-images/
+
+# local working files — never commit (contains private keys, scratch data)
+tmp/
