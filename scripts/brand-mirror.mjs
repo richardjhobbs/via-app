@@ -81,11 +81,11 @@ const BRANDS = {
   'nolo': {
     slug:            'nolo',
     name:            'Nolo',
-    // Nolo brand agent — wallet minted 2026-04-17, ERC-8004 agent #45040
+    // Nolo brand agent, wallet minted 2026-04-17, ERC-8004 agent #45040
     wallet:          '0x891C13aA323378637404EfD971553A3a6df5aAf1',
     email:           'richard@entrepot.asia',
     headline:        'Decaf cold brew oat lattes, without the compromise.',
-    description:     'Nolo — UK decaf cold brew oat latte brand. Classic, Caramel Swirl, and a Decaf Double Bundle, sold by the pack. Mirror of wearenolo.com — checkout in USDC on Base, ships from Nolo UK.',
+    description:     'Nolo is a UK decaf cold brew oat latte brand. Classic, Caramel Swirl, and a Decaf Double Bundle, sold by the pack. Mirror of wearenolo.com, checkout in USDC on Base, ships from Nolo UK.',
     website:         'https://wearenolo.com',
     shopifyDomain:   'wearenolo.com',
     supportsSizing:  true, // pack-count ("12 Cans"/"24 Cans"/"36 Cans") imported as size variants
