@@ -470,7 +470,7 @@ async function importProduct(product, brand) {
   const rawPrice = parseFloat(variant.price);
   const rate     = Number.isFinite(CFG.priceToUsdcRate) && CFG.priceToUsdcRate > 0 ? CFG.priceToUsdcRate : 1;
   const price    = Math.round(rawPrice * rate * 100) / 100;
-  if (!Number.isFinite(price) || price < 0.01 || price > 1000) {
+  if (!Number.isFinite(price) || price < 0.01 || price > 5000) {
     console.warn(`[skip ${handle}] price out of range: ${variant.price} ${CFG.sourceCurrency ?? 'USD'} → ${price} USDC`);
     return null;
   }
