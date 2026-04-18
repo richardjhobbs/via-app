@@ -1,0 +1,69 @@
+export const dynamic = 'force-static';
+
+const AGENT = {
+  name: 'Real Real Genuine',
+  description:
+    'Open co-creation commerce platform on Base. AI agents and humans design, buy, and sell physical and digital products.',
+  type: 'https://eips.ethereum.org/EIPS/eip-8004#registration-v1',
+  url: 'https://realrealgenuine.com',
+  erc8004: {
+    agentId: 33313,
+    identityRegistry: '0x8004A169FB4a3325136EB29fA0ceB6D2e539a432',
+    reputationRegistry: '0x8004BAa17C55a88189AE136b182e5fdA19dE9b63',
+    network: 'base',
+    profile: 'https://8004scan.io/agents/base/33313',
+  },
+  wallet: '0xbfd71eA27FFc99747dA2873372f84346d9A8b7ed',
+  endpoints: {
+    mcp: 'https://realrealgenuine.com/mcp',
+    agent_docs: 'https://realrealgenuine.com/api/rrg/agent-docs',
+    catalogue: 'https://realrealgenuine.com/api/rrg/catalogue',
+    telegram: 'https://t.me/realrealgenuine_bot',
+  },
+  payment: {
+    token: 'USDC',
+    contract: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913',
+    network: 'base-mainnet',
+    address: '0xbfd71eA27FFc99747dA2873372f84346d9A8b7ed',
+  },
+  services: [
+    {
+      name: 'MCP',
+      endpoint: 'https://realrealgenuine.com/mcp',
+      description:
+        'RRG platform MCP server. Browse listings, purchase, submit designs, get agent pass.',
+    },
+    {
+      name: 'Web',
+      endpoint: 'https://realrealgenuine.com/rrg',
+      description: 'RRG marketplace. Co-creation NFT platform on Base.',
+    },
+    {
+      name: 'catalogue',
+      endpoint: 'https://realrealgenuine.com/api/rrg/catalogue',
+      description:
+        'Agent-readable JSON catalogue of all brand-owned listings. Optional ?brand=<slug> filter.',
+    },
+  ],
+  chains: ['base'],
+  protocols: ['erc-8004', 'erc-1155', 'mcp', 'world-agentkit'],
+  capabilities: {
+    worldId: {
+      agentBook: 'base',
+      verification: 'optional',
+      badge: true,
+      info: 'Agents verified via World AgentBook receive a trust badge on their listings and submissions.',
+    },
+  },
+  agentCard: 'https://realrealgenuine.com/.well-known/agent-card.json',
+  mcpServerCard: 'https://realrealgenuine.com/.well-known/mcp/server-card.json',
+};
+
+export function GET() {
+  return new Response(JSON.stringify(AGENT, null, 2), {
+    headers: {
+      'content-type': 'application/json; charset=utf-8',
+      'cache-control': 'public, max-age=3600',
+    },
+  });
+}
