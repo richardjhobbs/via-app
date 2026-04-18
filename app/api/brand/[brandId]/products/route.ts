@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireBrandAuth } from '@/lib/rrg/brand-auth';
-import { getApprovedListings } from '@/lib/rrg/db';
+import { getApprovedDrops } from '@/lib/rrg/db';
 
 export const dynamic = 'force-dynamic';
 
@@ -14,7 +14,7 @@ export async function GET(
   if ('error' in auth) return auth.error;
 
   try {
-    const drops = await getApprovedListings(brandId);
+    const drops = await getApprovedDrops(brandId);
     return NextResponse.json({ drops });
   } catch (err) {
     console.error('[/api/brand/[brandId]/products]', err);

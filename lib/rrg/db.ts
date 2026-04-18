@@ -488,7 +488,7 @@ export async function getSubmissionsForReview(brandId?: string): Promise<RrgSubm
   return data ?? [];
 }
 
-export async function getApprovedListings(brandId?: string): Promise<RrgSubmission[]> {
+export async function getApprovedDrops(brandId?: string): Promise<RrgSubmission[]> {
   let query = db
     .from('rrg_submissions')
     .select('*')
@@ -504,7 +504,7 @@ export async function getApprovedListings(brandId?: string): Promise<RrgSubmissi
   return data ?? [];
 }
 
-export async function getApprovedListingsPaginated(
+export async function getApprovedDropsPaginated(
   page: number,
   perPage: number,
   briefId?: string | null,
@@ -530,8 +530,8 @@ export async function getApprovedListingsPaginated(
 
       return { drops: data ?? [], totalCount: count ?? 0 };
     },
-    [`listings-paginated-${page}-${perPage}-${briefId ?? 'all'}-${brandId ?? 'all'}`],
-    { revalidate: 30, tags: ['listings'] },
+    [`drops-paginated-${page}-${perPage}-${briefId ?? 'all'}-${brandId ?? 'all'}`],
+    { revalidate: 30, tags: ['drops'] },
   )();
 }
 
@@ -552,7 +552,7 @@ export async function getPurchaseCountsByTokenIds(
   return counts;
 }
 
-export async function getListingByTokenId(tokenId: number): Promise<RrgSubmission | null> {
+export async function getDropByTokenId(tokenId: number): Promise<RrgSubmission | null> {
   const { data } = await db
     .from('rrg_submissions')
     .select('*')
@@ -720,7 +720,7 @@ export async function getVariantsBySubmissionId(submissionId: string): Promise<R
 
 export async function getVariantsByTokenId(tokenId: number): Promise<RrgProductVariant[]> {
   // Look up submission first, then get variants
-  const sub = await getListingByTokenId(tokenId);
+  const sub = await getDropByTokenId(tokenId);
   if (!sub) return [];
   return getVariantsBySubmissionId(sub.id);
 }

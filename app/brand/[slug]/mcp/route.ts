@@ -15,8 +15,8 @@ import { z } from 'zod';
 import {
   db,
   getBrandBySlug,
-  getApprovedListings,
-  getListingByTokenId,
+  getApprovedDrops,
+  getDropByTokenId,
   getVariantsBySubmissionId,
   getSizingByBrand,
   getSizingByCategory,
@@ -131,7 +131,7 @@ function createBrandServer(brand: RrgBrand) {
     `List all products from ${brand.name}. Returns full agent-facing payload per item — including agentDescription (full, not truncated), styleTags, occasionFit, conditionGrade, authenticationStatus, priceUsdc/priceEur, and provenance — so a buyer's agent can filter and reason without per-item fan-out calls. Fields populated only for listings whose vision-enrichment has run; otherwise null/empty.`,
     {},
     async () => {
-      const drops = await getApprovedListings(brand.id);
+      const drops = await getApprovedDrops(brand.id);
       if (drops.length === 0) {
         return { content: [{ type: 'text', text: `No products listed for ${brand.name} yet.` }] };
       }
@@ -223,7 +223,7 @@ function createBrandServer(brand: RrgBrand) {
       token_id: z.number().describe('The RRG token ID of the product'),
     },
     async ({ token_id }) => {
-      const drop = await getListingByTokenId(token_id);
+      const drop = await getDropByTokenId(token_id);
       if (!drop || drop.brand_id !== brand.id) {
         return { isError: true, content: [{ type: 'text', text: `Product #${token_id} not found for ${brand.name}` }] };
       }
@@ -340,7 +340,7 @@ function createBrandServer(brand: RrgBrand) {
       buyer_wallet: z.string().describe('Your 0x wallet address on Base'),
     },
     async ({ token_id, size, buyer_wallet }) => {
-      const drop = await getListingByTokenId(token_id);
+      const drop = await getDropByTokenId(token_id);
       if (!drop || drop.brand_id !== brand.id) {
         return { isError: true, content: [{ type: 'text', text: `Product #${token_id} not found for ${brand.name}` }] };
       }

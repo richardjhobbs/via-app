@@ -1528,7 +1528,7 @@ function VouchersTab({ brandId }: { brandId: string }) {
       {loading ? (
         <p className="text-white/40 text-sm font-mono">Loading…</p>
       ) : templates.length === 0 ? (
-        <p className="text-white/40 text-sm font-mono">No voucher templates yet. Create one to start offering vouchers with your listings.</p>
+        <p className="text-white/40 text-sm font-mono">No voucher templates yet. Create one to start offering vouchers with your drops.</p>
       ) : (
         <div className="space-y-3">
           {templates.map((t) => (

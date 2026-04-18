@@ -1,12 +1,12 @@
 import React from 'react';
-import { getListingByTokenId, getBrandById, getVariantsBySubmissionId, getSizingByCategory, db } from '@/lib/rrg/db';
+import { getDropByTokenId, getBrandById, getVariantsBySubmissionId, getSizingByCategory, db } from '@/lib/rrg/db';
 import ProductSizeChart from '@/components/rrg/ProductSizeChart';
 import { getSignedUrl } from '@/lib/rrg/storage';
 import { getRRGReadOnly } from '@/lib/rrg/contract';
 import { notFound } from 'next/navigation';
 import PurchaseBlock from './PurchaseBlock';
 import PhysicalProductButton from './PhysicalProductButton';
-import ListingBadges from '@/components/rrg/ListingBadges';
+import DropBadges from '@/components/rrg/DropBadges';
 import AgentReadyBadge from '@/components/rrg/AgentReadyBadge';
 import Link from 'next/link';
 
@@ -77,7 +77,7 @@ export default async function DropPage({ params, searchParams }: Props) {
   const tokenId = parseInt(tokenIdStr, 10);
   if (isNaN(tokenId)) notFound();
 
-  const drop = await getListingByTokenId(tokenId);
+  const drop = await getDropByTokenId(tokenId);
   if (!drop) notFound();
 
   // Signed image URL
@@ -394,7 +394,7 @@ export default async function DropPage({ params, searchParams }: Props) {
                     {drop.creator_wallet.slice(0, 6)}…{drop.creator_wallet.slice(-4)}
                   </a>
                 </p>
-                <ListingBadges walletAddress={drop.creator_wallet} />
+                <DropBadges walletAddress={drop.creator_wallet} />
               </div>
             )}
             {drop.creator_bio && (

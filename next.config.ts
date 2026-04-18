@@ -11,10 +11,11 @@ const nextConfig: NextConfig = {
   serverExternalPackages: ['agentmail', 'ethers'],
   async redirects() {
     return [
-      // Backward-compat: old /rrg/drop/:tokenId → /rrg/listing/:tokenId
+      // Any /rrg/listing/:tokenId links that leaked out during the short-lived
+      // rename branch redirect back to the canonical /rrg/drop/:tokenId path.
       {
-        source: '/rrg/drop/:tokenId',
-        destination: '/rrg/listing/:tokenId',
+        source: '/rrg/listing/:tokenId',
+        destination: '/rrg/drop/:tokenId',
         permanent: true,
       },
     ];

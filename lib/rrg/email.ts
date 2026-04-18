@@ -47,7 +47,7 @@ export async function sendApprovalNotification({
   editionSize: number;
   creatorWallet: string;
 }): Promise<void> {
-  const listingUrl = `${SITE_URL}/rrg/listing/${tokenId}`;
+  const dropUrl = `${SITE_URL}/rrg/drop/${tokenId}`;
 
   const html = `
 <!DOCTYPE html>
@@ -81,9 +81,9 @@ export async function sendApprovalNotification({
     </div>
     <p>Sales revenue (70%) is sent automatically to your wallet with no further steps from you.</p>
     <p>Share the link below — every sale goes straight to your wallet.</p>
-    <a class="btn" href="${listingUrl}">View your listing →</a>
+    <a class="btn" href="${dropUrl}">View your drop →</a>
   </div>
-  <div class="footer"><a href="${SITE_URL}/rrg" style="color:#e5e5e5; text-decoration:none">Browse all listings</a></div>
+  <div class="footer"><a href="${SITE_URL}/rrg" style="color:#e5e5e5; text-decoration:none">Browse all drops</a></div>
 </div>
 </body>
 </html>`;
@@ -115,7 +115,7 @@ export async function sendFileDeliveryEmail({
   voucher?: { code: string; offer: string; brand_url: string | null; terms: string | null; expires_at: string } | null;
 }): Promise<void> {
   const scanBase    = 'https://basescan.org';
-  const listingUrl  = `${SITE_URL}/rrg/listing/${tokenId}`;
+  const dropUrl     = `${SITE_URL}/rrg/drop/${tokenId}`;
   const basescanUrl = `${scanBase}/tx/${txHash}`;
   const shortTx     = txHash; // full hash so the link is unambiguous
 
@@ -136,13 +136,13 @@ export async function sendFileDeliveryEmail({
 </style></head>
 <body>
 <div class="card">
-  <div class="header"><h1>Your RRG listing is ready</h1></div>
+  <div class="header"><h1>Your RRG drop is ready</h1></div>
   <div class="body">
     <p>Thanks for purchasing <strong style="color:#e5e5e5">"${escHtml(title)}"</strong>. Your files are ready to download.</p>
     <p><a class="btn" href="${downloadUrl}">Download your files →</a></p>
     <p class="note">⚠️ This link expires in 24 hours. Download and save your files now.</p>
     <p>On-chain receipt: <a href="${basescanUrl}" class="tx">${shortTx}</a></p>
-    <p><a href="${listingUrl}" style="color:#7c3aed; text-decoration:none; font-size:13px">View listing page →</a></p>
+    <p><a href="${dropUrl}" style="color:#7c3aed; text-decoration:none; font-size:13px">View drop page →</a></p>
     ${ipfsMetadataUrl ? `<p><a href="${ipfsMetadataUrl}" style="color:#7c3aed; text-decoration:none; font-size:13px">View metadata on IPFS →</a></p>` : ''}
     ${voucher ? `
     <div style="background:#052e16; border:1px solid rgba(16,185,129,0.3); border-radius:8px; padding:16px; margin:20px 0;">
@@ -154,14 +154,14 @@ export async function sendFileDeliveryEmail({
       <p style="color:#888; font-size:12px; margin:0">Valid until ${new Date(voucher.expires_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })}</p>
     </div>` : ''}
   </div>
-  <div class="footer"><a href="${SITE_URL}/rrg" style="color:#e5e5e5; text-decoration:none">Browse all listings</a></div>
+  <div class="footer"><a href="${SITE_URL}/rrg" style="color:#e5e5e5; text-decoration:none">Browse all drops</a></div>
 </div>
 </body>
 </html>`;
 
   await sendEmail({
     to,
-    subject: `Your RRG listing is ready — "${title}"`,
+    subject: `Your RRG drop is ready — "${title}"`,
     html,
   });
 }
@@ -207,7 +207,7 @@ export async function sendRejectionNotification({
     <p>We encourage you to refine and resubmit — we'd love to see more of your work.</p>
     <a class="btn" href="${SITE_URL}/rrg/submit">Submit again →</a>
   </div>
-  <div class="footer"><a href="${SITE_URL}/rrg" style="color:#e5e5e5; text-decoration:none">Browse all listings</a></div>
+  <div class="footer"><a href="${SITE_URL}/rrg" style="color:#e5e5e5; text-decoration:none">Browse all drops</a></div>
 </div>
 </body>
 </html>`;
@@ -319,7 +319,7 @@ export async function sendPhysicalPurchaseToBuyer(data: PhysicalPurchaseEmailDat
 </style></head>
 <body>
 <div class="card">
-  <div class="header"><h1>Your RRG listing is ready</h1></div>
+  <div class="header"><h1>Your RRG drop is ready</h1></div>
   <div class="body">
     <p>Thanks for purchasing <strong style="color:#e5e5e5">"${escHtml(data.title)}"</strong>. Your digital files are ready to download.</p>
     <p><a class="btn" href="${data.downloadUrl}">Download your files →</a></p>
@@ -347,7 +347,7 @@ ${escHtml(data.shippingAddress)}</div>
     <p style="font-size:13px">On-chain receipt: <a href="${scanBase}/tx/${data.txHash}" style="color:#7c3aed; font-family:monospace; font-size:12px">${data.txHash.slice(0, 20)}…</a></p>
     ${data.ipfsMetadataUrl ? `<p><a href="${data.ipfsMetadataUrl}" style="color:#7c3aed; text-decoration:none; font-size:13px">View metadata on IPFS →</a></p>` : ''}
   </div>
-  <div class="footer"><a href="${SITE_URL}/rrg" style="color:#e5e5e5; text-decoration:none">Browse all listings</a></div>
+  <div class="footer"><a href="${SITE_URL}/rrg" style="color:#e5e5e5; text-decoration:none">Browse all drops</a></div>
 </div>
 </body>
 </html>`;
@@ -356,7 +356,7 @@ ${escHtml(data.shippingAddress)}</div>
 
   await sendEmail({
     to: data.buyerEmail,
-    subject: `Your RRG listing is ready — "${data.title}" (includes physical product)`,
+    subject: `Your RRG drop is ready — "${data.title}" (includes physical product)`,
     html,
   });
 }
@@ -443,10 +443,10 @@ export async function sendOutreachOwnerEmail({
   <div class="header"><h1>Your agent received a collaboration request</h1></div>
   <div class="body">
     <p>Your ERC-8004 agent <strong style="color:#e5e5e5">"${escHtml(agentName)}"</strong>${idStr} was contacted by the RRG platform agent (#33313) via ${escHtml(channel.toUpperCase())}.</p>
-    <p>RRG is an agent-native design and commerce platform on Base where AI agents can browse and purchase fashion listings, submit designs to brand briefs, and launch their own brands — all using USDC with on-chain ERC-8004 reputation.</p>
+    <p>RRG is an agent-native design and commerce platform on Base where AI agents can browse and purchase fashion drops, submit designs to brand briefs, and launch their own brands — all using USDC with on-chain ERC-8004 reputation.</p>
     <div class="actions">
       <p>What your agent can do on RRG:</p>
-      <p>- Browse and purchase limited edition listings (gasless USDC)</p>
+      <p>- Browse and purchase limited edition drops (gasless USDC)</p>
       <p>- Submit original designs to open brand briefs (earn 35% on every sale)</p>
       <p>- Register and launch its own brand with automatic USDC payouts</p>
     </div>
