@@ -1,12 +1,6 @@
 export const dynamic = 'force-static';
 
 const ACP = {
-  protocol: {
-    name: 'acp',
-    version: '1.0',
-  },
-  api_base_url: 'https://realrealgenuine.com',
-  transports: ['mcp', 'https'],
   capabilities: {
     services: [
       {
@@ -38,6 +32,16 @@ const ACP = {
       },
     ],
   },
+  protocol: {
+    name: 'acp',
+    version: '1.0',
+  },
+  acp: {
+    profile: 'https://agenticcommerce.dev',
+    version: '1.0',
+  },
+  api_base_url: 'https://realrealgenuine.com',
+  transports: ['mcp', 'https'],
   payment: {
     methods: ['x402', 'usdc-base'],
     token: 'USDC',

@@ -7,6 +7,44 @@ const CARD = {
   url: 'https://realrealgenuine.com/mcp',
   version: '1.0.0',
   preferredTransport: 'JSONRPC',
+  extensions: [
+    {
+      uri: 'https://github.com/google-agentic-commerce/AP2',
+      name: 'ap2',
+      description:
+        'AP2 (Agent Payments Protocol) extension. Agent supports direct payment via x402 + USDC on Base (contract 0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913) to 0xbfd71eA27FFc99747dA2873372f84346d9A8b7ed.',
+      required: false,
+      params: {
+        methods: ['x402', 'usdc-base'],
+        networks: ['base-mainnet'],
+        recipient: '0xbfd71eA27FFc99747dA2873372f84346d9A8b7ed',
+      },
+    },
+    {
+      uri: 'https://a2a-protocol.org/extensions/ap2/v1',
+      name: 'ap2',
+      description: 'AP2 alternative discovery URI.',
+      required: false,
+    },
+    {
+      uri: 'https://googleapis.github.io/a2a/extensions/payments/ap2/v1',
+      name: 'ap2',
+      description: 'AP2 alternative discovery URI.',
+      required: false,
+    },
+    {
+      uri: 'https://x402.org',
+      name: 'x402',
+      description:
+        'x402 HTTP payment extension. Protected routes return HTTP 402 with payment requirements; /api and /api/v1 are gated.',
+      required: false,
+      params: {
+        networks: ['base-mainnet'],
+        recipient: '0xbfd71eA27FFc99747dA2873372f84346d9A8b7ed',
+        asset: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913',
+      },
+    },
+  ],
   supportedInterfaces: [
     {
       transport: 'JSONRPC',
@@ -57,8 +95,29 @@ const CARD = {
     url: 'https://www.getvia.xyz',
   },
   authentication: {
-    schemes: ['none'],
+    schemes: ['none', 'wallet_signature'],
   },
+  commerce: {
+    ap2: {
+      supported: true,
+      profile: 'https://a2a-protocol.org/latest/specification/payment/',
+      methods: ['x402', 'usdc-base'],
+    },
+    x402: {
+      supported: true,
+      profile: 'https://x402.org',
+      networks: ['base-mainnet'],
+      recipient: '0xbfd71eA27FFc99747dA2873372f84346d9A8b7ed',
+      token: {
+        symbol: 'USDC',
+        contract: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913',
+      },
+    },
+    ucp: 'https://realrealgenuine.com/.well-known/ucp',
+    acp: 'https://realrealgenuine.com/.well-known/acp.json',
+    api_catalog: 'https://realrealgenuine.com/.well-known/api-catalog',
+  },
+  paymentMethods: ['x402', 'ap2', 'usdc-base'],
 };
 
 export function GET() {

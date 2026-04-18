@@ -1,6 +1,10 @@
 export const dynamic = 'force-static';
 
 const UCP = {
+  ucp: {
+    profile: 'https://ucp.dev/specification/overview/',
+    version: '1.0',
+  },
   protocol_version: '1.0',
   services: ['commerce', 'digital-goods', 'physical-goods', 'nft-marketplace'],
   capabilities: {
