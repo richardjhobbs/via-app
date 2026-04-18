@@ -34,7 +34,7 @@ export default function ShopWithAI() {
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
           <div className="border border-white/10 rounded-lg p-6 flex flex-col">
-            <h3 className="text-sm font-mono uppercase tracking-wider text-white/60 mb-3">
+            <h3 className="text-lg font-mono uppercase tracking-wider text-white/80 mb-3">
               Use your AI assistant
             </h3>
             <p className="text-white/80 text-sm leading-relaxed mb-4">
@@ -57,7 +57,7 @@ export default function ShopWithAI() {
           </div>
 
           <div className="border border-white/10 rounded-lg p-6 flex flex-col">
-            <h3 className="text-sm font-mono uppercase tracking-wider text-white/60 mb-3">
+            <h3 className="text-lg font-mono uppercase tracking-wider text-white/80 mb-3">
               Point your own agent at the MCP
             </h3>
             <p className="text-white/80 text-sm leading-relaxed mb-4">

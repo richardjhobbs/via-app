@@ -17,6 +17,8 @@ import ShopWithAI from '@/components/rrg/ShopWithAI';
 export const dynamic = 'force-dynamic';
 
 const CAROUSEL_LIMIT = 25;
+const CAROUSEL_POOL = 200;
+const CAROUSEL_MAX_PER_BRAND = 5;
 
 // Social platform display names
 const SOCIAL_LABELS: Record<string, string> = {
@@ -113,8 +115,34 @@ export default async function RRGGallery({
   // Brand lookup map
   const brandMap = new Map(brands.map(b => [b.id, b]));
 
-  // Fetch most recent drops for carousel
-  const { drops } = await getApprovedDropsPaginated(1, CAROUSEL_LIMIT, undefined, selectedBrandId);
+  // Fetch pool of recent drops for carousel. When a specific brand is selected,
+  // keep the original tight fetch; otherwise pull a larger pool, cap each brand
+  // at CAROUSEL_MAX_PER_BRAND of its newest, and shuffle for variety.
+  const { drops: dropsPool } = await getApprovedDropsPaginated(
+    1,
+    selectedBrandId ? CAROUSEL_LIMIT : CAROUSEL_POOL,
+    undefined,
+    selectedBrandId,
+  );
+
+  let drops = dropsPool;
+  if (!selectedBrandId) {
+    const perBrand = new Map<string, number>();
+    const capped: typeof dropsPool = [];
+    for (const d of dropsPool) {
+      const key = d.brand_id ?? '__none__';
+      const cnt = perBrand.get(key) ?? 0;
+      if (cnt < CAROUSEL_MAX_PER_BRAND) {
+        perBrand.set(key, cnt + 1);
+        capped.push(d);
+      }
+    }
+    for (let i = capped.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [capped[i], capped[j]] = [capped[j], capped[i]];
+    }
+    drops = capped.slice(0, CAROUSEL_LIMIT);
+  }
 
   // Get purchase counts + signed URLs
   const tokenIds = drops.map(d => d.token_id).filter((id): id is number => id != null);
@@ -247,6 +275,9 @@ export default async function RRGGallery({
       <StoreCarousel drops={dropsWithUrls} />
 
       {/* ── Hero Split: Agent Launch + Co-Creation ──────────────────── */}
+      <h2 className="text-sm font-mono uppercase tracking-[0.3em] text-white/60 mb-4">
+        Get your personal shopping assistant and become a co-creator
+      </h2>
       <HeroSplit openBriefs={enrichedBriefs} />
 
       {/* ── Shop with your AI assistant (connect guides) ────────────── */}
