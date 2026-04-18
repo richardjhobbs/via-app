@@ -14,7 +14,7 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
   const brand = await getBrandBySlug(slug);
   if (!brand) return { title: 'Brand Not Found' };
   return {
-    title: `${brand.name} — Powered by RRG`,
+    title: `${brand.name}, Real Real Genuine`,
     description: brand.headline || brand.description || `${brand.name} on Real Real Genuine`,
   };
 }
@@ -25,8 +25,8 @@ export default async function BrandPublicLayout({ children, params }: Props) {
   if (!brand || brand.status !== 'active') return notFound();
 
   return (
-    <div className="min-h-screen bg-black text-white">
-      <RRGHeader active="store" />
+    <div style={{ minHeight: '100vh', background: 'var(--bg)', color: 'var(--ink)' }}>
+      <RRGHeader active="brands" />
       <main>{children}</main>
       <RRGFooter />
     </div>

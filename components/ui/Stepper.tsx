@@ -7,36 +7,58 @@ interface StepperProps {
 
 export function Stepper({ steps, currentStep }: StepperProps) {
   return (
-    <div className="flex items-center gap-2 mb-8">
-      {steps.map((label, i) => (
-        <div key={label} className="flex items-center gap-2">
-          <div
-            className={`flex items-center justify-center w-7 h-7 rounded-full text-xs font-bold transition-colors ${
-              i < currentStep
-                ? 'bg-green-500 text-black'
-                : i === currentStep
-                  ? 'bg-neutral-700 text-white ring-2 ring-green-500/50'
-                  : 'bg-neutral-900 text-neutral-600'
-            }`}
-          >
-            {i < currentStep ? '\u2713' : i + 1}
-          </div>
-          <span
-            className={`text-sm hidden sm:inline ${
-              i < currentStep ? 'text-green-400' : i === currentStep ? 'text-neutral-300' : 'text-neutral-600'
-            }`}
-          >
-            {label}
-          </span>
-          {i < steps.length - 1 && (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 36, flexWrap: 'wrap' }}>
+      {steps.map((label, i) => {
+        const done = i < currentStep;
+        const active = i === currentStep;
+        return (
+          <div key={label} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             <div
-              className={`w-8 h-px ${
-                i < currentStep ? 'bg-green-500/50' : 'bg-neutral-800'
-              }`}
-            />
-          )}
-        </div>
-      ))}
+              style={{
+                width: 28, height: 28,
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                borderRadius: 99,
+                fontFamily: 'var(--font-jetbrains), monospace',
+                fontSize: 10,
+                letterSpacing: 0,
+                transition: 'all 0.15s',
+                background: done ? 'var(--accent)' : active ? 'var(--ink)' : 'transparent',
+                color: done ? 'var(--bg)' : active ? 'var(--bg)' : 'var(--ink-3)',
+                border: `1px solid ${done ? 'var(--accent)' : active ? 'var(--ink)' : 'var(--line-strong)'}`,
+              }}
+            >
+              {done ? '✓' : i + 1}
+            </div>
+            <span
+              style={{
+                fontFamily: 'var(--font-jetbrains), monospace',
+                fontSize: 10,
+                letterSpacing: '0.14em',
+                textTransform: 'uppercase',
+                display: 'none',
+                color: done ? 'var(--accent)' : active ? 'var(--ink)' : 'var(--ink-3)',
+              }}
+              className="stepper-label"
+            >
+              {label}
+            </span>
+            {i < steps.length - 1 && (
+              <div
+                style={{
+                  width: 32,
+                  height: 1,
+                  background: done ? 'var(--accent)' : 'var(--line)',
+                }}
+              />
+            )}
+          </div>
+        );
+      })}
+      <style>{`
+        @media (min-width: 640px) {
+          .stepper-label { display: inline !important; }
+        }
+      `}</style>
     </div>
   );
 }

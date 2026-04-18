@@ -16,11 +16,8 @@ export function InterestSelector({ selected, onChange }: Props) {
 
   function toggleTag(category: string, tag: string) {
     const current = selectedMap.get(category) ?? new Set<string>();
-    if (current.has(tag)) {
-      current.delete(tag);
-    } else {
-      current.add(tag);
-    }
+    if (current.has(tag)) current.delete(tag);
+    else current.add(tag);
 
     const next: InterestSelection[] = [];
     for (const [cat, tags] of selectedMap) {
@@ -47,38 +44,55 @@ export function InterestSelector({ selected, onChange }: Props) {
   const categories = Object.entries(INTEREST_CATEGORIES) as [InterestCategoryKey, typeof INTEREST_CATEGORIES[InterestCategoryKey]][];
 
   return (
-    <div className="space-y-2">
-      <label className="block text-sm text-white/60 mb-1">Interests</label>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+      <label style={{
+        display: 'block',
+        fontFamily: 'var(--font-jetbrains), monospace',
+        fontSize: 10, letterSpacing: '0.16em', textTransform: 'uppercase',
+        color: 'var(--ink-3)',
+      }}>
+        Interests
+      </label>
       {categories.map(([key, cat]) => {
         const count = categoryCount(key);
         const isOpen = expanded === key;
         return (
-          <div key={key} className="border border-white/10 rounded-lg overflow-hidden">
+          <div key={key} style={{ border: '1px solid var(--line)', overflow: 'hidden' }}>
             <button
               type="button"
               onClick={() => setExpanded(isOpen ? null : key)}
-              className="w-full flex items-center justify-between px-3 py-2 text-sm hover:bg-white/5 transition-colors cursor-pointer"
+              style={{
+                width: '100%',
+                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                padding: '10px 14px',
+                fontSize: 14, fontFamily: 'inherit',
+                background: 'transparent', border: 'none', cursor: 'pointer',
+                color: 'var(--ink)',
+              }}
             >
-              <span className="text-white/80">{cat.label}</span>
-              <span className="flex items-center gap-2">
+              <span>{cat.label}</span>
+              <span style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                 {count > 0 && (
-                  <span className="text-xs text-green-400">{count} selected</span>
+                  <span style={{
+                    fontFamily: 'var(--font-jetbrains), monospace',
+                    fontSize: 10, letterSpacing: '0.12em', textTransform: 'uppercase',
+                    color: 'var(--accent)',
+                  }}>
+                    {count} selected
+                  </span>
                 )}
-                <span className="text-white/30 text-xs">{isOpen ? '▲' : '▼'}</span>
+                <span style={{ color: 'var(--ink-3)', fontSize: 10 }}>{isOpen ? '▲' : '▼'}</span>
               </span>
             </button>
             {isOpen && (
-              <div className="px-3 pb-3 flex flex-wrap gap-1.5">
+              <div style={{ padding: '0 14px 14px', display: 'flex', flexWrap: 'wrap', gap: 6 }}>
                 {cat.tags.map(tag => (
                   <button
                     key={tag}
                     type="button"
                     onClick={() => toggleTag(key, tag)}
-                    className={`px-2 py-1 text-xs rounded-full border transition-colors cursor-pointer ${
-                      isSelected(key, tag)
-                        ? 'border-green-500 text-green-400 bg-green-500/10'
-                        : 'border-white/15 text-white/50 hover:border-white/30 hover:text-white/70'
-                    }`}
+                    className={`chip ${isSelected(key, tag) ? 'is-active' : ''}`}
+                    style={{ padding: '4px 10px', fontSize: 10 }}
                   >
                     {tag.replace(/-/g, ' ')}
                   </button>

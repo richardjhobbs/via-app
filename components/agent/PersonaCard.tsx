@@ -70,17 +70,25 @@ export function PersonaCard({ agent, onSave }: Props) {
 
   return (
     <Card className="md:col-span-2">
-      <div className="flex items-center justify-between mb-4">
+      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 16, gap: 16 }}>
         <div>
-          <h2 className="text-base font-semibold">Persona</h2>
-          <p className="text-xs text-white/40 mt-0.5">
-            Shape how your {tierLabel} thinks, communicates, and understands you
+          <h2 style={{ fontFamily: 'var(--font-fraunces), serif', fontSize: 22, fontWeight: 400, letterSpacing: '-0.01em', margin: '0 0 4px' }}>
+            Persona
+          </h2>
+          <p style={{ fontSize: 12, color: 'var(--ink-3)', lineHeight: 1.5, margin: 0 }}>
+            Shape how your {tierLabel} thinks, communicates, and understands you.
           </p>
         </div>
         {!editing && (
           <button
             onClick={startEdit}
-            className="text-xs text-green-400 hover:text-green-300 transition-colors cursor-pointer"
+            style={{
+              background: 'transparent', border: 'none', cursor: 'pointer',
+              fontFamily: 'var(--font-jetbrains), monospace',
+              fontSize: 10, letterSpacing: '0.14em', textTransform: 'uppercase',
+              color: 'var(--accent)', padding: 0,
+              borderBottom: '1px solid color-mix(in srgb, var(--accent) 35%, transparent)',
+            }}
           >
             {hasPersona ? 'Edit' : 'Set up'}
           </button>
@@ -111,16 +119,17 @@ export function PersonaCard({ agent, onSave }: Props) {
                 }}
                 options={VOICE_PRESETS.map(p => ({
                   value: p.value,
-                  label: `${p.label} — ${p.description}`,
+                  label: `${p.label}, ${p.description}`,
                 }))}
               />
               {formVoicePreset === 'custom' && (
-                <Textarea
-                  placeholder="Describe the tone you want..."
-                  value={form.persona_voice}
-                  onChange={(e) => setForm(prev => ({ ...prev, persona_voice: e.target.value }))}
-                  className="mt-2"
-                />
+                <div style={{ marginTop: 8 }}>
+                  <Textarea
+                    placeholder="Describe the tone you want..."
+                    value={form.persona_voice}
+                    onChange={(e) => setForm(prev => ({ ...prev, persona_voice: e.target.value }))}
+                  />
+                </div>
               )}
             </div>
 
@@ -137,16 +146,17 @@ export function PersonaCard({ agent, onSave }: Props) {
                 }}
                 options={COMM_STYLE_PRESETS.map(p => ({
                   value: p.value,
-                  label: `${p.label} — ${p.description}`,
+                  label: `${p.label}, ${p.description}`,
                 }))}
               />
               {formCommPreset === 'custom' && (
-                <Textarea
-                  placeholder="Describe how you want it to communicate..."
-                  value={form.persona_comm_style}
-                  onChange={(e) => setForm(prev => ({ ...prev, persona_comm_style: e.target.value }))}
-                  className="mt-2"
-                />
+                <div style={{ marginTop: 8 }}>
+                  <Textarea
+                    placeholder="Describe how you want it to communicate..."
+                    value={form.persona_comm_style}
+                    onChange={(e) => setForm(prev => ({ ...prev, persona_comm_style: e.target.value }))}
+                  />
+                </div>
               )}
             </div>
           </div>
@@ -185,13 +195,18 @@ export function PersonaCard({ agent, onSave }: Props) {
           </div>
           {agent.interest_categories?.length > 0 && (
             <div>
-              <div className="text-white/40 mb-1">Interests</div>
-              <div className="space-y-1">
+              <div style={{ color: 'var(--ink-3)', fontFamily: 'var(--font-jetbrains), monospace', fontSize: 10, letterSpacing: '0.14em', textTransform: 'uppercase', marginBottom: 6 }}>Interests</div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                 {agent.interest_categories.map(ic => (
-                  <div key={ic.category} className="flex flex-wrap gap-1">
-                    <span className="text-white/50 text-xs mr-1">{ic.category}:</span>
+                  <div key={ic.category} style={{ display: 'flex', flexWrap: 'wrap', gap: 4, alignItems: 'center' }}>
+                    <span style={{ color: 'var(--ink-3)', fontSize: 12, marginRight: 4 }}>{ic.category}:</span>
                     {ic.tags.map(tag => (
-                      <span key={tag} className="px-2 py-0.5 text-xs border border-green-500/30 text-green-400/80 rounded-full">
+                      <span key={tag} style={{
+                        padding: '2px 8px',
+                        fontFamily: 'var(--font-jetbrains), monospace',
+                        fontSize: 10, letterSpacing: '0.1em', textTransform: 'uppercase',
+                        border: '1px solid var(--accent)', color: 'var(--accent)',
+                      }}>
                         {tag.replace(/-/g, ' ')}
                       </span>
                     ))}

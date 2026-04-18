@@ -1,12 +1,12 @@
 type BadgeVariant = 'default' | 'success' | 'warning' | 'danger' | 'info' | 'pro';
 
-const variants: Record<BadgeVariant, string> = {
-  default: 'bg-neutral-800 text-neutral-300',
-  success: 'bg-green-900/50 text-green-400 border-green-800',
-  warning: 'bg-yellow-900/50 text-yellow-400 border-yellow-800',
-  danger: 'bg-red-900/50 text-red-400 border-red-800',
-  info: 'bg-blue-900/50 text-blue-400 border-blue-800',
-  pro: 'bg-purple-900/50 text-purple-400 border-purple-800',
+const variantStyle: Record<BadgeVariant, React.CSSProperties> = {
+  default: { background: 'transparent', color: 'var(--ink-2)', borderColor: 'var(--line-strong)' },
+  success: { background: 'transparent', color: 'var(--accent)', borderColor: 'var(--accent)' },
+  warning: { background: 'transparent', color: '#a47a3a', borderColor: '#a47a3a' },
+  danger:  { background: 'transparent', color: '#b5453a', borderColor: '#b5453a' },
+  info:    { background: 'transparent', color: 'var(--ink-2)', borderColor: 'var(--line-strong)' },
+  pro:     { background: 'var(--accent)', color: 'var(--bg)', borderColor: 'var(--accent)' },
 };
 
 interface BadgeProps {
@@ -17,7 +17,17 @@ interface BadgeProps {
 export function Badge({ children, variant = 'default' }: BadgeProps) {
   return (
     <span
-      className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium border ${variants[variant]}`}
+      style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        padding: '3px 8px',
+        fontFamily: 'var(--font-jetbrains), monospace',
+        fontSize: 10,
+        letterSpacing: '0.14em',
+        textTransform: 'uppercase',
+        border: '1px solid',
+        ...variantStyle[variant],
+      }}
     >
       {children}
     </span>

@@ -16,9 +16,15 @@ interface Props {
 
 type Step = 'choose' | 'wallet' | 'verifying' | 'success';
 
+const lbl: React.CSSProperties = {
+  fontFamily: 'var(--font-jetbrains), monospace',
+  fontSize: 10, letterSpacing: '0.14em', textTransform: 'uppercase',
+  color: 'var(--ink-3)',
+};
+const body: React.CSSProperties = { fontSize: 13, color: 'var(--ink-2)', lineHeight: 1.55 };
+
 export function TopUpModal({ agent, onClose, onCredited }: Props) {
   const [step, setStep] = useState<Step>('choose');
-  const [amount, setAmount] = useState('5');
   const [txHash, setTxHash] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [credited, setCredited] = useState<number | null>(null);
@@ -48,8 +54,6 @@ export function TopUpModal({ agent, onClose, onCredited }: Props) {
 
       setCredited(data.credited);
       setStep('success');
-
-      // Update parent after a moment
       setTimeout(() => onCredited(data.new_balance), 1500);
     } catch {
       setError('Connection error. Please try again.');
@@ -58,84 +62,137 @@ export function TopUpModal({ agent, onClose, onCredited }: Props) {
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70">
-      <div className="bg-neutral-900 border border-white/10 rounded-xl w-full max-w-md mx-4 p-6">
-        <div className="flex items-center justify-between mb-4">
-          <h3 className="text-base font-semibold">Top up Concierge Credits</h3>
-          <button onClick={onClose} className="text-white/50 hover:text-white cursor-pointer">✕</button>
+    <div
+      onClick={onClose}
+      style={{
+        position: 'fixed', inset: 0, zIndex: 50,
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        background: 'color-mix(in srgb, var(--ink) 55%, transparent)',
+        backdropFilter: 'blur(6px)',
+        padding: 16,
+      }}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          background: 'var(--paper)',
+          border: '1px solid var(--line-strong)',
+          width: '100%', maxWidth: 460,
+          padding: 28,
+          color: 'var(--ink)',
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+          <h3 style={{ fontFamily: 'var(--font-fraunces), serif', fontSize: 22, fontWeight: 400, letterSpacing: '-0.01em', margin: 0 }}>
+            Top up Concierge Credits
+          </h3>
+          <button
+            onClick={onClose}
+            aria-label="Close"
+            style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--ink-3)', fontSize: 18, padding: 0 }}
+          >
+            ✕
+          </button>
         </div>
 
-        {/* Current balance */}
-        <div className="mb-4">
-          <div className="text-white/40 text-xs mb-1">Current balance</div>
-          <div className="text-2xl font-light text-green-400">${Number(agent.credit_balance_usdc ?? 0).toFixed(2)}</div>
+        <div style={{ marginBottom: 20 }}>
+          <div style={lbl}>Current balance</div>
+          <div style={{
+            fontFamily: 'var(--font-fraunces), serif',
+            fontSize: 32, fontWeight: 300, letterSpacing: '-0.02em',
+            color: 'var(--accent)', marginTop: 4,
+          }}>
+            ${Number(agent.credit_balance_usdc ?? 0).toFixed(2)}
+          </div>
         </div>
 
         {error && (
-          <div className="mb-4 p-2 rounded bg-red-900/30 border border-red-800 text-xs text-red-400">
+          <div style={{
+            marginBottom: 16,
+            padding: 12,
+            background: 'color-mix(in srgb, #b5453a 8%, transparent)',
+            border: '1px solid #b5453a',
+            fontSize: 12,
+            color: '#8a2e25',
+          }}>
             {error}
           </div>
         )}
 
-        {/* Step: Choose method */}
         {step === 'choose' && (
-          <div className="space-y-4">
-            <div className="text-sm text-white/60 mb-3">
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+            <p style={body}>
               Concierge Credits power your chat conversations and drop evaluations.
               Charged based on actual token usage.
-            </div>
+            </p>
 
-            <div className="bg-white/5 border border-white/10 rounded-lg p-3 space-y-1 mb-4">
-              <div className="flex justify-between text-xs">
-                <span className="text-white/50">Claude (Anthropic)</span>
-                <span className="text-white/70">~$0.006 per message</span>
+            <div style={{ background: 'var(--bg-2)', border: '1px solid var(--line)', padding: 14, display: 'flex', flexDirection: 'column', gap: 6 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12 }}>
+                <span style={{ color: 'var(--ink-3)' }}>Claude (Anthropic)</span>
+                <span style={{ color: 'var(--ink)' }}>~$0.006 per message</span>
               </div>
-              <div className="flex justify-between text-xs">
-                <span className="text-white/50">DeepSeek</span>
-                <span className="text-white/70">~$0.001 per message</span>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12 }}>
+                <span style={{ color: 'var(--ink-3)' }}>DeepSeek</span>
+                <span style={{ color: 'var(--ink)' }}>~$0.001 per message</span>
               </div>
             </div>
 
             <button
               onClick={() => setStep('wallet')}
-              className="w-full p-4 border border-white/10 rounded-lg hover:border-green-500/30 transition-colors cursor-pointer text-left"
+              style={{
+                width: '100%',
+                padding: 16, textAlign: 'left', cursor: 'pointer',
+                background: 'transparent',
+                border: '1px solid var(--line-strong)',
+                color: 'var(--ink)', fontFamily: 'inherit',
+              }}
+              onMouseEnter={(e) => { e.currentTarget.style.borderColor = 'var(--ink)'; }}
+              onMouseLeave={(e) => { e.currentTarget.style.borderColor = 'var(--line-strong)'; }}
             >
-              <div className="text-sm font-medium text-white/90 mb-1">Top up with USDC</div>
-              <div className="text-xs text-white/40">
-                Send USDC from your wallet on Base to add credits (1 USDC = $1.00 credit)
+              <div style={{ fontFamily: 'var(--font-fraunces), serif', fontSize: 16, fontWeight: 400, marginBottom: 4 }}>
+                Top up with USDC
+              </div>
+              <div style={{ fontSize: 12, color: 'var(--ink-3)', lineHeight: 1.5 }}>
+                Send USDC from your wallet on Base to add credits (1 USDC = $1.00 credit).
               </div>
             </button>
 
-            <div className="text-center">
-              <div className="text-xs text-white/30 mt-2">Card payments coming soon</div>
+            <div style={{ textAlign: 'center' }}>
+              <div style={{ ...lbl, color: 'var(--ink-3)', marginTop: 6 }}>Card payments coming soon</div>
             </div>
           </div>
         )}
 
-        {/* Step: Wallet transfer */}
         {step === 'wallet' && (
-          <div className="space-y-4">
-            <div className="text-sm text-white/60">
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+            <p style={body}>
               Send USDC on Base to the platform wallet. 1 USDC = $1.00 in Concierge Credits.
-            </div>
+            </p>
 
             <div>
-              <div className="text-xs text-white/40 mb-1">Platform wallet (send USDC here)</div>
-              <div className="bg-white/5 border border-white/10 rounded-lg p-3 font-mono text-xs text-white/70 break-all select-all">
+              <div style={lbl}>Platform wallet (send USDC here)</div>
+              <div style={{
+                marginTop: 6,
+                background: 'var(--bg-2)', border: '1px solid var(--line)',
+                padding: 12,
+                fontFamily: 'var(--font-jetbrains), monospace',
+                fontSize: 11, color: 'var(--ink-2)',
+                wordBreak: 'break-all', userSelect: 'all',
+              }}>
                 {PLATFORM_WALLET}
               </div>
             </div>
 
-            <div className="bg-white/5 border border-white/10 rounded-lg p-3 text-xs text-white/40 space-y-1">
-              <div>Network: <span className="text-white/60">Base</span></div>
-              <div>Token: <span className="text-white/60">USDC ({USDC_ADDRESS.slice(0, 8)}...)</span></div>
-              <div>Rate: <span className="text-white/60">1 USDC = $1.00 credit</span></div>
+            <div style={{ background: 'var(--bg-2)', border: '1px solid var(--line)', padding: 12, display: 'flex', flexDirection: 'column', gap: 4 }}>
+              <div style={{ fontSize: 12 }}><span style={{ color: 'var(--ink-3)' }}>Network: </span><span style={{ color: 'var(--ink)' }}>Base</span></div>
+              <div style={{ fontSize: 12 }}><span style={{ color: 'var(--ink-3)' }}>Token: </span><span style={{ color: 'var(--ink)' }}>USDC ({USDC_ADDRESS.slice(0, 8)}…)</span></div>
+              <div style={{ fontSize: 12 }}><span style={{ color: 'var(--ink-3)' }}>Rate: </span><span style={{ color: 'var(--ink)' }}>1 USDC = $1.00 credit</span></div>
             </div>
 
-            <div className="border-t border-white/10 pt-4">
-              <div className="text-xs text-white/50 mb-2">
+            <div style={{ borderTop: '1px solid var(--line)', paddingTop: 16 }}>
+              <p style={{ ...body, fontSize: 12, marginBottom: 10 }}>
                 After sending, paste the transaction hash below to verify and credit your account:
-              </div>
+              </p>
               <Input
                 label="Transaction hash"
                 placeholder="0x..."
@@ -144,7 +201,7 @@ export function TopUpModal({ agent, onClose, onCredited }: Props) {
               />
             </div>
 
-            <div className="flex gap-2">
+            <div style={{ display: 'flex', gap: 8 }}>
               <Button variant="ghost" size="sm" onClick={() => { setStep('choose'); setError(null); }}>
                 Back
               </Button>
@@ -155,20 +212,28 @@ export function TopUpModal({ agent, onClose, onCredited }: Props) {
           </div>
         )}
 
-        {/* Step: Verifying */}
         {step === 'verifying' && (
-          <div className="text-center py-8">
-            <div className="text-white/50 animate-pulse mb-2">Verifying transaction on Base...</div>
-            <div className="text-xs text-white/30">Checking USDC transfer to platform wallet</div>
+          <div style={{ textAlign: 'center', padding: '32px 0' }}>
+            <div style={{ ...body, marginBottom: 6 }}>Verifying transaction on Base…</div>
+            <div style={lbl}>Checking USDC transfer to platform wallet</div>
           </div>
         )}
 
-        {/* Step: Success */}
         {step === 'success' && (
-          <div className="text-center py-8">
-            <div className="text-3xl mb-3">&#10003;</div>
-            <div className="text-green-400 font-medium mb-1">Credits added</div>
-            <div className="text-white/60 text-sm">${credited?.toFixed(2)} credited to your Concierge</div>
+          <div style={{ textAlign: 'center', padding: '32px 0' }}>
+            <div style={{
+              fontFamily: 'var(--font-fraunces), serif',
+              fontSize: 40, color: 'var(--accent)', fontWeight: 300,
+              marginBottom: 8, lineHeight: 1,
+            }}>
+              ✓
+            </div>
+            <div style={{ fontFamily: 'var(--font-fraunces), serif', fontSize: 18, color: 'var(--ink)', marginBottom: 4 }}>
+              Credits added.
+            </div>
+            <div style={body}>
+              ${credited?.toFixed(2)} credited to your Concierge.
+            </div>
           </div>
         )}
       </div>

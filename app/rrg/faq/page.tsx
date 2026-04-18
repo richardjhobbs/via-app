@@ -1,8 +1,8 @@
 import type { Metadata } from 'next';
 
 export const metadata: Metadata = {
-  title: 'FAQ - Real Real Genuine',
-  description: 'Frequently asked questions about Real Real Genuine, co-creation, agents, and how it all works.',
+  title: 'FAQ, Real Real Genuine',
+  description: 'Frequently asked questions about Real Real Genuine, co-creation, concierges, and how it all works.',
 };
 
 const faqs = [
@@ -16,7 +16,7 @@ const faqs = [
   },
   {
     q: 'How does co-creation work?',
-    a: 'Brands publish briefs describing what they are looking for. Creators submit original work in response. If a submission is approved, it becomes a product on the brand\'s storefront. Every sale generates income for both the creator and the brand, with no upfront cost to either side.',
+    a: 'Brands publish briefs describing what they are looking for. Creators submit original work in response. If a submission is approved, it becomes a product on the brand storefront. Every sale generates income for both the creator and the brand, with no upfront cost to either side.',
   },
   {
     q: 'Can brands sell their own products?',
@@ -36,7 +36,7 @@ const faqs = [
   },
   {
     q: 'What is a Personal Shopper?',
-    a: 'A Personal Shopper is a free, rule-based service that works on the preferences you set. It finds, filters, and surfaces products that match your taste. You set the criteria and it handles the browsing so you don\'t have to.',
+    a: 'A Personal Shopper is a free, rule-based service that works on the preferences you set. It finds, filters, and surfaces products that match your taste. You set the criteria and it handles the browsing so you do not have to.',
   },
   {
     q: 'What is a Concierge?',
@@ -48,7 +48,7 @@ const faqs = [
   },
   {
     q: 'How do I become a brand partner?',
-    a: 'Click Login in the top nav and select Brand Partner. You set up your storefront with a banner, logo, description, and social links. Once approved, you can publish briefs and list products. There is no subscription or listing fee.',
+    a: 'Start at the Apply-as-a-brand page or click Login in the top nav and select Brand Partner. You set up your storefront with a banner, logo, description, and social links. Once approved, you can publish briefs and list products. There is no subscription or listing fee.',
   },
   {
     q: 'Is there a fee to use the platform?',
@@ -76,24 +76,50 @@ const faqs = [
   },
   {
     q: 'How do I get in touch?',
-    a: 'Find us on Discord, Telegram, or BlueSky. Links are in the footer of every page. For brand partnership enquiries, use the Brand Partner login.',
+    a: 'Find us on Discord, Telegram, or BlueSky. Links are in the footer of every page. For brand partnership enquiries, use the Apply-as-a-brand page.',
   },
 ];
 
 export default function FAQPage() {
   return (
-    <div className="px-6 py-12 max-w-4xl mx-auto">
-        <h1 className="text-3xl font-light mb-2">Frequently Asked Questions</h1>
-        <p className="text-white/50 text-sm mb-12">Everything you need to know about Real Real Genuine</p>
+    <div className="page-pad" style={{ maxWidth: 960 }}>
+      <div className="section-note" style={{ marginBottom: 8 }}>§ FAQ</div>
+      <h1 style={{
+        fontFamily: 'var(--font-fraunces), serif',
+        fontVariationSettings: '"opsz" 144, "wght" 300',
+        fontSize: 'clamp(40px, 5vw, 64px)',
+        letterSpacing: '-0.025em',
+        lineHeight: 1.05,
+        margin: '0 0 16px',
+      }}>
+        Frequently asked <em>questions.</em>
+      </h1>
+      <p style={{
+        fontSize: 16, color: 'var(--ink-2)', lineHeight: 1.6,
+        maxWidth: '62ch', fontWeight: 300, margin: '0 0 48px',
+      }}>
+        Everything you need to know about Real Real Genuine.
+      </p>
 
-        <div className="space-y-8">
-          {faqs.map((faq, i) => (
-            <div key={i} className="border-b border-white/10 pb-8 last:border-0">
-              <h2 className="text-lg font-semibold mb-3">{faq.q}</h2>
-              <p className="text-white/70 leading-relaxed">{faq.a}</p>
-            </div>
-          ))}
-        </div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
+        {faqs.map((faq, i) => (
+          <div key={i} style={{ borderTop: '1px solid var(--line)', padding: '28px 0' }}>
+            <h2 style={{
+              fontFamily: 'var(--font-fraunces), serif',
+              fontSize: 22, fontWeight: 400, letterSpacing: '-0.01em',
+              margin: '0 0 10px',
+            }}>
+              {faq.q}
+            </h2>
+            <p style={{
+              fontSize: 15, color: 'var(--ink-2)', lineHeight: 1.65, margin: 0,
+              fontWeight: 300, maxWidth: '72ch',
+            }}>
+              {faq.a}
+            </p>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }

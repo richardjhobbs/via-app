@@ -15,6 +15,24 @@ interface Props {
   agentId: string | null;
 }
 
+const headingStyle: React.CSSProperties = {
+  fontFamily: 'var(--font-fraunces), serif',
+  fontSize: 28,
+  fontWeight: 300,
+  letterSpacing: '-0.015em',
+  margin: '0 0 10px',
+  lineHeight: 1.15,
+};
+
+const subheadStyle: React.CSSProperties = {
+  color: 'var(--ink-2)',
+  fontSize: 15,
+  lineHeight: 1.55,
+  margin: '0 0 28px',
+  fontWeight: 300,
+  maxWidth: '52ch',
+};
+
 export function StepReview({ state, onBack, onComplete, agentId }: Props) {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
@@ -27,17 +45,13 @@ export function StepReview({ state, onBack, onComplete, agentId }: Props) {
     setError(null);
 
     try {
-      const endpoint = '/api/agent/create';
-
       const body: Record<string, unknown> = {
         email: state.email,
         name: state.name,
         tier: state.tier,
         style_tags: state.style_tags,
         free_instructions: state.free_instructions || null,
-        budget_ceiling_usdc: state.budget_ceiling_usdc
-          ? parseFloat(state.budget_ceiling_usdc)
-          : null,
+        budget_ceiling_usdc: state.budget_ceiling_usdc ? parseFloat(state.budget_ceiling_usdc) : null,
         bid_aggression: state.bid_aggression,
         llm_provider: state.llm_provider,
         wallet_address: state.wallet_address,
@@ -48,7 +62,7 @@ export function StepReview({ state, onBack, onComplete, agentId }: Props) {
         interest_categories: state.interest_categories,
       };
 
-      const res = await fetch(endpoint, {
+      const res = await fetch('/api/agent/create', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
@@ -70,18 +84,34 @@ export function StepReview({ state, onBack, onComplete, agentId }: Props) {
 
   if (agentId) {
     return (
-      <div className="text-center py-12">
-        <div className="text-4xl mb-4">&#10003;</div>
-        <h2 className="text-xl font-semibold mb-2">{tierDisplay.label} created</h2>
-        <p className="text-neutral-400 mb-4">
-          Your {tierDisplay.label} <strong>{state.name}</strong> is ready.
+      <div style={{ textAlign: 'center', padding: '56px 0' }}>
+        <div style={{
+          fontFamily: 'var(--font-fraunces), serif',
+          fontSize: 56,
+          color: 'var(--accent)',
+          fontWeight: 300,
+          lineHeight: 1,
+          marginBottom: 20,
+        }}>✓</div>
+        <h2 style={{ ...headingStyle, textAlign: 'center', marginBottom: 12 }}>
+          {tierDisplay.label} created.
+        </h2>
+        <p style={{ ...subheadStyle, textAlign: 'center', margin: '0 auto 10px', maxWidth: '46ch' }}>
+          Your {tierDisplay.label} <strong style={{ color: 'var(--ink)', fontWeight: 500 }}>{state.name}</strong> is ready.
         </p>
-        <p className="text-sm text-neutral-500 mb-6">
+        <p style={{
+          fontSize: 13,
+          color: 'var(--ink-3)',
+          margin: '0 auto 28px',
+          maxWidth: '48ch',
+          lineHeight: 1.55,
+          fontWeight: 300,
+        }}>
           A VIA Agent ID will be assigned when your on-chain identity is linked.
           This is your portable identity across the VIA network.
         </p>
         <Button onClick={() => router.push('/agents/dashboard')}>
-          Go to dashboard
+          Go to dashboard <span style={{ marginLeft: 6 }}>→</span>
         </Button>
       </div>
     );
@@ -89,13 +119,13 @@ export function StepReview({ state, onBack, onComplete, agentId }: Props) {
 
   return (
     <div>
-      <h2 className="text-xl font-semibold mb-2">Review and create</h2>
-      <p className="text-neutral-400 mb-6">
+      <h2 style={headingStyle}>Review and create.</h2>
+      <p style={subheadStyle}>
         Confirm your {tierDisplay.label} configuration.
       </p>
 
-      <Card className="mb-6">
-        <div className="space-y-3 text-sm">
+      <Card style={{ marginBottom: 24 }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 14, fontSize: 14 }}>
           <Row label="Service">
             <Badge variant={state.tier === 'pro' ? 'pro' : 'default'}>
               {tierDisplay.label}
@@ -139,13 +169,26 @@ export function StepReview({ state, onBack, onComplete, agentId }: Props) {
       </Card>
 
       {error && (
-        <div className="mb-4 p-3 rounded-lg bg-red-900/30 border border-red-800 text-sm text-red-400">
+        <div style={{
+          marginBottom: 16,
+          padding: 14,
+          background: 'color-mix(in srgb, #b5453a 8%, transparent)',
+          border: '1px solid #b5453a',
+          fontSize: 13,
+          color: '#8a2e25',
+          lineHeight: 1.55,
+        }}>
           {error}
           {(error.includes('already registered') || error.includes('already')) && (
-            <div className="mt-2">
+            <div style={{ marginTop: 8 }}>
               <a
                 href="/agents/dashboard"
-                className="text-green-400 hover:text-green-300 underline transition-colors"
+                style={{
+                  color: 'var(--accent)',
+                  textDecoration: 'none',
+                  borderBottom: '1px solid color-mix(in srgb, var(--accent) 35%, transparent)',
+                  paddingBottom: 1,
+                }}
               >
                 Go to your dashboard
               </a>
@@ -154,7 +197,7 @@ export function StepReview({ state, onBack, onComplete, agentId }: Props) {
         </div>
       )}
 
-      <div className="flex gap-3">
+      <div style={{ display: 'flex', gap: 10 }}>
         <Button variant="ghost" onClick={onBack} disabled={loading}>
           Back
         </Button>
@@ -174,9 +217,27 @@ function Row({
   children: React.ReactNode;
 }) {
   return (
-    <div className="flex justify-between">
-      <span className="text-neutral-500">{label}</span>
-      <span className="text-right max-w-[60%]">{children}</span>
+    <div style={{
+      display: 'grid',
+      gridTemplateColumns: 'minmax(120px, auto) 1fr',
+      gap: 20,
+      alignItems: 'flex-start',
+      paddingBottom: 10,
+      borderBottom: '1px dotted var(--line)',
+    }}>
+      <span style={{
+        fontFamily: 'var(--font-jetbrains), monospace',
+        fontSize: 10,
+        letterSpacing: '0.14em',
+        textTransform: 'uppercase',
+        color: 'var(--ink-3)',
+        paddingTop: 2,
+      }}>
+        {label}
+      </span>
+      <span style={{ color: 'var(--ink)', textAlign: 'left', wordBreak: 'break-word' }}>
+        {children}
+      </span>
     </div>
   );
 }

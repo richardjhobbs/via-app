@@ -9,20 +9,44 @@ interface TextareaProps extends TextareaHTMLAttributes<HTMLTextAreaElement> {
 }
 
 export const Textarea = forwardRef<HTMLTextAreaElement, TextareaProps>(
-  ({ label, error, hint, className = '', ...props }, ref) => (
-    <div className="w-full">
+  ({ label, error, hint, className = '', style, ...props }, ref) => (
+    <div style={{ width: '100%' }}>
       {label && (
-        <label className="block text-sm font-medium text-neutral-300 mb-1.5">
+        <label style={{
+          display: 'block',
+          fontFamily: 'var(--font-jetbrains), monospace',
+          fontSize: 10,
+          letterSpacing: '0.16em',
+          textTransform: 'uppercase',
+          color: 'var(--ink-3)',
+          marginBottom: 8,
+        }}>
           {label}
         </label>
       )}
       <textarea
         ref={ref}
-        className={`w-full bg-neutral-900 border border-neutral-700 rounded-lg px-3 py-2 text-sm text-white placeholder:text-neutral-500 focus:outline-none focus:ring-1 focus:ring-neutral-500 focus:border-neutral-500 disabled:opacity-50 min-h-[80px] ${error ? 'border-red-500' : ''} ${className}`}
+        className={className}
+        style={{
+          width: '100%',
+          background: 'var(--paper)',
+          border: `1px solid ${error ? '#b5453a' : 'var(--line-strong)'}`,
+          padding: '12px 14px',
+          fontSize: 14,
+          fontFamily: 'inherit',
+          color: 'var(--ink)',
+          minHeight: 100,
+          outline: 'none',
+          transition: 'border-color 0.15s',
+          resize: 'vertical',
+          ...style,
+        }}
+        onFocus={(e) => { e.currentTarget.style.borderColor = 'var(--ink)'; props.onFocus?.(e); }}
+        onBlur={(e) => { e.currentTarget.style.borderColor = error ? '#b5453a' : 'var(--line-strong)'; props.onBlur?.(e); }}
         {...props}
       />
-      {hint && !error && <p className="mt-1 text-xs text-neutral-500">{hint}</p>}
-      {error && <p className="mt-1 text-xs text-red-400">{error}</p>}
+      {hint && !error && <p style={{ marginTop: 6, fontSize: 11, color: 'var(--ink-3)' }}>{hint}</p>}
+      {error && <p style={{ marginTop: 6, fontSize: 11, color: '#b5453a', fontFamily: 'var(--font-jetbrains), monospace' }}>{error}</p>}
     </div>
   )
 );

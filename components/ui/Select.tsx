@@ -13,18 +13,39 @@ interface SelectProps {
   error?: string;
 }
 
+const labelStyle: React.CSSProperties = {
+  display: 'block',
+  fontFamily: 'var(--font-jetbrains), monospace',
+  fontSize: 10,
+  letterSpacing: '0.16em',
+  textTransform: 'uppercase',
+  color: 'var(--ink-3)',
+  marginBottom: 8,
+};
+
 export function Select({ label, value, onChange, options, error }: SelectProps) {
   return (
-    <div className="w-full">
-      {label && (
-        <label className="block text-sm font-medium text-neutral-300 mb-1.5">
-          {label}
-        </label>
-      )}
+    <div style={{ width: '100%' }}>
+      {label && <label style={labelStyle}>{label}</label>}
       <select
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        className={`w-full bg-neutral-900 border border-neutral-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:ring-1 focus:ring-neutral-500 ${error ? 'border-red-500' : ''}`}
+        style={{
+          width: '100%',
+          background: 'var(--paper)',
+          border: `1px solid ${error ? '#b5453a' : 'var(--line-strong)'}`,
+          padding: '12px 14px',
+          fontSize: 14,
+          fontFamily: 'inherit',
+          color: 'var(--ink)',
+          outline: 'none',
+          appearance: 'none',
+          backgroundImage: 'linear-gradient(45deg, transparent 48%, var(--ink-3) 48%, var(--ink-3) 52%, transparent 52%), linear-gradient(-45deg, transparent 48%, var(--ink-3) 48%, var(--ink-3) 52%, transparent 52%)',
+          backgroundPosition: 'right 14px center, right 20px center',
+          backgroundSize: '6px 6px',
+          backgroundRepeat: 'no-repeat',
+          paddingRight: 40,
+        }}
       >
         {options.map((opt) => (
           <option key={opt.value} value={opt.value}>
@@ -32,7 +53,7 @@ export function Select({ label, value, onChange, options, error }: SelectProps) 
           </option>
         ))}
       </select>
-      {error && <p className="mt-1 text-xs text-red-400">{error}</p>}
+      {error && <p style={{ marginTop: 6, fontSize: 11, color: '#b5453a', fontFamily: 'var(--font-jetbrains), monospace' }}>{error}</p>}
     </div>
   );
 }
@@ -56,23 +77,16 @@ export function TagSelect({ label, selected, onChange, options }: TagSelectProps
   };
 
   return (
-    <div className="w-full">
-      {label && (
-        <label className="block text-sm font-medium text-neutral-300 mb-2">
-          {label}
-        </label>
-      )}
-      <div className="flex flex-wrap gap-2">
+    <div style={{ width: '100%' }}>
+      {label && <label style={labelStyle}>{label}</label>}
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
         {options.map((tag) => (
           <button
             key={tag}
             type="button"
             onClick={() => toggle(tag)}
-            className={`px-3 py-1 rounded-full text-xs font-medium border transition-colors cursor-pointer ${
-              selected.includes(tag)
-                ? 'bg-white text-black border-white'
-                : 'bg-transparent text-neutral-400 border-neutral-700 hover:border-neutral-500'
-            }`}
+            className={`chip ${selected.includes(tag) ? 'is-active' : ''}`}
+            style={{ padding: '6px 12px' }}
           >
             {tag}
           </button>

@@ -11,35 +11,63 @@ interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   loading?: boolean;
 }
 
-const variants: Record<Variant, string> = {
-  primary:
-    'bg-green-500 text-black hover:bg-green-400 disabled:bg-neutral-700 disabled:text-neutral-400',
-  secondary:
-    'bg-neutral-800 text-white hover:bg-neutral-700 border border-neutral-700',
-  ghost:
-    'bg-transparent text-neutral-300 hover:text-white hover:bg-neutral-800',
-  danger:
-    'bg-red-600 text-white hover:bg-red-500',
+const variantStyle: Record<Variant, React.CSSProperties> = {
+  primary: {
+    background: 'var(--ink)',
+    color: 'var(--bg)',
+    border: '1px solid var(--ink)',
+  },
+  secondary: {
+    background: 'transparent',
+    color: 'var(--ink)',
+    border: '1px solid var(--line-strong)',
+  },
+  ghost: {
+    background: 'transparent',
+    color: 'var(--ink-2)',
+    border: '1px solid transparent',
+  },
+  danger: {
+    background: '#b5453a',
+    color: '#fff',
+    border: '1px solid #b5453a',
+  },
 };
 
-const sizes: Record<Size, string> = {
-  sm: 'px-3 py-1.5 text-sm',
-  md: 'px-4 py-2 text-sm',
-  lg: 'px-6 py-3 text-base',
+const sizeStyle: Record<Size, React.CSSProperties> = {
+  sm: { padding: '8px 14px', fontSize: 11 },
+  md: { padding: '12px 20px', fontSize: 12 },
+  lg: { padding: '14px 24px', fontSize: 13 },
 };
 
 export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
-  ({ variant = 'primary', size = 'md', loading, children, disabled, className = '', ...props }, ref) => (
+  ({ variant = 'primary', size = 'md', loading, children, disabled, className = '', style, ...props }, ref) => (
     <button
       ref={ref}
       disabled={disabled || loading}
-      className={`inline-flex items-center justify-center font-medium rounded-lg transition-colors cursor-pointer disabled:cursor-not-allowed ${variants[variant]} ${sizes[size]} ${className}`}
+      className={className}
+      style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: 10,
+        fontFamily: 'inherit',
+        fontWeight: 500,
+        letterSpacing: '0.04em',
+        borderRadius: 0,
+        cursor: disabled || loading ? 'not-allowed' : 'pointer',
+        opacity: disabled || loading ? 0.55 : 1,
+        transition: 'all 0.2s',
+        ...variantStyle[variant],
+        ...sizeStyle[size],
+        ...style,
+      }}
       {...props}
     >
       {loading && (
-        <svg className="animate-spin -ml-1 mr-2 h-4 w-4" viewBox="0 0 24 24" fill="none">
-          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" style={{ animation: 'spin 1s linear infinite' }}>
+          <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="2" strokeDasharray="50 50" opacity="0.3" />
+          <path d="M12 2a10 10 0 0 1 10 10" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
         </svg>
       )}
       {children}

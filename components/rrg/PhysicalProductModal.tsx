@@ -25,7 +25,6 @@ interface PhysicalProductModalProps {
     shippingIncludedRegions: string[] | null;
     refundCommitment: boolean;
     collectionInPerson: string | null;
-    /** Optional per-style size chart (garment products) */
     sizeChart?: SizeChartData | null;
   };
 }
@@ -66,48 +65,101 @@ export default function PhysicalProductModal({ open, onClose, details }: Physica
     scrollRef.current?.scrollBy({ top: dir === 'up' ? -200 : 200, behavior: 'smooth' });
   };
 
+  const labelStyle: React.CSSProperties = {
+    fontFamily: 'var(--font-jetbrains), monospace',
+    fontSize: 10,
+    letterSpacing: '0.16em',
+    textTransform: 'uppercase',
+    color: 'var(--ink-3)',
+    margin: '0 0 8px',
+  };
+
+  const bodyStyle: React.CSSProperties = {
+    fontSize: 14,
+    color: 'var(--ink-2)',
+    lineHeight: 1.6,
+    margin: 0,
+  };
+
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4"
+      style={{
+        position: 'fixed', inset: 0, zIndex: 50,
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        background: 'color-mix(in srgb, var(--ink) 55%, transparent)',
+        backdropFilter: 'blur(6px)',
+        padding: 16,
+      }}
       onClick={onClose}
     >
       <div
-        className="bg-[#111] border border-white/20 rounded-lg w-full max-w-2xl mx-4 max-h-[85vh] relative group"
+        style={{
+          background: 'var(--paper)',
+          border: '1px solid var(--line-strong)',
+          width: '100%',
+          maxWidth: 640,
+          maxHeight: '85vh',
+          position: 'relative',
+          color: 'var(--ink)',
+        }}
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
-        <div className="sticky top-0 bg-[#111] border-b border-white/10 px-6 py-4 flex justify-between items-center z-10 rounded-t-lg">
-          <h2 className="text-sm font-mono uppercase tracking-[0.2em] text-lime-400">
-            Physical Product Details
+        <div style={{
+          position: 'sticky', top: 0, zIndex: 10,
+          background: 'var(--paper)',
+          borderBottom: '1px solid var(--line)',
+          padding: '16px 24px',
+          display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+        }}>
+          <h2 style={{
+            fontFamily: 'var(--font-jetbrains), monospace',
+            fontSize: 11, letterSpacing: '0.16em', textTransform: 'uppercase',
+            color: 'var(--accent)', margin: 0,
+          }}>
+            Physical product details
           </h2>
           <button
             onClick={onClose}
-            className="text-white/50 hover:text-white transition-colors cursor-pointer"
+            aria-label="Close"
+            style={{ background: 'transparent', border: 'none', color: 'var(--ink-3)', cursor: 'pointer', padding: 4 }}
           >
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
               <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
             </svg>
           </button>
         </div>
 
-        {/* Up arrow */}
         {canScrollUp && (
           <button
             onClick={() => scroll('up')}
-            className="absolute top-14 left-1/2 -translate-x-1/2 z-20 w-10 h-10 flex items-center justify-center bg-black/80 border border-white/20 rounded-full opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer hover:border-green-500/50"
             aria-label="Scroll up"
+            style={{
+              position: 'absolute', top: 60, left: '50%', transform: 'translateX(-50%)',
+              zIndex: 20, width: 36, height: 36,
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              background: 'var(--paper)', border: '1px solid var(--line-strong)', borderRadius: 99,
+              cursor: 'pointer', color: 'var(--ink-2)',
+            }}
           >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="18 15 12 9 6 15" /></svg>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><polyline points="18 15 12 9 6 15" /></svg>
           </button>
         )}
 
-        {/* Scrollable content */}
-        <div ref={scrollRef} className="px-6 py-5 space-y-5 overflow-y-auto max-h-[calc(85vh-60px)]"
-             style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}>
+        <div
+          ref={scrollRef}
+          style={{
+            padding: '20px 24px',
+            overflowY: 'auto',
+            maxHeight: 'calc(85vh - 60px)',
+            display: 'flex', flexDirection: 'column', gap: 20,
+            scrollbarWidth: 'thin',
+          }}
+        >
           {details.physicalDescription && (
             <div>
-              <p className="text-sm font-mono text-white/50 mb-1.5">Description</p>
-              <p className="text-base text-white/80 leading-relaxed">{details.physicalDescription}</p>
+              <p style={labelStyle}>Description</p>
+              <p style={bodyStyle}>{details.physicalDescription}</p>
             </div>
           )}
 
@@ -124,48 +176,45 @@ export default function PhysicalProductModal({ open, onClose, details }: Physica
 
           {details.physicalImageUrls.length > 0 && (
             <div>
-              <p className="text-sm font-mono text-white/50 mb-2">Product Photos</p>
-              <div className="grid grid-cols-2 gap-2">
+              <p style={labelStyle}>Product photos</p>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
                 {details.physicalImageUrls.map((url, i) => (
-                  <div key={i} className="aspect-square bg-white/5 border border-white/10 rounded-lg overflow-hidden">
-                    <img src={url} alt={`Product photo ${i + 1}`} className="w-full h-full object-cover" />
+                  <div key={i} style={{ aspectRatio: '1', background: 'var(--bg-2)', border: '1px solid var(--line)', overflow: 'hidden' }}>
+                    <img src={url} alt={`Product photo ${i + 1}`} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
                   </div>
                 ))}
               </div>
             </div>
           )}
 
-          <div className="space-y-2">
-            <p className="text-sm font-mono text-white/50 mb-1.5">Price Includes</p>
-            <div className="flex items-center gap-2">
-              <span className={`text-sm ${details.priceIncludesTax ? 'text-lime-400' : 'text-white/40'}`}>
-                {details.priceIncludesTax ? '\u2713' : '\u2715'}
-              </span>
-              <span className="text-sm text-white/70">All applicable taxes</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <span className={`text-sm ${details.priceIncludesPacking ? 'text-lime-400' : 'text-white/40'}`}>
-                {details.priceIncludesPacking ? '\u2713' : '\u2715'}
-              </span>
-              <span className="text-sm text-white/70">Packing for shipment</span>
+          <div>
+            <p style={labelStyle}>Price includes</p>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              <CheckLine included={details.priceIncludesTax} label="All applicable taxes" />
+              <CheckLine included={details.priceIncludesPacking} label="Packing for shipment" />
             </div>
           </div>
 
           <div>
-            <p className="text-sm font-mono text-white/50 mb-1.5">Shipping</p>
+            <p style={labelStyle}>Shipping</p>
             {details.shippingType === 'included' ? (
               <div>
-                <p className="text-sm text-white/70 mb-1">Included in price for:</p>
-                <div className="flex flex-wrap gap-1.5">
+                <p style={{ ...bodyStyle, marginBottom: 8 }}>Included in price for:</p>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
                   {(details.shippingIncludedRegions ?? []).map((region) => (
-                    <span key={region} className="px-2 py-0.5 text-xs font-mono border border-lime-400/20 text-lime-400/70 rounded">
+                    <span key={region} style={{
+                      padding: '3px 8px',
+                      fontFamily: 'var(--font-jetbrains), monospace',
+                      fontSize: 10, letterSpacing: '0.12em', textTransform: 'uppercase',
+                      border: '1px solid var(--accent)', color: 'var(--accent)',
+                    }}>
                       {region}
                     </span>
                   ))}
                 </div>
               </div>
             ) : (
-              <p className="text-sm text-white/70">
+              <p style={bodyStyle}>
                 Shipping cost is calculated based on your delivery address and added to your total at checkout.
               </p>
             )}
@@ -173,30 +222,35 @@ export default function PhysicalProductModal({ open, onClose, details }: Physica
 
           {details.collectionInPerson && (
             <div>
-              <p className="text-sm font-mono text-white/50 mb-1.5">Collection in Person</p>
-              <p className="text-sm text-white/70">{details.collectionInPerson}</p>
+              <p style={labelStyle}>Collection in person</p>
+              <p style={bodyStyle}>{details.collectionInPerson}</p>
             </div>
           )}
 
           {details.ecommerceUrl && (
             <div>
-              <p className="text-sm font-mono text-white/50 mb-1.5">Also Available At</p>
+              <p style={labelStyle}>Also available at</p>
               <a
                 href={details.ecommerceUrl}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="text-sm text-white/60 hover:text-white/80 transition-colors font-mono underline block truncate max-w-full"
+                style={{
+                  fontFamily: 'var(--font-jetbrains), monospace',
+                  fontSize: 12, color: 'var(--ink-2)', textDecoration: 'none',
+                  borderBottom: '1px solid var(--line-strong)',
+                  paddingBottom: 1, wordBreak: 'break-all',
+                }}
               >
-                {details.ecommerceUrl.replace(/^https?:\/\//, '').replace(/\/$/, '')} {'\u2197'}
+                {details.ecommerceUrl.replace(/^https?:\/\//, '').replace(/\/$/, '')} ↗
               </a>
             </div>
           )}
 
           {details.refundCommitment && (
-            <div className="pt-3 border-t border-white/10">
-              <div className="flex items-start gap-2">
-                <span className="text-lime-400 text-sm mt-0.5">{'\u2713'}</span>
-                <p className="text-sm text-white/60 leading-relaxed">
+            <div style={{ paddingTop: 12, borderTop: '1px solid var(--line)' }}>
+              <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
+                <span style={{ color: 'var(--accent)', fontSize: 14, marginTop: 2 }}>✓</span>
+                <p style={bodyStyle}>
                   The brand commits to refunding the buyer if the physical product cannot be
                   shipped or delivered as described.
                 </p>
@@ -205,17 +259,33 @@ export default function PhysicalProductModal({ open, onClose, details }: Physica
           )}
         </div>
 
-        {/* Down arrow */}
         {canScrollDown && (
           <button
             onClick={() => scroll('down')}
-            className="absolute bottom-2 left-1/2 -translate-x-1/2 z-20 w-10 h-10 flex items-center justify-center bg-black/80 border border-white/20 rounded-full opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer hover:border-green-500/50"
             aria-label="Scroll down"
+            style={{
+              position: 'absolute', bottom: 8, left: '50%', transform: 'translateX(-50%)',
+              zIndex: 20, width: 36, height: 36,
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              background: 'var(--paper)', border: '1px solid var(--line-strong)', borderRadius: 99,
+              cursor: 'pointer', color: 'var(--ink-2)',
+            }}
           >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="6 9 12 15 18 9" /></svg>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><polyline points="6 9 12 15 18 9" /></svg>
           </button>
         )}
       </div>
+    </div>
+  );
+}
+
+function CheckLine({ included, label }: { included: boolean; label: string }) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+      <span style={{ color: included ? 'var(--accent)' : 'var(--ink-3)', fontSize: 14 }}>
+        {included ? '✓' : '✕'}
+      </span>
+      <span style={{ fontSize: 14, color: 'var(--ink-2)' }}>{label}</span>
     </div>
   );
 }

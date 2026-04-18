@@ -33,11 +33,12 @@ export default function PhysicalProductButton({ details }: Props) {
   return (
     <>
       <button
+        type="button"
         onClick={() => setOpen(true)}
-        className="mb-6 w-full py-3 border border-lime-400/40 text-lime-400 text-base font-mono
-                   uppercase tracking-widest hover:bg-lime-400/10 transition-all"
+        className="btn ghost"
+        style={{ width: '100%', justifyContent: 'center', padding: '14px 22px', fontSize: 11, letterSpacing: '0.16em', textTransform: 'uppercase', borderColor: 'var(--accent)', color: 'var(--accent)' }}
       >
-        Physical Product Details →
+        Physical product details <span className="arrow">→</span>
       </button>
       <PhysicalProductModal
         open={open}

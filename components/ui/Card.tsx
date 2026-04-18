@@ -4,10 +4,16 @@ interface CardProps extends HTMLAttributes<HTMLDivElement> {
   children: React.ReactNode;
 }
 
-export function Card({ children, className = '', ...props }: CardProps) {
+export function Card({ children, className = '', style, ...props }: CardProps) {
   return (
     <div
-      className={`border border-neutral-800 rounded-lg p-6 bg-neutral-950 ${className}`}
+      className={className}
+      style={{
+        border: '1px solid var(--line)',
+        background: 'var(--paper)',
+        padding: 24,
+        ...style,
+      }}
       {...props}
     >
       {children}

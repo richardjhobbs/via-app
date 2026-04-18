@@ -155,47 +155,71 @@ export function ChatPanel({ agent }: Props) {
 
   return (
     <Card className="md:col-span-2">
-      <div className="flex items-center justify-between">
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16 }}>
         <button
           onClick={() => setOpen(!open)}
-          className="flex items-center gap-2 cursor-pointer"
+          style={{
+            display: 'flex', alignItems: 'center', gap: 10,
+            background: 'transparent', border: 'none', cursor: 'pointer', padding: 0,
+          }}
         >
-          <h2 className="text-base font-semibold">Chat with {agent.name}</h2>
-          <span className="text-xs text-white/30">{open ? '▲' : '▼'}</span>
+          <h2 style={{ fontFamily: 'var(--font-fraunces), serif', fontSize: 22, fontWeight: 400, letterSpacing: '-0.01em', margin: 0 }}>
+            Chat with {agent.name}
+          </h2>
+          <span style={{ fontSize: 11, color: 'var(--accent)' }}>{open ? '▲' : '▼'}</span>
         </button>
-        <span className="text-xs text-white/40 flex items-center gap-1">
+        <span style={{
+          fontFamily: 'var(--font-jetbrains), monospace',
+          fontSize: 10, letterSpacing: '0.1em', textTransform: 'uppercase',
+          color: 'var(--ink-3)', display: 'flex', alignItems: 'center', gap: 6,
+        }}>
           {CHAT_COST_ESTIMATE[agent.llm_provider] ?? '~$0.003'} per message
-          <span className="relative group">
-            <span className="inline-flex items-center justify-center w-3.5 h-3.5 rounded-full border border-white/20 text-[10px] text-white/40 cursor-help">?</span>
-            <span className="absolute bottom-full right-0 mb-1 w-48 p-2 text-[10px] text-white/70 bg-neutral-800 border border-white/10 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-10">
-              Estimate only — charged according to LLM provider
+          <span style={{ position: 'relative' }} className="group">
+            <span style={{
+              display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+              width: 14, height: 14, borderRadius: 99,
+              border: '1px solid var(--line-strong)', fontSize: 9, color: 'var(--ink-3)',
+              cursor: 'help',
+            }}>?</span>
+            <span style={{
+              position: 'absolute', bottom: '100%', right: 0, marginBottom: 4,
+              width: 192, padding: 8, fontSize: 10, color: 'var(--ink-2)',
+              background: 'var(--paper)', border: '1px solid var(--line-strong)',
+              opacity: 0, pointerEvents: 'none',
+            }} className="group-hover:opacity-100">
+              Estimate only, charged by LLM provider.
             </span>
           </span>
         </span>
       </div>
 
       {open && (
-        <div className="mt-4">
+        <div style={{ marginTop: 16 }}>
           {/* Controls bar */}
-          <div className="flex items-center justify-between mb-3">
-            <div className="flex items-center gap-3">
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12, gap: 12, flexWrap: 'wrap' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
               <button
+                type="button"
                 onClick={() => setEvalMode(!evalMode)}
-                className={`text-xs px-2.5 py-1 rounded-full border transition-colors cursor-pointer ${
-                  evalMode
-                    ? 'border-purple-500 text-purple-400 bg-purple-500/10'
-                    : 'border-white/15 text-white/40 hover:text-white/60'
-                }`}
+                className={`chip ${evalMode ? 'is-active' : ''}`}
+                style={{ padding: '4px 12px', fontSize: 10 }}
               >
                 {evalMode ? 'Eval mode on' : 'Eval mode'}
               </button>
               {evalMode && (
-                <span className="text-xs text-white/30">Describe a drop to get your {tierLabel}&apos;s evaluation</span>
+                <span style={{ fontSize: 11, color: 'var(--ink-3)' }}>
+                  Describe a drop to get your {tierLabel}&apos;s evaluation.
+                </span>
               )}
             </div>
             <button
               onClick={newConversation}
-              className="text-xs text-white/40 hover:text-white/60 transition-colors cursor-pointer"
+              style={{
+                background: 'transparent', border: 'none', cursor: 'pointer', padding: 0,
+                fontFamily: 'var(--font-jetbrains), monospace',
+                fontSize: 10, letterSpacing: '0.14em', textTransform: 'uppercase',
+                color: 'var(--ink-3)',
+              }}
             >
               New conversation
             </button>
@@ -204,19 +228,22 @@ export function ChatPanel({ agent }: Props) {
           {/* Messages */}
           <div
             ref={scrollRef}
-            className="h-80 overflow-y-auto border border-white/10 rounded-lg p-3 mb-3 space-y-3"
+            style={{
+              height: 320, overflowY: 'auto',
+              border: '1px solid var(--line)', background: 'var(--bg-2)',
+              padding: 14, marginBottom: 12,
+              display: 'flex', flexDirection: 'column', gap: 12,
+            }}
           >
             {messages.length === 0 && (
-              <div className="flex items-center justify-center h-full">
-                <div className="text-center max-w-xs">
-                  <p className="text-sm text-white/30 mb-3">
-                    Say hello to {agent.name}.<br />
-                    <span className="text-xs">Your {tierLabel} is ready to chat.</span>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%' }}>
+                <div style={{ textAlign: 'center', maxWidth: 320 }}>
+                  <p style={{ fontFamily: 'var(--font-fraunces), serif', fontSize: 16, color: 'var(--ink-2)', margin: '0 0 10px', lineHeight: 1.5 }}>
+                    Say hello to {agent.name}.
                   </p>
-                  <p className="text-xs text-white/20 leading-relaxed">
-                    {agent.name} will learn more about your style and taste as you converse.
-                    Let {agent.name} know about brands and products that interest you and they
-                    will remember and be more selective on your behalf when shopping.
+                  <p style={{ fontSize: 12, color: 'var(--ink-3)', lineHeight: 1.6, margin: 0 }}>
+                    Your {tierLabel} will learn your style and taste as you converse.
+                    Share brands and pieces that interest you, and {agent.name} will be more selective on your behalf.
                   </p>
                 </div>
               </div>
@@ -224,18 +251,31 @@ export function ChatPanel({ agent }: Props) {
             {messages.map((msg, i) => (
               <div
                 key={i}
-                className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
+                style={{ display: 'flex', justifyContent: msg.role === 'user' ? 'flex-end' : 'flex-start' }}
               >
                 <div
-                  className={`max-w-[80%] rounded-lg px-3 py-2 text-sm ${
-                    msg.role === 'user'
-                      ? 'bg-green-500/15 text-green-100 border border-green-500/20'
-                      : 'bg-white/5 text-white/80 border border-white/10'
-                  }`}
+                  style={{
+                    maxWidth: '82%',
+                    padding: '10px 14px',
+                    fontSize: 14,
+                    lineHeight: 1.5,
+                    ...(msg.role === 'user'
+                      ? {
+                          background: 'var(--ink)', color: 'var(--bg)',
+                          borderRadius: '14px 14px 4px 14px',
+                        }
+                      : {
+                          background: 'var(--paper)', color: 'var(--ink)',
+                          border: '1px solid var(--line)',
+                          borderRadius: '14px 14px 14px 4px',
+                          fontFamily: 'var(--font-fraunces), serif',
+                          letterSpacing: '-0.005em',
+                        }),
+                  }}
                 >
-                  <div className="whitespace-pre-wrap">{msg.content || (msg.streaming ? '...' : '')}</div>
+                  <div style={{ whiteSpace: 'pre-wrap' }}>{msg.content || (msg.streaming ? '…' : '')}</div>
                   {msg.streaming && msg.content && (
-                    <span className="inline-block w-1.5 h-3.5 bg-white/40 animate-pulse ml-0.5" />
+                    <span style={{ display: 'inline-block', width: 6, height: 14, background: 'currentColor', opacity: 0.5, marginLeft: 2, animation: 'cc-pulse 1s infinite' }} />
                   )}
                 </div>
               </div>
@@ -243,16 +283,28 @@ export function ChatPanel({ agent }: Props) {
           </div>
 
           {/* Input */}
-          <div className="flex gap-2">
+          <div style={{ display: 'flex', gap: 8 }}>
             <input
               ref={inputRef}
               type="text"
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={handleKeyDown}
-              placeholder={evalMode ? 'Describe a drop to evaluate...' : `Message ${agent.name}...`}
+              placeholder={evalMode ? 'Describe a drop to evaluate…' : `Message ${agent.name}…`}
               disabled={sending}
-              className="flex-1 bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white placeholder:text-white/30 focus:outline-none focus:border-green-500/50 disabled:opacity-50"
+              style={{
+                flex: 1,
+                background: 'var(--paper)',
+                border: '1px solid var(--line-strong)',
+                padding: '10px 14px',
+                fontSize: 14,
+                fontFamily: 'inherit',
+                color: 'var(--ink)',
+                outline: 'none',
+                opacity: sending ? 0.55 : 1,
+              }}
+              onFocus={(e) => { e.currentTarget.style.borderColor = 'var(--ink)'; }}
+              onBlur={(e) => { e.currentTarget.style.borderColor = 'var(--line-strong)'; }}
             />
             <Button size="sm" onClick={send} loading={sending} disabled={!input.trim()}>
               Send
@@ -260,7 +312,13 @@ export function ChatPanel({ agent }: Props) {
           </div>
 
           {/* Credit info */}
-          <div className="mt-2 text-xs text-white/30 flex justify-between">
+          <div style={{
+            marginTop: 8,
+            fontFamily: 'var(--font-jetbrains), monospace',
+            fontSize: 10, letterSpacing: '0.12em', textTransform: 'uppercase',
+            color: 'var(--ink-3)',
+            display: 'flex', justifyContent: 'space-between',
+          }}>
             <span>Credits: ${Number(agent.credit_balance_usdc ?? 0).toFixed(2)}</span>
             <span>{agent.llm_provider}</span>
           </div>

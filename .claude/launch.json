@@ -6,7 +6,7 @@
       "runtimeExecutable": "C:\\Program Files\\nodejs\\node.exe",
       "runtimeArgs": ["node_modules/next/dist/bin/next", "dev", "--port", "3001"],
       "port": 3001,
-      "url": "http://localhost:3001/rrg"
+      "url": "http://localhost:3001/"
     }
   ]
 }

@@ -3,13 +3,13 @@ import RRGHeader from '@/components/rrg/RRGHeader';
 import RRGFooter from '@/components/rrg/RRGFooter';
 
 export const metadata: Metadata = {
-  title: 'RRG — Real Real Genuine',
+  title: 'The Store, Real Real Genuine',
   description: 'Submit designs. Earn USDC. Own on-chain.',
 };
 
 export default function RRGLayout({ children }: { children: React.ReactNode }) {
   return (
-    <div className="min-h-screen bg-black text-white">
+    <div style={{ minHeight: '100vh', background: 'var(--bg)', color: 'var(--ink)' }}>
       <RRGHeader active="store" />
       <main>{children}</main>
       <RRGFooter />

@@ -16,10 +16,6 @@ interface Props {
   requireSize: boolean;
 }
 
-/**
- * Wraps the size selector + PurchaseFlow so selected size can block the
- * purchase CTA until a size is chosen (when requireSize is true).
- */
 export default function PurchaseBlock({
   tokenId,
   priceUsdc,
@@ -32,8 +28,6 @@ export default function PurchaseBlock({
   requireSize,
 }: Props) {
   const [selectedSize, setSelectedSize] = useState<string | null>(initialSize ?? null);
-
-  // If size is required but not selected, block the purchase flow
   const purchaseBlocked = requireSize && !selectedSize;
 
   return (
@@ -47,10 +41,19 @@ export default function PurchaseBlock({
       )}
 
       {purchaseBlocked ? (
-        <div className="mt-6 p-4 border border-white/10 bg-white/5 rounded">
-          <p className="text-sm font-mono text-white/70 text-center">
-            Select a size above to continue
-          </p>
+        <div style={{
+          marginTop: 24,
+          padding: 16,
+          border: '1px solid var(--line)',
+          background: 'var(--bg-2)',
+          textAlign: 'center',
+          fontFamily: 'var(--font-jetbrains), monospace',
+          fontSize: 12,
+          letterSpacing: '0.1em',
+          textTransform: 'uppercase',
+          color: 'var(--ink-3)',
+        }}>
+          Select a size above to continue
         </div>
       ) : (
         <PurchaseFlow

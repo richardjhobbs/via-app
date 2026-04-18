@@ -23,16 +23,33 @@ export function StepProfile({ state, update, onNext, onBack }: Props) {
   const voicePreset = VOICE_PRESETS.some(p => p.value === state.persona_voice) ? state.persona_voice : 'custom';
   const commPreset = COMM_STYLE_PRESETS.some(p => p.value === state.persona_comm_style) ? state.persona_comm_style : 'custom';
 
+  const headingStyle: React.CSSProperties = {
+    fontFamily: 'var(--font-fraunces), serif',
+    fontSize: 28,
+    fontWeight: 300,
+    letterSpacing: '-0.015em',
+    margin: '0 0 10px',
+    lineHeight: 1.15,
+  };
+  const subheadStyle: React.CSSProperties = {
+    color: 'var(--ink-2)',
+    fontSize: 15,
+    lineHeight: 1.55,
+    margin: '0 0 28px',
+    fontWeight: 300,
+    maxWidth: '52ch',
+  };
+
   return (
     <div>
-      <h2 className="text-xl font-semibold mb-2">Configure your {tierLabel}</h2>
-      <p className="text-neutral-400 mb-6">
+      <h2 style={headingStyle}>Configure your {tierLabel}.</h2>
+      <p style={subheadStyle}>
         Tell your {tierLabel} what to look for. {state.tier === 'basic'
-          ? 'Instructions are parsed into rules — be specific.'
+          ? 'Instructions are parsed into rules, be specific.'
           : `Your ${tierLabel} will interpret these with judgement and adapt over time.`}
       </p>
 
-      <div className="space-y-5 mb-6">
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 20, marginBottom: 24 }}>
         <TagSelect
           label="Style tags"
           selected={state.style_tags}
@@ -73,18 +90,9 @@ export function StepProfile({ state, update, onNext, onBack }: Props) {
             })
           }
           options={[
-            {
-              value: 'conservative',
-              label: 'Conservative — bid at or near reserve price',
-            },
-            {
-              value: 'balanced',
-              label: 'Balanced — bid at midpoint between reserve and ceiling',
-            },
-            {
-              value: 'aggressive',
-              label: 'Aggressive — bid at ceiling immediately',
-            },
+            { value: 'conservative', label: 'Conservative, bid at or near reserve' },
+            { value: 'balanced',     label: 'Balanced, bid midpoint between reserve and ceiling' },
+            { value: 'aggressive',   label: 'Aggressive, bid at ceiling immediately' },
           ]}
         />
 
@@ -101,19 +109,28 @@ export function StepProfile({ state, update, onNext, onBack }: Props) {
       </div>
 
       {/* Persona section (optional, collapsible) */}
-      <div className="border-t border-white/10 pt-5 mb-8">
+      <div style={{ borderTop: '1px solid var(--line)', paddingTop: 20, marginBottom: 32 }}>
         <button
           type="button"
           onClick={() => setShowPersona(!showPersona)}
-          className="flex items-center gap-2 text-sm text-white/60 hover:text-white/80 transition-colors cursor-pointer mb-4"
+          style={{
+            display: 'flex', alignItems: 'center', gap: 10,
+            background: 'transparent', border: 'none', cursor: 'pointer',
+            fontFamily: 'var(--font-jetbrains), monospace',
+            fontSize: 10, letterSpacing: '0.16em', textTransform: 'uppercase',
+            color: 'var(--ink-2)',
+            marginBottom: 16, padding: 0,
+          }}
         >
-          <span className="text-xs">{showPersona ? '▼' : '▶'}</span>
+          <span style={{ fontSize: 9, color: 'var(--accent)' }}>{showPersona ? '▼' : '▶'}</span>
           <span>Persona (optional)</span>
-          <span className="text-xs text-white/30">— give your {tierLabel} a personality</span>
+          <span style={{ color: 'var(--ink-3)', textTransform: 'none', letterSpacing: 0, fontSize: 11 }}>
+            give your {tierLabel} a personality
+          </span>
         </button>
 
         {showPersona && (
-          <div className="space-y-4">
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
             <Textarea
               label="Bio"
               placeholder={`Describe who your ${tierLabel} is. What drives them? What's their perspective?`}
@@ -122,7 +139,7 @@ export function StepProfile({ state, update, onNext, onBack }: Props) {
               hint={`This shapes how your ${tierLabel} approaches decisions and communicates.`}
             />
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 16 }}>
               <div>
                 <Select
                   label="Voice / tone"
@@ -132,16 +149,17 @@ export function StepProfile({ state, update, onNext, onBack }: Props) {
                   }}
                   options={VOICE_PRESETS.map(p => ({
                     value: p.value,
-                    label: `${p.label} — ${p.description}`,
+                    label: `${p.label}, ${p.description}`,
                   }))}
                 />
                 {voicePreset === 'custom' && (
-                  <Textarea
-                    placeholder="Describe the tone you want..."
-                    value={state.persona_voice}
-                    onChange={(e) => update({ persona_voice: e.target.value })}
-                    className="mt-2"
-                  />
+                  <div style={{ marginTop: 8 }}>
+                    <Textarea
+                      placeholder="Describe the tone you want..."
+                      value={state.persona_voice}
+                      onChange={(e) => update({ persona_voice: e.target.value })}
+                    />
+                  </div>
                 )}
               </div>
 
@@ -154,16 +172,17 @@ export function StepProfile({ state, update, onNext, onBack }: Props) {
                   }}
                   options={COMM_STYLE_PRESETS.map(p => ({
                     value: p.value,
-                    label: `${p.label} — ${p.description}`,
+                    label: `${p.label}, ${p.description}`,
                   }))}
                 />
                 {commPreset === 'custom' && (
-                  <Textarea
-                    placeholder="Describe how you want it to communicate..."
-                    value={state.persona_comm_style}
-                    onChange={(e) => update({ persona_comm_style: e.target.value })}
-                    className="mt-2"
-                  />
+                  <div style={{ marginTop: 8 }}>
+                    <Textarea
+                      placeholder="Describe how you want it to communicate..."
+                      value={state.persona_comm_style}
+                      onChange={(e) => update({ persona_comm_style: e.target.value })}
+                    />
+                  </div>
                 )}
               </div>
             </div>
@@ -176,10 +195,8 @@ export function StepProfile({ state, update, onNext, onBack }: Props) {
         )}
       </div>
 
-      <div className="flex gap-3">
-        <Button variant="ghost" onClick={onBack}>
-          Back
-        </Button>
+      <div style={{ display: 'flex', gap: 10 }}>
+        <Button variant="ghost" onClick={onBack}>Back</Button>
         <Button onClick={onNext}>Review</Button>
       </div>
     </div>

@@ -150,8 +150,8 @@ export default function DashboardPage() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-black text-white">
-        <RRGHeader active="agent" />
+      <div style={{ minHeight: '100vh', background: 'var(--bg)', color: 'var(--ink)' }}>
+        <RRGHeader active="concierge" />
         <main className="px-6 py-12 max-w-4xl mx-auto">
           <p className="text-white/50 animate-pulse">Loading...</p>
         </main>
@@ -162,8 +162,8 @@ export default function DashboardPage() {
 
   if (!agent) {
     return (
-      <div className="min-h-screen bg-black text-white">
-        <RRGHeader active="agent" />
+      <div style={{ minHeight: '100vh', background: 'var(--bg)', color: 'var(--ink)' }}>
+        <RRGHeader active="concierge" />
         <main className="px-6 py-12 max-w-4xl mx-auto">
           <h1 className="text-xl font-semibold mb-4">No service found</h1>
           <p className="text-white/60 mb-6">Get your own Personal Shopper or Concierge.</p>
@@ -177,9 +177,9 @@ export default function DashboardPage() {
   const tierDisplay = TIER_DISPLAY[agent.tier];
 
   return (
-    <div className="min-h-screen bg-black text-white">
-      <RRGHeader active="agent" />
-      <main className="px-6 py-12 max-w-4xl mx-auto">
+    <div style={{ minHeight: '100vh', background: 'var(--bg)', color: 'var(--ink)' }}>
+      <RRGHeader active="concierge" />
+      <main className="page-pad" style={{ maxWidth: 1000 }}>
         {/* Agent header */}
         <div className="flex items-start justify-between mb-8">
           <div className="flex items-start gap-4">

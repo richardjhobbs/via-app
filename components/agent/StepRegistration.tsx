@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { ConnectEmbed, useActiveAccount, useProfiles } from 'thirdweb/react';
+import { ConnectEmbed, lightTheme, useActiveAccount, useProfiles } from 'thirdweb/react';
 import { base } from 'thirdweb/chains';
 import { inAppWallet, createWallet } from 'thirdweb/wallets';
 import { thirdwebClient } from '@/lib/rrg/thirdwebClient';
@@ -24,6 +24,25 @@ const wallets = [
   createWallet('walletConnect'),
 ];
 
+const maisonTheme = lightTheme({
+  colors: {
+    modalBg: '#ffffff',
+    primaryText: '#1a1612',
+    secondaryText: '#3a342d',
+    tertiaryBg: '#f2ede5',
+    accentText: '#6b4f3a',
+    accentButtonBg: '#1a1612',
+    accentButtonText: '#faf7f2',
+    primaryButtonBg: '#1a1612',
+    primaryButtonText: '#faf7f2',
+    secondaryButtonBg: '#faf7f2',
+    secondaryButtonText: '#1a1612',
+    secondaryButtonHoverBg: '#f2ede5',
+    borderColor: 'rgba(26,22,18,0.22)',
+    separatorLine: 'rgba(26,22,18,0.12)',
+  },
+});
+
 function isValidAddress(addr: string): boolean {
   return /^0x[0-9a-fA-F]{40}$/.test(addr);
 }
@@ -35,6 +54,46 @@ interface WalletLookup {
   name?: string;
 }
 
+// ── Local presentation tokens ──────────────────────────────────────────
+const labelStyle: React.CSSProperties = {
+  display: 'block',
+  fontFamily: 'var(--font-jetbrains), monospace',
+  fontSize: 10,
+  letterSpacing: '0.16em',
+  textTransform: 'uppercase',
+  color: 'var(--ink-3)',
+  marginBottom: 8,
+};
+
+const panelBase: React.CSSProperties = {
+  padding: 14,
+  border: '1px solid var(--line)',
+  background: 'var(--bg-2)',
+};
+const panelSuccess: React.CSSProperties = {
+  padding: 14,
+  border: '1px solid var(--accent)',
+  background: 'color-mix(in srgb, var(--accent) 8%, transparent)',
+};
+
+const heading: React.CSSProperties = {
+  fontFamily: 'var(--font-fraunces), serif',
+  fontSize: 28,
+  fontWeight: 300,
+  letterSpacing: '-0.015em',
+  margin: '0 0 10px',
+  lineHeight: 1.15,
+};
+
+const subhead: React.CSSProperties = {
+  color: 'var(--ink-2)',
+  fontSize: 15,
+  lineHeight: 1.55,
+  margin: '0 0 28px',
+  fontWeight: 300,
+  maxWidth: '52ch',
+};
+
 export function StepRegistration({ state, update, onNext, onBack }: Props) {
   const [walletMode, setWalletMode] = useState<'new' | 'import'>('new');
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -45,7 +104,6 @@ export function StepRegistration({ state, update, onNext, onBack }: Props) {
   const account = useActiveAccount();
   const { data: profiles } = useProfiles({ client: thirdwebClient });
 
-  // Auto-detect existing Thirdweb session on mount
   useEffect(() => {
     if (account?.address) {
       update({ wallet_address: account.address, wallet_type: 'embedded' });
@@ -65,7 +123,6 @@ export function StepRegistration({ state, update, onNext, onBack }: Props) {
         .then(data => { if (data?.exists) setExistingCreator(true); })
         .catch(() => {});
 
-      // Check if this wallet already has an agent
       fetch(`/api/agent/session?wallet=${account.address}`)
         .then(r => r.ok ? r.json() : null)
         .then(data => {
@@ -77,7 +134,6 @@ export function StepRegistration({ state, update, onNext, onBack }: Props) {
     }
   }, [account?.address, profiles, state.email, update]);
 
-  // Email-based wallet lookup (cross-session detection)
   const checkEmailWallet = useCallback(async (email: string) => {
     if (!email || !email.includes('@')) return;
     setLookupDismissed(false);
@@ -86,7 +142,6 @@ export function StepRegistration({ state, update, onNext, onBack }: Props) {
       if (res.ok) {
         const data = await res.json();
         if (data.found && data.source === 'agent') {
-          // This email already has an agent — redirect to dashboard
           setExistingAgent({ name: data.name || 'your agent', tier: 'basic' });
         } else if (data.found && data.source === 'creator') {
           setEmailLookup(data);
@@ -108,17 +163,10 @@ export function StepRegistration({ state, update, onNext, onBack }: Props) {
 
   const validate = () => {
     const errs: Record<string, string> = {};
-    if (!state.email || !state.email.includes('@'))
-      errs.email = 'Valid email required';
+    if (!state.email || !state.email.includes('@')) errs.email = 'Valid email required';
     if (!state.name.trim()) errs.name = 'Name required';
-
-    if (walletMode === 'new' && !state.wallet_address) {
-      errs.wallet = 'Connect a wallet to continue';
-    }
-    if (walletMode === 'import' && !isValidAddress(state.wallet_address)) {
-      errs.wallet = 'Valid wallet address required (0x...)';
-    }
-
+    if (walletMode === 'new' && !state.wallet_address) errs.wallet = 'Connect a wallet to continue';
+    if (walletMode === 'import' && !isValidAddress(state.wallet_address)) errs.wallet = 'Valid wallet address required (0x...)';
     setErrors(errs);
     return Object.keys(errs).length === 0;
   };
@@ -131,36 +179,49 @@ export function StepRegistration({ state, update, onNext, onBack }: Props) {
 
   const walletAlreadyConnected = !!account?.address && !!state.wallet_address;
 
-  // If existing agent found, show redirect banner instead of form
   if (existingAgent) {
     return (
       <div>
-        <h2 className="text-xl font-semibold mb-2">Welcome back</h2>
-        <div className="p-5 border border-green-500/30 bg-green-500/5 rounded-lg mb-6">
-          <p className="text-green-400 mb-2">You already have a {existingAgent.tier === 'pro' ? 'Concierge' : 'Personal Shopper'}: <strong>{existingAgent.name}</strong></p>
-          <p className="text-white/60 text-sm mb-4">Go to your dashboard to manage preferences, chat, and view activity.</p>
+        <h2 style={heading}>Welcome back.</h2>
+        <div style={{ ...panelSuccess, marginBottom: 24 }}>
+          <p style={{ color: 'var(--accent)', margin: '0 0 8px', fontFamily: 'var(--font-fraunces), serif', fontSize: 16 }}>
+            You already have a {existingAgent.tier === 'pro' ? 'Concierge' : 'Personal Shopper'}: <strong>{existingAgent.name}</strong>
+          </p>
+          <p style={{ color: 'var(--ink-2)', fontSize: 13, lineHeight: 1.55, margin: '0 0 14px' }}>
+            Go to your dashboard to manage preferences, chat, and view activity.
+          </p>
           <a
             href="/agents/dashboard"
-            className="inline-block bg-green-500 text-black px-5 py-2 rounded-lg font-medium text-sm hover:bg-green-400 transition-colors"
+            className="btn"
+            style={{ display: 'inline-flex', fontSize: 12, padding: '10px 18px' }}
           >
-            Go to your dashboard
+            Go to your dashboard <span style={{ marginLeft: 6 }}>→</span>
           </a>
         </div>
-        <button onClick={onBack} className="text-sm text-white/40 hover:text-white/60 transition-colors cursor-pointer">
-          &larr; Back
+        <button
+          onClick={onBack}
+          style={{
+            background: 'transparent', border: 'none', cursor: 'pointer',
+            fontFamily: 'var(--font-jetbrains), monospace', fontSize: 10, letterSpacing: '0.14em',
+            textTransform: 'uppercase', color: 'var(--ink-3)',
+          }}
+        >
+          ← Back
         </button>
       </div>
     );
   }
 
+  const tierLabel = TIER_DISPLAY[state.tier].label;
+
   return (
     <div>
-      <h2 className="text-xl font-semibold mb-2">Register your {TIER_DISPLAY[state.tier].label}</h2>
-      <p className="text-white/60 mb-6">
-        Give your {TIER_DISPLAY[state.tier].label} a name and choose how to set up the wallet.
+      <h2 style={heading}>Register your {tierLabel}.</h2>
+      <p style={subhead}>
+        Give your {tierLabel} a name and choose how to set up the wallet.
       </p>
 
-      <div className="space-y-4 mb-8">
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 20, marginBottom: 32 }}>
         <div>
           <Input
             label="Email"
@@ -171,27 +232,26 @@ export function StepRegistration({ state, update, onNext, onBack }: Props) {
             onBlur={(e) => checkEmailWallet(e.target.value)}
             error={errors.email}
           />
-          {/* Email-based wallet detection */}
           {emailLookup?.found && !lookupDismissed && !walletAlreadyConnected && (
-            <div className="mt-2 p-3 rounded-lg border border-green-500/30 bg-green-500/5">
-              <p className="text-sm text-green-400 mb-1">
+            <div style={{ ...panelSuccess, marginTop: 10 }}>
+              <p style={{ fontFamily: 'var(--font-fraunces), serif', fontSize: 15, color: 'var(--ink)', margin: '0 0 4px' }}>
                 We found a creator account with this email{emailLookup.name ? ` (${emailLookup.name})` : ''}.
               </p>
-              <p className="text-xs text-white/50 font-mono mb-2">
+              <p style={{ fontFamily: 'var(--font-jetbrains), monospace', fontSize: 11, color: 'var(--ink-3)', margin: '0 0 10px' }}>
                 {emailLookup.wallet?.slice(0, 10)}...{emailLookup.wallet?.slice(-8)}
               </p>
-              <div className="flex gap-2">
-                <button
-                  type="button"
-                  onClick={useExistingWallet}
-                  className="text-xs bg-green-500 text-black rounded px-3 py-1 font-medium hover:bg-green-400 transition-colors cursor-pointer"
-                >
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button type="button" onClick={useExistingWallet} className="btn" style={{ fontSize: 11, padding: '8px 14px' }}>
                   Use this wallet
                 </button>
                 <button
                   type="button"
                   onClick={() => setLookupDismissed(true)}
-                  className="text-xs text-white/40 hover:text-white/60 transition-colors cursor-pointer"
+                  style={{
+                    background: 'transparent', border: 'none', cursor: 'pointer',
+                    fontFamily: 'var(--font-jetbrains), monospace', fontSize: 10,
+                    letterSpacing: '0.14em', textTransform: 'uppercase', color: 'var(--ink-3)',
+                  }}
                 >
                   Use a different wallet
                 </button>
@@ -208,21 +268,22 @@ export function StepRegistration({ state, update, onNext, onBack }: Props) {
           error={errors.name}
         />
 
-        {/* Wallet section */}
         {walletAlreadyConnected ? (
           <div>
-            <label className="block text-sm font-medium text-neutral-300 mb-2">Wallet</label>
-            <div className="p-3 rounded-lg border border-green-500/30 bg-green-500/5">
-              <div className="flex items-center gap-2">
-                <span className="w-2 h-2 rounded-full bg-green-500" />
-                <span className="text-sm text-green-400">
+            <label style={labelStyle}>Wallet</label>
+            <div style={panelSuccess}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span style={{ width: 6, height: 6, borderRadius: 99, background: 'var(--live)' }} />
+                <span style={{ fontFamily: 'var(--font-fraunces), serif', fontSize: 15, color: 'var(--ink)' }}>
                   {existingCreator ? 'Connected (same as your creator wallet)' : 'Wallet connected'}
                 </span>
               </div>
-              <p className="text-xs font-mono text-white/50 mt-1">{state.wallet_address}</p>
+              <p style={{ fontFamily: 'var(--font-jetbrains), monospace', fontSize: 11, color: 'var(--ink-3)', margin: '4px 0 0' }}>
+                {state.wallet_address}
+              </p>
             </div>
             {existingCreator && (
-              <p className="mt-1.5 text-xs text-white/40">
+              <p style={{ marginTop: 8, fontSize: 12, color: 'var(--ink-3)', lineHeight: 1.55 }}>
                 Your agent will use the same wallet and on-chain identity as your creator account.
               </p>
             )}
@@ -230,57 +291,51 @@ export function StepRegistration({ state, update, onNext, onBack }: Props) {
         ) : (
           <>
             <div>
-              <label className="block text-sm font-medium text-neutral-300 mb-2">Wallet setup</label>
-              <div className="flex gap-3">
-                <button
-                  type="button"
+              <label style={labelStyle}>Wallet setup</label>
+              <div style={{ display: 'flex', gap: 12 }}>
+                <WalletModeButton
+                  active={walletMode === 'new'}
                   onClick={() => { setWalletMode('new'); if (!emailLookup?.wallet) update({ wallet_address: '' }); }}
-                  className={`flex-1 px-4 py-3 rounded-lg border text-sm text-left transition-colors cursor-pointer ${
-                    walletMode === 'new'
-                      ? 'border-green-500/60 bg-neutral-900'
-                      : 'border-neutral-700 hover:border-neutral-500'
-                  }`}
-                >
-                  <div className="font-medium mb-1">Create new wallet</div>
-                  <div className="text-xs text-neutral-500">Sign in with Google or email. No seed phrase.</div>
-                </button>
-                <button
-                  type="button"
+                  title="Create new wallet"
+                  subtitle="Sign in with Google or email. No seed phrase."
+                />
+                <WalletModeButton
+                  active={walletMode === 'import'}
                   onClick={() => { setWalletMode('import'); if (!emailLookup?.wallet) update({ wallet_address: '' }); }}
-                  className={`flex-1 px-4 py-3 rounded-lg border text-sm text-left transition-colors cursor-pointer ${
-                    walletMode === 'import'
-                      ? 'border-green-500/60 bg-neutral-900'
-                      : 'border-neutral-700 hover:border-neutral-500'
-                  }`}
-                >
-                  <div className="font-medium mb-1">Import existing</div>
-                  <div className="text-xs text-neutral-500">Paste your wallet address.</div>
-                </button>
+                  title="Import existing"
+                  subtitle="Paste your wallet address."
+                />
               </div>
             </div>
 
             {walletMode === 'new' && (
               <div>
                 {state.wallet_address ? (
-                  <div className="p-3 rounded-lg border border-green-500/30 bg-green-500/5">
-                    <div className="flex items-center gap-2">
-                      <span className="w-2 h-2 rounded-full bg-green-500" />
-                      <span className="text-sm text-green-400">Wallet connected</span>
+                  <div style={panelSuccess}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <span style={{ width: 6, height: 6, borderRadius: 99, background: 'var(--live)' }} />
+                      <span style={{ fontFamily: 'var(--font-fraunces), serif', fontSize: 15, color: 'var(--ink)' }}>Wallet connected</span>
                     </div>
-                    <p className="text-xs font-mono text-white/50 mt-1">{state.wallet_address}</p>
+                    <p style={{ fontFamily: 'var(--font-jetbrains), monospace', fontSize: 11, color: 'var(--ink-3)', margin: '4px 0 0' }}>
+                      {state.wallet_address}
+                    </p>
                   </div>
                 ) : (
-                  <div className="rounded-lg overflow-hidden border border-neutral-700">
+                  <div style={{ border: '1px solid var(--line-strong)', overflow: 'hidden' }}>
                     <ConnectEmbed
                       client={thirdwebClient}
                       wallets={wallets}
                       chain={base}
-                      theme="dark"
+                      theme={maisonTheme}
                       showThirdwebBranding={false}
                     />
                   </div>
                 )}
-                {errors.wallet && <p className="mt-1 text-xs text-red-400">{errors.wallet}</p>}
+                {errors.wallet && (
+                  <p style={{ marginTop: 6, fontSize: 11, color: '#b5453a', fontFamily: 'var(--font-jetbrains), monospace' }}>
+                    {errors.wallet}
+                  </p>
+                )}
               </div>
             )}
 
@@ -297,10 +352,42 @@ export function StepRegistration({ state, update, onNext, onBack }: Props) {
         )}
       </div>
 
-      <div className="flex gap-3">
+      <div style={{ display: 'flex', gap: 10 }}>
         <Button variant="ghost" onClick={onBack}>Back</Button>
         <Button onClick={handleNext}>Continue</Button>
       </div>
     </div>
+  );
+}
+
+function WalletModeButton({
+  active, onClick, title, subtitle,
+}: {
+  active: boolean;
+  onClick: () => void;
+  title: string;
+  subtitle: string;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      style={{
+        flex: 1,
+        padding: 16,
+        textAlign: 'left',
+        cursor: 'pointer',
+        background: active ? 'var(--paper)' : 'transparent',
+        border: `1px solid ${active ? 'var(--ink)' : 'var(--line-strong)'}`,
+        color: 'var(--ink)',
+        transition: 'all 0.15s',
+        fontFamily: 'inherit',
+      }}
+    >
+      <div style={{ fontFamily: 'var(--font-fraunces), serif', fontSize: 16, fontWeight: 400, marginBottom: 4, letterSpacing: '-0.005em' }}>
+        {title}
+      </div>
+      <div style={{ fontSize: 12, color: 'var(--ink-3)', lineHeight: 1.5 }}>{subtitle}</div>
+    </button>
   );
 }

@@ -9,10 +9,34 @@
  */
 
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { ConnectEmbed, useActiveAccount, useProfiles } from 'thirdweb/react';
+import { ConnectEmbed, lightTheme, useActiveAccount, useProfiles } from 'thirdweb/react';
 import { base } from 'thirdweb/chains';
 import { inAppWallet } from 'thirdweb/wallets';
 import { thirdwebClient } from '@/lib/rrg/thirdwebClient';
+
+// Maison-palette light theme for thirdweb ConnectEmbed. The embed doesn't
+// react to [data-theme] changes, so we hard-wire the light palette here and
+// live with dark-mode users briefly seeing a light-mode OAuth card.
+const maisonTheme = lightTheme({
+  colors: {
+    modalBg: '#ffffff',
+    primaryText: '#1a1612',
+    secondaryText: '#3a342d',
+    tertiaryBg: '#f2ede5',
+    accentText: '#6b4f3a',
+    accentButtonBg: '#1a1612',
+    accentButtonText: '#faf7f2',
+    primaryButtonBg: '#1a1612',
+    primaryButtonText: '#faf7f2',
+    secondaryButtonBg: '#faf7f2',
+    secondaryButtonText: '#1a1612',
+    secondaryButtonHoverBg: '#f2ede5',
+    borderColor: 'rgba(26,22,18,0.22)',
+    separatorLine: 'rgba(26,22,18,0.12)',
+    selectedTextBg: '#1a1612',
+    selectedTextColor: '#faf7f2',
+  },
+});
 
 interface Props {
   onAuthenticated: (wallet: string, email: string) => void;
@@ -72,16 +96,16 @@ export default function GoogleAuthEmbed({ onAuthenticated, buttonLabel }: Props)
   if (account?.address) {
     const email = extractEmail();
     return (
-      <div className="space-y-2 py-2">
-        <div className="flex items-center gap-2">
-          <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse" />
-          <span className="text-sm font-mono text-white/50">
-            {email ? 'Connected — processing…' : 'Connected — loading profile…'}
+      <div style={{ padding: '8px 0' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <span style={{ width: 8, height: 8, background: 'var(--live)', borderRadius: 99, animation: 'cc-pulse 2s infinite' }} />
+          <span style={{ fontFamily: 'var(--font-jetbrains), monospace', fontSize: 12, color: 'var(--ink-3)', letterSpacing: '0.08em' }}>
+            {email ? 'Connected, processing…' : 'Connected, loading profile…'}
           </span>
         </div>
         {retryCount >= 10 && !email && (
-          <p className="text-sm font-mono text-red-400">
-            Could not retrieve email from Google. Please try refreshing the page.
+          <p style={{ marginTop: 8, fontFamily: 'var(--font-jetbrains), monospace', fontSize: 12, color: '#b5453a' }}>
+            Could not retrieve email from Google. Please refresh the page.
           </p>
         )}
       </div>
@@ -93,7 +117,7 @@ export default function GoogleAuthEmbed({ onAuthenticated, buttonLabel }: Props)
       client={thirdwebClient}
       wallets={wallets}
       chain={base}
-      theme="dark"
+      theme={maisonTheme}
       showThirdwebBranding={false}
       header={{ title: buttonLabel || 'Continue with Google', titleIcon: '' }}
     />
