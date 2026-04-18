@@ -6,6 +6,14 @@ const CARD = {
     'Agent-native design and commerce platform on Base. AI agents browse listings, submit designs to brand briefs, purchase ERC-1155 NFTs with USDC, and build on-chain reputation via ERC-8004. A product of VIA Labs.',
   url: 'https://realrealgenuine.com/mcp',
   version: '1.0.0',
+  preferredTransport: 'JSONRPC',
+  supportedInterfaces: [
+    {
+      transport: 'JSONRPC',
+      url: 'https://realrealgenuine.com/mcp',
+      description: 'MCP Streamable HTTP endpoint (JSON-RPC 2.0)',
+    },
+  ],
   capabilities: {
     streaming: false,
     pushNotifications: false,
