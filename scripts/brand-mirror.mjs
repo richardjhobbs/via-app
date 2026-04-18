@@ -78,6 +78,51 @@ const BRANDS = {
     bannerLocal:     null,
     logoLocal:       null,
   },
+  'bobby-joseph': {
+    slug:            'bobby-joseph',
+    name:            'BOBBYJOSEPH',
+    wallet:          '0x734a25fB869ab6415b78bbe9a39f1f99dab349E7',
+    email:           'richard@entrepot.asia',
+    headline:        'Uniquely designed, out of Los Angeles.',
+    description:     'BOBBYJOSEPH: an assortment of uniquely designed goods out of Los Angeles. Limited-edition teddy bear charms, graphic-printed t-shirts and hoodies, headwear and single-speed bikes. Mirror of bobbyjoseph.com, checkout in USDC on Base, ships from BOBBYJOSEPH LA.',
+    website:         'https://bobbyjoseph.com',
+    shopifyDomain:   'bobbyjoseph.com',
+    supportsSizing:  true,
+    socialLinks:     {},
+    bannerLocal:     null,
+    logoLocal:       null,
+  },
+  'university-of-diversity': {
+    slug:            'university-of-diversity',
+    name:            'University of Diversity',
+    wallet:          '0x734a25fB869ab6415b78bbe9a39f1f99dab349E7',
+    email:           'richard@entrepot.asia',
+    headline:        'Many backgrounds. One campus.',
+    description:     'University of Diversity \u2014 collegiate-inflected apparel built around a single Arch Seal that stands for a shared campus across every background. Mirror of universityofdiversity.myshopify.com, checkout in USDC on Base, ships from UoD.',
+    website:         'https://universityofdiversity.myshopify.com',
+    shopifyDomain:   'universityofdiversity.myshopify.com',
+    supportsSizing:  true,
+    socialLinks:     {},
+    bannerLocal:     null,
+    logoLocal:       null,
+  },
+  'mykle': {
+    slug:            'mykle',
+    name:            'MYKLÉ',
+    // MYKLÉ brand agent, wallet minted 2026-04-18, ERC-8004 agent #45112
+    wallet:          '0x9eb5405feF682E1d4d555f64a683A499076556a3',
+    email:           'richard@entrepot.asia',
+    headline:        'Precision. Emotion. Silk as language.',
+    description:     'MYKL\u00c9 \u2014 silk scarves and ties by Norwegian designer Torunn Myklebust. Heritage florals, rope motifs and damier patterns rendered in silk, built for longevity over season. Mirror of mykle.co, checkout in USDC on Base, ships from MYKL\u00c9 France.',
+    website:         'https://mykle.co',
+    shopifyDomain:   'mykle.co',
+    supportsSizing:  false,
+    sourceCurrency:  'EUR',
+    priceToUsdcRate: 1.18, // locked 2026-04-18, 1 EUR = $1.18 USDC
+    socialLinks:     {},
+    bannerLocal:     null,
+    logoLocal:       null,
+  },
   'nolo': {
     slug:            'nolo',
     name:            'Nolo',
@@ -430,11 +475,36 @@ async function claimNextTokenId() {
   return current;
 }
 
+// Supabase upload cap we've observed in practice (~5MB). Shopify hi-res source
+// PNGs regularly breach that, so cap width and fall back progressively if the
+// payload still comes back too big. Only applies to Shopify CDN URLs (they
+// accept ?width= as a resize param); other hosts pass through unchanged.
+const MAX_IMAGE_BYTES = 5_000_000;
+const SHOPIFY_WIDTHS  = [2000, 1600, 1200];
+
+function withShopifyWidth(url, width) {
+  if (!/cdn\.shopify\.com/.test(url)) return url;
+  const u = new URL(url);
+  u.searchParams.set('width', String(width));
+  return u.toString();
+}
+
 async function downloadImage(url) {
-  const res = await fetch(url, { headers: { 'User-Agent': 'RRG-Mirror/2.0' } });
-  if (!res.ok) throw new Error(`image ${url} → ${res.status}`);
-  const ab = await res.arrayBuffer();
-  return Buffer.from(ab);
+  const candidates = /cdn\.shopify\.com/.test(url)
+    ? [url, ...SHOPIFY_WIDTHS.map(w => withShopifyWidth(url, w))]
+    : [url];
+
+  let lastBuf = null;
+  for (const u of candidates) {
+    const res = await fetch(u, { headers: { 'User-Agent': 'RRG-Mirror/2.0' } });
+    if (!res.ok) throw new Error(`image ${u} → ${res.status}`);
+    const buf = Buffer.from(await res.arrayBuffer());
+    lastBuf = buf;
+    if (buf.length <= MAX_IMAGE_BYTES) return buf;
+    console.log(`  [img] ${buf.length} bytes > cap, retrying smaller variant`);
+  }
+  // All candidates too big — return the smallest (last) and let upload fail loud
+  return lastBuf;
 }
 
 /**

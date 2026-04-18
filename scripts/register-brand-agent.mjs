@@ -45,6 +45,14 @@ const BRANDS = {
     website:     'https://wearenolo.com',
     categories:  ['coffee', 'beverage', 'decaf', 'cold-brew', 'oat-milk'],
   },
+  'mykle': {
+    name:        'MYKLÉ',
+    description: 'Silk scarves and ties by Norwegian designer Torunn Myklebust. Heritage florals, rope motifs and damier patterns rendered in silk, built for longevity over season. Mirror of mykle.co on Real Real Genuine. Checkout in USDC on Base, ships from MYKLÉ France.',
+    storefront:  'https://realrealgenuine.com/brand/mykle',
+    mcpEndpoint: 'https://realrealgenuine.com/brand/mykle/mcp',
+    website:     'https://mykle.co',
+    categories:  ['silk', 'scarves', 'ties', 'accessories', 'luxury', 'heritage'],
+  },
 };
 
 // ── Load .env.local ──────────────────────────────────────────────────
