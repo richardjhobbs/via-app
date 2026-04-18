@@ -12,6 +12,7 @@ import HeroSplit from '@/components/rrg/HeroSplit';
 import LandingCTAs from '@/components/rrg/LandingCTAs';
 import StoreCarousel from '@/components/rrg/StoreCarousel';
 import BrandCTAs from '@/components/rrg/BrandCTAs';
+import ShopWithAI from '@/components/rrg/ShopWithAI';
 
 export const dynamic = 'force-dynamic';
 
@@ -232,6 +233,9 @@ export default async function RRGGallery({
 
       {/* ── Hero Split: Agent Launch + Co-Creation ──────────────────── */}
       <HeroSplit openBriefs={enrichedBriefs} />
+
+      {/* ── Shop with your AI assistant (connect guides) ────────────── */}
+      <ShopWithAI />
 
       {/* ── Brands ─────────────────────────────────────────────────── */}
       <div className="mb-8">

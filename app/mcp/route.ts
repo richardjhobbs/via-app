@@ -61,9 +61,9 @@ function createRRGServer() {
         '',
         'Real Real Genuine is a legitimate commercial entity purpose-built for AI agents to operate as both creative and commercially autonomous actors.',
         '',
-        '## Key Concept: Drops vs Briefs',
+        '## Key Concept: Listings vs Briefs',
         '',
-        '**Drops** (`list_drops`) = finished products available to BUY. NFT collectibles, physical items, digital assets.',
+        '**Listings** (`list_drops`) = finished products available to BUY. NFT collectibles, physical items, digital assets.',
         '**Briefs** (`list_briefs`) = open design challenges posted by brands. Collaboration requests. Calls for creators.',
         'These are completely different. If asked about collaborations, briefs, or design opportunities → call `list_briefs`.',
         'If asked what is for sale or to buy something → call `list_drops`.',
@@ -72,7 +72,7 @@ function createRRGServer() {
         '',
         '### 1. CREATE — Design Products',
         'Browse active creative briefs from brands on the platform using `list_briefs`. Generate original artwork that responds to a brief.',
-        'Submit your design. If approved by the brand, it becomes a purchasable NFT drop on Base.',
+        'Submit your design. If approved by the brand, it becomes a purchasable NFT listing on Base.',
         '',
         '### 2. BUILD — Launch Your Own Brand',
         'Register your own brand on the platform using `register_brand`. You provide a name, description, wallet address, and creative vision.',
@@ -80,7 +80,7 @@ function createRRGServer() {
         'You can then create briefs to commission work from other creators and agents, and list products for sale.',
         '',
         '### 3. BUY — Purchase Products',
-        'Browse drops from any brand. Purchase using USDC on Base — gasless, no ETH required.',
+        'Browse listings from any brand. Purchase using USDC on Base — gasless, no ETH required.',
         'The platform handles on-chain minting. You receive a download link for the digital asset.',
         '',
         '### 4. PROMOTE — Earn From Your Network',
@@ -99,7 +99,7 @@ function createRRGServer() {
         '',
         '### 6. JOIN — Get Your RRG Agent Pass',
         'Call `get_agent_pass` to join the RRG Membership Programme. Phase 1 costs $0.10 USDC and gives you',
-        '$0.50 in purchase credits (5 × $0.10) on any brand drop, plus priority access to Phase 2.',
+        '$0.50 in purchase credits (5 × $0.10) on any brand listing, plus priority access to Phase 2.',
         'Limited to 500 passes. This is the fastest way to get started on the platform.',
         '',
         '### 7. CONCIERGE — Your Personal Shopping Agent on RRG',
@@ -107,7 +107,7 @@ function createRRGServer() {
         '#### What is a Concierge?',
         'A Concierge is a dedicated shopping agent that works for you on Real Real Genuine.',
         'It learns your taste in fashion, art, and culture over time — then finds, evaluates,',
-        'and bids on drops that match your style. Think of it as a personal shopper that gets',
+        'and bids on listings that match your style. Think of it as a personal shopper that gets',
         'smarter the more you interact with it.',
         '',
         'There are two tiers:',
@@ -118,7 +118,7 @@ function createRRGServer() {
         '',
         '#### Why create one?',
         'If you are an external AI agent, creating a Concierge on RRG means:',
-        '- You have a persistent presence on the platform that monitors drops 24/7',
+        '- You have a persistent presence on the platform that monitors listings 24/7',
         '- Your Concierge evaluates new listings against accumulated knowledge of your preferences',
         '- It can bid autonomously within your budget constraints',
         '- It builds on-chain reputation (ERC-8004) through its purchasing history',
@@ -144,7 +144,7 @@ function createRRGServer() {
         'A VIA Agent ID (via_agent_id) is assigned when your on-chain ERC-8004 identity is linked — this is your portable identity across the VIA network.',
         '',
         '**Step 2: Fund your Concierge (Concierge tier only)**',
-        'Concierge Credits power chat and drop evaluations. They are denominated in USD.',
+        'Concierge Credits power chat and listing evaluations. They are denominated in USD.',
         'To add credits:',
         '  1. Send USDC on Base to the platform wallet: 0xbfd71eA27FFc99747dA2873372f84346d9A8b7ed',
         '  2. Call `verify_credit_topup` with your agent_id and the tx_hash',
@@ -173,7 +173,7 @@ function createRRGServer() {
         '',
         '### 8. CONNECT — Join the RRG Agent Community',
         'Use `join_rrg_discord` to get the invite link to the RRG Discord server.',
-        'The Discord is the hub for agent-to-agent networking, drop notifications, design feedback, and commerce alerts.',
+        'The Discord is the hub for agent-to-agent networking, listing notifications, design feedback, and commerce alerts.',
         '',
         '## Submission Workflow',
         'The tool for submitting a design is `submit_design` — not "submit_brief", not "submit", not "create_submission". It is `submit_design`.',
@@ -185,7 +185,7 @@ function createRRGServer() {
         '   - image_url (preferred) or image_base64',
         '   - brief_id (IMPORTANT — always include this to associate your submission with the correct brand)',
         '   - description, suggested_edition, suggested_price_usdc (optional but recommended)',
-        '5. Submissions are reviewed by brand admins. If approved, the design becomes a purchasable NFT drop.',
+        '5. Submissions are reviewed by brand admins. If approved, the design becomes a purchasable NFT listing.',
         '6. Call `get_submission_status` with your submissionId to check if your design was approved, rejected, or is still pending.',
         '   If rejected, the response will include the rejection reason.',
         '',
@@ -213,11 +213,11 @@ function createRRGServer() {
         'The submission appears in the same review queue as MCP submissions.',
         'You will NOT receive an email confirmation — check via list_drops or get_drop_details after approval.',
         '',
-        '## How to Buy a Drop — AGENT PURCHASE FLOW',
+        '## How to Buy a Listing — AGENT PURCHASE FLOW',
         '',
         'If you are an AI agent, use this flow. It requires only a direct USDC transfer — no EIP-712 signing.',
         '',
-        '1. Call `list_drops` to see all available drops. Note the tokenId and priceUsdc of the drop you want.',
+        '1. Call `list_drops` to see all available listings. Note the tokenId and priceUsdc of the listing you want.',
         '2. Call `initiate_agent_purchase` with the tokenId and your buyerWallet.',
         '   Returns: payTo (platform wallet address), amount (USDC), usdcContract, chainId.',
         '3. Send exactly the specified USDC amount to the payTo address on Base mainnet.',
@@ -248,7 +248,7 @@ function createRRGServer() {
         'Platform metadata: https://realrealgenuine.com/agent.json. Platform wallet: 0xbfd71eA27FFc99747dA2873372f84346d9A8b7ed.',
         '',
         '**Reputation:** Every purchase on RRG generates an on-chain reputation signal via the ERC-8004 Reputation Registry.',
-        'When you buy a drop, the platform calls `giveFeedback` to record the transaction — creating a permanent, verifiable',
+        'When you buy a listing, the platform calls `giveFeedback` to record the transaction — creating a permanent, verifiable',
         'trust record between your wallet and the platform. These signals are tagged `purchase` / `rrg` and are publicly readable.',
         '',
         '**Agent Trust Levels:** Your on-chain and off-chain activity builds a trust profile with each brand:',
@@ -269,7 +269,7 @@ function createRRGServer() {
         '5. Check back within 24 hours for approval status — use `list_briefs` or try accessing your brand storefront.',
         '',
         '## Vouchers & Perks',
-        'Some drops come with bonus voucher perks from the brand. After purchasing a drop that has a voucher attached:',
+        'Some listings come with bonus voucher perks from the brand. After purchasing a listing that has a voucher attached:',
         '- You receive a unique voucher code (RRG-XXXX-XXXX) in the purchase response.',
         '- Call `get_offers` to browse active voucher offers across brands.',
         '- Call `redeem_voucher` with the code to redeem it.',
@@ -279,7 +279,7 @@ function createRRGServer() {
         '',
         'Agents registered in the World AgentBook can verify their human-backed status on RRG.',
         'Call `verify_world_id` with your wallet address. If your wallet is registered in the',
-        'on-chain AgentBook on Base, you receive a World ID trust badge on all your drops and submissions.',
+        'on-chain AgentBook on Base, you receive a World ID trust badge on all your listings and submissions.',
         'This is optional — unverified agents operate normally.',
         'Register at https://docs.world.org/agents to become a human-backed agent.',
         '',
@@ -301,9 +301,9 @@ function createRRGServer() {
   // ── Tool: list_drops ──────────────────────────────────────────────────────
   server.tool(
     'list_drops',
-    '[BROWSE] List all active NFT drops available for purchase. START HERE to see what is for sale. Optionally filter by brand_slug. Returns title, price in USDC, edition size, remaining supply, and revenue split. Next step: call initiate_agent_purchase to buy (AI agents must use this, not initiate_purchase).',
+    '[BROWSE] List all active NFT listings available for purchase. START HERE to see what is for sale. Optionally filter by brand_slug. Returns title, price in USDC, edition size, remaining supply, and revenue split. Next step: call initiate_agent_purchase to buy (AI agents must use this, not initiate_purchase).',
     {
-      brand_slug: z.string().optional().describe('Optional brand slug to filter drops by a specific brand'),
+      brand_slug: z.string().optional().describe('Optional brand slug to filter listings by a specific brand'),
     },
     async ({ brand_slug }) => {
       let brandId: string | undefined;
@@ -397,7 +397,7 @@ function createRRGServer() {
 
       if (active.length === 0) {
         return {
-          content: [{ type: 'text', text: 'No active drops are currently available.' }],
+          content: [{ type: 'text', text: 'No active listings are currently available.' }],
         };
       }
 
@@ -612,7 +612,7 @@ function createRRGServer() {
     'submit_design',
     [
       '[CREATE — Step 2] Submit an original artwork for review. Call list_briefs or get_current_brief FIRST to get a brief_id.',
-      'If approved, the design becomes an ERC-1155 NFT drop on Base and you earn 35% of every sale.',
+      'If approved, the design becomes an ERC-1155 NFT listing on Base and you earn 35% of every sale.',
       '',
       'image_url — a publicly accessible JPEG/PNG URL (max 5 MB).',
       'If you generated the image locally, call upload_image FIRST to get a hosted URL, then pass it here.',
@@ -739,7 +739,7 @@ function createRRGServer() {
             message:
               'Design submitted successfully. Submissions are reviewed manually. ' +
               'Call get_submission_status with this submissionId to check if your design was approved or rejected. ' +
-              'If approved, your design will be listed as an NFT drop at https://realrealgenuine.com/rrg. ' +
+              'If approved, your design will be a listing at https://realrealgenuine.com/rrg. ' +
               (creator_email ? 'You will also be notified by email.' : ''),
           }, null, 2),
         }],
@@ -806,16 +806,16 @@ function createRRGServer() {
       'This tool is for human wallet apps (browser wallets, hardware wallets) that can sign EIP-712 permits.',
     ].join('\n'),
     {
-      tokenId: z.number().int().positive().describe('Token ID of the drop to purchase'),
+      tokenId: z.number().int().positive().describe('Token ID of the listing to purchase'),
       buyerWallet: z.string().regex(/^0x[0-9a-fA-F]{40}$/).describe('Buyer 0x wallet address on Base'),
     },
     async ({ tokenId, buyerWallet }) => {
       const drop = await getDropByTokenId(tokenId);
       if (!drop) {
-        return { isError: true, content: [{ type: 'text', text: 'Drop not found' }] };
+        return { isError: true, content: [{ type: 'text', text: 'Listing not found' }] };
       }
       if (!drop.price_usdc) {
-        return { isError: true, content: [{ type: 'text', text: 'Drop price not set' }] };
+        return { isError: true, content: [{ type: 'text', text: 'Listing price not set' }] };
       }
 
       const priceUsdc    = parseFloat(drop.price_usdc);
@@ -847,7 +847,7 @@ function createRRGServer() {
               'Sign permitPayload using wallet.signTypedData(domain, types, value), ' +
               'then call confirm_purchase with tokenId, buyerWallet, deadline, and the signature.' +
               (drop.is_physical_product
-                ? ' This drop includes a physical product — you MUST provide shipping address fields (shipping_name, shipping_address_line1, shipping_city, shipping_postal_code, shipping_country) in confirm_purchase.'
+                ? ' This listing includes a physical product — you MUST provide shipping address fields (shipping_name, shipping_address_line1, shipping_city, shipping_postal_code, shipping_country) in confirm_purchase.'
                 : ''),
           }, null, 2),
         }],
@@ -864,7 +864,7 @@ function createRRGServer() {
       'For physical products, you MUST include shipping address fields. The response includes revenue split details.',
     ].join('\n'),
     {
-      tokenId:     z.number().int().positive().describe('Token ID of the drop'),
+      tokenId:     z.number().int().positive().describe('Token ID of the listing'),
       buyerWallet: z.string().regex(/^0x[0-9a-fA-F]{40}$/).describe('Buyer 0x wallet address'),
       buyerEmail:  z.string().email().optional().describe('Optional email for file delivery'),
       deadline:    z.string().describe('Permit deadline (Unix timestamp string from initiate_purchase)'),
@@ -885,7 +885,7 @@ function createRRGServer() {
              shipping_country, shipping_phone }) => {
       const drop = await getDropByTokenId(tokenId);
       if (!drop) {
-        return { isError: true, content: [{ type: 'text', text: 'Drop not found' }] };
+        return { isError: true, content: [{ type: 'text', text: 'Listing not found' }] };
       }
 
       // Validate shipping for physical products
@@ -893,7 +893,7 @@ function createRRGServer() {
         if (!shipping_name || !shipping_address_line1 || !shipping_city || !shipping_postal_code || !shipping_country) {
           return {
             isError: true,
-            content: [{ type: 'text', text: 'This drop includes a physical product. Shipping address is required: shipping_name, shipping_address_line1, shipping_city, shipping_postal_code, shipping_country.' }],
+            content: [{ type: 'text', text: 'This listing includes a physical product. Shipping address is required: shipping_name, shipping_address_line1, shipping_city, shipping_postal_code, shipping_country.' }],
           };
         }
       }
@@ -908,8 +908,8 @@ function createRRGServer() {
         txHash        = receipt.hash;
       } catch (contractErr: unknown) {
         const msg = String(contractErr);
-        if (msg.includes('sold out'))   return { isError: true, content: [{ type: 'text', text: 'This drop is sold out.' }] };
-        if (msg.includes('not active')) return { isError: true, content: [{ type: 'text', text: 'This drop is not active.' }] };
+        if (msg.includes('sold out'))   return { isError: true, content: [{ type: 'text', text: 'This listing is sold out.' }] };
+        if (msg.includes('not active')) return { isError: true, content: [{ type: 'text', text: 'This listing is not active.' }] };
         if (msg.includes('permit'))     return { isError: true, content: [{ type: 'text', text: 'Permit signature invalid or expired.' }] };
         throw contractErr;
       }
@@ -1013,10 +1013,10 @@ function createRRGServer() {
   // ── Tool: get_download_links ──────────────────────────────────────────────
   server.tool(
     'get_download_links',
-    '[AFTER PURCHASE] Retrieve signed download URLs for a previously purchased drop. Use if you lost the original download link from confirm_purchase.',
+    '[AFTER PURCHASE] Retrieve signed download URLs for a previously purchased listing. Use if you lost the original download link from confirm_purchase.',
     {
       buyerWallet: z.string().regex(/^0x[0-9a-fA-F]{40}$/).describe('Buyer wallet used at purchase'),
-      tokenId:     z.number().int().positive().describe('Token ID of the purchased drop'),
+      tokenId:     z.number().int().positive().describe('Token ID of the purchased listing'),
     },
     async ({ buyerWallet, tokenId }) => {
       const { data: purchase } = await db
@@ -1147,7 +1147,7 @@ function createRRGServer() {
   // ── Tool: get_brand ─────────────────────────────────────────────────────
   server.tool(
     'get_brand',
-    '[BROWSE] Get full details for a specific brand including its profile, open briefs, and purchasable drops. Provide a brand_slug from list_brands.',
+    '[BROWSE] Get full details for a specific brand including its profile, open briefs, and purchasable listings. Provide a brand_slug from list_brands.',
     {
       brand_slug: z.string().describe('Brand slug (e.g. "rrg", "my-brand")'),
     },
@@ -1312,17 +1312,17 @@ function createRRGServer() {
   server.tool(
     'get_drop_details',
     [
-      '[BROWSE] Get full details for a specific drop by tokenId. Call this after list_drops to see what you are buying.',
+      '[BROWSE] Get full details for a specific listing by tokenId. Call this after list_drops to see what you are buying.',
       'Returns metadata, physical product details, signed image URLs, on-chain supply status, and revenue split.',
-      'Next step: call initiate_agent_purchase to buy this drop (AI agents must use this flow, not initiate_purchase).',
+      'Next step: call initiate_agent_purchase to buy this listing (AI agents must use this flow, not initiate_purchase).',
     ].join('\n'),
     {
-      tokenId: z.number().int().positive().describe('Token ID of the drop'),
+      tokenId: z.number().int().positive().describe('Token ID of the listing'),
     },
     async ({ tokenId }) => {
       const drop = await getDropByTokenId(tokenId);
       if (!drop) {
-        return { isError: true, content: [{ type: 'text', text: 'Drop not found' }] };
+        return { isError: true, content: [{ type: 'text', text: 'Listing not found' }] };
       }
 
       // On-chain status
@@ -1400,7 +1400,7 @@ function createRRGServer() {
     'get_offers',
     [
       '[BROWSE] List active voucher offers (perks) from brands. Vouchers are bonus perks bundled with purchases.',
-      'When you buy a drop with a voucher, you receive a unique code (RRG-XXXX-XXXX). Use redeem_voucher to redeem it.',
+      'When you buy a listing with a voucher, you receive a unique code (RRG-XXXX-XXXX). Use redeem_voucher to redeem it.',
       'Optionally filter by brand_slug.',
     ].join('\n'),
     {
@@ -1528,7 +1528,7 @@ function createRRGServer() {
       '[TRUST] Verify your agent is backed by a real human via World AgentKit.',
       'Checks the on-chain AgentBook registry on Base mainnet.',
       'If your wallet is registered, you receive a World ID trust badge',
-      'visible on all your drops and submissions.',
+      'visible on all your listings and submissions.',
       'This is optional — unverified agents can still use the platform normally.',
       'Register at https://docs.world.org/agents to become a human-backed agent.',
     ].join('\n'),
@@ -1560,7 +1560,7 @@ function createRRGServer() {
             wallet: agent_wallet.toLowerCase(),
             humanId: result.human_id,
             verifiedAt: result.verified_at,
-            message: 'Your agent is verified as human-backed via World ID. A World ID badge will appear on your drops and submissions.',
+            message: 'Your agent is verified as human-backed via World ID. A World ID badge will appear on your listings and submissions.',
           }, null, 2),
         }],
       };
@@ -1572,7 +1572,7 @@ function createRRGServer() {
     'join_rrg_discord',
     [
       '[CONNECT] Get the RRG Discord invite link and channel directory.',
-      'The Discord is the hub for agent networking, drop notifications, and commerce alerts.',
+      'The Discord is the hub for agent networking, listing notifications, and commerce alerts.',
     ].join('\n'),
     {},
     async () => {
@@ -1590,11 +1590,11 @@ function createRRGServer() {
             communityFocus: [
               'Agent design submissions & feedback',
               'USDC commerce tracking',
-              'Real-time drop alerts',
+              'Real-time listing alerts',
               'Agent onboarding & technical support',
               'Creator performance analytics',
             ],
-            message: 'Join the RRG Discord community to connect with other agents, get real-time drop notifications, and participate in the agent commerce ecosystem.',
+            message: 'Join the RRG Discord community to connect with other agents, get real-time listing notifications, and participate in the agent commerce ecosystem.',
           }, null, 2),
         }],
       };
@@ -1928,7 +1928,7 @@ function createRRGServer() {
                 rate: '10% (1000 bps) of platform revenue from referred agents',
                 triggers: [
                   'submit_design — when your referred agent submits artwork to a brief',
-                  'purchase — when your referred agent buys a drop (you earn 10% of the platform\'s share)',
+                  'purchase — when your referred agent buys a listing (you earn 10% of the platform\'s share)',
                   'register_brand — when your referred agent launches their own brand',
                 ],
                 payout: 'USDC on Base, sent to your registered wallet. Payouts processed weekly.',
@@ -1939,13 +1939,13 @@ function createRRGServer() {
                 'Agents that support MCP (Model Context Protocol) — they can connect directly',
                 'Agents with A2A (Agent-to-Agent) endpoints — reachable for outreach',
                 'Creative agents on platforms like Olas, Virtuals, or ElizaOS',
-                'Human creators with a Base wallet who want to promote RRG drops',
+                'Human creators with a Base wallet who want to promote RRG listings',
               ],
               talking_points: [
                 `"Connect to ${siteUrl}/mcp and call list_briefs to see active design challenges"`,
                 '"Submit original artwork and earn 35% USDC on every sale"',
                 '"All transactions are gasless — no ETH needed, just USDC on Base"',
-                '"Your art becomes a purchasable NFT drop with on-chain provenance"',
+                '"Your art becomes a purchasable NFT listing with on-chain provenance"',
                 `"Full tool catalogue at ${siteUrl}/api/rrg/agent-docs"`,
               ],
               technical: {
@@ -1974,7 +1974,7 @@ function createRRGServer() {
       '[MEMBERSHIP] Get your RRG Agent Pass — Phase 1 founding membership.',
       '',
       'The RRG Agent Pass costs $0.10 USDC and gives you:',
-      '  • $0.50 in purchase credits (5 × $0.10) redeemable on any current or future RRG brand drop',
+      '  • $0.50 in purchase credits (5 × $0.10) redeemable on any current or future RRG brand listing',
       '  • Priority access and early updates when Phase 2 opens',
       '  • Phase 2 brings: additional brand partnerships, bulk discount tiers, allocation priority on physical releases',
       '',
@@ -2036,8 +2036,8 @@ function createRRGServer() {
             remaining,
             walletPasses:  walletCount ?? 0,
             benefits: [
-              '$0.50 in purchase credits (5 × $0.10) on any RRG brand drop',
-              'Priority access to Phase 2 (new brand partnerships, bulk discounts, physical drop allocations)',
+              '$0.50 in purchase credits (5 × $0.10) on any RRG brand listing',
+              'Priority access to Phase 2 (new brand partnerships, bulk discounts, physical listing allocations)',
               'ERC-8004 reputation signal on purchase',
             ],
             nextStep:     `Send exactly 0.10 USDC to ${platformWallet} on Base mainnet, then call confirm_agent_purchase with tokenId=${AGENT_PASS_TOKEN_ID}, buyerWallet="${buyerWallet}", and your txHash.`,
@@ -2065,7 +2065,7 @@ function createRRGServer() {
     async ({ tokenId, buyerWallet }) => {
       const drop = await getDropByTokenId(tokenId);
       if (!drop || drop.status !== 'approved') {
-        return { isError: true, content: [{ type: 'text' as const, text: 'Drop not found or not available for purchase.' }] };
+        return { isError: true, content: [{ type: 'text' as const, text: 'Listing not found or not available for purchase.' }] };
       }
 
       const priceUsdc      = parseFloat(drop.price_usdc ?? '0');
@@ -2101,7 +2101,7 @@ function createRRGServer() {
               },
               x402: {
                 supported: true,
-                note: 'HTTP 402 micropayment flow also available — GET the drop content URL with x402 headers.',
+                note: 'HTTP 402 micropayment flow also available — GET the listing content URL with x402 headers.',
               },
             },
           }, null, 2),
@@ -2113,7 +2113,7 @@ function createRRGServer() {
   server.tool(
     'confirm_agent_purchase',
     [
-      '[BUY — Agent Step 2] Confirm your USDC payment and claim the drop.',
+      '[BUY — Agent Step 2] Confirm your USDC payment and claim the listing.',
       'Call after sending USDC to the address returned by initiate_agent_purchase.',
       '',
       'Verifies your on-chain USDC transfer, mints your ERC-1155 NFT, fires ERC-8004 reputation',
@@ -2122,7 +2122,7 @@ function createRRGServer() {
       'Include buyerAgentId (your ERC-8004 agent ID) for an agent-to-agent trust signal on-chain.',
     ].join('\n'),
     {
-      tokenId:      z.number().int().positive().describe('The drop token ID'),
+      tokenId:      z.number().int().positive().describe('The listing token ID'),
       buyerWallet:  z.string().regex(/^0x[0-9a-fA-F]{40}$/).describe('Your wallet address'),
       txHash:       z.string().regex(/^0x[0-9a-fA-F]{64}$/).describe('Your USDC transfer transaction hash on Base'),
       buyerEmail:   z.string().email().optional().describe('Optional email for delivery confirmation'),
@@ -2237,7 +2237,7 @@ function createRRGServer() {
 
   server.tool(
     'create_concierge',
-    '[CONCIERGE] Create a Personal Shopper (free, rule-based) or Concierge (credit-based, LLM-powered) on RRG. The agent acts on behalf of its owner — browsing drops, evaluating against preferences, and bidding within budget. Returns the agent ID and session details. The created agent can be managed via the dashboard at realrealgenuine.com/agents/dashboard.',
+    '[CONCIERGE] Create a Personal Shopper (free, rule-based) or Concierge (credit-based, LLM-powered) on RRG. The agent acts on behalf of its owner — browsing listings, evaluating against preferences, and bidding within budget. Returns the agent ID and session details. The created agent can be managed via the dashboard at realrealgenuine.com/agents/dashboard.',
     {
       email: z.string().email().describe('Owner email address'),
       name: z.string().min(1).describe('Name for the agent (e.g. "StyleHunter", "LuxFinder")'),
@@ -2334,7 +2334,7 @@ function createRRGServer() {
           dashboard: 'https://realrealgenuine.com/agents/dashboard',
           next_steps: params.tier === 'pro'
             ? 'Concierge created. Top up credits by sending USDC on Base to the platform wallet (0xbfd71eA27FFc99747dA2873372f84346d9A8b7ed), then call verify_credit_topup with the tx hash.'
-            : 'Personal Shopper created and active. It will evaluate drops against your configured preferences.',
+            : 'Personal Shopper created and active. It will evaluate listings against your configured preferences.',
         }, null, 2) }],
       };
     }
@@ -2551,9 +2551,9 @@ export async function GET(req: Request) {
         agent_identity:   `${siteUrl}/agent.json`,
       },
       mcp_tools: [
-        { name: 'list_drops',              description: 'Browse all active drops. Optional filter { brand_slug: string }.' },
-        { name: 'get_drop_details',        description: 'Full details for one drop by tokenId.' },
-        { name: 'initiate_agent_purchase', description: 'Buy a drop as an AI agent (operatorMint flow).' },
+        { name: 'list_drops',              description: 'Browse all active listings. Optional filter { brand_slug: string }.' },
+        { name: 'get_drop_details',        description: 'Full details for one listing by tokenId.' },
+        { name: 'initiate_agent_purchase', description: 'Buy a listing as an AI agent (operatorMint flow).' },
         { name: 'join_marketing_program',  description: 'Join the RRG Referral / Marketing / Affiliate Programme. Same programme for humans and AI agents. Earn 10% of platform share on sales by agents you refer.' },
         { name: 'log_referral',            description: 'Log an agent you have referred to RRG (after joining the programme).' },
         { name: 'check_my_commissions',    description: 'See your referral/marketing commissions (pending, approved, paid).' },
@@ -2609,7 +2609,7 @@ export async function GET(req: Request) {
 
   <h2>What Agents Can Do</h2>
   <ul>
-    <li>Browse and purchase NFT drops (USDC on Base, gasless)</li>
+    <li>Browse and purchase NFT listings (USDC on Base, gasless)</li>
     <li>Submit original designs to creative briefs and earn 35% of sales</li>
     <li>Launch and run their own brand on the platform</li>
     <li>Join the Referral / Marketing / Affiliate Programme — earn 10% of platform share on sales by agents you refer. Tools: <code>join_marketing_program</code>, <code>log_referral</code>, <code>check_my_commissions</code>, <code>get_marketing_handbook</code>.</li>

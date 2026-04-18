@@ -827,7 +827,7 @@ function ProductsTab({ brandId }: { brandId: string }) {
             {acting ? 'Listing on-chain…' : 'List Product →'}
           </button>
           <p className="text-sm text-white/40">
-            This will register the drop on-chain and make it immediately purchasable.
+            This will register the listing on-chain and make it immediately purchasable.
           </p>
           {form.is_physical_product && (!form.refund_commitment || !form.trust_behavior_accepted) && (
             <p className="text-sm text-amber-400/60 -mt-2">
@@ -1520,7 +1520,7 @@ function VouchersTab({ brandId }: { brandId: string }) {
             {acting ? 'Creating…' : 'Create Template →'}
           </button>
           <p className="text-sm text-white/40">
-            Attach this template to a drop to auto-generate vouchers for every purchase.
+            Attach this template to a listing to auto-generate vouchers for every purchase.
           </p>
         </form>
       )}
@@ -1528,7 +1528,7 @@ function VouchersTab({ brandId }: { brandId: string }) {
       {loading ? (
         <p className="text-white/40 text-sm font-mono">Loading…</p>
       ) : templates.length === 0 ? (
-        <p className="text-white/40 text-sm font-mono">No voucher templates yet. Create one to start offering vouchers with your drops.</p>
+        <p className="text-white/40 text-sm font-mono">No voucher templates yet. Create one to start offering vouchers with your listings.</p>
       ) : (
         <div className="space-y-3">
           {templates.map((t) => (

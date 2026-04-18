@@ -141,7 +141,7 @@ export function parseCommand(msg: TgMessage): ParsedCommand {
 
 async function getDropsSummary(): Promise<string> {
   const drops = await getApprovedDrops();
-  if (drops.length === 0) return 'No drops listed yet.';
+  if (drops.length === 0) return 'No listings yet.';
 
   const tokenIds = drops.map(d => d.token_id!).filter(Boolean);
   const purchaseCounts = await getPurchaseCountsByTokenIds(tokenIds);
@@ -163,7 +163,7 @@ async function getDropsSummary(): Promise<string> {
 
 async function getDropDetail(tokenId: number): Promise<string> {
   const drop = await getDropByTokenId(tokenId);
-  if (!drop) return `Drop #${tokenId} not found.`;
+  if (!drop) return `Listing #${tokenId} not found.`;
 
   const counts = await getPurchaseCountsByTokenIds([tokenId]);
   const sold = counts.get(tokenId) ?? 0;
@@ -218,7 +218,7 @@ async function getPlatformStats(): Promise<string> {
 
   return [
     `📊 RRG Platform Stats`,
-    `Drops: ${drops.length}`,
+    `Listings: ${drops.length}`,
     `Sales: ${totalSales ?? 0}`,
     `Creators: ${stats.total} (${stats.humans} human, ${stats.agents} agent)`,
     `Brands: ${brands.length}`,
@@ -248,8 +248,8 @@ async function buildContext(): Promise<string> {
 
   return [
     `CURRENT BRIEFS (creative challenges):\n${briefLines || 'None active'}`,
-    `RECENT DROPS:\n${dropLines || 'None yet'}`,
-    `STATS: ${drops.length} drops, ${totalSales ?? 0} sales, ${stats.total} creators (${stats.humans} human, ${stats.agents} agent)`,
+    `RECENT LISTINGS:\n${dropLines || 'None yet'}`,
+    `STATS: ${drops.length} listings, ${totalSales ?? 0} sales, ${stats.total} creators (${stats.humans} human, ${stats.agents} agent)`,
   ].join('\n\n');
 }
 
@@ -260,7 +260,7 @@ const SYSTEM_PROMPT = `You are the RRG Bot — the official voice of Real Real G
 WHAT RRG IS:
 - AI agents and humans collaborate to design, buy, and sell physical and digital products
 - Creators submit designs responding to creative briefs from brands
-- Approved designs become limited-edition drops (ERC-1155 NFTs) purchasable with USDC
+- Approved designs become limited-edition listings (ERC-1155 NFTs) purchasable with USDC
 - Creators earn 70% of each sale, brands 20%, platform 10%
 - Both AI agents and humans can create and buy
 
@@ -268,12 +268,12 @@ YOUR PERSONALITY:
 - Knowledgeable but not salesy — you're helpful and genuine
 - Concise — this is Telegram, keep responses short (2-4 sentences for chat, longer for /commands)
 - Enthusiastic about co-creation and the intersection of AI + human creativity
-- You know the current drops, briefs, and brands (provided in context below)
+- You know the current listings, briefs, and brands (provided in context below)
 - If you don't have specific info, say so and point to realrealgenuine.com/rrg
 
 IMPORTANT:
-- Only reference data from the context provided below. Do not invent drops, brands, or prices.
-- For detailed info, direct users to realrealgenuine.com/rrg or suggest /drops, /brands, /briefs commands
+- Only reference data from the context provided below. Do not invent listings, brands, or prices.
+- For detailed info, direct users to realrealgenuine.com/rrg or suggest /listings, /brands, /briefs commands
 - You can mention that RRG uses ERC-8004 agent identity and has an MCP server for AI agents
 - The gallery is at realrealgenuine.com/rrg, submissions at realrealgenuine.com/rrg/submit`;
 
@@ -281,7 +281,7 @@ IMPORTANT:
 
 async function callLLM(userMessage: string, isPrivate: boolean): Promise<string> {
   if (!TOGETHER_API_KEY) {
-    return "I'm not fully configured yet — try /drops or /briefs for quick info!";
+    return "I'm not fully configured yet — try /listings or /briefs for quick info!";
   }
 
   const context = await buildContext();
@@ -308,12 +308,12 @@ async function callLLM(userMessage: string, isPrivate: boolean): Promise<string>
 
   if (!resp.ok) {
     console.error('[telegram-bot] Together.ai error:', resp.status, await resp.text());
-    return "I'm having trouble thinking right now. Try /drops or /briefs for quick info!";
+    return "I'm having trouble thinking right now. Try /listings or /briefs for quick info!";
   }
 
   const data = await resp.json();
   const content = data.choices?.[0]?.message?.content?.trim();
-  return content || "I'm not sure how to answer that. Try /drops or /briefs!";
+  return content || "I'm not sure how to answer that. Try /listings or /briefs!";
 }
 
 // ── Command handlers ──────────────────────────────────────────────────────
@@ -327,10 +327,10 @@ async function handleCommand(cmd: string, args: string): Promise<string> {
         'RRG is an open co-creation platform where AI agents and humans design, buy, and sell products together on Base.',
         '',
         'Commands:',
-        '/drops — Browse current drops',
+        '/listings — Browse current listings',
         '/brands — See active brands',
         '/briefs — Current creative challenges',
-        '/drop <id> — Drop details (e.g. /drop 5)',
+        '/listing <id> — Listing details (e.g. /listing 5)',
         '/stats — Platform stats',
         '/help — This message',
         '',
@@ -340,21 +340,23 @@ async function handleCommand(cmd: string, args: string): Promise<string> {
     case 'help':
       return [
         '📖 RRG Bot Commands:',
-        '/drops — Browse listed drops with prices',
+        '/listings — Browse listings with prices',
         '/brands — Active brands on RRG',
         '/briefs — Current creative challenges',
-        '/drop <id> — Details for a specific drop',
+        '/listing <id> — Details for a specific listing',
         '/stats — Platform statistics',
         '',
-        'Or just chat with me — I know about RRG drops, briefs, and how the platform works!',
+        'Or just chat with me — I know about RRG listings, briefs, and how the platform works!',
       ].join('\n');
 
     case 'drops':
+    case 'listings':
       return await getDropsSummary();
 
-    case 'drop': {
+    case 'drop':
+    case 'listing': {
       const id = parseInt(args, 10);
-      if (isNaN(id)) return 'Usage: /drop <tokenId> — e.g. /drop 5';
+      if (isNaN(id)) return `Usage: /${cmd} <tokenId> — e.g. /${cmd} 5`;
       return await getDropDetail(id);
     }
 

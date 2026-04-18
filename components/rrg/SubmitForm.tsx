@@ -121,7 +121,7 @@ export default function SubmitForm({ brandId, brandSlug, brandName, briefId }: S
         <h2 className="text-2xl font-light mb-4">Submission received</h2>
         <p className="text-white/60 text-base leading-relaxed mb-10">
           We&apos;ll review your design and notify you at the email provided if it&apos;s
-          approved for a drop. This usually takes 2&ndash;5 days.
+          approved as a listing. This usually takes 2&ndash;5 days.
         </p>
         <Link
           href={`/brand/${brandSlug}`}
@@ -200,7 +200,7 @@ export default function SubmitForm({ brandId, brandSlug, brandName, briefId }: S
           />
           <p className="mt-1.5 text-sm text-white/50 flex justify-between">
             <span>
-              Shown on your drop page. URLs become clickable links — or use{' '}
+              Shown on your listing. URLs become clickable links — or use{' '}
               <span className="font-mono text-white/60">[My Site](https://…)</span>
               {' '}for custom link text.
             </span>
@@ -374,7 +374,7 @@ export default function SubmitForm({ brandId, brandSlug, brandName, briefId }: S
             placeholder="you@example.com"
           />
           <p className="mt-1.5 text-sm text-white/50">
-            We&apos;ll notify you when your design is approved for a drop
+            We&apos;ll notify you when your design is approved as a listing
           </p>
         </div>
 

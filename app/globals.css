@@ -1,4 +1,15 @@
-@import "tailwindcss";
+/* Disable Tailwind's auto source-detection and list sources explicitly.
+   Auto-detection scans every file under the repo root, including scratch
+   dirs (tmp/, scripts/, docs/) that contain Python scripts and Windows
+   path literals whose `\Xxxxx` backslash sequences get parsed as CSS
+   escape codes — a path like `...\e9690f75-...` triggers
+   `String.fromCodePoint(0xE9768F)` (>0x10FFFF) and crashes the build.
+   `@source not` would be cleaner but wasn't available until 4.1+. */
+@import "tailwindcss" source(none);
+
+@source "./";
+@source "../components";
+@source "../lib";
 
 :root {
   --background: #0a0a0a;

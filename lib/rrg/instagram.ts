@@ -144,7 +144,7 @@ async function sendInstagramEmail(p: InstagramNotifyParams, caption: string, ima
   </div>
 
   <div class="section">
-    <div class="label">Drop details</div>
+    <div class="label">Listing details</div>
     <div class="meta-row"><span class="meta-key">Title</span><span class="meta-val">${escHtml(p.title)}</span></div>
     ${p.brandName ? `<div class="meta-row"><span class="meta-key">Brand</span><span class="meta-val">${escHtml(p.brandName)}</span></div>` : ''}
     ${p.briefName ? `<div class="meta-row"><span class="meta-key">Brief</span><span class="meta-val">${escHtml(p.briefName)}</span></div>` : ''}

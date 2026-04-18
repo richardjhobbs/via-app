@@ -9,6 +9,17 @@ const nextConfig: NextConfig = {
   output: process.env.NODE_ENV === 'production' ? 'standalone' : undefined,
   turbopack: {},
   serverExternalPackages: ['agentmail', 'ethers'],
+  async redirects() {
+    return [
+      // Any /rrg/listing/:tokenId links that leaked out during the short-lived
+      // rename branch redirect back to the canonical /rrg/drop/:tokenId path.
+      {
+        source: '/rrg/listing/:tokenId',
+        destination: '/rrg/drop/:tokenId',
+        permanent: true,
+      },
+    ];
+  },
   async rewrites() {
     // Proxy brand onboarding at /brands/* to the standalone onboarding
     // app. The onboarding app is configured with basePath: '/brands' so

@@ -737,7 +737,7 @@ function DashboardPage({
                   : 'text-white/50 hover:text-white/80'
               }`}
             >
-              {t}
+              {t === 'drops' ? 'listings' : t}
             </button>
           ))}
         </div>
@@ -807,7 +807,7 @@ function DropsTab({ wallet }: { wallet: string }) {
   }, [wallet]);
 
   if (loading) return <p className="text-sm font-mono text-white/50">Loading…</p>;
-  if (items.length === 0) return <p className="text-sm font-mono text-white/40">No approved drops yet.</p>;
+  if (items.length === 0) return <p className="text-sm font-mono text-white/40">No approved listings yet.</p>;
 
   const totalRevenue = items.reduce((sum, d) => sum + d.salesRevenue, 0);
   const totalSales   = items.reduce((sum, d) => sum + d.salesCount, 0);

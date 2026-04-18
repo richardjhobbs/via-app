@@ -18,7 +18,7 @@ interface Props {
   openBriefs: Brief[];
 }
 
-function Modal({ open, onClose, children }: { open: boolean; onClose: () => void; children: React.ReactNode }) {
+function Modal({ open, onClose, children, noBorder }: { open: boolean; onClose: () => void; children: React.ReactNode; noBorder?: boolean }) {
   const overlayRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -36,16 +36,18 @@ function Modal({ open, onClose, children }: { open: boolean; onClose: () => void
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4"
       onClick={(e) => { if (e.target === overlayRef.current) onClose(); }}
     >
-      <div className="relative max-w-2xl w-full max-h-[80vh] overflow-y-auto border border-white/20 bg-black rounded-lg">
-        <button
-          onClick={onClose}
-          className="absolute top-3 right-3 w-8 h-8 flex items-center justify-center text-white/60 hover:text-white transition-colors cursor-pointer"
-          aria-label="Close"
-        >
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
-          </svg>
-        </button>
+      <div className={`relative max-w-2xl w-full max-h-[80vh] overflow-y-auto bg-black rounded-lg ${noBorder ? '' : 'border border-white/20'}`}>
+        {!noBorder && (
+          <button
+            onClick={onClose}
+            className="absolute top-3 right-3 z-10 w-8 h-8 flex items-center justify-center text-white/60 hover:text-white transition-colors cursor-pointer"
+            aria-label="Close"
+          >
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+            </svg>
+          </button>
+        )}
         {children}
       </div>
     </div>
@@ -65,11 +67,11 @@ export default function HeroSplit({ openBriefs }: Props) {
           <div>
             <div className="flex items-center gap-2 mb-3">
               <span className="w-2 h-2 rounded-full bg-green-500" />
-              <h2 className="text-sm font-mono uppercase tracking-wider text-white/60">Personal Shopper</h2>
+              <h2 className="text-lg font-mono uppercase tracking-wider text-white/80">Personal Shopper</h2>
             </div>
             <p className="text-white/80 text-sm leading-relaxed mb-4">
               Get your own Personal Shopper or Concierge. Set your preferences, create or connect
-              a wallet, and let them find, evaluate, and bid on drops on your behalf.
+              a wallet, and let them find, evaluate, and buy listings on your behalf.
             </p>
             <button
               onClick={() => setAgentVideoOpen(true)}
@@ -92,7 +94,7 @@ export default function HeroSplit({ openBriefs }: Props) {
           <div>
             <div className="flex items-center gap-2 mb-3">
               <span className="w-2 h-2 rounded-full bg-green-500" />
-              <h2 className="text-sm font-mono uppercase tracking-wider text-white/60">Co-Creation</h2>
+              <h2 className="text-lg font-mono uppercase tracking-wider text-white/80">Co-Creation</h2>
             </div>
             <p className="text-white/80 text-sm leading-relaxed mb-4">
               Brands publish briefs. Creators respond with original work. Approved designs
@@ -115,22 +117,31 @@ export default function HeroSplit({ openBriefs }: Props) {
         </div>
       </div>
 
-      {/* Agent Video Modal (placeholder — video TBD) */}
-      <Modal open={agentVideoOpen} onClose={() => setAgentVideoOpen(false)}>
-        <div className="p-6 text-center">
-          <p className="text-white/60 text-sm font-mono uppercase tracking-wider mb-4">Agent Launch Video</p>
-          <div className="border border-white/10 rounded-lg overflow-hidden">
-            <div className="aspect-video bg-white/5 flex items-center justify-center">
-              <p className="text-white/40 text-sm">Video coming soon</p>
-            </div>
-          </div>
+      {/* Personal Shopper Video Modal — autoplay, 1:1, no border, close on external click */}
+      <Modal open={agentVideoOpen} onClose={() => setAgentVideoOpen(false)} noBorder>
+        <div className="relative w-full rounded-lg overflow-hidden" style={{ paddingBottom: '100%' }}>
+          <iframe
+            className="absolute inset-0 w-full h-full"
+            src={`https://player.vimeo.com/video/1182535760?autoplay=1&badge=0&autopause=0&player_id=0&app_id=58479`}
+            frameBorder="0"
+            allow="autoplay; fullscreen; picture-in-picture; clipboard-write; encrypted-media; web-share"
+            referrerPolicy="strict-origin-when-cross-origin"
+            title="Personal Shopper"
+          />
         </div>
       </Modal>
 
-      {/* Co-Creation Video Modal */}
-      <Modal open={coCreateVideoOpen} onClose={() => setCoCreateVideoOpen(false)}>
-        <div className="p-0">
-          <VimeoPlayer videoId="1179525112" title="Real Real Genuine" aspectRatio="100" />
+      {/* Co-Creation Video Modal — autoplay, 1:1, no border, close on external click */}
+      <Modal open={coCreateVideoOpen} onClose={() => setCoCreateVideoOpen(false)} noBorder>
+        <div className="relative w-full rounded-lg overflow-hidden" style={{ paddingBottom: '100%' }}>
+          <iframe
+            className="absolute inset-0 w-full h-full"
+            src={`https://player.vimeo.com/video/1179525112?autoplay=1&badge=0&autopause=0&player_id=0&app_id=58479`}
+            frameBorder="0"
+            allow="autoplay; fullscreen; picture-in-picture; clipboard-write; encrypted-media; web-share"
+            referrerPolicy="strict-origin-when-cross-origin"
+            title="Real Real Genuine"
+          />
         </div>
       </Modal>
 
