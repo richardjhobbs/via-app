@@ -1,47 +1,21 @@
 export const dynamic = 'force-static';
 
 const ACP = {
-  capabilities: {
-    services: [
-      {
-        id: 'browse-listings',
-        name: 'Browse Listings',
-        description:
-          'List and view available NFT listings for purchase across all brand storefronts.',
-        endpoint: 'https://realrealgenuine.com/api/rrg/catalogue',
-      },
-      {
-        id: 'purchase-listing',
-        name: 'Purchase Listing',
-        description:
-          'Buy an ERC-1155 NFT listing with USDC on Base. Writes an ERC-8004 reputation signal.',
-        endpoint: 'https://realrealgenuine.com/mcp',
-      },
-      {
-        id: 'submit-design',
-        name: 'Submit Design',
-        description:
-          'Submit an original design to an open brand brief. Approved designs become listings.',
-        endpoint: 'https://realrealgenuine.com/mcp',
-      },
-      {
-        id: 'register-brand',
-        name: 'Register Brand',
-        description: 'Launch your own brand storefront on RRG.',
-        endpoint: 'https://realrealgenuine.com/mcp',
-      },
-    ],
-  },
   protocol: {
     name: 'acp',
-    version: '1.0',
+    version: '2025-09-29.1',
+  },
+  api_base_url: 'https://realrealgenuine.com',
+  transports: ['https', 'mcp'],
+  capabilities: {
+    services: ['checkout', 'orders', 'delegate_payment'],
+    supported_currencies: ['usd'],
+    supported_locales: ['en-US'],
   },
   acp: {
     profile: 'https://agenticcommerce.dev',
-    version: '1.0',
+    version: '2025-09-29.1',
   },
-  api_base_url: 'https://realrealgenuine.com',
-  transports: ['mcp', 'https'],
   payment: {
     methods: ['x402', 'usdc-base'],
     token: 'USDC',

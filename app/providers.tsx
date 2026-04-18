@@ -7,6 +7,7 @@ import { inAppWallet } from 'thirdweb/wallets';
 import { wagmiConfig } from '@/lib/rrg/wagmiConfig';
 import { thirdwebClient } from '@/lib/rrg/thirdwebClient';
 import { useState } from 'react';
+import WebMCPTools from '@/components/rrg/WebMCPTools';
 
 // Wallets that should auto-reconnect across page loads / tabs
 const autoConnectWallets = [
@@ -22,6 +23,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
         <ThirdwebProvider>
           {/* Silently reconnects thirdweb in-app wallet if user previously authenticated */}
           <AutoConnect client={thirdwebClient} wallets={autoConnectWallets} />
+          <WebMCPTools />
           {children}
         </ThirdwebProvider>
       </QueryClientProvider>
