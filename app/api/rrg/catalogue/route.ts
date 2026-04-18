@@ -99,7 +99,7 @@ export async function GET(req: NextRequest) {
       stock_remaining,
       sold_out:          stock_remaining === 0,
       image_url:         r.jpeg_storage_path ? signedMap.get(r.jpeg_storage_path) ?? null : null,
-      buy_url:           r.token_id != null ? `${SITE_URL}/rrg/listing/${r.token_id}` : null,
+      buy_url:           r.token_id != null ? `${SITE_URL}/rrg/drop/${r.token_id}` : null,
       agent_buy_endpoint:`${SITE_URL}/api/rrg/claim`,
       is_physical:       !!r.is_physical_product,
       shipping_type:     r.shipping_type,

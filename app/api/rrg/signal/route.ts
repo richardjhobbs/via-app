@@ -64,7 +64,7 @@ export async function GET(req: NextRequest) {
     endpoint:      'https://realrealgenuine.com/mcp',
     sourceTxHash:  tx_hash,
     ...(token_id ? { tokenId: Number(token_id) } : {}),
-    ...(token_id ? { dropUrl: `https://realrealgenuine.com/rrg/listing/${token_id}` } : {}),
+    ...(token_id ? { dropUrl: `https://realrealgenuine.com/rrg/drop/${token_id}` } : {}),
   };
 
   // Return exactly JSON.stringify(doc) — no pretty-printing — so hashes match.

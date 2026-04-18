@@ -353,7 +353,7 @@ export async function POST(
       success: true,
       tokenId,
       txHash:  receipt.hash,
-      dropUrl: `${process.env.NEXT_PUBLIC_SITE_URL}/rrg/listing/${tokenId}`,
+      dropUrl: `${process.env.NEXT_PUBLIC_SITE_URL}/rrg/drop/${tokenId}`,
     }, { status: 201 });
 
   } catch (err) {

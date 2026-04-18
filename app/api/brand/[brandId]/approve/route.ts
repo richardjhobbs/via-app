@@ -137,7 +137,7 @@ export async function POST(
       txHash:           receipt.hash,
       notificationSent,
       splitType:        split.splitType,
-      dropUrl:          `${process.env.NEXT_PUBLIC_SITE_URL}/rrg/listing/${tokenId}`,
+      dropUrl:          `${process.env.NEXT_PUBLIC_SITE_URL}/rrg/drop/${tokenId}`,
     });
 
   } catch (err) {

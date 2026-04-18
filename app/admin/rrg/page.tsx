@@ -1081,7 +1081,7 @@ function DropsTab() {
                       <button onClick={() => editing === d.id ? setEditing(null) : startEdit(d)} className="text-white/50 hover:text-white transition-colors">
                         {editing === d.id ? 'Cancel' : 'Edit'}
                       </button>
-                      <a href={`/rrg/listing/${d.token_id}`} target="_blank" rel="noopener noreferrer" className="text-white/50 hover:text-white transition-colors">View ↗</a>
+                      <a href={`/rrg/drop/${d.token_id}`} target="_blank" rel="noopener noreferrer" className="text-white/50 hover:text-white transition-colors">View ↗</a>
                       <a href={`${scanBase}/address/${process.env.NEXT_PUBLIC_RRG_CONTRACT_ADDRESS}`} target="_blank" rel="noopener noreferrer" className="text-white/50 hover:text-white transition-colors font-mono">Scan ↗</a>
                     </div>
                   </div>

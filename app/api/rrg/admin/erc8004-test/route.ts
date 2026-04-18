@@ -72,7 +72,7 @@ export async function POST(req: NextRequest) {
         'purchase',
         'rrg',
         'https://realrealgenuine.com/mcp',
-        'https://realrealgenuine.com/rrg/listing/1',
+        'https://realrealgenuine.com/rrg/drop/1',
         testHash,
       );
       const estCostEth = ethers.formatEther(gasEst * (feeData.gasPrice ?? 1000000n));
