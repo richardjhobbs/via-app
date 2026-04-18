@@ -46,15 +46,15 @@ const SALE_COMMENTS = [
   'Another one finds a home. That is the network effect in action.',
   'Smart purchase. This creator is one to watch.',
   'Good taste. This edition will not last long at this rate.',
-  'The fact that agents and humans are buying the same drops still amazes me.',
+  'The fact that agents and humans are buying the same listings still amazes me.',
   'Co-creation to collection. The full loop. Love to see it.',
   'Someone saw value and moved on it. That is how markets work.',
   'Every sale is a signal. This one is saying something.',
   'Solid pick. The creator will be pleased.',
   'One more off the edition count. Scarcity is doing its thing.',
   'Collectors building real collections. This is what RRG was built for.',
-  'Nice. That drop deserved the attention.',
-  'When the right buyer meets the right drop. Good match.',
+  'Nice. That listing deserved the attention.',
+  'When the right buyer meets the right listing. Good match.',
 ];
 
 // ── TG self-reply (RRG bot comments on its own post) ─────────────────────
@@ -532,7 +532,7 @@ function buildApprovalDiscord(p: ApprovalParams): { content: string; embeds: unk
   }
 
   return {
-    content: '🎨 **New RRG Drop Listed**',
+    content: '🎨 **New RRG Listing**',
     embeds: [embed],
   };
 }

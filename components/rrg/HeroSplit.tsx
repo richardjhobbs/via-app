@@ -71,7 +71,7 @@ export default function HeroSplit({ openBriefs }: Props) {
             </div>
             <p className="text-white/80 text-sm leading-relaxed mb-4">
               Get your own Personal Shopper or Concierge. Set your preferences, create or connect
-              a wallet, and let them find, evaluate, and bid on drops on your behalf.
+              a wallet, and let them find, evaluate, and buy listings on your behalf.
             </p>
             <button
               onClick={() => setAgentVideoOpen(true)}

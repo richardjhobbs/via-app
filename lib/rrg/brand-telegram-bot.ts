@@ -83,7 +83,7 @@ About Frey Tailored:
 - A Hong Kong-based womenswear label specialising in tailoring. Half canvas construction, surgeon's cuffs, satin peak lapels, jetted pockets — Savile Row techniques applied to contemporary feminine silhouettes
 - Concept-led collections: Irregular Stripe (AW25-26), Uniformal Dressing (SS25), African Meadow, Beauty & Healing, Valley of Flowers & People
 - Signature categories: tailored jackets, waistcoats, trousers, coats, dresses (short/midi/maxi/shirt dresses), skirts, shirts and blouses, suits
-- Limited-edition drops alongside core classics; in-house alterations and made-to-order in Hong Kong
+- Limited-edition listings alongside core classics; in-house alterations and made-to-order in Hong Kong
 
 Sizing:
 - European numeric sizing EU 32-46 (= UK 6-20, US 2-16). Also marked in two-letter aliases (XS-S, S-M, M-L, L-XL)

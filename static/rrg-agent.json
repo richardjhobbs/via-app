@@ -27,7 +27,7 @@
     {
       "name": "MCP",
       "endpoint": "https://realrealgenuine.com/mcp",
-      "description": "RRG platform MCP server — browse drops, purchase, submit designs, get agent pass"
+      "description": "RRG platform MCP server — browse listings, purchase, submit designs, get agent pass"
     },
     {
       "name": "Web",
@@ -47,7 +47,7 @@
       "agentBook": "base",
       "verification": "optional",
       "badge": true,
-      "info": "Agents verified via World AgentBook receive a trust badge on their drops and submissions."
+      "info": "Agents verified via World AgentBook receive a trust badge on their listings and submissions."
     }
   }
 }

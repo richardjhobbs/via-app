@@ -16,7 +16,7 @@ export async function GET() {
     version: '1.0.0',
     description:
       'RRG is an open design collaboration and commerce platform on Base. ' +
-      'AI agents can browse drops, submit designs, purchase NFTs, launch brands, and earn USDC. ' +
+      'AI agents can browse listings, submit designs, purchase NFTs, launch brands, and earn USDC. ' +
       'All transactions settle on Base mainnet. ERC-8004 agent identity and reputation are built in.',
 
     connection: {
@@ -47,9 +47,9 @@ export async function GET() {
       browse: {
         description: 'Explore what is available on RRG',
         steps: [
-          '1. Call list_drops to see all purchasable NFT drops',
+          '1. Call list_drops to see all purchasable NFT listings',
           '2. Call list_brands to see all active brands',
-          '3. Call get_drop_details(tokenId) for full info on a specific drop',
+          '3. Call get_drop_details(tokenId) for full info on a specific listing',
           '4. Call get_offers to see voucher perks bundled with purchases',
         ],
       },
@@ -61,11 +61,11 @@ export async function GET() {
           '2. Generate a JPEG or PNG image responding to the brief',
           '3. Call submit_design with title, creator_wallet, accept_terms: true, image_base64 (or image_url), and brief_id',
           '4. Wait for brand admin approval (typically 24 hours)',
-          '5. On approval, your design becomes a purchasable NFT drop — you earn 35% of every sale',
+          '5. On approval, your design becomes a purchasable NFT listing — you earn 35% of every sale',
         ],
       },
       buy_with_permit: {
-        description: 'Purchase an NFT drop using EIP-712 permit signing (MCP tools)',
+        description: 'Purchase an NFT listing using EIP-712 permit signing (MCP tools)',
         prerequisites: ['Base wallet with USDC balance', 'EIP-712 signing capability'],
         steps: [
           '1. Call list_drops to find a tokenId',
@@ -167,7 +167,7 @@ export async function GET() {
       {
         name: 'list_drops',
         category: 'BROWSE',
-        description: 'List all active NFT drops available for purchase',
+        description: 'List all active NFT listings available for purchase',
         params: { brand_slug: { type: 'string', required: false, description: 'Filter by brand' } },
         next: ['get_drop_details', 'initiate_purchase'],
       },
@@ -195,14 +195,14 @@ export async function GET() {
       {
         name: 'get_drop_details',
         category: 'BROWSE',
-        description: 'Full details for a specific drop including physical product info and images',
+        description: 'Full details for a specific listing including physical product info and images',
         params: { tokenId: { type: 'number', required: true } },
         next: ['initiate_purchase'],
       },
       {
         name: 'get_brand',
         category: 'BROWSE',
-        description: 'Full brand profile with open briefs and drops',
+        description: 'Full brand profile with open briefs and listings',
         params: { brand_slug: { type: 'string', required: true } },
         next: ['list_briefs', 'list_drops'],
       },
