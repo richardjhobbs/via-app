@@ -95,7 +95,7 @@ export default function BrandDirectory({
       )}
 
       {/* Desktop: 2-column grid */}
-      <div ref={scrollRef} className="hidden sm:grid grid-cols-2 gap-4 max-h-[500px] overflow-y-auto" style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}>
+      <div ref={scrollRef} className="hidden sm:grid grid-cols-2 gap-4 max-h-[1000px] overflow-y-auto" style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}>
         {brands.map((b) => <BrandCard key={b.slug} b={b} />)}
       </div>
 

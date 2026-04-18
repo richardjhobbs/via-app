@@ -16,7 +16,7 @@ import ShopWithAI from '@/components/rrg/ShopWithAI';
 
 export const dynamic = 'force-dynamic';
 
-const CAROUSEL_LIMIT = 10;
+const CAROUSEL_LIMIT = 25;
 
 // Social platform display names
 const SOCIAL_LABELS: Record<string, string> = {
@@ -231,12 +231,6 @@ export default async function RRGGallery({
         </div>
       </div>
 
-      {/* ── Hero Split: Agent Launch + Co-Creation ──────────────────── */}
-      <HeroSplit openBriefs={enrichedBriefs} />
-
-      {/* ── Shop with your AI assistant (connect guides) ────────────── */}
-      <ShopWithAI />
-
       {/* ── Brands ─────────────────────────────────────────────────── */}
       <div className="mb-8">
         <h2 className="text-sm font-mono uppercase tracking-[0.3em] text-white/60 mb-4">Brands</h2>
@@ -251,6 +245,12 @@ export default async function RRGGallery({
 
       {/* ── Store Carousel ──────────────────────────────────────────── */}
       <StoreCarousel drops={dropsWithUrls} />
+
+      {/* ── Hero Split: Agent Launch + Co-Creation ──────────────────── */}
+      <HeroSplit openBriefs={enrichedBriefs} />
+
+      {/* ── Shop with your AI assistant (connect guides) ────────────── */}
+      <ShopWithAI />
 
       {/* ── Drops Coming Soon ───────────────────────────────────────── */}
       <div className="mb-16">
