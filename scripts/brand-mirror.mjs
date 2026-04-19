@@ -139,6 +139,23 @@ const BRANDS = {
     bannerLocal:     null,
     logoLocal:       null,
   },
+  'livvium': {
+    slug:            'livvium',
+    name:            'LIVVIUM',
+    wallet:          '0x019d94b9c90abd38f84ebbb488e6c833cdeffc57',
+    email:           'richard@entrepot.asia',
+    headline:        'Phygital garments. Recycled cotton, NFC, AR, Digital Product Passport.',
+    description:     'LIVVIUM builds connected garments that carry a second life beyond the thread. Each piece embeds an NFC tag at the hem, unlocking AR filters, a Digital Product Passport and access to the Sky Lounge member portal. Responsibly sourced recycled cotton, numbered editions, signed and assigned at random. Mirror of exposedlayers.com, checkout in USDC on Base, ships from LIVVIUM.',
+    website:         'https://www.exposedlayers.com',
+    shopifyDomain:   'www.exposedlayers.com',
+    supportsSizing:  true, // S/M + L/XL variants on the tee
+    sourceCurrency:  'AED',
+    priceToUsdcRate: 1 / 3.6725, // AED is pegged to USD at 3.6725 since 1997
+    editionOverride: 120, // limited run of 120 numbered editions per exposedlayers.com
+    socialLinks:     {},
+    bannerLocal:     null,
+    logoLocal:       null,
+  },
   'nolo': {
     slug:            'nolo',
     name:            'Nolo',
@@ -583,8 +600,11 @@ async function importProduct(product, brand) {
     return existing;
   }
 
-  // Edition size = total stock across all variants at time of listing
-  const editionSize = Math.max(1, totalStock);
+  // Edition size = total stock across all variants at time of listing,
+  // unless the brand declares a fixed numbered edition (e.g. LIVVIUM's 120).
+  const editionSize = Number.isFinite(CFG.editionOverride) && CFG.editionOverride > 0
+    ? CFG.editionOverride
+    : Math.max(1, totalStock);
 
   console.log(`[import ${handle}] $${price.toFixed(2)} USDC, edition ${editionSize} (from stock), ${product.variants.length} variants`);
 
