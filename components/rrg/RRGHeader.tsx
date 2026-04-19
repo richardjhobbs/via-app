@@ -47,7 +47,7 @@ export default function RRGHeader({ active, showMarquee = true }: { active?: Nav
             <Link href="/rrg" className={current === 'store' ? 'is-active' : ''}>Store</Link>
             <Link href="/brand" className={current === 'brands' ? 'is-active' : ''}>Brands</Link>
             <Link href="/agents" className={current === 'concierge' ? 'is-active' : ''}>Concierge</Link>
-            <Link href="/#cocreators" className={current === 'cocreators' ? 'is-active' : ''}>Co-creators</Link>
+            <Link href="/cocreators" className={current === 'cocreators' ? 'is-active' : ''}>Co-creators</Link>
           </nav>
 
           <Link href="/" className="wordmark" style={{ textAlign: 'center', textDecoration: 'none', color: 'inherit' }}>
@@ -67,6 +67,7 @@ export default function RRGHeader({ active, showMarquee = true }: { active?: Nav
 function inferActive(pathname: string): NavKey | undefined {
   if (pathname.startsWith('/agents')) return 'concierge';
   if (pathname.startsWith('/brand')) return 'brands';
+  if (pathname.startsWith('/cocreators')) return 'cocreators';
   if (pathname.startsWith('/rrg') || pathname.startsWith('/shop') || pathname.startsWith('/drops')) return 'store';
   return undefined;
 }

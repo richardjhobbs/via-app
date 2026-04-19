@@ -10,7 +10,6 @@ import { getSignedUrlsBatch } from '@/lib/rrg/storage';
 import RRGHeader from '@/components/rrg/RRGHeader';
 import RRGFooter from '@/components/rrg/RRGFooter';
 import ShopWithAI from '@/components/rrg/ShopWithAI';
-import OpenBriefsModal, { type OpenBriefSummary } from '@/components/rrg/OpenBriefsModal';
 
 export const dynamic = 'force-dynamic';
 
@@ -112,20 +111,6 @@ export default async function Landing() {
   const heroPrice = heroDrop?.price_usdc ? `$${Number(heroDrop.price_usdc).toFixed(0)}` : '$206';
   const heroBrandName = heroBrand?.name ?? 'Maison Archive';
   const heroHref = heroDrop?.token_id != null ? `/rrg/drop/${heroDrop.token_id}` : '/rrg';
-
-  // ─── Open briefs (all, for modal) ────────────────────────────────────
-  const briefsForModal: OpenBriefSummary[] = openBriefs.map((b) => {
-    const brand = b.brand_id ? brandMap.get(b.brand_id) : null;
-    return {
-      id: b.id,
-      title: b.title,
-      description: b.description,
-      response_count: b.response_count,
-      ends_at: b.ends_at,
-      brand_name: brand?.name ?? null,
-      brand_slug: brand?.slug ?? null,
-    };
-  });
 
   // ─── Feature + grid brand cards ──────────────────────────────────────
   const feature = sortedBrands[0];
@@ -386,7 +371,19 @@ export default async function Landing() {
             <h3>Co-creation, quietly.</h3>
           </div>
           <div className="sh-right">
-            <OpenBriefsModal briefs={briefsForModal} />
+            <Link
+              href="/cocreators"
+              style={{
+                color: 'var(--ink-2)',
+                fontSize: 13,
+                textDecoration: 'none',
+                borderBottom: '1px solid var(--line-strong)',
+                paddingBottom: 2,
+                letterSpacing: '0.01em',
+              }}
+            >
+              All open briefs ({openBriefs.length}) →
+            </Link>
           </div>
         </div>
         <div className="collab-inner">

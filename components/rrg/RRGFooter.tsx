@@ -21,7 +21,7 @@ export default function RRGFooter() {
           <ul>
             <li><Link href="/rrg">Full Store</Link></li>
             <li><Link href="/brand">Brands</Link></li>
-            <li><Link href="/#cocreators">Co-creators</Link></li>
+            <li><Link href="/cocreators">Co-creators</Link></li>
           </ul>
         </div>
 
@@ -38,7 +38,7 @@ export default function RRGFooter() {
           <h5>Trade</h5>
           <ul>
             <li><Link href="/create" className="highlight">Apply as a brand →</Link></li>
-            <li><Link href="/#cocreators">Co-creator briefs</Link></li>
+            <li><Link href="/cocreators">Co-creator briefs</Link></li>
             <li><a href="/mcp">Agent access (MCP)</a></li>
           </ul>
         </div>
@@ -97,7 +97,13 @@ export default function RRGFooter() {
           <Link href="/terms">Terms</Link>
           <Link href="/privacy">Privacy</Link>
           <Link href="/rrg/faq">FAQ</Link>
-          <span className="agent-badge"><span className="d"></span>Registry #33313, ERC-8004, Base</span>
+          <a
+            href="https://8004scan.io/agents/base/33313"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="agent-badge"
+            style={{ textDecoration: 'none' }}
+          ><span className="d"></span>Registry #33313, ERC-8004, Base</a>
           <span>
             Powered by{' '}
             <a
