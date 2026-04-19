@@ -89,11 +89,18 @@ export default async function DropPage({ params, searchParams }: Props) {
 
   const isShopifyBacked = !!brand?.shopify_domain;
 
-  const rawVariants = brand?.supports_sizing ? await getVariantsBySubmissionId(drop.id) : [];
-  const variantsForUI = rawVariants.map(v => ({
-    size: v.size, color: v.color,
-    inStock: v.cached_stock > 0, stock: v.cached_stock,
-  }));
+  // Always fetch variants for Shopify-backed brands so stock calc works for
+  // single-variant catalogues too (e.g. MYKLÉ one-size accessories). The
+  // supports_sizing flag only gates size-selector UI, not stock reads.
+  const rawVariants = (brand?.supports_sizing || isShopifyBacked)
+    ? await getVariantsBySubmissionId(drop.id)
+    : [];
+  const variantsForUI = brand?.supports_sizing
+    ? rawVariants.map(v => ({
+        size: v.size, color: v.color,
+        inStock: v.cached_stock > 0, stock: v.cached_stock,
+      }))
+    : [];
 
   let onChain = { minted: 0, maxSupply: drop.edition_size ?? 0, active: true, soldOut: false };
 
