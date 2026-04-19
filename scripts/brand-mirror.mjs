@@ -123,6 +123,22 @@ const BRANDS = {
     bannerLocal:     null,
     logoLocal:       null,
   },
+  'the-merchant-fox': {
+    slug:            'the-merchant-fox',
+    name:            'The Merchant Fox',
+    wallet:          '0x734a25fB869ab6415b78bbe9a39f1f99dab349E7',
+    email:           'richard@entrepot.asia',
+    headline:        'Fox Brothers cloth since 1772, finished into ties, knitwear and homewares.',
+    description:     'The Merchant Fox is rooted in Fox Brothers of Wellington, Somerset, a British mill weaving worsted and woollen cloth at Tonedale since 1772. Fox pioneered flannel in 1803 and wove the khaki serge that uniformed the British Army; the archive runs deeper than most fashion houses have been alive. Curated by Douglas Cordeaux, The Merchant Fox turns that cloth into finished pieces: ties, knitwear, pocket squares, throws, cologne. Every item is tested by the curator and built to be repaired, not replaced. Mill-to-wearer, in one county. Mirror of themerchantfox.co.uk, checkout in USDC on Base, ships from The Counting House, Tonedale Mill.',
+    website:         'https://www.themerchantfox.co.uk',
+    shopifyDomain:   'www.themerchantfox.co.uk',
+    supportsSizing:  true, // cricket slipover has XS-XL; other products are single-variant
+    sourceCurrency:  'GBP',
+    priceToUsdcRate: 1.35, // locked 2026-04-19, 1 GBP = $1.35 USDC
+    socialLinks:     { instagram: 'https://www.instagram.com/themerchantfox/' },
+    bannerLocal:     null,
+    logoLocal:       null,
+  },
   'nolo': {
     slug:            'nolo',
     name:            'Nolo',
