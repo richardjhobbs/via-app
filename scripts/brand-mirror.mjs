@@ -263,6 +263,20 @@ const BRANDS = {
     bannerLocal:     null,
     logoLocal:       null,
   },
+  'shoyoroll': {
+    slug:            'shoyoroll',
+    name:            'Shoyoroll',
+    wallet:          '0x734a25fB869ab6415b78bbe9a39f1f99dab349E7',
+    email:           'richard@entrepot.asia',
+    headline:        'Jiu-jitsu kimonos, rash guards and apparel. Numbered batches, no restocks.',
+    description:     'Shoyoroll is a Brazilian Jiu-Jitsu apparel label founded by Vini Aieta in 2006 and built around the numbered Batch kimono series — limited-run gis released in dated drops, rarely restocked, each with its own patchwork, cut and story. Alongside the Batches sit the Competition Standard gis, training rash guards, shorts, tees and accessories, all engineered for the mat first. Collected as much as they\u2019re worn. This is a selective mirror of five hand-picked pieces from shoyoroll.com — a competition kimono, a signature SSS kimono, a long-sleeve rash guard, the OG logo tee and a mat-side notepad. Checkout in USDC on Base, ships from Shoyoroll US.',
+    website:         'https://shoyoroll.com',
+    shopifyDomain:   'shoyoroll.com',
+    supportsSizing:  true, // kimonos and apparel run full size runs (A0-A4, S-XXL)
+    socialLinks:     { instagram: 'https://www.instagram.com/shoyoroll/' },
+    bannerLocal:     null,
+    logoLocal:       null,
+  },
   'nolo': {
     slug:            'nolo',
     name:            'Nolo',
