@@ -410,13 +410,27 @@ body {
 .brand-body .count { color: var(--ink-3); font-family: var(--font-jetbrains), 'JetBrains Mono', monospace; font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase; white-space: nowrap; }
 
 .feat-inner { position: relative; height: 100%; display: flex; flex-direction: column; justify-content: space-between; padding: 28px 28px 26px; color: #fff; }
-.feat-overlay { background: linear-gradient(180deg, rgba(0,0,0,0.5) 0%, rgba(0,0,0,0.1) 32%, rgba(0,0,0,0.1) 50%, rgba(0,0,0,0.88) 100%); position: absolute; inset: 0; }
+.feat-overlay { background: linear-gradient(180deg, rgba(0,0,0,0.5) 0%, rgba(0,0,0,0.1) 28%, rgba(0,0,0,0.1) 48%, rgba(0,0,0,0.92) 100%); position: absolute; inset: 0; }
 .feat-inner > * { position: relative; z-index: 1; }
 .feat-top { display: flex; justify-content: space-between; align-items: flex-start; }
-.feat-chip { font-family: var(--font-jetbrains), 'JetBrains Mono', monospace; font-size: 10px; letter-spacing: 0.18em; text-transform: uppercase; padding: 7px 11px; background: rgba(0,0,0,0.55); backdrop-filter: blur(6px); border: 1px solid rgba(255,255,255,0.28); color: #fff; text-shadow: 0 1px 8px rgba(0,0,0,0.5); }
-.feat-bottom h4 { font-family: var(--font-fraunces), 'Fraunces', serif; font-weight: 300; font-style: italic; font-size: 42px; letter-spacing: -0.015em; line-height: 1; margin: 0 0 8px; color: #fff; text-shadow: 0 2px 18px rgba(0,0,0,0.6), 0 1px 2px rgba(0,0,0,0.45); }
-.feat-bottom p { font-size: 13px; color: rgba(255,255,255,0.92); margin: 0 0 14px; max-width: 40ch; text-shadow: 0 1px 10px rgba(0,0,0,0.55); }
-.feat-bottom .feat-meta { display: flex; gap: 18px; flex-wrap: wrap; font-family: var(--font-jetbrains), 'JetBrains Mono', monospace; font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; color: rgba(255,255,255,0.88); text-shadow: 0 1px 8px rgba(0,0,0,0.55); }
+.feat-chip { font-family: var(--font-jetbrains), 'JetBrains Mono', monospace; font-size: 10px; letter-spacing: 0.18em; text-transform: uppercase; padding: 7px 11px; background: rgba(0,0,0,0.6); backdrop-filter: blur(6px); border: 1px solid rgba(255,255,255,0.28); color: #fff; text-shadow: 0 1px 8px rgba(0,0,0,0.5); }
+
+/* Dark scrim behind the bottom caption block so white text stays legible
+   over light-background product photos (e.g. white-cyc jacket shots). The
+   scrim extends beyond the feat-inner padding to reach the card edges. */
+.feat-bottom { position: relative; }
+.feat-bottom::before {
+  content: "";
+  position: absolute;
+  inset: -18px -28px -26px -28px;
+  background: linear-gradient(180deg, rgba(0,0,0,0) 0%, rgba(0,0,0,0.55) 28%, rgba(0,0,0,0.78) 100%);
+  z-index: -1;
+  pointer-events: none;
+}
+
+.feat-bottom h4 { font-family: var(--font-fraunces), 'Fraunces', serif; font-weight: 300; font-style: italic; font-size: 42px; letter-spacing: -0.015em; line-height: 1; margin: 0 0 8px; color: #fff; text-shadow: 0 2px 18px rgba(0,0,0,0.65), 0 1px 2px rgba(0,0,0,0.5); }
+.feat-bottom p { font-size: 13px; color: rgba(255,255,255,0.95); margin: 0 0 14px; max-width: 40ch; text-shadow: 0 1px 10px rgba(0,0,0,0.6); }
+.feat-bottom .feat-meta { display: flex; gap: 18px; flex-wrap: wrap; font-family: var(--font-jetbrains), 'JetBrains Mono', monospace; font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; color: rgba(255,255,255,0.92); text-shadow: 0 1px 8px rgba(0,0,0,0.6); }
 
 /* ─── Spread (concierge at work) ─────────────────────────────────────── */
 .spread {
