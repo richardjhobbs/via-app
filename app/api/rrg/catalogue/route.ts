@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { db, getCurrentNetwork, getBrandBySlug } from '@/lib/rrg/db';
+import { db, getCurrentNetwork, getBrandBySlug, getNonActiveBrandIds } from '@/lib/rrg/db';
 import { getSignedUrlsBatch } from '@/lib/rrg/storage';
 
 /**
@@ -29,10 +29,15 @@ export async function GET(req: NextRequest) {
     if (!brand) {
       return NextResponse.json({ error: `Brand not found: ${brandSlug}` }, { status: 404 });
     }
+    if (brand.status !== 'active') {
+      return NextResponse.json({ error: `Brand not available: ${brandSlug}` }, { status: 404 });
+    }
     brandId      = brand.id;
     brandName    = brand.name;
     brandWallet  = brand.wallet_address;
   }
+
+  const suspendedIds = brandId ? [] : await getNonActiveBrandIds();
 
   // Pull approved brand-owned listings on the current network.
   let q = db
@@ -43,7 +48,11 @@ export async function GET(req: NextRequest) {
     .eq('hidden', false)
     .eq('is_brand_product', true)
     .order('approved_at', { ascending: false });
-  if (brandId) q = q.eq('brand_id', brandId);
+  if (brandId) {
+    q = q.eq('brand_id', brandId);
+  } else if (suspendedIds.length > 0) {
+    q = q.not('brand_id', 'in', `(${suspendedIds.join(',')})`);
+  }
 
   const { data: rows, error } = await q;
   if (error) {

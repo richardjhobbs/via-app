@@ -488,7 +488,18 @@ export async function getSubmissionsForReview(brandId?: string): Promise<RrgSubm
   return data ?? [];
 }
 
+/**
+ * Brand IDs that are not currently `active` (suspended, archived, etc.).
+ * Used to exclude their products from every public surface.
+ */
+export async function getNonActiveBrandIds(): Promise<string[]> {
+  const { data } = await db.from('rrg_brands').select('id').neq('status', 'active');
+  return (data ?? []).map((b) => b.id as string);
+}
+
 export async function getApprovedDrops(brandId?: string): Promise<RrgSubmission[]> {
+  const suspendedIds = brandId ? [] : await getNonActiveBrandIds();
+
   let query = db
     .from('rrg_submissions')
     .select('*')
@@ -498,6 +509,8 @@ export async function getApprovedDrops(brandId?: string): Promise<RrgSubmission[
 
   if (brandId) {
     query = query.eq('brand_id', brandId);
+  } else if (suspendedIds.length > 0) {
+    query = query.not('brand_id', 'in', `(${suspendedIds.join(',')})`);
   }
 
   const { data } = await query.order('approved_at', { ascending: false });
@@ -510,6 +523,8 @@ export async function getApprovedDropsPaginated(
   briefId?: string | null,
   brandId?: string,
 ): Promise<{ drops: RrgSubmission[]; totalCount: number }> {
+  const suspendedIds = brandId ? [] : await getNonActiveBrandIds();
+
   return unstable_cache(
     async () => {
       const offset = (page - 1) * perPage;
@@ -522,7 +537,11 @@ export async function getApprovedDropsPaginated(
         .eq('hidden', false);
 
       if (briefId) query = query.eq('brief_id', briefId);
-      if (brandId) query = query.eq('brand_id', brandId);
+      if (brandId) {
+        query = query.eq('brand_id', brandId);
+      } else if (suspendedIds.length > 0) {
+        query = query.not('brand_id', 'in', `(${suspendedIds.join(',')})`);
+      }
 
       const { data, count } = await query
         .order('approved_at', { ascending: false })
@@ -530,7 +549,7 @@ export async function getApprovedDropsPaginated(
 
       return { drops: data ?? [], totalCount: count ?? 0 };
     },
-    [`drops-paginated-${page}-${perPage}-${briefId ?? 'all'}-${brandId ?? 'all'}`],
+    [`drops-paginated-${page}-${perPage}-${briefId ?? 'all'}-${brandId ?? 'all'}-sus${suspendedIds.length}`],
     { revalidate: 30, tags: ['drops'] },
   )();
 }
