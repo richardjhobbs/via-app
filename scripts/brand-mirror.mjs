@@ -25,8 +25,9 @@
 
 import { ethers } from 'ethers';
 import { createClient } from '@supabase/supabase-js';
-import { readFileSync } from 'fs';
-import { resolve } from 'path';
+import { readFileSync, writeFileSync, existsSync, readdirSync, appendFileSync } from 'fs';
+import { homedir } from 'os';
+import { join, resolve } from 'path';
 import { randomUUID } from 'crypto';
 
 // ── Brand configs ────────────────────────────────────────────────────
@@ -153,6 +154,112 @@ const BRANDS = {
     priceToUsdcRate: 1 / 3.6725, // AED is pegged to USD at 3.6725 since 1997
     editionOverride: 120, // limited run of 120 numbered editions per exposedlayers.com
     socialLinks:     {},
+    bannerLocal:     null,
+    logoLocal:       null,
+  },
+  'les-basics': {
+    slug:            'les-basics',
+    name:            'LES BASICS',
+    wallet:          '0x734a25fB869ab6415b78bbe9a39f1f99dab349E7',
+    email:           'richard@entrepot.asia',
+    headline:        'Hi-vis refined. Reworked by hand in north London.',
+    description:     'NYSM by LES BASICS is reworked urban visibility from a small north London studio. Hi-vis refined into everyday clothes for people who move through cities with purpose: deadstock, overlooked and vintage garments re-cut by hand, finished with reflective heat transfers, reflective-thread reworking and a signature zig-zag stitch square. Low-impact, circular, small-batch. Rumoured to mean New York Sado-Masochism, more likely Now You See Me. Mirror of lesbasics.net, checkout in USDC on Base, ships from LES BASICS UK.',
+    website:         'https://lesbasics.net',
+    shopifyDomain:   'lesbasics.net',
+    supportsSizing:  false, // NYSM capsule items listed are single-size / one-size
+    sourceCurrency:  'GBP',
+    priceToUsdcRate: 1.35, // locked 2026-04-20, 1 GBP = $1.35 USDC (aligned with the-merchant-fox 2026-04-19)
+    socialLinks:     {},
+    bannerLocal:     null,
+    logoLocal:       null,
+  },
+  'washi-jeans': {
+    slug:            'washi-jeans',
+    name:            'WASHI',
+    wallet:          '0x734a25fB869ab6415b78bbe9a39f1f99dab349E7',
+    email:           'richard@entrepot.asia',
+    headline:        'Washi paper denim. Japanese heritage, woven for now.',
+    description:     'WASHI (\u548c\u7d19) is a sustainable luxury denim label built around fabric woven from Japanese washi paper. Each pair pairs 45% WASHI N0.6 paper yarn for the weft with 55% indigo eco-rope dyed ecological cotton yarn for the warp — medium weight, non-stretch, strong 3D shaping, shape memory. Made in Japan, European sizing, reusable washi denim bag on every delivery. Mirror of washijeans.com, checkout in USDC on Base, ships from WASHI Japan.',
+    website:         'https://washijeans.com',
+    shopifyDomain:   'washijeans.com',
+    supportsSizing:  true,
+    sourceCurrency:  'HKD',
+    priceToUsdcRate: 1 / 7.78, // HKD USD-peg, same rate as Frey Tailored (locked 2026-04-20)
+    socialLinks:     {},
+    bannerLocal:     null,
+    logoLocal:       null,
+  },
+  'gumball-3000': {
+    slug:            'gumball-3000',
+    name:            'Gumball 3000',
+    wallet:          '0x734a25fB869ab6415b78bbe9a39f1f99dab349E7',
+    email:           'richard@entrepot.asia',
+    headline:        'Rally. Racing. Rock and roll. Since 1999.',
+    description:     'Gumball 3000 is a British lifestyle brand built around the annual 3,000-mile international motor rally founded in 1999 by Maximillion Cooper. Apparel, headwear, accessories, and occasional collab hardware like the Bang & Olufsen Beosound 2. Mirror of gumball3000.com, checkout in USDC on Base, ships from Gumball 3000.',
+    website:         'https://gumball3000.com',
+    shopifyDomain:   'gumball3000.com',
+    supportsSizing:  true, // drivers jacket XS-XL, OG crewneck S-XXL
+    sourceCurrency:  'GBP',
+    priceToUsdcRate: 1.35, // locked 2026-04-20, 1 GBP = $1.35 USDC
+    socialLinks:     { instagram: 'https://www.instagram.com/gumball3000/' },
+    bannerLocal:     null,
+    logoLocal:       null,
+  },
+  'adapt': {
+    slug:            'adapt',
+    name:            'Adapt',
+    wallet:          '0x734a25fB869ab6415b78bbe9a39f1f99dab349E7',
+    email:           'richard@entrepot.asia',
+    headline:        'Alphanumeric x Adapt :: BACK TO SCHOOL.',
+    description:     'Alphanumeric was a skateboarding and lifestyle brand founded in 1998, considered by many to be one of the first true "streetwear" brands of the 2000s and beyond. It also served as a significant inspiration in the formation of the Adapt brand. More than 25 years after its inception, Alphanumeric and Adapt are proud to announce their collaborative capsule collection, "Back To School". Alphanumeric + Adapt. Thank You, PEACE. Mirror of adaptclothing.com, checkout in USDC on Base, ships from Adapt.',
+    website:         'https://adaptclothing.com',
+    shopifyDomain:   'adaptclothing.com',
+    supportsSizing:  true,
+    socialLinks:     {},
+    bannerLocal:     null,
+    logoLocal:       null,
+  },
+  'weinsanto': {
+    slug:            'weinsanto',
+    name:            'WEINSANTO',
+    wallet:          '0x734a25fB869ab6415b78bbe9a39f1f99dab349E7',
+    email:           'richard@entrepot.asia',
+    headline:        'Theatrical Parisian couture. Asymmetric drape, ruffles, performance.',
+    description:     'WEINSANTO is the Paris label of French-Alsatian designer Victor Weinsanto, debuted on the Paris Fashion Week calendar in 2021. The house is known for theatrical runways drawing on dance and performance, with collections like "Murder in Paris", "Common Love" and "Perfect Day" built around asymmetric tailoring, draped pleats, ruffles and faux leather. Mirror of weinsanto.com, checkout in USDC on Base, ships from WEINSANTO Paris.',
+    website:         'https://weinsanto.com',
+    shopifyDomain:   'weinsanto.com',
+    supportsSizing:  true, // berets, trousers, pants, tee all ship size variants
+    sourceCurrency:  'EUR',
+    priceToUsdcRate: 1.18, // locked 2026-04-20, 1 EUR = $1.18 USDC (aligned with MYKLÉ 2026-04-18)
+    socialLinks:     { instagram: 'https://www.instagram.com/weinsanto/' },
+    bannerLocal:     null,
+    logoLocal:       null,
+  },
+  'standard-and-strange': {
+    slug:            'standard-and-strange',
+    name:            'Standard & Strange',
+    wallet:          '0x734a25fB869ab6415b78bbe9a39f1f99dab349E7',
+    email:           'richard@entrepot.asia',
+    headline:        'Own fewer, better things.',
+    description:     'Standard & Strange is a Berkeley-founded specialty apparel shop built around the idea of owning fewer, better things. Founded in 2012 by Neil Berrett and Jeremy Smith and named after a Jane Jacobs line celebrating "the standard with the strange, the large with the small", the shop curates heritage-grade clothing from Japanese, European and American makers: denim, leather, knitwear, footwear and accessories chosen to wear in, not out. Stores in Berkeley, Santa Fe and New York; ships from Berkeley. Mirror of standardandstrange.com, checkout in USDC on Base.',
+    website:         'https://standardandstrange.com',
+    shopifyDomain:   'standardandstrange.com',
+    supportsSizing:  true,
+    socialLinks:     { instagram: 'https://www.instagram.com/standardandstrange/' },
+    bannerLocal:     null,
+    logoLocal:       null,
+  },
+  'de-la-soul': {
+    slug:            'de-la-soul',
+    name:            'De La Soul',
+    wallet:          '0x734a25fB869ab6415b78bbe9a39f1f99dab349E7',
+    email:           'richard@entrepot.asia',
+    headline:        'Native Tongues since 1988. Official store, on-chain.',
+    description:     'De La Soul is the Long Island hip-hop trio that rewrote what rap could sound like. Formed in Amityville in 1988 by Posdnuos (Kelvin Mercer), Trugoy the Dove (David Jude Jolicoeur, 1968-2023) and Maseo (Vincent Mason), their debut 3 Feet High and Rising (1989) launched the Native Tongues movement: sample-rich, playful, daisy-age, daisy-age. Eight studio albums, a Grammy, a 30-year catalogue that finally returned to streaming in 2023, and a lifelong commitment to the craft. This is the official store: apparel, headwear, and accessories celebrating the records and the late Dave Jolicoeur. Mirror of store.wearedelasoul.com, checkout in USDC on Base, ships from De La Soul Official Store.',
+    website:         'https://store.wearedelasoul.com',
+    shopifyDomain:   'store.wearedelasoul.com',
+    supportsSizing:  true, // tees + hoodies have size variants; slipmat and hat are single-size
+    socialLinks:     { instagram: 'https://www.instagram.com/wearedelasoul/' },
     bannerLocal:     null,
     logoLocal:       null,
   },
@@ -573,7 +680,7 @@ async function importProduct(product, brand) {
   const rawPrice = parseFloat(variant.price);
   const rate     = Number.isFinite(CFG.priceToUsdcRate) && CFG.priceToUsdcRate > 0 ? CFG.priceToUsdcRate : 1;
   const price    = Math.round(rawPrice * rate * 100) / 100;
-  if (!Number.isFinite(price) || price < 0.01 || price > 5000) {
+  if (!Number.isFinite(price) || price < 0.01 || price > 10000) {
     console.warn(`[skip ${handle}] price out of range: ${variant.price} ${CFG.sourceCurrency ?? 'USD'} → ${price} USDC`);
     return null;
   }
@@ -619,7 +726,10 @@ async function importProduct(product, brand) {
   if (!fmt) throw new Error(`${handle} image not jpeg/png/webp`);
 
   const submissionId = randomUUID();
-  const filename     = `${CFG.slug}-${handle}-${Date.now()}.${fmt.ext}`;
+  // Supabase storage keys reject non-ASCII — sanitize the Shopify handle
+  // (some brands include unicode like ® or accented chars).
+  const safeHandle   = handle.replace(/[^a-zA-Z0-9-]+/g, '-').replace(/^-+|-+$/g, '').toLowerCase() || 'item';
+  const filename     = `${CFG.slug}-${safeHandle}-${Date.now()}.${fmt.ext}`;
   const path         = `submissions/${submissionId}/jpeg/${filename}`;
   const { error: upErr } = await db.storage.from(BUCKET).upload(path, imgBuf, {
     contentType: fmt.mime, upsert: false,
@@ -637,7 +747,7 @@ async function importProduct(product, brand) {
       const buf = await downloadImage(extra.src);
       const f   = detectImage(buf);
       if (!f) { console.warn(`  [extra-img ${i+1}] not jpeg/png/webp, skipping`); continue; }
-      const fn  = `${CFG.slug}-${handle}-aux-${i+1}-${Date.now()}.${f.ext}`;
+      const fn  = `${CFG.slug}-${safeHandle}-aux-${i+1}-${Date.now()}.${f.ext}`;
       const p   = `submissions/${submissionId}/jpeg/${fn}`;
       const { error: e } = await db.storage.from(BUCKET).upload(p, buf, {
         contentType: f.mime, upsert: false,
@@ -803,6 +913,89 @@ async function syncVariants(submissionId, product) {
 }
 
 // ────────────────────────────────────────────────────────────────────
+// Auto-memory — writes a `<slug>_storefront.md` under Richard's memory
+// dir on the local machine at end of a successful run. Skips silently
+// off-machine or if the file already exists (manual edits are preserved).
+// ────────────────────────────────────────────────────────────────────
+function findMemoryDir() {
+  // Find the RRG project memory dir without hardcoding the encoded project
+  // path. `~/.claude/projects/*/memory/MEMORY.md` exists — pick the one whose
+  // encoded path resolves to this working directory (i.e. ends with `-rrg`).
+  const base = join(homedir(), '.claude', 'projects');
+  if (!existsSync(base)) return null;
+  let entries;
+  try { entries = readdirSync(base); } catch { return null; }
+  for (const e of entries) {
+    const memDir = join(base, e, 'memory');
+    if (existsSync(join(memDir, 'MEMORY.md')) && /-rrg$/i.test(e)) return memDir;
+  }
+  return null;
+}
+
+function writeBrandMemory(brand, results) {
+  const memDir = findMemoryDir();
+  if (!memDir) { console.log('[memory] no local memory dir — skipping'); return; }
+
+  const filename = `${CFG.slug.replace(/-/g, '_')}_storefront.md`;
+  const path = join(memDir, filename);
+  if (existsSync(path)) {
+    console.log(`[memory] ${filename} exists — leaving manual edits alone`);
+    return;
+  }
+
+  const tokenIds = results.map(r => r.token_id).filter(n => n != null).sort((a, b) => a - b);
+  const tokenRange = tokenIds.length === 0 ? 'none' :
+    tokenIds.length === 1 ? `${tokenIds[0]}` :
+    `${tokenIds[0]}-${tokenIds[tokenIds.length - 1]}`;
+  const currency = CFG.sourceCurrency ?? 'USD';
+  const rate = Number.isFinite(CFG.priceToUsdcRate) ? CFG.priceToUsdcRate : 1;
+  const today = new Date().toISOString().slice(0, 10);
+
+  const body = `---
+name: ${CFG.name} storefront
+description: Brand mirror on RRG — ${CFG.headline ?? CFG.name}. ${currency}→USDC at ${rate}, tokens ${tokenRange}
+type: project
+---
+## ${CFG.name} — storefront (${today})
+
+Auto-generated by \`scripts/brand-mirror.mjs\` on ${today}. Add non-obvious manual notes below.
+
+### Facts
+
+- Brand slug: \`${CFG.slug}\`
+- Supabase row id: \`${brand.id}\`
+- Storefront: \`https://realrealgenuine.com/brand/${CFG.slug}\`
+- Catalogue API: \`https://realrealgenuine.com/api/rrg/catalogue?brand=${CFG.slug}\`
+- Public source: \`${CFG.shopifyDomain ? 'https://' + CFG.shopifyDomain + '/products.json' : (CFG.squarespaceShopUrl ?? CFG.website)}\`
+- Wallet: \`${CFG.wallet}\`
+- Currency: ${currency}${currency === 'USD' ? '' : ` → USDC at fixed rate \`${rate}\``}
+- \`supports_sizing: ${!!CFG.supportsSizing}\`
+- Token IDs on Base mainnet (contract \`${RRG_ADDR}\`): **${tokenRange}** (${tokenIds.length} products)
+- Chain registration: ${SKIP_CHAIN ? 'SKIPPED (DB + images only — re-run with --commit-chain to register)' : 'COMMITTED on-chain'}
+
+### Non-obvious things to remember
+
+_(none yet — fill in after the build)_
+`;
+
+  writeFileSync(path, body, 'utf8');
+  console.log(`[memory] wrote ${filename}`);
+
+  // Append index line to MEMORY.md if the slug isn't already referenced
+  const indexPath = join(memDir, 'MEMORY.md');
+  try {
+    const idx = readFileSync(indexPath, 'utf8');
+    if (!idx.includes(filename)) {
+      const line = `→ See [${filename}](${filename}) — ${CFG.name} storefront mirror, ${currency}→USDC at ${rate}, tokens ${tokenRange}.\n`;
+      appendFileSync(indexPath, (idx.endsWith('\n') ? '' : '\n') + line, 'utf8');
+      console.log(`[memory] indexed in MEMORY.md`);
+    }
+  } catch (e) {
+    console.warn(`[memory] could not update MEMORY.md: ${e.message}`);
+  }
+}
+
+// ────────────────────────────────────────────────────────────────────
 // Main
 // ────────────────────────────────────────────────────────────────────
 (async () => {
@@ -840,5 +1033,10 @@ async function syncVariants(submissionId, product) {
   console.log(`Brand storefront: https://realrealgenuine.com/brand/${CFG.slug}`);
   for (const r of results) {
     if (r.token_id != null) console.log(`  • token #${r.token_id} → /rrg/drop/${r.token_id}`);
+  }
+
+  if (results.length > 0 && !DRY_RUN) {
+    try { writeBrandMemory(brand, results); }
+    catch (e) { console.warn(`[memory] skipped: ${e.message}`); }
   }
 })().catch((e) => { console.error('FATAL:', e); process.exit(1); });
