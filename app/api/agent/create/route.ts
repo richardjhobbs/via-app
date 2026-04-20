@@ -10,7 +10,7 @@ export const dynamic = 'force-dynamic';
  * POST /api/agent/create
  *
  * Register a new agent with an embedded Thirdweb wallet.
- * The wallet is created client-side via Thirdweb SDK — we receive the address.
+ * The wallet is created client-side via Thirdweb SDK; we receive the address.
  */
 export async function POST(req: NextRequest) {
   try {
@@ -112,25 +112,47 @@ export async function POST(req: NextRequest) {
       details: { tier, wallet_type: 'embedded' },
     });
 
-    // Auto-mint ERC-8004 identity (fire-and-forget — don't block the response)
+    // Auto-mint ERC-8004 identity (fire-and-forget, don't block the response)
     (async () => {
+      let assignedAgentId: number | null = null;
       try {
         const { registerAgentIdentity, getAgentIdForWallet } = await import('@/lib/agent/erc8004');
 
         // Check if wallet already has an identity token
         const existingId = await getAgentIdForWallet(wallet_address.toLowerCase());
         if (existingId !== null) {
-          await db.from('agent_agents').update({ erc8004_agent_id: Number(existingId), erc8004_linked: true }).eq('id', agent.id);
-          await db.from('agent_activity_log').insert({ agent_id: agent.id, action: 'erc8004_linked', details: { agent_id_on_chain: Number(existingId), method: 'existing' } });
-          return;
+          assignedAgentId = Number(existingId);
+          await db.from('agent_agents').update({ erc8004_agent_id: assignedAgentId, erc8004_linked: true }).eq('id', agent.id);
+          await db.from('agent_activity_log').insert({ agent_id: agent.id, action: 'erc8004_linked', details: { agent_id_on_chain: assignedAgentId, method: 'existing' } });
+        } else {
+          const { tokenId, txHash } = await registerAgentIdentity(agent.id, name.trim(), wallet_address.toLowerCase(), tier);
+          assignedAgentId = Number(tokenId);
+          await db.from('agent_agents').update({ erc8004_agent_id: assignedAgentId, erc8004_linked: true }).eq('id', agent.id);
+          await db.from('agent_activity_log').insert({ agent_id: agent.id, action: 'erc8004_minted', details: { agent_id_on_chain: assignedAgentId, method: 'auto' }, tx_hash: txHash });
+          console.log(`ERC-8004 auto-minted: VIA #${tokenId} for agent ${agent.id}`);
         }
-
-        const { tokenId, txHash } = await registerAgentIdentity(agent.id, name.trim(), wallet_address.toLowerCase(), tier);
-        await db.from('agent_agents').update({ erc8004_agent_id: Number(tokenId), erc8004_linked: true }).eq('id', agent.id);
-        await db.from('agent_activity_log').insert({ agent_id: agent.id, action: 'erc8004_minted', details: { agent_id_on_chain: Number(tokenId), method: 'auto' }, tx_hash: txHash });
-        console.log(`ERC-8004 auto-minted: VIA #${tokenId} for agent ${agent.id}`);
       } catch (err) {
         console.error('ERC-8004 auto-mint failed (non-blocking):', err);
+      }
+
+      // Once we have an erc8004_agent_id, match this agent against active
+      // brands and write agent_brand_preferences rows. Feeds the onboarding
+      // credit engine. Fire-and-forget.
+      if (assignedAgentId !== null) {
+        try {
+          const { queueAgentBrandMatch } = await import('@/lib/rrg/agent-brand-match');
+          queueAgentBrandMatch({
+            id: agent.id,
+            erc8004_agent_id: assignedAgentId,
+            style_tags: agent.style_tags,
+            interest_categories: agent.interest_categories,
+            free_instructions: agent.free_instructions,
+            persona_bio: agent.persona_bio,
+            persona_voice: agent.persona_voice,
+          });
+        } catch (err) {
+          console.error('[agent-brand-match] queue failed:', err);
+        }
       }
     })();
 

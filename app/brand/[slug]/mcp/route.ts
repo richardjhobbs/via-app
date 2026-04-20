@@ -25,6 +25,11 @@ import {
   type RrgProductVariant,
 } from '@/lib/rrg/db';
 import { getRRGReadOnly } from '@/lib/rrg/contract';
+import {
+  logMcpInteraction,
+  parseAgentIdentity,
+  type McpToolName,
+} from '@/lib/rrg/mcp-interactions';
 
 export const dynamic = 'force-dynamic';
 
@@ -95,7 +100,13 @@ async function getVariantStock(
 
 // ── Server factory ───────────────────────────────────────────────────
 
-function createBrandServer(brand: RrgBrand) {
+/**
+ * Helper injected into each tool handler: fire-and-forget log to
+ * mcp_interactions. The via-brand-onboarding credit engine reads these.
+ */
+type LogTool = (tool: McpToolName, opts?: { completed?: boolean }) => void;
+
+function createBrandServer(brand: RrgBrand, logTool: LogTool = () => {}) {
   const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://realrealgenuine.com';
 
   const server = new McpServer(
@@ -131,6 +142,7 @@ function createBrandServer(brand: RrgBrand) {
     `List all products from ${brand.name}. Returns full agent-facing payload per item — including agentDescription (full, not truncated), styleTags, occasionFit, conditionGrade, authenticationStatus, priceUsdc/priceEur, and provenance — so a buyer's agent can filter and reason without per-item fan-out calls. Fields populated only for listings whose vision-enrichment has run; otherwise null/empty.`,
     {},
     async () => {
+      logTool('list_products');
       const drops = await getApprovedDrops(brand.id);
       if (drops.length === 0) {
         return { content: [{ type: 'text', text: `No products listed for ${brand.name} yet.` }] };
@@ -223,6 +235,7 @@ function createBrandServer(brand: RrgBrand) {
       token_id: z.number().describe('The RRG token ID of the product'),
     },
     async ({ token_id }) => {
+      logTool('get_product');
       const drop = await getDropByTokenId(token_id);
       if (!drop || drop.brand_id !== brand.id) {
         return { isError: true, content: [{ type: 'text', text: `Product #${token_id} not found for ${brand.name}` }] };
@@ -304,6 +317,9 @@ function createBrandServer(brand: RrgBrand) {
         category: z.string().optional().describe('Filter by category: tops, bottoms, outerwear, skirts. Omit for all categories.'),
       },
       async ({ category }) => {
+        // get_sizing_guide isn't in the credit-eligible tool set, but we
+        // still log it under list_products to keep the counter honest.
+        logTool('list_products');
         let sizing;
         if (category) {
           const single = await getSizingByCategory(brand.id, category);
@@ -340,6 +356,7 @@ function createBrandServer(brand: RrgBrand) {
       buyer_wallet: z.string().describe('Your 0x wallet address on Base'),
     },
     async ({ token_id, size, buyer_wallet }) => {
+      logTool('buy_product');
       const drop = await getDropByTokenId(token_id);
       if (!drop || drop.brand_id !== brand.id) {
         return { isError: true, content: [{ type: 'text', text: `Product #${token_id} not found for ${brand.name}` }] };
@@ -426,7 +443,18 @@ async function handleBrandMcpRequest(
           })(),
         });
 
-  const server = createBrandServer(brand);
+  const { agentId, agentWallet } = parseAgentIdentity(req.headers);
+  const logTool = (tool: McpToolName, opts?: { completed?: boolean }) => {
+    logMcpInteraction({
+      brandId: brand.id,
+      toolCalled: tool,
+      agentId,
+      agentWallet,
+      completed: opts?.completed,
+    });
+  };
+
+  const server = createBrandServer(brand, logTool);
   await server.connect(transport);
   return transport.handleRequest(normalised);
 }
