@@ -10,7 +10,7 @@ type NavKey = 'store' | 'brands' | 'concierge' | 'cocreators' | 'agent' | 'drops
 
 /**
  * Static fallback items used before /api/rrg/marquee returns, and if that
- * request fails. Items 2–4 match what the API returns so any swap after
+ * request fails. Items 2 to 4 match what the API returns so any swap after
  * mount is subtle.
  */
 const FALLBACK_MARQUEE_ITEMS = [
@@ -20,7 +20,7 @@ const FALLBACK_MARQUEE_ITEMS = [
 ];
 
 /**
- * RRGHeader — Maison topbar.
+ * RRGHeader: Maison topbar.
  *
  * Structure: announcement marquee above, then sticky topbar with
  * left nav / centered wordmark / right actions (Sign in + theme toggle).
@@ -35,6 +35,20 @@ export default function RRGHeader({ active, showMarquee = true }: { active?: Nav
   const current = active ?? inferActive(pathname);
 
   const [items, setItems] = useState<string[]>(FALLBACK_MARQUEE_ITEMS);
+  const [menuOpen, setMenuOpen] = useState(false);
+
+  useEffect(() => {
+    setMenuOpen(false);
+  }, [pathname]);
+
+  useEffect(() => {
+    if (!menuOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setMenuOpen(false);
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [menuOpen]);
 
   useEffect(() => {
     if (!showMarquee) return;
@@ -49,7 +63,7 @@ export default function RRGHeader({ active, showMarquee = true }: { active?: Nav
           setItems(data.items);
         }
       } catch {
-        // Silent — keep whatever items we last had.
+        // Silent: keep whatever items we last had.
       }
     };
 
@@ -82,6 +96,19 @@ export default function RRGHeader({ active, showMarquee = true }: { active?: Nav
             <Link href="/cocreators" className={current === 'cocreators' ? 'is-active' : ''}>Co-creators</Link>
           </nav>
 
+          <button
+            type="button"
+            className="topbar-burger"
+            aria-label={menuOpen ? 'Close menu' : 'Open menu'}
+            aria-expanded={menuOpen}
+            aria-controls="topbar-mobile-menu"
+            onClick={() => setMenuOpen((v) => !v)}
+          >
+            <span className={`burger-icon${menuOpen ? ' is-open' : ''}`} aria-hidden="true">
+              <span /><span /><span />
+            </span>
+          </button>
+
           <Link href="/" className="wordmark" style={{ textAlign: 'center', textDecoration: 'none', color: 'inherit' }}>
             Real Real Genuine
           </Link>
@@ -90,6 +117,17 @@ export default function RRGHeader({ active, showMarquee = true }: { active?: Nav
             <LoginButton />
             <ThemeToggle />
           </div>
+        </div>
+
+        <div
+          id="topbar-mobile-menu"
+          className={`topbar-mobile${menuOpen ? ' is-open' : ''}`}
+          hidden={!menuOpen}
+        >
+          <Link href="/rrg" className={current === 'store' ? 'is-active' : ''}>Store</Link>
+          <Link href="/brand" className={current === 'brands' ? 'is-active' : ''}>Brands</Link>
+          <Link href="/agents" className={current === 'concierge' ? 'is-active' : ''}>Concierge</Link>
+          <Link href="/cocreators" className={current === 'cocreators' ? 'is-active' : ''}>Co-creators</Link>
         </div>
       </header>
     </>
