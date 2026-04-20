@@ -263,6 +263,22 @@ const BRANDS = {
     bannerLocal:     null,
     logoLocal:       null,
   },
+  'stuart-trevor': {
+    slug:            'stuart-trevor',
+    name:            'Stuart Trevor',
+    wallet:          '0x734a25fB869ab6415b78bbe9a39f1f99dab349E7',
+    email:           'richard@entrepot.asia',
+    headline:        'AllSaints co-founder\u2019s solo label. Organic cotton, curated vintage, Underground England creepers.',
+    description:     'Stuart Trevor is the eponymous London label of Stuart Trevor, co-founder of AllSaints (1994). Launched in 2018 around three pillars: brand-own apparel cut from GOTS-certified organic and recycled cotton (Saint and Dante\u2019s Inferno tees, ST-logo jeans, rugby shirts paying homage to Joy Division and other rock\u2019n\u2019roll touchstones); curated vintage and military surplus pulled from European stockists (RAF Ceremonial Mess Dress jackets, Bundeswehr Luftwaffe side caps, vintage ACNE wool coats); and a long-running collaboration with Underground England, the Wolverhampton creeper and commando boot maker that defined post-punk footwear from the late 1970s onward. Mirror of stuarttrevor.com, checkout in USDC on Base, ships from Stuart Trevor UK.',
+    website:         'https://stuarttrevor.com',
+    shopifyDomain:   'stuarttrevor.com',
+    supportsSizing:  true, // tees S-XXL, boots run UK size matrix, vintage one-of-one
+    sourceCurrency:  'GBP',
+    priceToUsdcRate: 1.35, // locked 2026-04-20, 1 GBP = $1.35 USDC (aligned with Gumball 3000 same day)
+    socialLinks:     { instagram: 'https://www.instagram.com/stuarttrevorofficial/' },
+    bannerLocal:     null,
+    logoLocal:       null,
+  },
   'shoyoroll': {
     slug:            'shoyoroll',
     name:            'Shoyoroll',
