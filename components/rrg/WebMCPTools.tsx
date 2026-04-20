@@ -1,148 +1,123 @@
 'use client';
 
+// Tools registered via navigator.modelContext (WebMCP).
+// Runs both inline (emitted in SSR HTML, fires during parse) and in useEffect
+// as a fallback. Scanner (isitagentready.com) detects us via the inline path.
+
 import { useEffect } from 'react';
 
-type ModelContext = {
-  registerTool?: (tool: {
-    name: string;
-    description: string;
-    inputSchema: Record<string, unknown>;
-    execute: (input: unknown) => Promise<unknown> | unknown;
-  }, options?: { signal?: AbortSignal }) => Promise<unknown> | unknown;
-  provideContext?: (ctx: { tools: unknown[] }) => Promise<unknown> | unknown;
-};
+const TOOL_DEFINITIONS = [
+  {
+    name: 'browse_listings',
+    description:
+      'List available NFT product listings on Real Real Genuine across all brand storefronts. Returns id, title, price in USDC, brand, and image.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        brand: { type: 'string', description: 'Optional brand slug filter.' },
+        limit: { type: 'integer', minimum: 1, maximum: 100, default: 20 },
+      },
+      additionalProperties: false,
+    },
+    endpoint: 'https://realrealgenuine.com/api/rrg/catalogue',
+  },
+  {
+    name: 'get_brand',
+    description:
+      'Get detail for a single brand on Real Real Genuine by slug, including open design briefs and payout splits.',
+    inputSchema: {
+      type: 'object',
+      properties: { slug: { type: 'string' } },
+      required: ['slug'],
+      additionalProperties: false,
+    },
+    endpoint: 'https://realrealgenuine.com/api/rrg/catalogue?brand={slug}',
+  },
+  {
+    name: 'search_listings',
+    description: 'Free-text search across RRG listings by title or brand.',
+    inputSchema: {
+      type: 'object',
+      properties: { query: { type: 'string' } },
+      required: ['query'],
+      additionalProperties: false,
+    },
+    endpoint: 'https://realrealgenuine.com/api/rrg/catalogue',
+  },
+  {
+    name: 'get_agent_protocol_info',
+    description:
+      'Return RRG agent protocol metadata (ERC-8004 identity, MCP endpoint, wallet, payment terms).',
+    inputSchema: { type: 'object', properties: {}, additionalProperties: false },
+    endpoint: 'https://realrealgenuine.com/agent.json',
+  },
+  {
+    name: 'navigate_to_listing',
+    description: "Navigate the user's browser to a specific RRG listing page by token id.",
+    inputSchema: {
+      type: 'object',
+      properties: { tokenId: { type: 'integer', minimum: 1 } },
+      required: ['tokenId'],
+      additionalProperties: false,
+    },
+    endpoint: 'https://realrealgenuine.com/rrg/drop/{tokenId}',
+  },
+];
 
-declare global {
-  interface Navigator {
-    modelContext?: ModelContext;
+const INLINE_SCRIPT = `
+(function(){
+  if (typeof navigator === 'undefined' || !navigator.modelContext) return;
+  var tools = ${JSON.stringify(TOOL_DEFINITIONS)};
+  var mc = navigator.modelContext;
+  for (var i = 0; i < tools.length; i++) {
+    (function(t){
+      var def = {
+        name: t.name,
+        description: t.description,
+        inputSchema: t.inputSchema,
+        execute: function(input){
+          input = input || {};
+          var url = t.endpoint;
+          for (var k in input) {
+            url = url.replace('{'+k+'}', encodeURIComponent(input[k]));
+          }
+          if (t.name === 'navigate_to_listing') {
+            if (typeof window !== 'undefined') window.location.href = url;
+            return { navigated: true, url: url };
+          }
+          if (t.name === 'search_listings') {
+            return fetch(url).then(function(r){return r.json();}).then(function(data){
+              var q = String(input.query || '').toLowerCase();
+              var all = (data && data.drops) || [];
+              var hits = all.filter(function(d){
+                return (d.title||'').toLowerCase().indexOf(q) >= 0 ||
+                       (d.brand||'').toLowerCase().indexOf(q) >= 0;
+              });
+              return { query: q, count: hits.length, listings: hits };
+            });
+          }
+          if (input.limit) url += (url.indexOf('?') >= 0 ? '&' : '?') + 'limit=' + encodeURIComponent(input.limit);
+          return fetch(url).then(function(r){return r.json();});
+        }
+      };
+      try {
+        if (mc.registerTool) mc.registerTool(def);
+        else if (mc.provideContext) mc.provideContext({ tools: [def] });
+      } catch(e) {}
+    })(tools[i]);
   }
-}
+})();
+`;
 
 export default function WebMCPTools() {
   useEffect(() => {
     if (typeof navigator === 'undefined' || !navigator.modelContext) return;
-    const mc = navigator.modelContext;
-    const controller = new AbortController();
-
-    const tools = [
-      {
-        name: 'browse_listings',
-        description:
-          'List available NFT product listings on Real Real Genuine across all brand storefronts. Returns id, title, price in USDC, brand, and image.',
-        inputSchema: {
-          type: 'object',
-          properties: {
-            brand: { type: 'string', description: 'Optional brand slug filter (e.g. "clooudie", "frey").' },
-            limit: { type: 'integer', minimum: 1, maximum: 100, default: 20 },
-          },
-          additionalProperties: false,
-        },
-        async execute(input: unknown) {
-          const i = (input ?? {}) as { brand?: string; limit?: number };
-          const url = new URL('https://realrealgenuine.com/api/rrg/catalogue');
-          if (i.brand) url.searchParams.set('brand', i.brand);
-          if (i.limit) url.searchParams.set('limit', String(i.limit));
-          const res = await fetch(url.toString());
-          return res.json();
-        },
-      },
-      {
-        name: 'get_brand',
-        description:
-          'Get detail for a single brand on Real Real Genuine by slug, including open design briefs and their payout splits.',
-        inputSchema: {
-          type: 'object',
-          properties: {
-            slug: { type: 'string', description: 'Brand slug, e.g. "clooudie".' },
-          },
-          required: ['slug'],
-          additionalProperties: false,
-        },
-        async execute(input: unknown) {
-          const i = (input ?? {}) as { slug?: string };
-          if (!i.slug) throw new Error('slug is required');
-          const res = await fetch(`https://realrealgenuine.com/api/rrg/catalogue?brand=${encodeURIComponent(i.slug)}`);
-          return res.json();
-        },
-      },
-      {
-        name: 'search_listings',
-        description:
-          'Free-text search across all RRG listings by title. Returns matches from the public catalogue.',
-        inputSchema: {
-          type: 'object',
-          properties: {
-            query: { type: 'string', description: 'Search phrase.' },
-          },
-          required: ['query'],
-          additionalProperties: false,
-        },
-        async execute(input: unknown) {
-          const i = (input ?? {}) as { query?: string };
-          const res = await fetch('https://realrealgenuine.com/api/rrg/catalogue');
-          const data = (await res.json()) as { drops?: Array<{ title?: string; brand?: string }> };
-          const q = (i.query ?? '').toLowerCase();
-          const listings = (data.drops ?? []).filter(
-            (d) => (d.title ?? '').toLowerCase().includes(q) || (d.brand ?? '').toLowerCase().includes(q),
-          );
-          return { query: q, count: listings.length, listings };
-        },
-      },
-      {
-        name: 'get_agent_protocol_info',
-        description:
-          'Return the RRG agent protocol metadata (ERC-8004 identity, MCP endpoint, wallet, payment terms). Useful before an agent decides to transact.',
-        inputSchema: {
-          type: 'object',
-          properties: {},
-          additionalProperties: false,
-        },
-        async execute() {
-          const res = await fetch('https://realrealgenuine.com/agent.json');
-          return res.json();
-        },
-      },
-      {
-        name: 'navigate_to_listing',
-        description:
-          'Navigate the user\'s browser to a specific RRG listing page by token id.',
-        inputSchema: {
-          type: 'object',
-          properties: {
-            tokenId: { type: 'integer', minimum: 1, description: 'Listing token id.' },
-          },
-          required: ['tokenId'],
-          additionalProperties: false,
-        },
-        execute(input: unknown) {
-          const i = (input ?? {}) as { tokenId?: number };
-          if (!i.tokenId) throw new Error('tokenId is required');
-          const target = `https://realrealgenuine.com/rrg/drop/${i.tokenId}`;
-          if (typeof window !== 'undefined') {
-            window.location.href = target;
-          }
-          return { navigated: true, url: target };
-        },
-      },
-    ];
-
-    async function register() {
-      try {
-        if (mc.registerTool) {
-          for (const tool of tools) {
-            await mc.registerTool(tool, { signal: controller.signal });
-          }
-        } else if (mc.provideContext) {
-          await mc.provideContext({ tools });
-        }
-      } catch {
-        // best-effort, some browsers may not yet support WebMCP
-      }
+    try {
+      new Function(INLINE_SCRIPT)();
+    } catch {
+      // inline script already registered tools; this is fallback only
     }
-    register();
-
-    return () => controller.abort();
   }, []);
 
-  return null;
+  return <script dangerouslySetInnerHTML={{ __html: INLINE_SCRIPT }} />;
 }
