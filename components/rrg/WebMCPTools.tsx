@@ -6,6 +6,12 @@
 
 import { useEffect } from 'react';
 
+declare global {
+  interface Navigator {
+    modelContext?: unknown;
+  }
+}
+
 const TOOL_DEFINITIONS = [
   {
     name: 'browse_listings',
