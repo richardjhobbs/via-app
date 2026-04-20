@@ -293,6 +293,22 @@ const BRANDS = {
     bannerLocal:     null,
     logoLocal:       null,
   },
+  'eye-club': {
+    slug:            'eye-club',
+    name:            'Eye Club',
+    wallet:          '0x734a25fB869ab6415b78bbe9a39f1f99dab349E7',
+    email:           'richard@entrepot.asia',
+    headline:        'British eyewear. Hand-crafted Italian acetate, titanium hinges, one price.',
+    description:     'Eye Club is an independent British eyewear house running a single, focused line of sunglasses and optical frames. Every frame is cut from hand-crafted Italian acetate and hinged in titanium, sold at a single \u00a3220 price point regardless of silhouette or colourway. Wayfarers, cat-eyes, oversized rectangles, sculpted statement frames, translucent colour stories. This is a selective mirror of five frames from eye-club.co.uk covering the range\u2019s main silhouettes and a signal colourway from each: Walters (dark tortoise wayfarer), Falk (black/claret cat-eye), Brunner (emerald-green oversized rectangle), Hathorn (champagne-tortoise statement) and Norman (blush oversized wayfarer). Checkout in USDC on Base, ships from Eye Club UK.',
+    website:         'https://www.eye-club.co.uk',
+    shopifyDomain:   'www.eye-club.co.uk',
+    supportsSizing:  false, // eyewear has no size matrix
+    sourceCurrency:  'GBP',
+    priceToUsdcRate: 1.35, // locked 2026-04-20, aligned with Gumball 3000 / Stuart Trevor same day
+    socialLinks:     {},
+    bannerLocal:     null,
+    logoLocal:       null,
+  },
   'nolo': {
     slug:            'nolo',
     name:            'Nolo',
