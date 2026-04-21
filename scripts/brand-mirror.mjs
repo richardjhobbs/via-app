@@ -325,6 +325,22 @@ const BRANDS = {
     bannerLocal:     null,
     logoLocal:       null,
   },
+  'vollebak': {
+    slug:            'vollebak',
+    name:            'Vollebak',
+    wallet:          '0x734a25fB869ab6415b78bbe9a39f1f99dab349E7',
+    email:           'richard@entrepot.asia',
+    headline:        'Clothing from the future. Copper, graphene, aerogel, eiderdown, indestructible.',
+    description:     'Vollebak is a London science-and-fashion label founded in 2015 by twin brothers Steve and Nick Tidball. The brand builds clothing out of materials usually reserved for aerospace, medicine and the deep earth: copper yarn that kills bacteria on contact, graphene, aerogel from the Mars rover programme, and indestructible Dyneema composites. Worn by polar explorers, astronauts, climbers and deep-sea divers. Frequent TIME Best Inventions winners. This is a selective mirror of five signature pieces from vollebak.com: Full Metal Jacket in its silver copper edition, Martian Aerogel Jacket in rover orange, Eiderdown Puffer in obsidian black, Indestructible Chinos in sandstone, and the Graphene T-Shirt in black. Checkout in USDC on Base, ships from Vollebak UK.',
+    website:         'https://vollebak.com',
+    shopifyDomain:   'vollebak.com',
+    supportsSizing:  true,
+    sourceCurrency:  'GBP',
+    priceToUsdcRate: 1.35, // locked 2026-04-21, 1 GBP = $1.35 USDC (aligned with Goodhood same day)
+    socialLinks:     { instagram: 'https://www.instagram.com/vollebak/' },
+    bannerLocal:     null,
+    logoLocal:       null,
+  },
   'nolo': {
     slug:            'nolo',
     name:            'Nolo',
