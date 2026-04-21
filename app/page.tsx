@@ -35,11 +35,20 @@ export default async function Landing() {
     getApprovedDropsPaginated(1, 60),
   ]);
 
+  // The RRG house brand is excluded from § 01 brand cards and § 03 lookbook —
+  // this landing page is the RRG surface itself, so its own imagery shouldn't
+  // populate the "admitted brands" grid or the lookbook.
+  const rrgBrandIds = new Set(allBrands.filter(b => b.slug === 'rrg').map(b => b.id));
+
   // Sort brands: most products first, then recency. Ensures feature card has content.
-  const sortedBrands = [...directoryBrands].sort((a, b) => {
-    if (b.product_count !== a.product_count) return b.product_count - a.product_count;
-    return b.created_at.localeCompare(a.created_at);
-  });
+  const sortedBrands = [...directoryBrands]
+    .filter(b => !rrgBrandIds.has(b.id))
+    .sort((a, b) => {
+      if (b.product_count !== a.product_count) return b.product_count - a.product_count;
+      return b.created_at.localeCompare(a.created_at);
+    });
+
+  const filteredDropsPool = dropsPool.filter(d => !d.brand_id || !rrgBrandIds.has(d.brand_id));
 
   const totalBrands = allBrands.length;
   const totalProducts = directoryBrands.reduce((sum, b) => sum + b.product_count, 0);
@@ -47,27 +56,18 @@ export default async function Landing() {
 
   // ─── Signed URLs ─────────────────────────────────────────────────────
   const brandPaths = sortedBrands.flatMap(b => [b.banner_path, b.logo_path]).filter((p): p is string => !!p);
-  const dropPaths = dropsPool.map(d => d.jpeg_storage_path).filter((p): p is string => !!p);
+  const dropPaths = filteredDropsPool.map(d => d.jpeg_storage_path).filter((p): p is string => !!p);
   const urlMap = await getSignedUrlsBatch([...brandPaths, ...dropPaths]);
 
   const brandMap = new Map(allBrands.map(b => [b.id, b]));
 
-  // Per-brand first (most recent) product image, used for brand-grid cards
-  // where banners are unreliable (different aspect ratios, logos, etc.).
-  const brandImage = new Map<string, string>();
-  for (const d of dropsPool) {
-    if (!d.brand_id || brandImage.has(d.brand_id)) continue;
-    const u = d.jpeg_storage_path ? urlMap.get(d.jpeg_storage_path) : null;
-    if (u) brandImage.set(d.brand_id, u);
-  }
-
   // ─── Lookbook (cap one per brand for variety, 8 total) ───────────────
-  const tokenIds = dropsPool.map(d => d.token_id).filter((id): id is number => id != null);
+  const tokenIds = filteredDropsPool.map(d => d.token_id).filter((id): id is number => id != null);
   const purchaseCounts = await getPurchaseCountsByTokenIds(tokenIds);
 
   const seen = new Set<string>();
-  const lookbookDrops: typeof dropsPool = [];
-  for (const d of dropsPool) {
+  const lookbookDrops: typeof filteredDropsPool = [];
+  for (const d of filteredDropsPool) {
     const key = d.brand_id ?? '__none__';
     if (seen.has(key)) continue;
     seen.add(key);
@@ -75,11 +75,28 @@ export default async function Landing() {
     if (lookbookDrops.length >= 8) break;
   }
   if (lookbookDrops.length < 8) {
-    for (const d of dropsPool) {
+    for (const d of filteredDropsPool) {
       if (lookbookDrops.includes(d)) continue;
       lookbookDrops.push(d);
       if (lookbookDrops.length >= 8) break;
     }
+  }
+
+  // Per-brand product image for brand-grid cards. Prefer a drop NOT already shown
+  // in the lookbook below, so § 01 and § 03 don't duplicate the same photos.
+  const lookbookDropIds = new Set(lookbookDrops.map(d => d.id));
+  const brandImage = new Map<string, string>();
+  for (const d of filteredDropsPool) {
+    if (!d.brand_id || brandImage.has(d.brand_id)) continue;
+    if (lookbookDropIds.has(d.id)) continue;
+    const u = d.jpeg_storage_path ? urlMap.get(d.jpeg_storage_path) : null;
+    if (u) brandImage.set(d.brand_id, u);
+  }
+  // Fallback: brands with only one drop reuse it rather than show no image.
+  for (const d of filteredDropsPool) {
+    if (!d.brand_id || brandImage.has(d.brand_id)) continue;
+    const u = d.jpeg_storage_path ? urlMap.get(d.jpeg_storage_path) : null;
+    if (u) brandImage.set(d.brand_id, u);
   }
 
   const lookbookItems = lookbookDrops.map((d, i) => {
@@ -113,8 +130,21 @@ export default async function Landing() {
   const heroHref = heroDrop?.token_id != null ? `/rrg/drop/${heroDrop.token_id}` : '/rrg';
 
   // ─── Feature + grid brand cards ──────────────────────────────────────
-  const feature = sortedBrands[0];
-  const gridBrands = sortedBrands.slice(1, 9);
+  // Prefer brands NOT already featured in the § 03 lookbook. Same-brand photos
+  // read as "duplicates" even when the products differ, so push lookbook brands
+  // to the back of the queue and only include them if we run out of alternatives.
+  const lookbookBrandIds = new Set(
+    lookbookDrops.map(d => d.brand_id).filter((id): id is string => !!id),
+  );
+  const brandsForS01 = [...sortedBrands].sort((a, b) => {
+    const aInLb = lookbookBrandIds.has(a.id) ? 1 : 0;
+    const bInLb = lookbookBrandIds.has(b.id) ? 1 : 0;
+    if (aInLb !== bInLb) return aInLb - bInLb;
+    if (b.product_count !== a.product_count) return b.product_count - a.product_count;
+    return b.created_at.localeCompare(a.created_at);
+  });
+  const feature = brandsForS01[0];
+  const gridBrands = brandsForS01.slice(1, 9);
   const tallBrand = gridBrands[2]; // 3rd grid slot becomes tall feature
 
   function brandCardImage(brandId: string, bannerPath: string | null, fallbackIdx: number): string {
