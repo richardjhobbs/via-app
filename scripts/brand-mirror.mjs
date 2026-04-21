@@ -309,6 +309,22 @@ const BRANDS = {
     bannerLocal:     null,
     logoLocal:       null,
   },
+  'goodhood': {
+    slug:            'goodhood',
+    name:            'Goodhood',
+    wallet:          '0x734a25fB869ab6415b78bbe9a39f1f99dab349E7',
+    email:           'richard@entrepot.asia',
+    headline:        'Shoreditch concept store since 2007. In-house Goodhood Worldwide line, plus curated streetwear and lifestyle.',
+    description:     'Goodhood is a London concept store founded in 2007 by Kyle Stewart and Jo Sindle, rooted on Curtain Road in Shoreditch. The shop built its reputation on careful buying across streetwear, workwear, footwear, homewares and beauty, and has grown an in-house line, Goodhood Worldwide, alongside the stocked brands. Goodhood Worldwide covers tees, caps, jackets, sweatpants and occasional jewellery pieces, cut from sturdy cottons and finished with the shop\u2019s house graphics and signet motifs. This is a selective mirror of five Goodhood Worldwide pieces: WTAF cotton tee, Overdyed G sweatpant in washed orange, G Cap in camo, sterling silver round signet ring, and the black mechanics jacket. Mirror of goodhoodstore.com, checkout in USDC on Base, ships from Goodhood UK.',
+    website:         'https://goodhoodstore.com',
+    shopifyDomain:   'goodhoodstore.com',
+    supportsSizing:  true,
+    sourceCurrency:  'GBP',
+    priceToUsdcRate: 1.35, // locked 2026-04-21, 1 GBP = $1.35 USDC (aligned with Eye Club 2026-04-20)
+    socialLinks:     { instagram: 'https://www.instagram.com/goodhoodstore/' },
+    bannerLocal:     null,
+    logoLocal:       null,
+  },
   'nolo': {
     slug:            'nolo',
     name:            'Nolo',
@@ -514,7 +530,7 @@ async function fetchShopify() {
   // We force Accept-Language: "" so Shopify serves the shop's BASE currency
   // (the one defined in the Shopify admin) — that's what CFG.priceToUsdcRate
   // expects when converting to USDC.
-  const MAX_PAGES = 10; // up to 2,500 products — generous for any single brand
+  const MAX_PAGES = 25; // up to 6,250 products (Goodhood has ~4,000+; bumped 2026-04-21)
   const all = [];
   for (let page = 1; page <= MAX_PAGES; page++) {
     const url = `https://${CFG.shopifyDomain}/products.json?limit=250&page=${page}`;
