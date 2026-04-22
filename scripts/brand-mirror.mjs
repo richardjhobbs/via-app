@@ -341,6 +341,46 @@ const BRANDS = {
     bannerLocal:     null,
     logoLocal:       null,
   },
+  'cabourn': {
+    slug:            'cabourn',
+    name:            'Nigel Cabourn',
+    wallet:          '0x734a25fB869ab6415b78bbe9a39f1f99dab349E7',
+    email:           'richard@entrepot.asia',
+    headline:        'Vintage military, workwear and expedition. British design, Japanese make.',
+    description:     'Nigel Cabourn is a British designer label founded in 1974, built on vintage military, workwear and expedition references. The label reissues and reworks garments from Cabourn\'s vast personal archive of military clothing, combining UK mill fabrics with Japanese construction. This is the Japanese storefront cabourn.jp, with an emphasis on made-in-Japan production. Selective mirror of five pieces: Gas Protect Camo Gunner Smock (Woman), Army Cargo Short (Man), Souvenir Jacket in cotton nylon weather cloth (Unisex), British Officers Shirt Type 2 in hemp (Woman), and Gunner Jacket in Taslan nylon (Unisex). Checkout in USDC on Base, ships from Cabourn Japan.',
+    website:         'https://cabourn.jp',
+    shopifyDomain:   'cabourn.jp',
+    supportsSizing:  true,
+    sourceCurrency:  'JPY',
+    priceToUsdcRate: 1 / 150, // locked 2026-04-22, 1 USDC = 150 JPY
+    socialLinks:     { instagram: 'https://www.instagram.com/nigelcabourn_official/' },
+    bannerLocal:     null,
+    logoLocal:       null,
+    // Cabourn's JP site titles products as "【ナイジェル・ケーボン】<CAT> / <JP> / <EN>"
+    // and bodies are mostly Japanese. Override with clean English copy per handle.
+    productOverrides: {
+      '80520830200': {
+        title: 'Gas Protect Camo Gunner Smock (Woman)',
+        description: 'A 1940s British Army gas-protection coat reworked in cotton typewriter cloth with an original Cabourn camouflage print. Cut on the gunner smock silhouette, built for the punishing environment inside artillery positions: a deep hood that wraps the head and covers up to the throat shields against hot gas and blast. Heritage utility in an unflinching, purpose-built form.',
+      },
+      '80520051012': {
+        title: 'Army Cargo Short',
+        description: 'British Army inspired cargo short cut in hardwearing cotton. Deep bellows pockets, reinforced stress points, relaxed field-ready silhouette with a clean above-the-knee cut. Built from Cabourn\'s archive research into mid-century tropical fatigues.',
+      },
+      '80520030006': {
+        title: 'Souvenir Jacket, Cotton Nylon Weather',
+        description: 'Reversible souvenir jacket in a cotton-nylon weather cloth. Motif embroidery front and back, weatherproofed face and soft lining, military surplus heritage filtered through Cabourn\'s travel-worn lens. A unisex silhouette cut for layering.',
+      },
+      '80520810003': {
+        title: 'British Officers Shirt Type 2, Hemp (Woman)',
+        description: 'British officers shirt rendered in breathable hemp and cut for women. Two patch chest pockets, soft epaulettes, band collar and mother-of-pearl buttons, with a longer length and feminine proportions. A Cabourn archive staple reworked for modern wear.',
+      },
+      '80510030001': {
+        title: 'Gunner Jacket, Taslan Nylon',
+        description: 'The gunner jacket rebuilt in technical Taslan nylon: lightweight, water-resistant and packable. Four utility pockets, storm flap, adjustable hem and cuffs. Cabourn\'s artillery-crew archetype in an every-day shell weight, unisex fit.',
+      },
+    },
+  },
   'nolo': {
     slug:            'nolo',
     name:            'Nolo',
@@ -747,7 +787,11 @@ function getTotalStock(product) {
 
 async function importProduct(product, brand) {
   const handle  = product.handle;
-  const title   = product.title;
+  // Per-product overrides let us ship clean English copy for brands whose
+  // native catalogue is localised (e.g. cabourn.jp ships JP + EN smashed
+  // together). Shape: productOverrides[handle] = { title?, description? }.
+  const override = CFG.productOverrides?.[handle] ?? {};
+  const title   = override.title ?? product.title;
   const variant = product.variants?.[0];
   const image   = product.images?.[0];
 
@@ -861,7 +905,7 @@ async function importProduct(product, brand) {
   }
 
   // Insert rrg_submissions row
-  const description = stripHtml(product.body_html).slice(0, 1500) || null;
+  const description = (override.description ?? stripHtml(product.body_html)).slice(0, 1500) || null;
   const insertRow = {
     id:                  submissionId,
     creator_wallet:      CFG.wallet.toLowerCase(),
