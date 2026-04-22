@@ -65,6 +65,8 @@ export interface RrgBrand {
   shopify_storefront_token_encrypted: string | null;
   /** True if brand has garment sizing — enables size selector UI + sizing guide MCP tool */
   supports_sizing: boolean;
+  /** Free-form brand config — includes shipping flat-rate, custom policies, etc. See lib/rrg/shipping.ts for the shipping shape. */
+  brand_data: Record<string, unknown> | null;
 }
 
 export interface RrgBrief {

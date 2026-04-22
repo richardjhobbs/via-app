@@ -127,6 +127,7 @@ function createBrandServer(brand: RrgBrand, logTool: LogTool = () => {}) {
         '- `list_products` — Browse all products from this brand',
         '- `get_product` — Get full details including live stock per size/variant',
         brand.supports_sizing ? '- `get_sizing_guide` — Size charts and fit advice' : '',
+        '- `get_quote` — Live shipping quote for a product + size + destination',
         '- `buy_product` — Initiate a purchase (returns payment instructions)',
         '',
         `Storefront: ${siteUrl}/brand/${brand.slug}`,
@@ -344,6 +345,125 @@ function createBrandServer(brand: RrgBrand, logTool: LogTool = () => {}) {
       },
     );
   }
+
+  // ── get_quote ──────────────────────────────────────────────────────
+  // Live shipping rate from Shopify for a given product+size+destination.
+  // Uses the Admin API's draft-order rate engine when the brand has
+  // provisioned an Admin token (shpat_*); falls back to the brand's static
+  // flat-rate config otherwise. See lib/rrg/shopify-admin.ts for the draft
+  // order flow (rate fetch + immediate cleanup — no order record retained).
+  server.tool(
+    'get_quote',
+    `Get a live shipping quote for a ${brand.name} product from the buyer's country. Returns available rates sorted cheapest-first. If the brand has Shopify Admin API configured, rates come from Shopify's live rate engine using the merchant's real zones. Otherwise falls back to flat-rate config.`,
+    {
+      token_id:        z.number().describe('The RRG token ID of the product'),
+      size:            z.string().optional().describe('Size/variant — required if the product has multiple sizes'),
+      quantity:        z.number().int().positive().default(1).describe('Units to quote for (default 1)'),
+      shipping_address: z.object({
+        address1:    z.string().describe('Street address line 1'),
+        address2:    z.string().optional(),
+        city:        z.string(),
+        province:    z.string().optional().describe('State / province name or code'),
+        country:     z.string().describe('ISO 3166-1 alpha-2 country code (e.g. US, GB, AU)'),
+        zip:         z.string().describe('Postal / ZIP code'),
+      }).describe('Destination address. Only country + zip + city are strictly required for rate calculation.'),
+    },
+    async ({ token_id, size, quantity = 1, shipping_address }) => {
+      logTool('get_quote');
+
+      const drop = await getDropByTokenId(token_id);
+      if (!drop || drop.brand_id !== brand.id) {
+        return { isError: true, content: [{ type: 'text', text: `Product #${token_id} not found for ${brand.name}` }] };
+      }
+
+      // Resolve the Shopify variant for this size (required by the rate engine).
+      const variants = await getVariantsBySubmissionId(drop.id);
+      let matchVariant = variants[0];
+      if (size) {
+        const found = variants.find(v => v.size?.toLowerCase() === size.toLowerCase());
+        if (!found) {
+          const available = variants.map(v => v.size).filter(Boolean).join(', ');
+          return { isError: true, content: [{ type: 'text', text: `Size "${size}" not available. Available: ${available}` }] };
+        }
+        matchVariant = found;
+      } else if (variants.length > 1) {
+        const sizes = variants.map(v => v.size).filter(Boolean).join(', ');
+        return { isError: true, content: [{ type: 'text', text: `${drop.title} has multiple sizes (${sizes}). Specify size to get an accurate shipping quote.` }] };
+      }
+
+      // Load token + domain from the brand row. resolveShopifyToken handles
+      // the plaintext: dev prefix; null means fall back to flat-rate config.
+      const { resolveShopifyToken, isAdminToken, getShopifyShippingRates, isShopifyScopeMissing } = await import('@/lib/rrg/shopify-admin');
+      const token = resolveShopifyToken(brand);
+
+      if (token && isAdminToken(token) && brand.shopify_domain && matchVariant?.shopify_variant_id) {
+        try {
+          const rates = await getShopifyShippingRates(
+            brand.shopify_domain,
+            token,
+            [{ variant_id: matchVariant.shopify_variant_id, quantity }],
+            {
+              address1:     shipping_address.address1,
+              address2:     shipping_address.address2,
+              city:         shipping_address.city,
+              province:     shipping_address.province,
+              country:      shipping_address.country,
+              country_code: shipping_address.country.toUpperCase(),
+              zip:          shipping_address.zip,
+            },
+          );
+
+          if (rates.length === 0) {
+            return { content: [{ type: 'text', text: JSON.stringify({
+              status:     'no_rates',
+              reason:     'Shopify returned no shipping rates for this destination. The merchant may not ship to this country.',
+              shipsTo:    shipping_address.country.toUpperCase(),
+              tokenId:    token_id,
+            }, null, 2) }] };
+          }
+
+          const sorted = rates.slice().sort((a, b) => a.price_usd - b.price_usd);
+          return { content: [{ type: 'text', text: JSON.stringify({
+            status:   'ok',
+            source:   'shopify_admin_live',
+            tokenId:  token_id,
+            product:  drop.title,
+            size:     matchVariant?.size ?? 'n/a',
+            quantity,
+            shipsTo:  shipping_address.country.toUpperCase(),
+            currency: 'USD',
+            rates:    sorted.map(r => ({
+              handle:       r.handle,
+              title:        r.title,
+              priceUsd:     r.price_usd,
+              deliveryDays: r.delivery_days && r.delivery_days.length ? r.delivery_days : undefined,
+            })),
+          }, null, 2) }] };
+        } catch (err) {
+          // Scope missing is an expected state (read-only tokens). Log
+          // quietly and fall through. Other errors are worth a console.error.
+          if (isShopifyScopeMissing(err)) {
+            console.log(`[brand-mcp ${brand.slug}] admin token lacks write_draft_orders — using flat-rate fallback`);
+          } else {
+            console.error(`[brand-mcp ${brand.slug}] shopify rate fetch failed:`, err);
+          }
+        }
+      }
+
+      // Fallback: flat-rate config from brand_data.shipping (if configured).
+      const { getShippingConfig, computeShippingQuote } = await import('@/lib/rrg/shipping');
+      const config = getShippingConfig(brand.brand_data);
+      const quote = computeShippingQuote(config, shipping_address.country);
+
+      return { content: [{ type: 'text', text: JSON.stringify({
+        status:  quote.status === 'flat_rate' ? 'ok' : quote.status,
+        source:  'flat_rate_config',
+        tokenId: token_id,
+        product: drop.title,
+        quote,
+      }, null, 2) }] };
+    },
+  );
 
   // ── buy_product ────────────────────────────────────────────────────
 
