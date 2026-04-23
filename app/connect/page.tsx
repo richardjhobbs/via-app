@@ -23,49 +23,50 @@ const CONNECTORS: Connector[] = [
   {
     id: 'claude',
     name: 'Claude',
-    tagline: 'Claude Desktop, Claude Code, or claude.ai (Pro / Max).',
-    approach: 'config',
+    tagline: 'Free (1 connector), Pro, Max, Team, Enterprise. Works on claude.ai web, Desktop, and mobile.',
+    approach: 'ui',
     steps: [
-      'Open Claude Desktop → Settings → Developer → Edit Config.',
-      'Add the RRG server to your `mcpServers` block:',
-      { code: `{
-  "mcpServers": {
-    "rrg": {
-      "command": "npx",
-      "args": ["-y", "mcp-remote", "https://realrealgenuine.com/mcp"]
-    }
-  }
-}` },
-      'Save, then fully quit and relaunch Claude Desktop.',
-      'Ask Claude: "What can you do with the RRG server?"',
+      'Open claude.ai → Settings → Connectors. Scroll to the bottom and click Add custom connector.',
+      'Name: RRG. Remote MCP server URL:',
+      { code: MCP_ENDPOINT },
+      'Leave OAuth blank (RRG is public). Click Add. Claude enumerates tools from its cloud.',
+      'In a new chat, open the tools menu (⚒) in the composer, toggle RRG on, and send a prompt.',
+      'Claude Desktop alternative: Settings → Developer → Edit Config, add an mcpServers entry using npx mcp-remote as the bridge.',
     ],
     docs: 'https://getvia.xyz/connect/claude',
   },
   {
     id: 'chatgpt',
     name: 'ChatGPT',
-    tagline: 'ChatGPT Plus / Pro / Business / Enterprise, via agent / developer mode.',
+    tagline: 'Business / Enterprise / Education get full MCP. Plus / Pro get read-only. Not on Free.',
     approach: 'url',
     steps: [
-      'In ChatGPT, enable Developer Mode (Settings → Beta features).',
-      'Go to Settings → Connectors → Add custom connector.',
-      'Paste the RRG endpoint:',
+      'In ChatGPT, open Settings → Apps & Connectors → Advanced settings and toggle Developer mode on.',
+      'Back in Settings → Apps & Connectors, click Create. A dialog titled New App (BETA) opens.',
+      'Name: RRG. MCP Server URL:',
       { code: MCP_ENDPOINT },
-      'Authorise when prompted. Start a new chat and ask for listings or to place an order.',
+      'Authentication: No Auth. Tick "I understand and want to continue", then click Create.',
+      'In a new chat, click + in the composer, open More, pick RRG, and ask for listings.',
     ],
     docs: 'https://getvia.xyz/connect/chatgpt',
   },
   {
     id: 'gemini',
     name: 'Gemini',
-    tagline: 'Google Gemini Advanced, via the MCP-compatible extension layer.',
-    approach: 'ui',
+    tagline: 'Gemini CLI and Code Assist (free + paid). Consumer gemini.google.com does not yet accept custom MCP.',
+    approach: 'config',
     steps: [
-      'In Gemini, open Extensions / Connectors.',
-      'Add a new MCP server and paste the RRG endpoint:',
-      { code: MCP_ENDPOINT },
-      'Grant the permissions Gemini asks for.',
-      'Try: "Find me the latest Maison pieces under $300."',
+      'Edit ~/.gemini/settings.json (global) or .gemini/settings.json (per project).',
+      'Add an mcpServers entry pointing at the RRG endpoint:',
+      { code: `{
+  "mcpServers": {
+    "rrg": {
+      "httpUrl": "https://realrealgenuine.com/mcp"
+    }
+  }
+}` },
+      'Restart the gemini CLI. Type /mcp inside the prompt to confirm RRG tools are listed.',
+      'Gemini Enterprise admins can register RRG as a custom MCP server connector from the Google Cloud console.',
     ],
     docs: 'https://getvia.xyz/connect/gemini',
   },
@@ -86,13 +87,14 @@ const CONNECTORS: Connector[] = [
   {
     id: 'perplexity',
     name: 'Perplexity',
-    tagline: 'Perplexity Pro, via Spaces or the connector panel.',
+    tagline: 'Perplexity Pro, Max, and Enterprise. Not supported on Free.',
     approach: 'url',
     steps: [
-      'Open Perplexity → Spaces → Create Space → Add connector.',
-      'Select MCP (custom) and paste the endpoint:',
+      'Open perplexity.ai → Account → Connectors → + Custom connector, then select Remote.',
+      'Name: RRG. MCP Server URL:',
       { code: MCP_ENDPOINT },
-      'Save. Ask inside the Space: "Show me the latest drops on RRG."',
+      'Authentication: None. Tick the risk acknowledgement and click Add.',
+      'In a new thread, enable the RRG connector in the composer and ask for the latest listings. Works in Comet too.',
     ],
     docs: 'https://getvia.xyz/connect/perplexity',
   },
