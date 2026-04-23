@@ -25,6 +25,7 @@ import {
   type RrgProductVariant,
 } from '@/lib/rrg/db';
 import { getRRGReadOnly } from '@/lib/rrg/contract';
+import { toAgentProduct } from '@/lib/rrg/mcp-product-shape';
 import {
   logMcpInteraction,
   parseAgentIdentity,
@@ -155,69 +156,34 @@ function createBrandServer(brand: RrgBrand, logTool: LogTool = () => {}) {
       const products = await Promise.all(drops.map(async (drop) => {
         const variants = await getVariantsBySubmissionId(drop.id);
         const sold = purchaseCounts.get(drop.token_id!) ?? 0;
-        const remaining = drop.edition_size - sold;
 
-        // Enrich variants with live stock (Shopify-backed brands only)
-        const enrichedVariants = await Promise.all(
+        // Overlay live Shopify stock onto DB cached_stock before projection.
+        // Fresh stock for Shopify-backed brands; DB value for everything else.
+        const liveVariants = await Promise.all(
           variants.map(async (v) => {
-            const stock = await getVariantStock(brand.shopify_domain, v);
-            return {
-              size: v.size,
-              color: v.color,
-              inStock: stock > 0,
-              stock,
-              priceOverride: v.price_override,
-            };
+            const liveStock = await getVariantStock(brand.shopify_domain, v);
+            return { ...v, cached_stock: liveStock };
           })
         );
 
-        const availableSizes = enrichedVariants
-          .filter(v => v.inStock)
-          .map(v => v.size)
-          .filter(Boolean);
-
-        // Pull agent-facing fields out of product_attributes (curated brands only)
+        // Canonical agent-product shape (shared with platform MCP). Reseller
+        // anchors surface only when the brand's merchant_type is resale.
+        const shape = toAgentProduct({ drop, brand, variants: liveVariants, sold, siteUrl });
         const attrs = (drop.product_attributes ?? {}) as Record<string, unknown>;
-        const asString = (k: string): string | null =>
-          typeof attrs[k] === 'string' ? attrs[k] as string : null;
-        const asArray = (k: string): string[] =>
-          Array.isArray(attrs[k]) ? attrs[k] as string[] : [];
-
-        // For curated single-SKU brands (no variants), inStock is derived from edition vs sold
-        const inStock = variants.length > 0
-          ? enrichedVariants.some(v => v.inStock)
-          : remaining > 0;
 
         return {
-          tokenId: drop.token_id,
-          title: drop.title,
-          brand: asString('brand') ?? brand.name,
-          category: asString('category'),
-          // Pricing (both currencies when present)
-          priceUsdc: drop.price_usdc,
+          ...shape,
+          // Per-brand MCP extras preserved for existing consumers
+          brand:    shape.brandName,
+          category: typeof attrs.category === 'string' ? attrs.category : null,
           priceEur: typeof attrs.price_eur === 'number' ? attrs.price_eur : null,
-          // Luxury-resale signals
-          conditionGrade: asString('condition_grade'),
-          authenticationStatus: asString('authentication_status'),
-          // Filter signals
-          styleTags: asArray('style_tags'),
-          occasionFit: asArray('occasion_fit'),
-          buyerIntentSignals: asArray('buyer_intent_signals'),
-          // Reasoning payload — full, not truncated
-          agentDescription: drop.enhanced_description,
-          brandContext: asString('brand_context'),
-          resaleValueContext: asString('resale_value_context'),
-          // Stock + edition
-          editionSize: drop.edition_size,
-          remaining,
-          inStock,
-          availableSizes,
-          totalVariants: variants.length,
-          inStockVariants: enrichedVariants.filter(v => v.inStock).length,
-          // Physical / provenance
-          isPhysical: drop.is_physical_product,
-          ecommerceUrl: drop.ecommerce_url,
-          rrgUrl: `${siteUrl}/rrg/drop/${drop.token_id}`,
+          inStock:  shape.variants.length > 0
+            ? shape.variants.some(v => v.inStock)
+            : (shape.remaining ?? 0) > 0,
+          availableSizes:   shape.variants.filter(v => v.inStock).map(v => v.size).filter(Boolean),
+          totalVariants:    shape.variants.length,
+          inStockVariants:  shape.variants.filter(v => v.inStock).length,
+          isPhysical:       shape.isPhysicalProduct,
         };
       }));
 
@@ -246,62 +212,28 @@ function createBrandServer(brand: RrgBrand, logTool: LogTool = () => {}) {
       const counts = await getPurchaseCountsByTokenIds([token_id]);
       const sold = counts.get(token_id) ?? 0;
 
-      const enrichedVariants = await Promise.all(
+      // Overlay live Shopify stock onto DB cached_stock before projection.
+      const liveVariants = await Promise.all(
         variants.map(async (v) => {
-          const stock = await getVariantStock(brand.shopify_domain, v);
-          return {
-            size: v.size,
-            color: v.color,
-            sku: v.sku,
-            inStock: stock > 0,
-            stock,
-            priceOverride: v.price_override ? `${v.price_override}` : null,
-          };
+          const liveStock = await getVariantStock(brand.shopify_domain, v);
+          return { ...v, cached_stock: liveStock };
         })
       );
 
-      // Flatten high-value product_attributes keys to top level for agent ergonomics
+      const shape = toAgentProduct({ drop, brand, variants: liveVariants, sold, siteUrl });
       const attrs = (drop.product_attributes ?? {}) as Record<string, unknown>;
-      const asString = (k: string): string | null =>
-        typeof attrs[k] === 'string' ? attrs[k] as string : null;
-      const asArray = (k: string): string[] =>
-        Array.isArray(attrs[k]) ? attrs[k] as string[] : [];
 
       const result = {
-        tokenId: drop.token_id,
-        title: drop.title,
-        // Base description from the brand (what humans see on the listing page)
-        description: drop.description,
-        // Agent-facing 150-200 word reasoning payload (null until enrichment has run)
-        agentDescription: drop.enhanced_description,
-        // Flattened high-value attributes — promoted from productAttributes for ease of use
-        brand: asString('brand') ?? brand.name,
-        category: asString('category'),
-        conditionGrade: asString('condition_grade'),
-        conditionDetail: asString('condition_detail'),
-        visualDescription: asString('visual_description'),
-        styleTags: asArray('style_tags'),
-        occasionFit: asArray('occasion_fit'),
-        buyerIntentSignals: asArray('buyer_intent_signals'),
-        authenticationStatus: asString('authentication_status'),
-        brandContext: asString('brand_context'),
-        resaleValueContext: asString('resale_value_context'),
-        // Full structured attributes (everything, including any custom keys)
-        productAttributes: drop.product_attributes,
-        // Pricing
-        priceUsdc: drop.price_usdc,
+        ...shape,
+        // Per-brand MCP extras: flattened category + EUR price + sized helpers
+        brand:    shape.brandName,
+        category: typeof attrs.category === 'string' ? attrs.category : null,
         priceEur: typeof attrs.price_eur === 'number' ? attrs.price_eur : null,
-        // Edition + stock
-        editionSize: drop.edition_size,
         sold,
-        remaining: drop.edition_size - sold,
-        isPhysical: drop.is_physical_product,
+        isPhysical:     shape.isPhysicalProduct,
         sizingCategory: drop.sizing_category,
-        ecommerceUrl: drop.ecommerce_url,
-        rrgUrl: `${siteUrl}/rrg/drop/${drop.token_id}`,
-        variants: enrichedVariants,
-        sizesInStock: enrichedVariants.filter(v => v.inStock).map(v => v.size).filter(Boolean),
-        sizesOutOfStock: enrichedVariants.filter(v => !v.inStock).map(v => v.size).filter(Boolean),
+        sizesInStock:    shape.variants.filter(v => v.inStock).map(v => v.size).filter(Boolean),
+        sizesOutOfStock: shape.variants.filter(v => !v.inStock).map(v => v.size).filter(Boolean),
       };
 
       return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
