@@ -300,10 +300,135 @@ function createRRGServer() {
     },
   );
 
+  // ── Tool: search_products ─────────────────────────────────────────────────
+  server.tool(
+    'search_products',
+    [
+      '[FIND] START HERE when you know what you want. Free-text search across every active RRG listing — titles, descriptions, agent descriptions, and structured attributes (retail_sku, canonical_name, collab, original_release, vendor, style_tags).',
+      'Use this for queries like "Jordan 1 Alaska", "AA3834-100", "Off-White Nike", "Stadium Goods sneakers", "silk scarf", "leather tote".',
+      'Returns ranked matches with tokenId, priceRangeUsdc, authenticationStatus, retailSku, canonicalName, and rrgUrl. Per-size pricing is indicated by hasPerSizePricing + priceRangeUsdc.',
+      'Next step: call get_drop_details with the matching tokenId for full variants / agent description, then initiate_agent_purchase to buy.',
+      '',
+      'If zero matches, try broader or alternate tokens (the item may be indexed under a different naming cluster — e.g. "Virgil Abloh Archive" vs "Off-White"). If still zero, call list_drops for a browse of the full catalogue.',
+    ].join('\n'),
+    {
+      query:      z.string().min(1).describe('Free-text query. Multi-word is fine — each ≥2-char token is matched independently across all indexed fields. Examples: "Jordan 1 Alaska 10.5", "AA3834-100", "Off-White Virgil Abloh"'),
+      brand_slug: z.string().optional().describe('Optional brand slug to scope the search (e.g. "stadium-goods")'),
+      limit:      z.number().int().min(1).max(50).optional().describe('Max results (default 10)'),
+    },
+    async ({ query, brand_slug, limit }) => {
+      const maxResults = limit ?? 10;
+      const tokens = query.toLowerCase().split(/\s+/).filter(t => t.length >= 2);
+      if (tokens.length === 0) {
+        return { isError: true, content: [{ type: 'text', text: 'Query must contain at least one token of 2+ characters.' }] };
+      }
+
+      let brandId: string | undefined;
+      if (brand_slug) {
+        const b = await getBrandBySlug(brand_slug);
+        if (!b) {
+          return { isError: true, content: [{ type: 'text', text: `Brand "${brand_slug}" not found. Call list_brands to see available brands.` }] };
+        }
+        brandId = b.id;
+      }
+
+      const drops = await getApprovedDrops(brandId);
+
+      // Score each drop by token matches across title / description /
+      // enhanced_description / product_attributes. Title matches are weighted
+      // heavier than description matches. Retail SKU exact matches get a big
+      // bonus so an agent searching "AA3834-100" lands the right listing
+      // even if the token count is small.
+      const scored = [];
+      for (const drop of drops) {
+        const title = (drop.title ?? '').toLowerCase();
+        const desc  = (drop.description ?? '').toLowerCase();
+        const aDesc = (drop.enhanced_description ?? '').toLowerCase();
+        const attrsStr = JSON.stringify(drop.product_attributes ?? {}).toLowerCase();
+        const attrs = (drop.product_attributes ?? {}) as Record<string, unknown>;
+        const retailSku = typeof attrs.retail_sku === 'string' ? attrs.retail_sku.toLowerCase() : '';
+
+        let score = 0;
+        const matchedTokens: string[] = [];
+        for (const tok of tokens) {
+          let matched = false;
+          if (title.includes(tok))    { score += 3; matched = true; }
+          if (retailSku && (retailSku.includes(tok) || retailSku.replace(/[-\s]/g, '').includes(tok.replace(/[-\s]/g, ''))))
+                                        { score += 5; matched = true; }
+          if (aDesc.includes(tok))    { score += 2; matched = true; }
+          if (desc.includes(tok))     { score += 2; matched = true; }
+          if (attrsStr.includes(tok)) { score += 1; matched = true; }
+          if (matched) matchedTokens.push(tok);
+        }
+        // Bonus: every token matched somewhere
+        if (matchedTokens.length === tokens.length && tokens.length > 1) score += 4;
+        if (score > 0) scored.push({ drop, score, matchedTokens });
+      }
+
+      scored.sort((a, b) => b.score - a.score);
+      const top = scored.slice(0, maxResults);
+
+      if (top.length === 0) {
+        return {
+          content: [{
+            type: 'text',
+            text: JSON.stringify({
+              query,
+              brandSlug:    brand_slug ?? null,
+              totalMatches: 0,
+              message:      `No matches for "${query}"${brand_slug ? ` within brand "${brand_slug}"` : ''}. Try broader tokens (e.g. brand name only, or a SKU fragment), alternate phrasings (same item may be listed under "Virgil Abloh Archive" or "Off-White" or "VAA"), or call list_drops to browse the full catalogue.`,
+              nextStep:     'list_drops()' + (brand_slug ? ` or list_drops({brand_slug:"${brand_slug}"})` : ''),
+            }, null, 2),
+          }],
+        };
+      }
+
+      // Project top results via the shared toAgentProduct shape (compact)
+      const results = await Promise.all(top.map(async ({ drop, score, matchedTokens }) => {
+        const variants = await getVariantsBySubmissionId(drop.id);
+        const brand    = drop.brand_id ? await getBrandById(drop.brand_id).catch(() => null) : null;
+        const shape    = toAgentProduct({ drop, brand, variants });
+        return {
+          tokenId:        shape.tokenId,
+          title:          shape.title,
+          brandName:      shape.brandName,
+          merchantType:   shape.merchantType,
+          assetType:      shape.assetType,
+          ...(shape.authenticationStatus ? { authenticationStatus: shape.authenticationStatus } : {}),
+          ...(shape.retailSku            ? { retailSku:            shape.retailSku } : {}),
+          ...(shape.canonicalName        ? { canonicalName:        shape.canonicalName } : {}),
+          ...(shape.originalRelease      ? { originalRelease:      shape.originalRelease } : {}),
+          priceUsdc:      shape.priceUsdc,
+          basePriceUsdc:  shape.basePriceUsdc,
+          ...(shape.priceRangeUsdc ? { priceRangeUsdc: shape.priceRangeUsdc, hasPerSizePricing: shape.hasPerSizePricing } : {}),
+          availablePhysicalUnits: shape.availablePhysicalUnits,
+          rrgUrl:         shape.rrgUrl,
+          ecommerceUrl:   shape.ecommerceUrl,
+          matchScore:     score,
+          matchedTokens,
+        };
+      }));
+
+      return {
+        content: [{
+          type: 'text',
+          text: JSON.stringify({
+            query,
+            brandSlug:    brand_slug ?? null,
+            totalMatches: scored.length,
+            returned:     top.length,
+            results,
+            nextStep:     'Call get_drop_details with the tokenId of the match you want (includes full variant list with per-size pricing + agent description). Then initiate_agent_purchase (AI agents) or initiate_purchase (human wallet) to buy. Pass selected_size for sized products so the payment amount matches the chosen size.',
+          }, null, 2),
+        }],
+      };
+    }
+  );
+
   // ── Tool: list_drops ──────────────────────────────────────────────────────
   server.tool(
     'list_drops',
-    '[BROWSE] List all active NFT listings available for purchase. START HERE to see what is for sale. Optionally filter by brand_slug. Returns title, price in USDC, edition size, remaining supply, and revenue split. Next step: call initiate_agent_purchase to buy (AI agents must use this, not initiate_purchase).',
+    '[BROWSE] List all active RRG listings, optionally scoped by brand_slug. Use when you want to browse the catalogue without a specific item in mind. If you already know what you are looking for ("Jordan 1 Alaska", "AA3834-100", etc.) call search_products FIRST — list_drops returns up to a few hundred items which is expensive to scan. Returns title, price in USDC, edition size, remaining supply, and revenue split where applicable. Next step after narrowing down: get_drop_details + initiate_agent_purchase.',
     {
       brand_slug: z.string().optional().describe('Optional brand slug to filter listings by a specific brand'),
     },
@@ -2632,9 +2757,10 @@ export async function GET(req: Request) {
         agent_identity:   `${siteUrl}/agent.json`,
       },
       mcp_tools: [
-        { name: 'list_drops',              description: 'Browse all active listings. Optional filter { brand_slug: string }.' },
-        { name: 'get_drop_details',        description: 'Full details for one listing by tokenId.' },
-        { name: 'initiate_agent_purchase', description: 'Buy a listing as an AI agent (operatorMint flow).' },
+        { name: 'search_products',         description: 'Free-text search across titles, descriptions, agent descriptions, and structured attributes (retail_sku, canonical_name, collab, original_release, vendor, style_tags). START HERE for "find me X" queries.' },
+        { name: 'list_drops',              description: 'Browse all active listings. Optional filter { brand_slug: string }. Prefer search_products when you have a specific item name or SKU.' },
+        { name: 'get_drop_details',        description: 'Full details for one listing by tokenId (including per-size variants, pricing range, and agent description).' },
+        { name: 'initiate_agent_purchase', description: 'Buy a listing as an AI agent (operatorMint flow). Pass selected_size for sized products so the payment amount matches the chosen size.' },
         { name: 'join_marketing_program',  description: 'Join the RRG Referral / Marketing / Affiliate Programme. Same programme for humans and AI agents. Earn 10% of platform share on sales by agents you refer.' },
         { name: 'log_referral',            description: 'Log an agent you have referred to RRG (after joining the programme).' },
         { name: 'check_my_commissions',    description: 'See your referral/marketing commissions (pending, approved, paid).' },
