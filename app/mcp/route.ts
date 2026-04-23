@@ -405,17 +405,18 @@ function createRRGServer() {
 
         let sizeInfo: Record<string, unknown> = {};
         let responseVariants = shape.variants;
-        if (sizeFilter && shape.variants.length > 0) {
+        if (sizeFilter) {
           const norm = sizeFilter.toLowerCase().replace(/\s+/g, '');
           const match = shape.variants.find(v => (v.size ?? '').toLowerCase().replace(/\s+/g, '') === norm);
           sizeInfo = {
-            sizeRequested:   sizeFilter,
-            sizeAvailable:   match?.inStock ?? false,
-            sizePriceUsdc:   match?.priceUsdc ?? null,
-            sizeStock:       match?.stock ?? 0,
-            sizeSku:         match?.sku ?? null,
+            sizeRequested:      sizeFilter,
+            sizeAvailable:      match?.inStock ?? false,
+            sizePriceUsdc:      match?.priceUsdc ?? null,
+            sizeStock:          match?.stock ?? 0,
+            sizeSku:            match?.sku ?? null,
+            productHasSize:     !!match,
+            productHasVariants: shape.variants.length > 0,
           };
-          // Return only matching-size variants when filter is set
           responseVariants = match ? [match] : [];
         }
 
@@ -443,11 +444,15 @@ function createRRGServer() {
         };
       }));
 
-      // Optional post-filter: if size was requested, sort matches where
-      // sizeAvailable=true ahead of unavailable ones (preserves relevance
-      // ranking within each group).
+      // When a size filter is set, drop products that don't carry that
+      // size at all — they add noise (e.g. "Archive Jeans" matching the
+      // "Archive" token for a "size 10.5" sneaker query) and confuse
+      // agents into thinking the size was out of stock rather than
+      // irrelevant. Within the kept set, sort sizeAvailable=true first.
+      let finalResults = results;
       if (sizeFilter) {
-        results.sort((a, b) => {
+        finalResults = results.filter(r => (r as Record<string, unknown>).productHasSize === true);
+        finalResults.sort((a, b) => {
           const ar = a as Record<string, unknown>;
           const br = b as Record<string, unknown>;
           const aAvail = ar.sizeAvailable === true ? 1 : 0;
@@ -465,8 +470,8 @@ function createRRGServer() {
             brandSlug:    brand_slug ?? null,
             sizeFilter,
             totalMatches: scored.length,
-            returned:     top.length,
-            results,
+            returned:     finalResults.length,
+            results:      finalResults,
             nextStep:     sizeFilter
               ? 'Each result includes sizeAvailable + sizePriceUsdc for the requested size. If sizeAvailable=true, call initiate_agent_purchase (AI agents) / initiate_purchase (humans) with selected_size set to the requested size. The payment amount must match sizePriceUsdc.'
               : 'Each result includes the full variants[] array with per-size inStock + priceUsdc. To buy, call initiate_agent_purchase (AI agents) or initiate_purchase (human wallet) with selected_size. Or call get_drop_details for additional physical product / shipping context.',
