@@ -1,46 +1,43 @@
 'use client';
 
-import { useState } from 'react';
-import ProductSizeSelector, { type ProductVariant } from './ProductSizeSelector';
+import ProductSizeSelector from './ProductSizeSelector';
 import PurchaseFlow from './PurchaseFlow';
+import { useSelectedSize } from './SelectedSizeContext';
 
 interface Props {
   tokenId: number;
-  priceUsdc: number;
   soldOut: boolean;
   active: boolean;
   isPhysicalProduct?: boolean;
   shippingType?: string | null;
-  variants: ProductVariant[];
-  initialSize?: string;
+  hasVariants: boolean;
   requireSize: boolean;
 }
 
+/**
+ * Wires the size selector + purchase flow to the shared SelectedSizeContext.
+ * The effective (per-size) price is pulled from context and handed to the
+ * purchase flow so the "Buy" button reflects the selection and the server
+ * charges the right amount.
+ */
 export default function PurchaseBlock({
   tokenId,
-  priceUsdc,
   soldOut,
   active,
   isPhysicalProduct,
   shippingType,
-  variants,
-  initialSize,
+  hasVariants,
   requireSize,
 }: Props) {
-  const [selectedSize, setSelectedSize] = useState<string | null>(initialSize ?? null);
-  const purchaseBlocked = requireSize && !selectedSize;
+  const { selectedSize, effectivePrice, selectedInStock } = useSelectedSize();
+  const sizeMissing = requireSize && !selectedSize;
+  const sizeOutOfStock = requireSize && !!selectedSize && !selectedInStock;
 
   return (
     <div>
-      {variants.length > 0 && (
-        <ProductSizeSelector
-          variants={variants}
-          initialSize={initialSize}
-          onSizeChange={setSelectedSize}
-        />
-      )}
+      {hasVariants && <ProductSizeSelector />}
 
-      {purchaseBlocked ? (
+      {sizeMissing || sizeOutOfStock ? (
         <div style={{
           marginTop: 24,
           padding: 16,
@@ -53,12 +50,14 @@ export default function PurchaseBlock({
           textTransform: 'uppercase',
           color: 'var(--ink-3)',
         }}>
-          Select a size above to continue
+          {sizeOutOfStock
+            ? `Size ${selectedSize} is sold out — choose another size`
+            : 'Select a size above to continue'}
         </div>
       ) : (
         <PurchaseFlow
           tokenId={tokenId}
-          priceUsdc={priceUsdc}
+          priceUsdc={effectivePrice}
           soldOut={soldOut}
           active={active}
           isPhysicalProduct={isPhysicalProduct}

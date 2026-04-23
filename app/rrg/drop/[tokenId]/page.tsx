@@ -5,6 +5,8 @@ import { getRRGReadOnly } from '@/lib/rrg/contract';
 import { notFound } from 'next/navigation';
 import PurchaseBlock from './PurchaseBlock';
 import PhysicalProductButton from './PhysicalProductButton';
+import { SelectedSizeProvider, type VariantInfo } from './SelectedSizeContext';
+import ReactivePriceStat from './ReactivePriceStat';
 import DropBadges from '@/components/rrg/DropBadges';
 import Link from 'next/link';
 
@@ -95,11 +97,16 @@ export default async function DropPage({ params, searchParams }: Props) {
   const rawVariants = (brand?.supports_sizing || isShopifyBacked)
     ? await getVariantsBySubmissionId(drop.id)
     : [];
-  const variantsForUI = brand?.supports_sizing
-    ? rawVariants.map(v => ({
-        size: v.size, color: v.color,
-        inStock: v.cached_stock > 0, stock: v.cached_stock,
-      }))
+  const variantsForUI: VariantInfo[] = brand?.supports_sizing
+    ? rawVariants
+        .filter((v): v is typeof v & { size: string } => !!v.size)
+        .map(v => ({
+          size:          v.size,
+          color:         v.color,
+          inStock:       v.cached_stock > 0,
+          stock:         v.cached_stock,
+          priceOverride: v.price_override != null ? Number(v.price_override) : null,
+        }))
     : [];
 
   let onChain = { minted: 0, maxSupply: drop.edition_size ?? 0, active: true, soldOut: false };
@@ -273,13 +280,17 @@ export default async function DropPage({ params, searchParams }: Props) {
             </div>
           )}
 
-          {/* Stats strip */}
+          {/* Stats + purchase — wrapped in provider so Price stat, size
+              selector, and Buy button all react to the same selected size.
+              Non-Shopify drops have no variants, so the provider's selection
+              stays null and effectivePrice stays at base price_usdc. */}
+          <SelectedSizeProvider
+            variants={variantsForUI}
+            basePriceUsdc={priceUsdc}
+            initialSize={preSelectedSize}
+          >
           <div className={`pdp-stats ${isShopifyBacked ? 'two' : ''}`}>
-            <div>
-              <div className="pdp-stat-lbl">Price</div>
-              <div className="pdp-stat-val">${priceUsdc.toFixed(0)}</div>
-              <div className="pdp-stat-sub">USDC</div>
-            </div>
+            <ReactivePriceStat />
             {isShopifyBacked ? (
               <div>
                 <div className="pdp-stat-lbl">Stock</div>
@@ -327,18 +338,17 @@ export default async function DropPage({ params, searchParams }: Props) {
             </div>
           )}
 
-          {/* Purchase block */}
+          {/* Purchase block (inside the SelectedSizeProvider above) */}
           <PurchaseBlock
             tokenId={tokenId}
-            priceUsdc={priceUsdc}
             soldOut={onChain.soldOut}
             active={onChain.active}
             isPhysicalProduct={drop.is_physical_product}
             shippingType={drop.shipping_type}
-            variants={variantsForUI}
-            initialSize={preSelectedSize}
+            hasVariants={variantsForUI.length > 0}
             requireSize={variantsForUI.length > 0}
           />
+          </SelectedSizeProvider>
 
           {/* What you get */}
           <div style={{ marginTop: 32, paddingTop: 24, borderTop: '1px solid var(--line)' }}>
