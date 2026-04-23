@@ -2,9 +2,25 @@ import { createClient } from '@supabase/supabase-js';
 import { unstable_cache } from 'next/cache';
 
 // ── Typed DB client (server-side, uses service key) ───────────────────
+//
+// Placeholder fallbacks exist so `next build` can import this module without
+// env vars (e.g. on a CI image). At runtime on the VPS, a missing service key
+// or URL means every query silently returns empty — which is how the landing
+// page shipped with no brands when `.env.local` wasn't symlinked into the
+// standalone output. Log once at module load so the PM2 log shows the
+// misconfiguration instead of a quiet empty store.
+const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL;
+const SUPABASE_KEY = process.env.SUPABASE_SERVICE_KEY;
+if (!SUPABASE_URL || !SUPABASE_KEY) {
+  console.error(
+    '[rrg/db] missing Supabase env at module load — NEXT_PUBLIC_SUPABASE_URL=%s SUPABASE_SERVICE_KEY=%s. Every query will fail and public surfaces (landing brand grid, /rrg, /brand) will render empty.',
+    SUPABASE_URL ? 'set' : 'MISSING',
+    SUPABASE_KEY ? 'set' : 'MISSING',
+  );
+}
 export const db = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL ?? 'https://placeholder.supabase.co',
-  process.env.SUPABASE_SERVICE_KEY ?? 'placeholder-key',
+  SUPABASE_URL ?? 'https://placeholder.supabase.co',
+  SUPABASE_KEY ?? 'placeholder-key',
   { auth: { persistSession: false } }
 );
 
@@ -222,11 +238,18 @@ export async function getBrandBySlug(slug: string): Promise<RrgBrand | null> {
 
 export const getAllActiveBrands = unstable_cache(
   async (): Promise<RrgBrand[]> => {
-    const { data } = await db
+    const { data, error } = await db
       .from('rrg_brands')
       .select('*')
       .eq('status', 'active')
       .order('created_at', { ascending: true });
+    if (error) {
+      // Surface DB/env errors rather than silently rendering an empty brand
+      // grid on the landing page, /rrg, /brand, etc. The previous behaviour
+      // made Supabase outages and bad service-key env look like an empty
+      // store, which is exactly how we shipped to prod with no brands.
+      console.error('[getAllActiveBrands] supabase query failed:', error);
+    }
     return data ?? [];
   },
   ['all-active-brands'],
@@ -248,21 +271,28 @@ export interface BrandDirectoryItem {
 export const getBrandsForDirectory = unstable_cache(
   async (): Promise<BrandDirectoryItem[]> => {
     // Fetch active brands
-    const { data: brands } = await db
+    const { data: brands, error: brandsError } = await db
       .from('rrg_brands')
       .select('id, slug, name, headline, logo_path, banner_path, created_at')
       .eq('status', 'active');
 
+    if (brandsError) {
+      console.error('[getBrandsForDirectory] brands query failed:', brandsError);
+    }
     if (!brands || brands.length === 0) return [];
 
     // Fetch product stats per brand (approved, visible drops)
     const brandIds = brands.map((b) => b.id);
-    const { data: stats } = await db
+    const { data: stats, error: statsError } = await db
       .from('rrg_submissions')
       .select('brand_id, approved_at')
       .eq('status', 'approved')
       .eq('hidden', false)
       .in('brand_id', brandIds);
+
+    if (statsError) {
+      console.error('[getBrandsForDirectory] submissions stats query failed:', statsError);
+    }
 
     // Aggregate: count + latest approved_at per brand
     const brandStats = new Map<string, { count: number; latest: string | null }>();
