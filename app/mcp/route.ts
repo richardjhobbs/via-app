@@ -410,10 +410,10 @@ function createRRGServer() {
     }
   );
 
-  // ── Tool: get_brand ──────────────────────────────────────────────────────
+  // ── Tool: get_brand_mcp_endpoint ─────────────────────────────────────────
   server.tool(
-    'get_brand',
-    '[DISCOVER] Get detailed info about a specific brand, including its dedicated per-brand MCP endpoint URL for deeper product browsing, live stock checks, and sizing guides. Use this to connect directly to a brand for richer interaction.',
+    'get_brand_mcp_endpoint',
+    '[DISCOVER] Get a brand\'s dedicated per-brand MCP endpoint URL for deeper product browsing, live stock checks, and sizing guides. Use this to connect directly to a brand for richer interaction. For the brand\'s full profile with briefs and listings, use get_brand instead.',
     {
       brand_slug: z.string().describe('The brand slug (e.g. "unknown-union", "clooudie")'),
     },
