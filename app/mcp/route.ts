@@ -304,16 +304,23 @@ function createRRGServer() {
   server.tool(
     'search_products',
     [
-      '[FIND] START HERE when you know what you want. Free-text search across every active RRG listing — titles, descriptions, agent descriptions, and structured attributes (retail_sku, canonical_name, collab, original_release, vendor, style_tags).',
-      'Use this for queries like "Jordan 1 Alaska", "AA3834-100", "Off-White Nike", "Stadium Goods sneakers", "silk scarf", "leather tote".',
-      'Returns ranked matches with tokenId, priceRangeUsdc, authenticationStatus, retailSku, canonicalName, and rrgUrl. Per-size pricing is indicated by hasPerSizePricing + priceRangeUsdc.',
+      '[FIND] START HERE when you know what you want. Free-text search across every active RRG listing.',
+      'Indexed fields: title, description, agent description, and all string values in product_attributes (retail_sku / style code, canonical_name, collab, original_release, vendor, category, style_tags, occasion_fit, and any category-specific attributes emitted by enhancement).',
+      'Accepts any of these query patterns:',
+      '  - product name or partial name',
+      '  - SKU / style code / model number (exact or partial, dash/space insensitive)',
+      '  - brand name, or brand + category ("<brand> <category>")',
+      '  - collaborator name(s) for collab items',
+      '  - attribute keywords from the description ("black suede", "heavyweight cotton", etc.)',
+      'Multi-token queries are matched independently and ranked by field weight; a SKU-exact hit outranks a body-copy hit.',
+      'Returns ranked matches with tokenId, priceRangeUsdc, authenticationStatus, retailSku, canonicalName, rrgUrl. Per-size pricing is indicated by hasPerSizePricing + priceRangeUsdc.',
       'Next step: call get_drop_details with the matching tokenId for full variants / agent description, then initiate_agent_purchase to buy.',
       '',
-      'If zero matches, try broader or alternate tokens (the item may be indexed under a different naming cluster — e.g. "Virgil Abloh Archive" vs "Off-White"). If still zero, call list_drops for a browse of the full catalogue.',
+      'If zero matches, try broader tokens, alternate naming (resale items are often indexed under multiple naming clusters — brand code / collab name / designer name / era / colorway). If still zero, call list_drops to browse.',
     ].join('\n'),
     {
-      query:      z.string().min(1).describe('Free-text query. Multi-word is fine — each ≥2-char token is matched independently across all indexed fields. Examples: "Jordan 1 Alaska 10.5", "AA3834-100", "Off-White Virgil Abloh"'),
-      brand_slug: z.string().optional().describe('Optional brand slug to scope the search (e.g. "stadium-goods")'),
+      query:      z.string().min(1).describe('Free-text query. Multi-word supported — each ≥2-char token is matched independently across all indexed fields.'),
+      brand_slug: z.string().optional().describe('Optional brand slug to scope the search. Call list_brands to see slugs.'),
       limit:      z.number().int().min(1).max(50).optional().describe('Max results (default 10)'),
     },
     async ({ query, brand_slug, limit }) => {
@@ -376,7 +383,7 @@ function createRRGServer() {
               query,
               brandSlug:    brand_slug ?? null,
               totalMatches: 0,
-              message:      `No matches for "${query}"${brand_slug ? ` within brand "${brand_slug}"` : ''}. Try broader tokens (e.g. brand name only, or a SKU fragment), alternate phrasings (same item may be listed under "Virgil Abloh Archive" or "Off-White" or "VAA"), or call list_drops to browse the full catalogue.`,
+              message:      `No matches for "${query}"${brand_slug ? ` within brand "${brand_slug}"` : ''}. Try broader tokens (brand name alone, a SKU/style-code fragment, or a single descriptive keyword), or alternate naming (resale items often list under multiple naming clusters — brand code / collab name / designer name / era / colorway). Call list_brands to see available brands, or list_drops to browse the catalogue.`,
               nextStep:     'list_drops()' + (brand_slug ? ` or list_drops({brand_slug:"${brand_slug}"})` : ''),
             }, null, 2),
           }],
@@ -428,7 +435,7 @@ function createRRGServer() {
   // ── Tool: list_drops ──────────────────────────────────────────────────────
   server.tool(
     'list_drops',
-    '[BROWSE] List all active RRG listings, optionally scoped by brand_slug. Use when you want to browse the catalogue without a specific item in mind. If you already know what you are looking for ("Jordan 1 Alaska", "AA3834-100", etc.) call search_products FIRST — list_drops returns up to a few hundred items which is expensive to scan. Returns title, price in USDC, edition size, remaining supply, and revenue split where applicable. Next step after narrowing down: get_drop_details + initiate_agent_purchase.',
+    '[BROWSE] List all active RRG listings, optionally scoped by brand_slug. Use when exploring the catalogue without a specific item in mind. If you already have a product name, SKU, brand, or descriptive keyword, call search_products FIRST — list_drops can return the full catalogue, which is expensive to scan. Returns title, price in USDC, edition size, remaining supply, and revenue split where applicable. Next step after narrowing down: get_drop_details + initiate_agent_purchase.',
     {
       brand_slug: z.string().optional().describe('Optional brand slug to filter listings by a specific brand'),
     },
