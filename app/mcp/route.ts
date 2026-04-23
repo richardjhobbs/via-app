@@ -17,6 +17,7 @@ import {
   getBrandSalesStats, getVariantsBySubmissionId, RRG_BRAND_ID,
 } from '@/lib/rrg/db';
 import { resolveEffectivePrice } from '@/lib/rrg/pricing';
+import { toAgentProduct } from '@/lib/rrg/mcp-product-shape';
 import {
   getActiveTemplatesByBrand, getVoucherByCode, redeemVoucher,
   formatVoucherForDisplay, type VoucherTemplate,
@@ -365,17 +366,6 @@ function createRRGServer() {
             remaining = drop.edition_size ?? null;
           }
 
-          // Per-size price range: some sized listings (Stadium Goods) carry
-          // different prices per size via price_override. Surface the range
-          // up-front so browsing agents don't assume all sizes == priceUsdc.
-          const basePriceNum = parseFloat(drop.price_usdc ?? '0');
-          const inStockPrices = variantRows
-            .filter(v => v.cached_stock > 0)
-            .map(v => v.price_override != null ? Number(v.price_override) : basePriceNum);
-          const priceRangeUsdc = inStockPrices.length > 0
-            ? { min: Math.min(...inStockPrices), max: Math.max(...inStockPrices) }
-            : null;
-          const hasPerSizePricing = new Set(inStockPrices).size > 1;
           // Revenue split disclosure:
           //   • Co-created drops: publish the 35% creator share publicly — that's
           //     part of the offer to creators and they need to see it.
@@ -383,7 +373,6 @@ function createRRGServer() {
           //     term between the brand and the platform. Do NOT expose it.
           const price    = parseFloat(drop.price_usdc ?? '0');
           const dropType = drop.is_brand_product ? 'brand_created' : 'co_created';
-
           let revenueSplit: Record<string, unknown> | undefined = undefined;
           if (!drop.is_brand_product) {
             const splitData = computeSplit(price, 'co_created');
@@ -398,34 +387,38 @@ function createRRGServer() {
             };
           }
 
-          const attrs = (drop.product_attributes ?? {}) as Record<string, unknown>;
-          const authStatus = typeof attrs.authentication_status === 'string' ? attrs.authentication_status : null;
-          const retailSku  = typeof attrs.retail_sku === 'string' ? attrs.retail_sku : null;
-          const assetType  = drop.is_physical_product
-            ? 'physical_product_with_nft_proof_of_ownership'
-            : 'digital_asset';
-          const brandName  = drop.brand_id
-            ? (await getBrandById(drop.brand_id).catch(() => null))?.name ?? 'RRG'
-            : 'RRG';
+          // Canonical agent shape (merchant-aware). For the list view we
+          // project a compact subset — variants + full product_attributes
+          // add up fast across hundreds of listings, so we keep the heavy
+          // fields for get_drop_details and expose only what an agent
+          // needs to filter + decide whether to drill in.
+          const brand = drop.brand_id ? await getBrandById(drop.brand_id).catch(() => null) : null;
+          const shape = toAgentProduct({ drop, brand, variants: variantRows });
 
           return {
-            tokenId:     drop.token_id,
-            title:       drop.title,
-            description: drop.description,
-            agentDescription: drop.enhanced_description ?? null,
-            ...(authStatus ? { authenticationStatus: authStatus } : {}),
-            ...(retailSku  ? { retailSku } : {}),
-            brandName,
-            assetType,
-            priceUsdc:   drop.price_usdc,
-            ...(priceRangeUsdc ? { priceRangeUsdc, hasPerSizePricing } : {}),
-            editionSize: drop.edition_size,
+            tokenId:       shape.tokenId,
+            title:         shape.title,
+            description:   shape.description,
+            agentDescription: shape.agentDescription,
+            brandName:     shape.brandName,
+            brandId:       drop.brand_id ?? RRG_BRAND_ID,
+            merchantType:  shape.merchantType,
+            assetType:     shape.assetType,
+            // Legitimacy anchors (null for direct_brand — kept in the shape
+            // but omitted here to keep the list payload lean)
+            ...(shape.authenticationStatus ? { authenticationStatus: shape.authenticationStatus } : {}),
+            ...(shape.retailSku ? { retailSku: shape.retailSku } : {}),
+            ...(shape.canonicalName ? { canonicalName: shape.canonicalName } : {}),
+            priceUsdc:         shape.priceUsdc,
+            basePriceUsdc:     shape.basePriceUsdc,
+            ...(shape.priceRangeUsdc ? { priceRangeUsdc: shape.priceRangeUsdc, hasPerSizePricing: shape.hasPerSizePricing } : {}),
+            editionSize:       shape.editionSize,
             remaining,
-            ipfsUrl:     drop.ipfs_url,
-            brandId:     drop.brand_id ?? RRG_BRAND_ID,
+            availablePhysicalUnits: shape.availablePhysicalUnits,
+            ipfsUrl:           drop.ipfs_url,
+            isPhysicalProduct: shape.isPhysicalProduct,
             dropType,
             ...(revenueSplit ? { revenueSplit } : {}),
-            isPhysicalProduct: drop.is_physical_product ?? false,
             ...(drop.is_physical_product ? {
               physicalDetails: {
                 description:             drop.physical_description,
@@ -1422,75 +1415,19 @@ function createRRGServer() {
       // MUST pass `selected_size` to initiate_agent_purchase / initiate_purchase
       // so the permit / payment amount matches the size they actually want.
       const rawVariants = await getVariantsBySubmissionId(drop.id);
-      const variants = rawVariants
-        .filter(v => v.size != null)
-        .map(v => ({
-          size:          v.size,
-          color:         v.color,
-          sku:           v.sku,
-          inStock:       v.cached_stock > 0,
-          stock:         v.cached_stock,
-          priceOverride: v.price_override != null ? Number(v.price_override) : null,
-          priceUsdc:     v.price_override != null ? Number(v.price_override) : Number(drop.price_usdc ?? 0),
-        }));
-      const basePrice = Number(drop.price_usdc ?? 0);
-      const inStockPrices = variants.filter(v => v.inStock).map(v => v.priceUsdc);
-      const priceRange = inStockPrices.length > 0
-        ? { min: Math.min(...inStockPrices), max: Math.max(...inStockPrices) }
-        : null;
-      const hasPerSizePricing = new Set(inStockPrices).size > 1;
 
-      // Surface the enriched agent-facing fields that already live on the
-      // submission row. The platform MCP was previously returning only the
-      // raw brand body copy, which left agents guessing about legitimacy
-      // (authenticator, original SKU, condition, etc). Lift the same fields
-      // the per-brand MCP exposes so browsing agents see the full picture
-      // without a second hop.
-      const attrs = (drop.product_attributes ?? {}) as Record<string, unknown>;
-      const asStr = (k: string) => typeof attrs[k] === 'string' ? (attrs[k] as string) : null;
-      const asArr = (k: string) => Array.isArray(attrs[k])
-        ? (attrs[k] as unknown[]).filter((x): x is string => typeof x === 'string')
-        : [];
-
-      const inStockCount = variants.filter(v => v.inStock).length;
-      const physicalUnits = drop.is_physical_product ? (inStockCount || drop.edition_size || 0) : null;
+      // Canonical agent-facing shape — shared with the per-brand MCP via
+      // lib/rrg/mcp-product-shape.ts. Merchant mode (direct_brand /
+      // reseller_authenticated / curated_consignment) controls whether
+      // authentication anchors + resale-value context are included.
+      const agentProduct = toAgentProduct({ drop, brand, variants: rawVariants });
 
       const result: Record<string, unknown> = {
-        tokenId:     drop.token_id,
-        title:       drop.title,
-        description: drop.description,
-        agentDescription:     drop.enhanced_description ?? null,
-        productAttributes:    Object.keys(attrs).length > 0 ? attrs : null,
-        authenticationStatus: asStr('authentication_status'),
-        retailSku:            asStr('retail_sku'),
-        originalRelease:      asStr('original_release'),
-        brandContext:         asStr('brand_context'),
-        conditionGrade:       asStr('condition_grade'),
-        conditionDetail:      asStr('condition_detail'),
-        styleTags:            asArr('style_tags'),
-        occasionFit:          asArr('occasion_fit'),
-        priceUsdc:   drop.price_usdc,
-        basePriceUsdc: basePrice,
-        ...(priceRange ? { priceRangeUsdc: priceRange } : {}),
-        hasPerSizePricing,
-        editionSize: drop.edition_size,
-        ...(physicalUnits != null ? { availablePhysicalUnits: physicalUnits } : {}),
-        assetType:   drop.is_physical_product
-          ? 'physical_product_with_nft_proof_of_ownership'
-          : 'digital_asset',
+        ...agentProduct,
+        // Platform-MCP-only extensions (not part of the shared shape)
         imageUrl,
         ipfsUrl:     drop.ipfs_url,
-        brandId,
-        brandName:   brand?.name ?? 'RRG',
-        brandWebsite: brand?.website_url ?? null,
         onChain,
-        isPhysicalProduct: drop.is_physical_product ?? false,
-        ...(variants.length > 0 ? {
-          variants,
-          pricingNote: hasPerSizePricing
-            ? 'This listing has per-size pricing. priceUsdc is the BASE only (often the floor for sold-out sizes). Use variants[].priceUsdc for the size you actually want, and pass selected_size to initiate_agent_purchase / initiate_purchase so the payment amount matches.'
-            : 'All in-stock sizes share the same price. Still pass selected_size when purchasing a sized product so the order records the correct size.',
-        } : {}),
       };
 
       if (drop.is_physical_product) {

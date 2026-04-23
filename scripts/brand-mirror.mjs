@@ -29,6 +29,7 @@ import { readFileSync, writeFileSync, existsSync, readdirSync, appendFileSync } 
 import { homedir } from 'os';
 import { join, resolve } from 'path';
 import { randomUUID } from 'crypto';
+import { spawn } from 'child_process';
 
 // ── Brand configs ────────────────────────────────────────────────────
 const BRANDS = {
@@ -449,6 +450,11 @@ const BRANDS = {
     shopifyDomain:   'www.stadiumgoods.com',
     supportsSizing:  true,
     // USD native, 1:1 USDC (no sourceCurrency / priceToUsdcRate needed)
+    // Merchant type: authenticated resale marketplace. Enhancement runs
+    // the reseller-prompt profile so every product lands with auth anchors
+    // (retail_sku, original_release, authenticator, provenance).
+    merchantType:    'reseller_authenticated',
+    defaultAuthenticationStatus: 'Authenticated by Stadium Goods in-house sneaker authentication team (SoHo NYC, since 2015; ~47,000 sq ft NJ authentication warehouse). Every pair is inspected and tagged before shipping.',
     socialLinks:     { instagram: 'https://www.instagram.com/stadiumgoods/' },
     bannerLocal:     null,
     logoLocal:       null,
@@ -496,6 +502,7 @@ const HANDLES    = flag('--handles');
 const CACHE_FILE = flag('--cache-file');
 const DRY_RUN    = args.includes('--dry-run');
 const SEED_ONLY  = args.includes('--seed-only');
+const NO_ENHANCE = args.includes('--no-enhance');
 // Chain registration is now OPT-IN (safer default for pilots, onboarding
 // agents, and re-runs). Pass --commit-chain to actually call registerDrop on
 // Base mainnet. `--skip-chain` is still accepted as a no-op alias.
@@ -592,6 +599,15 @@ async function ensureBrand() {
       };
     }
     const id = randomUUID();
+    // merchant_type drives how enhance-descriptions prompts the LLM and
+    // how the MCP projection decides whether to surface authentication
+    // anchors. Stored in the free-form brand_data JSON (no schema change
+    // needed — Record<string, unknown> per lib/rrg/db.ts).
+    const merchantType = CFG.merchantType ?? 'direct_brand';
+    const brandData = {
+      merchant_type: merchantType,
+      ...(CFG.defaultAuthenticationStatus ? { default_authentication_status: CFG.defaultAuthenticationStatus } : {}),
+    };
     const insert = {
       id,
       slug:               CFG.slug,
@@ -609,25 +625,42 @@ async function ensureBrand() {
       social_links:       CFG.socialLinks ?? {},
       shopify_domain:     CFG.shopifyDomain,
       supports_sizing:    CFG.supportsSizing ?? false,
+      brand_data:         brandData,
     };
     const { data, error } = await db.from('rrg_brands').insert(insert).select().single();
     if (error) { console.error('[seed] insert failed:', error); process.exit(1); }
     brand = data;
-    console.log(`[seed] created brand id=${brand.id}`);
+    console.log(`[seed] created brand id=${brand.id} merchant_type=${merchantType}`);
   } else {
     console.log(`[seed] found existing brand id=${brand.id}`);
-    // Ensure shopify fields are set
+    // Always update merchant_type + default_authentication_status from
+    // the canonical BRANDS config, so changes there flow through.
+    const merchantType = CFG.merchantType ?? 'direct_brand';
+    const existingData = (existing.brand_data ?? {});
+    const nextData = {
+      ...existingData,
+      merchant_type: merchantType,
+      ...(CFG.defaultAuthenticationStatus ? { default_authentication_status: CFG.defaultAuthenticationStatus } : {}),
+    };
+    const updates = { brand_data: nextData };
     if (!existing.shopify_domain && CFG.shopifyDomain) {
-      await db.from('rrg_brands').update({
-        shopify_domain: CFG.shopifyDomain,
-        supports_sizing: CFG.supportsSizing ?? false,
-      }).eq('id', brand.id);
-      console.log(`[seed] updated shopify_domain + supports_sizing`);
+      updates.shopify_domain = CFG.shopifyDomain;
+      updates.supports_sizing = CFG.supportsSizing ?? false;
     }
+    await db.from('rrg_brands').update(updates).eq('id', brand.id);
+    console.log(`[seed] synced brand_data (merchant_type=${merchantType})`);
+    brand.brand_data = nextData;
   }
 
   return brand;
 }
+
+// Regex used to auto-flag a per-product resale_mode override. A direct-brand
+// storefront can still carry the occasional archive / vintage piece that
+// needs reseller-style anchors — these Shopify tags/product_type values
+// trigger the override at import time without the operator having to
+// hand-curate the brand.
+const RESALE_HINT_RE = /\b(archive|vintage|consignment|pre-?loved|deadstock|resale)\b/i;
 
 // ────────────────────────────────────────────────────────────────────
 // PHASE 2 — Import products with full variant matrix
@@ -1001,6 +1034,50 @@ async function importProduct(product, brand) {
 
   // Insert rrg_submissions row
   const description = (override.description ?? stripHtml(product.body_html)).slice(0, 1500) || null;
+
+  // Seed product_attributes with what we can derive from Shopify WITHOUT an
+  // LLM call. These are the non-visual anchors an agent needs to match
+  // against its own knowledge (SKU, vendor, release year hint from tags).
+  // The enhance step runs afterwards and merges image-derived fields on top,
+  // but won't overwrite these structured facts.
+  const vendor      = typeof product.vendor === 'string' ? product.vendor : null;
+  const productType = typeof product.product_type === 'string' ? product.product_type : null;
+  const rawTags     = typeof product.tags === 'string'
+    ? product.tags.split(',').map(t => t.trim()).filter(Boolean)
+    : Array.isArray(product.tags) ? product.tags : [];
+  const firstVariantSku = product.variants?.[0]?.sku ?? null;
+  // Stadium Goods encodes SKUs like "176023|AA3834 100|10.5" — split on pipe
+  // and prefer the middle segment (the actual Nike/brand style code) if it
+  // looks like one; otherwise use the raw SKU.
+  let retailSku = firstVariantSku;
+  if (typeof firstVariantSku === 'string' && firstVariantSku.includes('|')) {
+    const parts = firstVariantSku.split('|').map(p => p.trim());
+    const styleLike = parts.find(p => /^[A-Z]{2,}\s?\d{3,}/.test(p));
+    retailSku = styleLike ?? parts[0] ?? firstVariantSku;
+  }
+
+  const merchantType = (brand.brand_data ?? {}).merchant_type ?? CFG.merchantType ?? 'direct_brand';
+  const brandDefaultAuth = (brand.brand_data ?? {}).default_authentication_status ?? CFG.defaultAuthenticationStatus ?? null;
+
+  // Per-product resale override: direct-brand storefronts sometimes carry a
+  // one-off archive piece. If the product's tags or type hit the resale
+  // regex, flip resale_mode=true so enhance-descriptions uses the reseller
+  // prompt for this row even though the brand itself is direct.
+  const perProductResale = RESALE_HINT_RE.test(rawTags.join(' ')) || RESALE_HINT_RE.test(productType ?? '');
+
+  const seededAttributes = {
+    vendor,
+    product_type: productType,
+    shopify_tags: rawTags,
+    ...(retailSku ? { retail_sku: retailSku } : {}),
+    ...(vendor ? { brand_vendor: vendor } : {}),
+    ...(perProductResale ? { resale_mode: true } : {}),
+    ...(merchantType === 'reseller_authenticated' && brandDefaultAuth
+        ? { authentication_status: brandDefaultAuth }
+        : {}),
+    _merchant_type_at_import: merchantType,
+  };
+
   const insertRow = {
     id:                  submissionId,
     creator_wallet:      CFG.wallet.toLowerCase(),
@@ -1028,7 +1105,12 @@ async function importProduct(product, brand) {
     refund_commitment:   true,
     trust_behavior_accepted: true,
     has_voucher:         false,
-    hidden:              false,
+    // Pre-publish guard: stay hidden until the enhance step completes
+    // successfully. getApprovedDrops already filters hidden=false, so this
+    // keeps unenhanced products out of MCP and the storefront. The enhance
+    // step flips hidden=false on success. Opt out with --no-enhance.
+    hidden:              NO_ENHANCE ? false : true,
+    product_attributes:  seededAttributes,
   };
   const { error: insErr } = await db.from('rrg_submissions').insert(insertRow);
   if (insErr) throw new Error(`insert submission: ${insErr.message}`);
@@ -1255,5 +1337,34 @@ _(none yet — fill in after the build)_
   if (results.length > 0 && !DRY_RUN) {
     try { writeBrandMemory(brand, results); }
     catch (e) { console.warn(`[memory] skipped: ${e.message}`); }
+  }
+
+  // ── Stage 5: auto-chain enhance-descriptions ──────────────────────────
+  // New rows landed with hidden=true (pre-publish guard). enhance-descriptions
+  // writes enhanced_description + merged product_attributes and flips
+  // hidden=false on success. Skipped when --no-enhance is passed or when
+  // dry-run / seed-only short-circuited the import path. Runs in a child
+  // process so the mirror exits cleanly even if enhance needs a different
+  // module resolution or tool availability.
+  if (results.length > 0 && !DRY_RUN && !NO_ENHANCE) {
+    console.log();
+    console.log(`──── Auto-chaining enhance-descriptions for ${CFG.slug} ────`);
+    await new Promise((resolveP) => {
+      const proc = spawn(process.execPath, [
+        resolve(process.cwd(), 'scripts/enhance-descriptions.mjs'),
+        '--brand', CFG.slug,
+      ], { stdio: 'inherit', env: process.env });
+      proc.on('close', (code) => {
+        if (code === 0) console.log(`[auto-enhance] done (code ${code})`);
+        else console.warn(`[auto-enhance] exited with code ${code} — rows may remain hidden until a manual run`);
+        resolveP();
+      });
+      proc.on('error', (err) => {
+        console.warn(`[auto-enhance] spawn failed: ${err.message}`);
+        resolveP();
+      });
+    });
+  } else if (NO_ENHANCE) {
+    console.log('[enhance] skipped (--no-enhance). Rows inserted with hidden=false directly.');
   }
 })().catch((e) => { console.error('FATAL:', e); process.exit(1); });

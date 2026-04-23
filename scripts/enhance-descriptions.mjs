@@ -109,13 +109,36 @@ if (!BRAND_SLUG) {
 // evaluate cheaper vision-capable models (Haiku, Gemini Flash, etc) for
 // production scaling — the prompt is model-agnostic.
 //
-const SYSTEM_PROMPT = `You are a product data writer for Real Real Genuine, an agent-facing commerce platform.
+// ── Merchant-aware enhancement prompts ────────────────────────────────
+//
+// Every product routed through this script must end up with an
+// agent-readable enhanced_description plus a product_attributes JSON
+// that an agent can filter on. The schema diverges by merchant type:
+//
+//   direct_brand          — image analysis + product specifics + brand voice
+//   reseller_authenticated — direct-brand fields PLUS authentication anchors
+//                            (retail_sku, original_release, authenticator,
+//                             provenance, resale value context)
+//   curated_consignment   — single-piece pre-loved luxury resale shape
+//                            (condition grade, brand context, resale value)
+//
+// The mode is resolved at runtime from
+// rrg_brands.brand_data.merchant_type, with a per-row override of
+// rrg_submissions.product_attributes.resale_mode === true flipping any
+// direct-brand product into reseller mode (e.g. a direct brand listing a
+// one-off archive piece tagged "vintage" in Shopify).
+//
+// Auto-seeded attributes already on the row (vendor, product_type,
+// shopify_tags, retail_sku parsed from Shopify SKU) are PRESERVED through
+// the merge — the LLM's output augments them, never overwrites.
+
+const DIRECT_BRAND_PROMPT = `You are a product data writer for Real Real Genuine, an agent-facing commerce platform.
 
 You will be given:
-1. An image of a garment (usually flat-lay or mannequin)
+1. An image of a garment or product (flat-lay, on-model, or product photo)
 2. The brand's original conceptual description (often abstract/thematic)
 3. The product title
-4. The sizing category (tops | bottoms | outerwear | skirts)
+4. Any auto-seeded facts already extracted from the source (vendor, product type, tags)
 
 Your job:
 A) Extract STRUCTURED attributes from the image (for agent filtering)
@@ -127,16 +150,99 @@ Return strict JSON (no prose around it):
 {
   "attributes": {
     "fabric_guess":     "material best guess (e.g. 'midweight cotton jersey', 'heavyweight wool/cotton knit')",
-    "fit":              "slim | regular | relaxed | oversized | boxy",
+    "fit":              "slim | regular | relaxed | oversized | boxy | true to size",
     "silhouette":       "concrete shape (e.g. 'crew-neck short-sleeve boxy tee')",
     "primary_color":    "dominant color word",
     "secondary_colors": ["accent colors"],
     "graphic_details":  "printed/embroidered graphics visible + approximate position",
     "construction":     "visible construction details (seams, hems, trim, closures, reinforcement, labels)",
-    "styling_hints":    "how the garment might pair or layer"
+    "styling_hints":    "how the garment might pair or layer",
+    "style_tags":       ["5-10 short filterable tags, e.g. 'minimal', 'workwear', 'monogram', 'structured', 'archival'"],
+    "occasion_fit":     ["3-6 contexts this works for, e.g. 'work', 'evening', 'weekend', 'travel', 'formal'"]
   },
   "enhanced_description": "3-5 sentences preserving brand voice and weaving in the physical details."
 }`;
+
+const RESELLER_PROMPT = `You are a product data writer for Real Real Genuine, an agent-facing commerce platform. This product comes from an AUTHENTICATED RESELLER (a sneaker / streetwear / fashion consignment marketplace that authenticates every unit in-house). Agents need to be able to cross-reference what they're looking at against their own knowledge of the original release — so the output MUST surface canonical anchors: retail SKU / style code, original release name + year, authenticator, and the fact that the ERC-1155 token is a proof-of-ownership record for a physical pair (not a separate digital collectible).
+
+You will be given:
+1. An image of the product
+2. The reseller's original description
+3. The product title (which may embed the style code)
+4. Any auto-seeded facts from Shopify (vendor, product type, tags, often a parsed retail_sku) — PRESERVE these verbatim if present, refine only if clearly wrong.
+
+Your job:
+A) Extract STRUCTURED attributes for agent filtering AND authentication anchors for legitimacy verification
+B) Write a 150-200 word agent_description that encodes: what it is (canonical name + year), where it sits in its collection / collab, authenticator context, condition framing, and how it's priced vs the secondary market. Preserve the reseller's voice; add specificity. No invented facts.
+
+Return strict JSON (no prose around it):
+{
+  "attributes": {
+    "retail_sku":                "official style code (e.g. 'AA3834-100') — keep auto-seeded value if already present",
+    "canonical_name":            "the name an agent's training data would recognise (e.g. 'Air Jordan 1 Retro High Off-White NRG (White)')",
+    "original_release":          "1-2 sentences: original release (brand, line, colorway, collection) + year",
+    "collab":                    "collaborator(s) if any (e.g. 'Off-White c/o Virgil Abloh x Nike (Jordan Brand)')",
+    "release_year":              "e.g. '2018'",
+    "authentication_status":     "who authenticated this unit + their process (keep auto-seeded value if already present)",
+    "authentication_provenance": "1-2 sentences on the authenticator's credibility and their role in this category",
+    "physical_token_semantics":  "Explain that the ERC-1155 minted on Base is the ownership record for the physical item, not a separate digital artwork.",
+    "condition_grade":           "Pristine | Excellent | Very Good | Good | Fair",
+    "condition_detail":          "1-2 sentences on visible wear / completeness (box, extras)",
+    "silhouette":                "concrete shape / model family (e.g. 'Air Jordan 1 high-top basketball sneaker')",
+    "construction":              "visible construction specifics",
+    "fabric_guess":              "materials (leather types, suede, nylon, etc.)",
+    "primary_color":             "dominant color word",
+    "secondary_colors":          ["accent colors"],
+    "graphic_details":           "visible graphics / markings / hangtags / signatures",
+    "styling_hints":             "how a collector / buyer rotates this piece",
+    "style_tags":                ["5-10 short filterable tags"],
+    "occasion_fit":              ["3-6 usage contexts"],
+    "buyer_intent_signals":      ["5-8 phrases a buyer's agent might match against, e.g. 'grail tier', 'investment piece', 'deadstock collector'"],
+    "resale_value_context":      "1-2 sentences on how this model/release performs in secondary markets"
+  },
+  "enhanced_description": "150-200 word agent-readable paragraph. Lead with canonical identity (what it is, from where, what year). Weave in authentication + condition + provenance. Close with pricing context and buyer fit. No marketing fluff."
+}`;
+
+const CONSIGNMENT_PROMPT = `You are a product data writer for Real Real Genuine, an agent-facing commerce platform, serving a CURATED CONSIGNMENT shop (pre-loved luxury resale — single-piece inventory, per-item condition, no runs or SKUs). Agents reasoning over the item need: style, provenance, condition, value signal, and buyer fit in one dense block.
+
+You will be given:
+1. One or more high-resolution images of a single luxury item
+2. Raw scraped data: brand, category, price, condition, size, original description
+3. Any auto-seeded facts from the source.
+
+Your job: produce strict JSON with (A) structured attributes an agent can filter on, (B) a 150-200 word agent_description that lets an AI buyer's agent decide whether this fits its buyer.
+
+Return strict JSON (no prose around it):
+{
+  "attributes": {
+    "brand_context":        "1-2 sentences: what this house represents in luxury — heritage, signature aesthetic, resale strength",
+    "condition_grade":      "Pristine | Excellent | Very Good | Good | Fair",
+    "condition_detail":     "2-3 sentences: visible wear specifics",
+    "visual_description":   "3-4 sentences: silhouette, construction, materials, colorway, hardware, details visible in images",
+    "authentication_status":"who authenticated (leave auto-seeded value if present)",
+    "style_tags":           ["5-10 short filterable tags"],
+    "occasion_fit":         ["3-6 contexts"],
+    "buyer_intent_signals": ["5-8 phrases a buyer's agent matches against"],
+    "resale_value_context": "1-2 sentences on how this item/category performs in secondary markets",
+    "image_is_dark":        "boolean: true if SUBJECT is predominantly dark (card bg contrast hint)"
+  },
+  "enhanced_description": "150-200 word agent-readable paragraph encoding style + provenance + condition + resale-value signal + buyer-fit. No invented facts. No size advice."
+}`;
+
+function systemPromptFor(mode) {
+  if (mode === 'reseller_authenticated') return RESELLER_PROMPT;
+  if (mode === 'curated_consignment')    return CONSIGNMENT_PROMPT;
+  return DIRECT_BRAND_PROMPT;
+}
+
+function resolveMerchantMode(product, brand) {
+  const attrs = product.product_attributes ?? {};
+  if (attrs.resale_mode === true) return 'reseller_authenticated';
+  const bd = brand.brand_data ?? {};
+  const bm = bd.merchant_type;
+  if (bm === 'reseller_authenticated' || bm === 'curated_consignment' || bm === 'direct_brand') return bm;
+  return 'direct_brand';
+}
 
 // ── Helpers ──────────────────────────────────────────────────────────
 
@@ -149,7 +255,7 @@ async function getBrand() {
 async function getProducts(brandId) {
   let query = db
     .from('rrg_submissions')
-    .select('id, token_id, title, description, enhanced_description, jpeg_storage_path')
+    .select('id, token_id, title, description, enhanced_description, jpeg_storage_path, product_attributes, hidden')
     .eq('brand_id', brandId)
     .eq('status', 'approved');
   if (ONLY_TOKEN) query = query.eq('token_id', ONLY_TOKEN);
@@ -168,7 +274,15 @@ async function getImageBase64(path) {
   return { base64: buf.toString('base64'), mime };
 }
 
-async function analyzeProduct(product, image) {
+async function analyzeProduct(product, image, mode) {
+  const seeded = product.product_attributes ?? {};
+  // Tell the LLM what's already on the row so it preserves auto-seeded
+  // facts (vendor, SKU, tags) and only augments / refines.
+  const seededDump = Object.entries(seeded)
+    .filter(([k]) => !k.startsWith('_'))
+    .map(([k, v]) => `  ${k}: ${typeof v === 'string' ? v : JSON.stringify(v)}`)
+    .join('\n');
+
   const userContent = [
     {
       type: 'image',
@@ -181,18 +295,20 @@ async function analyzeProduct(product, image) {
 BRAND'S ORIGINAL DESCRIPTION:
 ${product.description ?? '(none provided)'}
 
-Analyze the image and return the JSON structure specified in the system prompt.`,
+AUTO-SEEDED FACTS (preserve these verbatim unless clearly wrong):
+${seededDump || '(none)'}
+
+Analyze the image and return the JSON structure specified in the system prompt. For fields already present in the auto-seeded facts, keep the seeded value; only add the ones not yet populated.`,
     },
   ];
 
   const resp = await anthropic.messages.create({
     model:       'claude-sonnet-4-5',
     max_tokens:  1500,
-    system:      SYSTEM_PROMPT,
+    system:      systemPromptFor(mode),
     messages:    [{ role: 'user', content: userContent }],
   });
 
-  // Extract JSON from response
   const text = resp.content.filter(b => b.type === 'text').map(b => b.text).join('');
   const jsonMatch = text.match(/\{[\s\S]*\}/);
   if (!jsonMatch) throw new Error('No JSON found in Claude response');
@@ -254,7 +370,8 @@ function loadPrecomputed(pathArg) {
       continue;
     }
 
-    console.log(`[analyze ${label}]`);
+    const mode = resolveMerchantMode(p, brand);
+    console.log(`[analyze ${label}] mode=${mode}`);
 
     try {
       let result;
@@ -274,7 +391,7 @@ function loadPrecomputed(pathArg) {
         console.log(`  [precomputed] using enrichment from ${PRECOMPUTED_PATH}`);
       } else {
         const image = await getImageBase64(p.jpeg_storage_path);
-        result = await analyzeProduct(p, image);
+        result = await analyzeProduct(p, image, mode);
       }
       totalTokensIn  += result.tokensIn;
       totalTokensOut += result.tokensOut;
@@ -284,15 +401,29 @@ function loadPrecomputed(pathArg) {
       console.log(`  → tokens: ${result.tokensIn} in / ${result.tokensOut} out`);
 
       if (!DRY_RUN) {
+        // Merge LLM output on top of whatever was already on the row (the
+        // brand-mirror auto-seeded fields). LLM does NOT overwrite seeded
+        // retail_sku / vendor / tags — we deep-prefer seeded strings.
+        const seeded = p.product_attributes ?? {};
+        const merged = { ...result.attributes, ...seeded };
+        // For keys where the LLM has new content and seeded is missing,
+        // keep the LLM value. The spread order above keeps seeded on top
+        // where keys collide — that's the intent.
+        for (const [k, v] of Object.entries(result.attributes)) {
+          if (merged[k] == null || merged[k] === '') merged[k] = v;
+        }
+
         const { error } = await db.from('rrg_submissions').update({
           enhanced_description: result.enhancedDescription,
-          product_attributes:   result.attributes,
+          product_attributes:   merged,
           enhanced_at:          new Date().toISOString(),
+          // Pre-publish guard: flip to visible once we've actually enriched.
+          hidden:               false,
         }).eq('id', p.id);
         if (error) {
           console.error(`  ERROR updating DB:`, error.message);
         } else {
-          console.log(`  ✓ saved`);
+          console.log(`  ✓ saved (hidden → false)`);
         }
       }
       processed++;
