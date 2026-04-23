@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { useBrandContext } from './layout';
+import { useBrandContext } from './brand-context';
 import BrandTermsModal from '@/components/rrg/BrandTermsModal';
 import HelpTip from '@/components/rrg/HelpTip';
 import { brandAdmin, briefFields, voucherFields } from '@/lib/rrg/help-content';
