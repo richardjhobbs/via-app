@@ -330,25 +330,44 @@ function createRRGServer() {
         }
       }
 
-      // Enrich with on-chain minted count where possible
+      // Enrich with on-chain minted count where possible.
+      //
+      // Brand products (Shopify-backed mirrors) are NOT necessarily
+      // registered on-chain — registerDrop is opt-in via --commit-chain in
+      // brand-mirror.mjs. For those, the contract returns a default struct
+      // (active=false, maxSupply=0) which previously caused the drop to be
+      // filtered out of list_drops entirely. Trust DB status + variant stock
+      // for brand products; only apply the on-chain active filter to
+      // co-created / non-brand drops where chain registration is required.
       const enriched = await Promise.all(
         drops.map(async (drop) => {
+          const isBrandProduct = drop.is_brand_product ?? false;
+
+          // Fetch variants first — for brand products (Shopify mirrors) the
+          // authoritative stock source is variant cached_stock, not the
+          // contract (which may not even have an entry when the mirror ran
+          // without --commit-chain).
+          const variantRows = await getVariantsBySubmissionId(drop.id);
+
           let remaining: number | null = null;
-          if (drop.token_id) {
+          if (drop.token_id && !isBrandProduct) {
             try {
               const contract = getRRGReadOnly();
               const data = await contract.getDrop(drop.token_id);
               remaining = Number(data.maxSupply) - Number(data.minted);
-              if (!data.active) return null; // skip inactive
+              if (!data.active) return null; // co-created drops require on-chain activation
             } catch {
               remaining = drop.edition_size ?? null;
             }
+          } else if (variantRows.length > 0) {
+            remaining = variantRows.reduce((s, v) => s + Math.max(0, v.cached_stock), 0);
+          } else {
+            remaining = drop.edition_size ?? null;
           }
 
           // Per-size price range: some sized listings (Stadium Goods) carry
           // different prices per size via price_override. Surface the range
           // up-front so browsing agents don't assume all sizes == priceUsdc.
-          const variantRows = await getVariantsBySubmissionId(drop.id);
           const basePriceNum = parseFloat(drop.price_usdc ?? '0');
           const inStockPrices = variantRows
             .filter(v => v.cached_stock > 0)
