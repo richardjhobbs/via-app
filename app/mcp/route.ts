@@ -321,11 +321,13 @@ function createRRGServer() {
     {
       query:      z.string().min(1).describe('Free-text query. Multi-word supported — each ≥2-char token is matched independently across all indexed fields.'),
       brand_slug: z.string().optional().describe('Optional brand slug to scope the search. Call list_brands to see slugs.'),
+      size:       z.string().optional().describe('Optional size filter (e.g. "10.5", "M", "UK 8"). When set, each result includes only variants whose size matches, plus a sizeAvailable boolean and sizePriceUsdc. Results with sizeAvailable=false are still returned (marked unavailable) so the agent can report correctly.'),
       limit:      z.number().int().min(1).max(50).optional().describe('Max results (default 10)'),
     },
-    async ({ query, brand_slug, limit }) => {
+    async ({ query, brand_slug, size, limit }) => {
       const maxResults = limit ?? 10;
       const tokens = query.toLowerCase().split(/\s+/).filter(t => t.length >= 2);
+      const sizeFilter = size?.trim() ?? null;
       if (tokens.length === 0) {
         return { isError: true, content: [{ type: 'text', text: 'Query must contain at least one token of 2+ characters.' }] };
       }
@@ -390,11 +392,33 @@ function createRRGServer() {
         };
       }
 
-      // Project top results via the shared toAgentProduct shape (compact)
+      // Project top results via the shared toAgentProduct shape. Variants
+      // are INCLUDED inline so an agent asking "size 10.5" sees the exact
+      // size-level availability in one call — no need to follow up with
+      // get_drop_details just to resolve per-size stock. When `size` is
+      // passed, results also carry sizeAvailable + sizePriceUsdc at the
+      // top level so the agent can answer the caller directly.
       const results = await Promise.all(top.map(async ({ drop, score, matchedTokens }) => {
         const variants = await getVariantsBySubmissionId(drop.id);
         const brand    = drop.brand_id ? await getBrandById(drop.brand_id).catch(() => null) : null;
         const shape    = toAgentProduct({ drop, brand, variants });
+
+        let sizeInfo: Record<string, unknown> = {};
+        let responseVariants = shape.variants;
+        if (sizeFilter && shape.variants.length > 0) {
+          const norm = sizeFilter.toLowerCase().replace(/\s+/g, '');
+          const match = shape.variants.find(v => (v.size ?? '').toLowerCase().replace(/\s+/g, '') === norm);
+          sizeInfo = {
+            sizeRequested:   sizeFilter,
+            sizeAvailable:   match?.inStock ?? false,
+            sizePriceUsdc:   match?.priceUsdc ?? null,
+            sizeStock:       match?.stock ?? 0,
+            sizeSku:         match?.sku ?? null,
+          };
+          // Return only matching-size variants when filter is set
+          responseVariants = match ? [match] : [];
+        }
+
         return {
           tokenId:        shape.tokenId,
           title:          shape.title,
@@ -405,10 +429,13 @@ function createRRGServer() {
           ...(shape.retailSku            ? { retailSku:            shape.retailSku } : {}),
           ...(shape.canonicalName        ? { canonicalName:        shape.canonicalName } : {}),
           ...(shape.originalRelease      ? { originalRelease:      shape.originalRelease } : {}),
+          agentDescription: shape.agentDescription,
           priceUsdc:      shape.priceUsdc,
           basePriceUsdc:  shape.basePriceUsdc,
           ...(shape.priceRangeUsdc ? { priceRangeUsdc: shape.priceRangeUsdc, hasPerSizePricing: shape.hasPerSizePricing } : {}),
           availablePhysicalUnits: shape.availablePhysicalUnits,
+          variants:       responseVariants,
+          ...sizeInfo,
           rrgUrl:         shape.rrgUrl,
           ecommerceUrl:   shape.ecommerceUrl,
           matchScore:     score,
@@ -416,16 +443,33 @@ function createRRGServer() {
         };
       }));
 
+      // Optional post-filter: if size was requested, sort matches where
+      // sizeAvailable=true ahead of unavailable ones (preserves relevance
+      // ranking within each group).
+      if (sizeFilter) {
+        results.sort((a, b) => {
+          const ar = a as Record<string, unknown>;
+          const br = b as Record<string, unknown>;
+          const aAvail = ar.sizeAvailable === true ? 1 : 0;
+          const bAvail = br.sizeAvailable === true ? 1 : 0;
+          if (aAvail !== bAvail) return bAvail - aAvail;
+          return a.matchScore === b.matchScore ? 0 : (b.matchScore - a.matchScore);
+        });
+      }
+
       return {
         content: [{
           type: 'text',
           text: JSON.stringify({
             query,
             brandSlug:    brand_slug ?? null,
+            sizeFilter,
             totalMatches: scored.length,
             returned:     top.length,
             results,
-            nextStep:     'Call get_drop_details with the tokenId of the match you want (includes full variant list with per-size pricing + agent description). Then initiate_agent_purchase (AI agents) or initiate_purchase (human wallet) to buy. Pass selected_size for sized products so the payment amount matches the chosen size.',
+            nextStep:     sizeFilter
+              ? 'Each result includes sizeAvailable + sizePriceUsdc for the requested size. If sizeAvailable=true, call initiate_agent_purchase (AI agents) / initiate_purchase (humans) with selected_size set to the requested size. The payment amount must match sizePriceUsdc.'
+              : 'Each result includes the full variants[] array with per-size inStock + priceUsdc. To buy, call initiate_agent_purchase (AI agents) or initiate_purchase (human wallet) with selected_size. Or call get_drop_details for additional physical product / shipping context.',
           }, null, 2),
         }],
       };
