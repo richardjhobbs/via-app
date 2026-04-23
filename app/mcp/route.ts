@@ -14,8 +14,9 @@ import { z } from 'zod';
 import {
   db, getApprovedDrops, getCurrentBrief, getDropByTokenId,
   getAllActiveBrands, getBrandBySlug, getBrandById, getOpenBriefs,
-  getBrandSalesStats, RRG_BRAND_ID,
+  getBrandSalesStats, getVariantsBySubmissionId, RRG_BRAND_ID,
 } from '@/lib/rrg/db';
+import { resolveEffectivePrice } from '@/lib/rrg/pricing';
 import {
   getActiveTemplatesByBrand, getVoucherByCode, redeemVoucher,
   formatVoucherForDisplay, type VoucherTemplate,
@@ -343,6 +344,19 @@ function createRRGServer() {
               remaining = drop.edition_size ?? null;
             }
           }
+
+          // Per-size price range: some sized listings (Stadium Goods) carry
+          // different prices per size via price_override. Surface the range
+          // up-front so browsing agents don't assume all sizes == priceUsdc.
+          const variantRows = await getVariantsBySubmissionId(drop.id);
+          const basePriceNum = parseFloat(drop.price_usdc ?? '0');
+          const inStockPrices = variantRows
+            .filter(v => v.cached_stock > 0)
+            .map(v => v.price_override != null ? Number(v.price_override) : basePriceNum);
+          const priceRangeUsdc = inStockPrices.length > 0
+            ? { min: Math.min(...inStockPrices), max: Math.max(...inStockPrices) }
+            : null;
+          const hasPerSizePricing = new Set(inStockPrices).size > 1;
           // Revenue split disclosure:
           //   • Co-created drops: publish the 35% creator share publicly — that's
           //     part of the offer to creators and they need to see it.
@@ -370,6 +384,7 @@ function createRRGServer() {
             title:       drop.title,
             description: drop.description,
             priceUsdc:   drop.price_usdc,
+            ...(priceRangeUsdc ? { priceRangeUsdc, hasPerSizePricing } : {}),
             editionSize: drop.edition_size,
             remaining,
             ipfsUrl:     drop.ipfs_url,
@@ -808,8 +823,9 @@ function createRRGServer() {
     {
       tokenId: z.number().int().positive().describe('Token ID of the listing to purchase'),
       buyerWallet: z.string().regex(/^0x[0-9a-fA-F]{40}$/).describe('Buyer 0x wallet address on Base'),
+      selected_size: z.string().optional().describe('For sized products, the size you want to buy (e.g. "10.5", "M"). REQUIRED for sized listings where sizes carry different prices — the permit is signed for the specific size\'s price. Call get_drop first to see available variants and their prices.'),
     },
-    async ({ tokenId, buyerWallet }) => {
+    async ({ tokenId, buyerWallet, selected_size }) => {
       const drop = await getDropByTokenId(tokenId);
       if (!drop) {
         return { isError: true, content: [{ type: 'text', text: 'Listing not found' }] };
@@ -818,7 +834,10 @@ function createRRGServer() {
         return { isError: true, content: [{ type: 'text', text: 'Listing price not set' }] };
       }
 
-      const priceUsdc    = parseFloat(drop.price_usdc);
+      // Size-aware pricing: if a selected_size maps to a variant with a
+      // price_override, sign the permit for THAT amount. Otherwise fall back
+      // to the base drop price.
+      const priceUsdc    = await resolveEffectivePrice(drop.id, drop.price_usdc, selected_size);
       const priceUsdc6dp = toUsdc6dp(priceUsdc);
 
       const permitPayload = await buildPermitPayload(
@@ -837,6 +856,7 @@ function createRRGServer() {
               title:       drop.title,
               priceUsdc,
               editionSize: drop.edition_size,
+              ...(selected_size ? { selectedSize: selected_size } : {}),
             },
             ...(drop.is_physical_product ? {
               requiresShippingAddress: true,
@@ -878,15 +898,17 @@ function createRRGServer() {
       shipping_postal_code:   z.string().optional().describe('Postal/ZIP code (required for physical products)'),
       shipping_country:       z.string().optional().describe('Country (required for physical products)'),
       shipping_phone:         z.string().optional().describe('Phone number for shipping'),
+      selected_size:          z.string().optional().describe('For sized products, the size you chose at initiate_purchase. MUST match the size whose price was used to build the permit.'),
     },
     async ({ tokenId, buyerWallet, buyerEmail, deadline, signature,
              shipping_name, shipping_address_line1, shipping_address_line2,
              shipping_city, shipping_state, shipping_postal_code,
-             shipping_country, shipping_phone }) => {
+             shipping_country, shipping_phone, selected_size }) => {
       const drop = await getDropByTokenId(tokenId);
       if (!drop) {
         return { isError: true, content: [{ type: 'text', text: 'Listing not found' }] };
       }
+      const effectivePrice = await resolveEffectivePrice(drop.id, drop.price_usdc, selected_size);
 
       // Validate shipping for physical products
       if (drop.is_physical_product) {
@@ -926,10 +948,11 @@ function createRRGServer() {
           buyer_email:         buyerEmail || null,
           buyer_type:          'agent',
           tx_hash:             txHash,
-          amount_usdc:         drop.price_usdc,
+          amount_usdc:         effectivePrice.toString(),
           download_token:      downloadToken,
           download_expires_at: downloadExpiry,
           brand_id:            drop.brand_id ?? RRG_BRAND_ID,
+          ...(selected_size ? { selected_size } : {}),
           // Shipping fields (physical products)
           ...(drop.is_physical_product ? {
             shipping_name:           shipping_name || null,
@@ -955,7 +978,7 @@ function createRRGServer() {
         const brand   = brandId !== RRG_BRAND_ID ? await getBrandById(brandId) : null;
         brandPctOverride = brand?.brand_pct_override ?? null;
         const split   = calculateSplit({
-          totalUsdc:        parseFloat(drop.price_usdc ?? '0'),
+          totalUsdc:        effectivePrice,
           brandId,
           creatorWallet:    drop.creator_wallet,
           brandWallet:      brand?.wallet_address ?? null,
@@ -980,7 +1003,7 @@ function createRRGServer() {
       // wholesale split private.
       let purchaseRevenueSplit: Record<string, unknown> | undefined = undefined;
       if (!drop.is_brand_product) {
-        const purchasePrice = parseFloat(drop.price_usdc ?? '0');
+        const purchasePrice = effectivePrice;
         const purchaseSplit = computeSplit(purchasePrice, 'co_created');
         purchaseRevenueSplit = {
           model:        'fixed_co_created',
@@ -1360,11 +1383,37 @@ function createRRGServer() {
       const brandId = drop.brand_id ?? RRG_BRAND_ID;
       const brand   = await getBrandById(brandId);
 
+      // Variants + per-size price overrides. For sized products (Stadium Goods,
+      // Frey Tailored, etc.) different sizes can carry different prices. Agents
+      // MUST pass `selected_size` to initiate_agent_purchase / initiate_purchase
+      // so the permit / payment amount matches the size they actually want.
+      const rawVariants = await getVariantsBySubmissionId(drop.id);
+      const variants = rawVariants
+        .filter(v => v.size != null)
+        .map(v => ({
+          size:          v.size,
+          color:         v.color,
+          sku:           v.sku,
+          inStock:       v.cached_stock > 0,
+          stock:         v.cached_stock,
+          priceOverride: v.price_override != null ? Number(v.price_override) : null,
+          priceUsdc:     v.price_override != null ? Number(v.price_override) : Number(drop.price_usdc ?? 0),
+        }));
+      const basePrice = Number(drop.price_usdc ?? 0);
+      const inStockPrices = variants.filter(v => v.inStock).map(v => v.priceUsdc);
+      const priceRange = inStockPrices.length > 0
+        ? { min: Math.min(...inStockPrices), max: Math.max(...inStockPrices) }
+        : null;
+      const hasPerSizePricing = new Set(inStockPrices).size > 1;
+
       const result: Record<string, unknown> = {
         tokenId:     drop.token_id,
         title:       drop.title,
         description: drop.description,
         priceUsdc:   drop.price_usdc,
+        basePriceUsdc: basePrice,
+        ...(priceRange ? { priceRangeUsdc: priceRange } : {}),
+        hasPerSizePricing,
         editionSize: drop.edition_size,
         imageUrl,
         ipfsUrl:     drop.ipfs_url,
@@ -1372,6 +1421,12 @@ function createRRGServer() {
         brandName:   brand?.name ?? 'RRG',
         onChain,
         isPhysicalProduct: drop.is_physical_product ?? false,
+        ...(variants.length > 0 ? {
+          variants,
+          pricingNote: hasPerSizePricing
+            ? 'This listing has per-size pricing. priceUsdc is the base; use variants[].priceUsdc for the size you want, and pass selected_size to initiate_agent_purchase / initiate_purchase so the payment amount matches.'
+            : 'All in-stock sizes share the same price. Still pass selected_size when purchasing a sized product so the order records the correct size.',
+        } : {}),
       };
 
       if (drop.is_physical_product) {
@@ -2059,16 +2114,19 @@ function createRRGServer() {
       'then call confirm_agent_purchase with your transaction hash.',
     ].join('\n'),
     {
-      tokenId:     z.number().int().positive().describe('The token ID of the drop to purchase'),
-      buyerWallet: z.string().regex(/^0x[0-9a-fA-F]{40}$/).describe('Your wallet address on Base'),
+      tokenId:       z.number().int().positive().describe('The token ID of the drop to purchase'),
+      buyerWallet:   z.string().regex(/^0x[0-9a-fA-F]{40}$/).describe('Your wallet address on Base'),
+      selected_size: z.string().optional().describe('For sized products (e.g. sneakers, garments), the size you want to buy (e.g. "10.5", "M"). Different sizes may carry different prices — call get_drop first to see variants[] with per-size priceUsdc, then pass the size here so the amount you are instructed to pay matches that size.'),
     },
-    async ({ tokenId, buyerWallet }) => {
+    async ({ tokenId, buyerWallet, selected_size }) => {
       const drop = await getDropByTokenId(tokenId);
       if (!drop || drop.status !== 'approved') {
         return { isError: true, content: [{ type: 'text' as const, text: 'Listing not found or not available for purchase.' }] };
       }
 
-      const priceUsdc      = parseFloat(drop.price_usdc ?? '0');
+      // Size-aware pricing: a selected size with its own price_override charges
+      // that override; otherwise fall back to the base drop price.
+      const priceUsdc      = await resolveEffectivePrice(drop.id, drop.price_usdc, selected_size);
       const amountRaw      = String(Math.round(priceUsdc * 1_000_000));
       const platformWallet = process.env.NEXT_PUBLIC_PLATFORM_WALLET ?? '0xbfd71eA27FFc99747dA2873372f84346d9A8b7ed';
 
@@ -2078,13 +2136,14 @@ function createRRGServer() {
           text: JSON.stringify({
             tokenId,
             title:        drop.title,
+            ...(selected_size ? { selectedSize: selected_size } : {}),
             payTo:        platformWallet,
             amount:       priceUsdc.toFixed(2),
             amountRaw,
             usdcContract: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913',
             chainId:      8453,
             network:      'base',
-            nextStep:     `Send exactly ${priceUsdc.toFixed(2)} USDC to ${platformWallet} on Base mainnet, then call confirm_agent_purchase with tokenId=${tokenId}, buyerWallet="${buyerWallet}", and your txHash.`,
+            nextStep:     `Send exactly ${priceUsdc.toFixed(2)} USDC to ${platformWallet} on Base mainnet, then call confirm_agent_purchase with tokenId=${tokenId}, buyerWallet="${buyerWallet}",${selected_size ? ` selected_size="${selected_size}",` : ''} and your txHash.`,
             paymentMethods: {
               direct_usdc: {
                 payTo: platformWallet,
@@ -2122,13 +2181,25 @@ function createRRGServer() {
       'Include buyerAgentId (your ERC-8004 agent ID) for an agent-to-agent trust signal on-chain.',
     ].join('\n'),
     {
-      tokenId:      z.number().int().positive().describe('The listing token ID'),
-      buyerWallet:  z.string().regex(/^0x[0-9a-fA-F]{40}$/).describe('Your wallet address'),
-      txHash:       z.string().regex(/^0x[0-9a-fA-F]{64}$/).describe('Your USDC transfer transaction hash on Base'),
-      buyerEmail:   z.string().email().optional().describe('Optional email for delivery confirmation'),
-      buyerAgentId: z.number().int().positive().optional().describe('Your ERC-8004 agent ID for on-chain reputation signals (e.g. 17666)'),
+      tokenId:       z.number().int().positive().describe('The listing token ID'),
+      buyerWallet:   z.string().regex(/^0x[0-9a-fA-F]{40}$/).describe('Your wallet address'),
+      txHash:        z.string().regex(/^0x[0-9a-fA-F]{64}$/).describe('Your USDC transfer transaction hash on Base'),
+      buyerEmail:    z.string().email().optional().describe('Optional email for delivery confirmation'),
+      buyerAgentId:  z.number().int().positive().optional().describe('Your ERC-8004 agent ID for on-chain reputation signals (e.g. 17666)'),
+      selected_size: z.string().optional().describe('For sized products, the size you chose at initiate_agent_purchase. MUST match — the server verifies your USDC transfer against the price for that size.'),
+      shipping_name:          z.string().optional().describe('Recipient name (required for physical products)'),
+      shipping_address_line1: z.string().optional().describe('Street address line 1 (required for physical products)'),
+      shipping_address_line2: z.string().optional().describe('Street address line 2'),
+      shipping_city:          z.string().optional().describe('City (required for physical products)'),
+      shipping_state:         z.string().optional().describe('State or province'),
+      shipping_postal_code:   z.string().optional().describe('Postal/ZIP code (required for physical products)'),
+      shipping_country:       z.string().optional().describe('Country (required for physical products)'),
+      shipping_phone:         z.string().optional().describe('Phone number for shipping'),
     },
-    async ({ tokenId, buyerWallet, txHash, buyerEmail, buyerAgentId }) => {
+    async ({ tokenId, buyerWallet, txHash, buyerEmail, buyerAgentId, selected_size,
+             shipping_name, shipping_address_line1, shipping_address_line2,
+             shipping_city, shipping_state, shipping_postal_code,
+             shipping_country, shipping_phone }) => {
       const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://realrealgenuine.com';
       try {
         const resp = await fetch(`${siteUrl}/api/rrg/claim`, {
@@ -2140,6 +2211,15 @@ function createRRGServer() {
             txHash,
             ...(buyerEmail   ? { email: buyerEmail }  : {}),
             ...(buyerAgentId ? { buyerAgentId }        : {}),
+            ...(selected_size ? { selected_size }     : {}),
+            ...(shipping_name          ? { shipping_name }          : {}),
+            ...(shipping_address_line1 ? { shipping_address_line1 } : {}),
+            ...(shipping_address_line2 ? { shipping_address_line2 } : {}),
+            ...(shipping_city          ? { shipping_city }          : {}),
+            ...(shipping_state         ? { shipping_state }         : {}),
+            ...(shipping_postal_code   ? { shipping_postal_code }   : {}),
+            ...(shipping_country       ? { shipping_country }       : {}),
+            ...(shipping_phone         ? { shipping_phone }         : {}),
           }),
         });
         const data = await resp.json();
