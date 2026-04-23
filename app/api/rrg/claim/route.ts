@@ -10,6 +10,7 @@ import { sendInstagramNotification } from '@/lib/rrg/instagram';
 import { postReputationSignal, postBuyerReputationSignal, fireVoucherSignal, lookupAgentIdByWallet } from '@/lib/rrg/erc8004';
 import { randomBytes } from 'crypto';
 import { calculateSplit } from '@/lib/rrg/splits';
+import { resolveEffectivePrice } from '@/lib/rrg/pricing';
 import { insertDistributionAndPay } from '@/lib/rrg/auto-payout';
 import { createVoucher, formatVoucherForDisplay } from '@/lib/rrg/vouchers';
 import { incrementTrust } from '@/lib/rrg/agent-trust';
@@ -142,6 +143,13 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    // ── Resolve effective price (per-size override if applicable) ────────
+    const effectivePrice = await resolveEffectivePrice(
+      submission.id,
+      submission.price_usdc,
+      selected_size,
+    );
+
     // ── Verify on-chain (skipped for self-purchases) ─────────────────────
     if (!isSelfPurchase) {
       const provider = new ethers.JsonRpcProvider(BASE_RPC);
@@ -168,7 +176,7 @@ export async function POST(req: NextRequest) {
       }
 
       // ── Parse Transfer logs from USDC contract ──────────────────────────
-      const expectedAmount = BigInt(Math.round(Number(submission.price_usdc) * 1_000_000));
+      const expectedAmount = BigInt(Math.round(effectivePrice * 1_000_000));
 
       let paymentVerified = false;
       for (const log of receipt.logs) {
@@ -235,7 +243,7 @@ export async function POST(req: NextRequest) {
         buyer_wallet:        buyerWallet.toLowerCase(),
         buyer_type:          'agent',
         tx_hash:             txHash,
-        amount_usdc:         submission.price_usdc.toString(),
+        amount_usdc:         effectivePrice.toString(),
         download_token:      downloadToken,
         download_expires_at: downloadExpiry,
         files_delivered:     false,
@@ -306,7 +314,7 @@ export async function POST(req: NextRequest) {
         reputationTxHash = await postReputationSignal({
           buyerAgentId: resolvedBuyerAgentId,
           buyerWallet:  buyerWallet.toLowerCase(),
-          priceUsdc:    submission.price_usdc ?? '0',
+          priceUsdc:    effectivePrice.toString(),
           tokenId,
           txHash,
         });
@@ -316,7 +324,7 @@ export async function POST(req: NextRequest) {
         const buyerSignalHash = await postBuyerReputationSignal({
           buyerAgentId: resolvedBuyerAgentId,
           buyerWallet:  buyerWallet.toLowerCase(),
-          priceUsdc:    submission.price_usdc ?? '0',
+          priceUsdc:    effectivePrice.toString(),
           tokenId,
           txHash,
         });
@@ -416,7 +424,7 @@ export async function POST(req: NextRequest) {
       const isLegacy = brandId === RRG_BRAND_ID && !submission.is_brand_product;
 
       const split = calculateSplit({
-        totalUsdc:        parseFloat(submission.price_usdc ?? '0'),
+        totalUsdc:        effectivePrice,
         brandId,
         creatorWallet:    submission.creator_wallet,
         brandWallet:      brand?.wallet_address ?? null,
@@ -509,7 +517,7 @@ export async function POST(req: NextRequest) {
         await incrementTrust(
           submission.brand_id,
           buyerWallet.toLowerCase(),
-          parseFloat(submission.price_usdc ?? '0')
+          effectivePrice
         );
         console.log(`[claim] Agent trust incremented for brand ${submission.brand_id}`);
       } catch (trustErr) {

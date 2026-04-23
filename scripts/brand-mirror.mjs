@@ -398,6 +398,61 @@ const BRANDS = {
     bannerLocal:     null,
     logoLocal:       null,
   },
+  '13-de-marzo': {
+    slug:            '13-de-marzo',
+    name:            '13DE MARZO',
+    wallet:          '0x734a25fB869ab6415b78bbe9a39f1f99dab349E7',
+    email:           'richard@entrepot.asia',
+    headline:        'Chinese streetwear, built around the teddy bear. Plush textures, character collabs, cross-season knits.',
+    description:     '13DE MARZO is a Shanghai-based streetwear label founded by designer Dong Bing in 2016, built around an instantly recognisable cast of plush teddy bear characters (Fur Mario, Doozoo, Kuromi collabs) and a design language of melted logos, fuzzy textures and oversized jewellery. The brand runs a global storefront at 13demarzo.net priced in EUR and ships worldwide. Selective mirror of five pieces across five categories: Doozoo Flip Flops (summer slip-on footwear), Graffiti Logo Denim Bucket Hat (headwear), Kuromi Bear Cellphone T-Shirt (Sanrio collab graphic tee), Bear Hug Star Ring (silver statement jewellery) and Tibe Hunting Totem Bag (utility shoulder bag). Checkout in USDC on Base, ships from 13DE MARZO.',
+    website:         'https://13demarzo.net',
+    shopifyDomain:   '13demarzo.net',
+    supportsSizing:  true,
+    sourceCurrency:  'EUR',
+    priceToUsdcRate: 1.08, // locked 2026-04-22, 1 EUR = $1.08 USDC
+    socialLinks:     { instagram: 'https://www.instagram.com/13demarzo_official/' },
+    bannerLocal:     null,
+    logoLocal:       null,
+    // Native titles all begin "13DE MARZO …" — strip the brand prefix and
+    // provide clean marketing copy (native bodies are mostly empty).
+    productOverrides: {
+      '13de-marzo-doozoo-flip-flops': {
+        title: 'Doozoo Flip Flops',
+        description: 'Leather flip flops built on a thick stacked sole for added height and all-day comfort. A fixed bear charm rides on the toe strap, heart-stitched insoles cushion underfoot, and the outsole carries a custom 13DE MARZO repeat logo with embossed branding on the strap. The house\u2019s Doozoo character in a summer slip-on.',
+      },
+      '13de-marzo-kuromi-bear-cellphone-t-shirt': {
+        title: 'Kuromi Bear Cellphone T-Shirt',
+        description: 'Official 13DE MARZO x Kuromi collaboration tee. Heavyweight cotton jersey with a front graphic of the house teddy bear clutching a novelty cellphone rendered in Kuromi\u2019s punk-pink palette. Boxy relaxed fit, ribbed crew, dropped shoulder. From the Sanrio capsule that put 13DE MARZO on the global character-collab map.',
+      },
+      '13de-marzo-graffiti-logo-denim-bucket-hat': {
+        title: 'Graffiti Logo Denim Bucket Hat',
+        description: 'Washed denim bucket hat with an all-over graffiti-print 13DE MARZO wordmark and the house bear silhouette stitched to the crown. Structured short brim, eyelet vents, cotton sweatband. Sits between a workwear cap and a late-\u201990s Y2K bucket.',
+      },
+      '13de-marzo-bear-hug-star-ring': {
+        title: 'Bear Hug Star Ring',
+        description: 'Sterling-silver statement ring cast as the house teddy bear wrapped around a faceted star. Chunky proportions, high-polish finish and stackable band profile. One of the signature silhouettes from 13DE MARZO\u2019s jewellery line, genderless sizing.',
+      },
+      '13de-marzo-tibe-hunting-totem-bag': {
+        title: 'Tibe Hunting Totem Bag',
+        description: 'Cross-body utility bag from the Tibe Hunting capsule. Panelled nylon and leather body, totem-carved hardware, an adjustable webbing strap and a zipped main compartment with inner organiser pockets. Big enough for a 12-inch tablet, structured enough to keep its shape empty. Genderless.',
+      },
+    },
+  },
+  'stadium-goods': {
+    slug:            'stadium-goods',
+    name:            'Stadium Goods',
+    wallet:          '0x734a25fB869ab6415b78bbe9a39f1f99dab349E7',
+    email:           'richard@entrepot.asia',
+    headline:        'Sneaker archive. Museum-grade resale, consigned in New York.',
+    description:     'Stadium Goods is a New York sneaker and streetwear consignment marketplace founded in 2015 by John McPheters and Jed Stiller, acquired by Farfetch in 2018 for $250m and now part of Coupang. The SoHo flagship and 47,000 sq ft New Jersey warehouse stock deadstock, historical collabs and archive grails authenticated in-house by a sneaker-specialist team. Selective mirror of stadiumgoods.com, USD native, full size run with per-size pricing reflecting real secondary-market scarcity. Checkout in USDC on Base, ships from Stadium Goods NYC.',
+    website:         'https://www.stadiumgoods.com',
+    shopifyDomain:   'www.stadiumgoods.com',
+    supportsSizing:  true,
+    // USD native, 1:1 USDC (no sourceCurrency / priceToUsdcRate needed)
+    socialLinks:     { instagram: 'https://www.instagram.com/stadiumgoods/' },
+    bannerLocal:     null,
+    logoLocal:       null,
+  },
 };
 
 // ── Load .env.local ──────────────────────────────────────────────────
@@ -438,6 +493,7 @@ const flag = (name) => {
 const BRAND_KEY  = flag('--brand');
 const ONLY       = flag('--only');
 const HANDLES    = flag('--handles');
+const CACHE_FILE = flag('--cache-file');
 const DRY_RUN    = args.includes('--dry-run');
 const SEED_ONLY  = args.includes('--seed-only');
 // Chain registration is now OPT-IN (safer default for pilots, onboarding
@@ -578,6 +634,45 @@ async function ensureBrand() {
 // ────────────────────────────────────────────────────────────────────
 
 async function fetchShopify() {
+  // Offline path: when --cache-file points to a local JSON with the
+  // { products: [...] } shape, skip the HTTP fetch entirely. Used when the
+  // source Shopify host rate-limits or blocks our egress (e.g. Stadium Goods
+  // after a pagination burst triggers their anti-scraping). File must be
+  // produced by a prior successful fetch or hand-assembled from single-product
+  // /products/{handle}.json responses.
+  if (CACHE_FILE && typeof CACHE_FILE === 'string') {
+    const resolved = resolve(CACHE_FILE);
+    console.log(`[shopify] reading cache file ${resolved}`);
+    const raw = readFileSync(resolved, 'utf8');
+    const json = JSON.parse(raw);
+    const products = json.products ?? [];
+    console.log(`[shopify] loaded ${products.length} product(s) from cache`);
+    return products;
+  }
+
+  // Fast path: when --only is set to a single handle, fetch just that
+  // product via /products/{handle}.json instead of paginating the whole
+  // catalogue. Avoids rate limits on large stores (e.g. Stadium Goods'
+  // ~4k-product catalogue hit 429 on page 18 before this was added).
+  if (ONLY && !ONLY.includes(',')) {
+    const url = `https://${CFG.shopifyDomain}/products/${ONLY}.json`;
+    console.log(`[shopify] GET ${url} (single-product fast path)`);
+    const res = await fetch(url, {
+      headers: {
+        'User-Agent':      'RRG-Mirror/2.0',
+        'Accept':          'application/json',
+        'Accept-Language': '',
+      },
+      cache: 'no-store',
+    });
+    if (!res.ok) throw new Error(`Shopify ${res.status} for handle ${ONLY}`);
+    const json = await res.json();
+    const product = json.product;
+    if (!product) throw new Error(`No product in response for handle ${ONLY}`);
+    console.log(`[shopify] fetched 1 product via fast path`);
+    return [product];
+  }
+
   // Shopify caps products.json at 250 per page; walk pages until the response
   // is short (end of catalogue) or a safety cap is hit.
   //

@@ -10,6 +10,7 @@ import { autopostSale } from '@/lib/rrg/autopost';
 import { sendInstagramNotification } from '@/lib/rrg/instagram';
 import { postReputationSignal, postBuyerReputationSignal, fireVoucherSignal, lookupAgentIdByWallet } from '@/lib/rrg/erc8004';
 import { calculateSplit } from '@/lib/rrg/splits';
+import { resolveEffectivePrice } from '@/lib/rrg/pricing';
 import { insertDistributionAndPay } from '@/lib/rrg/auto-payout';
 import { createVoucher, formatVoucherForDisplay } from '@/lib/rrg/vouchers';
 import { firePurchaseAttribution } from '@/lib/rrg/marketing-attribution';
@@ -82,6 +83,13 @@ export async function POST(req: NextRequest) {
     const receipt = await tx.wait(1);
     const txHash  = receipt.hash;
 
+    // ── Resolve effective price (per-size override if applicable) ─────
+    const effectivePrice = await resolveEffectivePrice(
+      drop.id,
+      drop.price_usdc,
+      selected_size,
+    );
+
     // ── Generate download token ────────────────────────────────────────
     const downloadToken   = randomBytes(32).toString('hex');
     const downloadExpiry  = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
@@ -96,7 +104,7 @@ export async function POST(req: NextRequest) {
         buyer_email:        buyerEmail || null,
         buyer_type:         'human',
         tx_hash:            txHash,
-        amount_usdc:        drop.price_usdc,
+        amount_usdc:        effectivePrice.toString(),
         download_token:     downloadToken,
         download_expires_at: downloadExpiry,
         network:             getCurrentNetwork(),
@@ -176,7 +184,7 @@ export async function POST(req: NextRequest) {
           reputationTxHash = await postReputationSignal({
             buyerAgentId: resolvedBuyerAgentId,
             buyerWallet:  buyerWallet.toLowerCase(),
-            priceUsdc:    drop.price_usdc ?? '0',
+            priceUsdc:    effectivePrice.toString(),
             tokenId:      parseInt(tokenId),
             txHash,
           });
@@ -186,7 +194,7 @@ export async function POST(req: NextRequest) {
           const buyerSignalHash = await postBuyerReputationSignal({
             buyerAgentId: resolvedBuyerAgentId,
             buyerWallet:  buyerWallet.toLowerCase(),
-            priceUsdc:    drop.price_usdc ?? '0',
+            priceUsdc:    effectivePrice.toString(),
             tokenId:      parseInt(tokenId),
             txHash,
           });
@@ -247,7 +255,7 @@ export async function POST(req: NextRequest) {
       const isLegacy = brandId === RRG_BRAND_ID && !drop.is_brand_product;
 
       const split = calculateSplit({
-        totalUsdc:        parseFloat(drop.price_usdc ?? '0'),
+        totalUsdc:        effectivePrice,
         brandId,
         creatorWallet:    drop.creator_wallet,
         brandWallet:      brand?.wallet_address ?? null,
