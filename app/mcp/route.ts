@@ -379,10 +379,25 @@ function createRRGServer() {
             };
           }
 
+          const attrs = (drop.product_attributes ?? {}) as Record<string, unknown>;
+          const authStatus = typeof attrs.authentication_status === 'string' ? attrs.authentication_status : null;
+          const retailSku  = typeof attrs.retail_sku === 'string' ? attrs.retail_sku : null;
+          const assetType  = drop.is_physical_product
+            ? 'physical_product_with_nft_proof_of_ownership'
+            : 'digital_asset';
+          const brandName  = drop.brand_id
+            ? (await getBrandById(drop.brand_id).catch(() => null))?.name ?? 'RRG'
+            : 'RRG';
+
           return {
             tokenId:     drop.token_id,
             title:       drop.title,
             description: drop.description,
+            agentDescription: drop.enhanced_description ?? null,
+            ...(authStatus ? { authenticationStatus: authStatus } : {}),
+            ...(retailSku  ? { retailSku } : {}),
+            brandName,
+            assetType,
             priceUsdc:   drop.price_usdc,
             ...(priceRangeUsdc ? { priceRangeUsdc, hasPerSizePricing } : {}),
             editionSize: drop.edition_size,
@@ -1406,25 +1421,55 @@ function createRRGServer() {
         : null;
       const hasPerSizePricing = new Set(inStockPrices).size > 1;
 
+      // Surface the enriched agent-facing fields that already live on the
+      // submission row. The platform MCP was previously returning only the
+      // raw brand body copy, which left agents guessing about legitimacy
+      // (authenticator, original SKU, condition, etc). Lift the same fields
+      // the per-brand MCP exposes so browsing agents see the full picture
+      // without a second hop.
+      const attrs = (drop.product_attributes ?? {}) as Record<string, unknown>;
+      const asStr = (k: string) => typeof attrs[k] === 'string' ? (attrs[k] as string) : null;
+      const asArr = (k: string) => Array.isArray(attrs[k])
+        ? (attrs[k] as unknown[]).filter((x): x is string => typeof x === 'string')
+        : [];
+
+      const inStockCount = variants.filter(v => v.inStock).length;
+      const physicalUnits = drop.is_physical_product ? (inStockCount || drop.edition_size || 0) : null;
+
       const result: Record<string, unknown> = {
         tokenId:     drop.token_id,
         title:       drop.title,
         description: drop.description,
+        agentDescription:     drop.enhanced_description ?? null,
+        productAttributes:    Object.keys(attrs).length > 0 ? attrs : null,
+        authenticationStatus: asStr('authentication_status'),
+        retailSku:            asStr('retail_sku'),
+        originalRelease:      asStr('original_release'),
+        brandContext:         asStr('brand_context'),
+        conditionGrade:       asStr('condition_grade'),
+        conditionDetail:      asStr('condition_detail'),
+        styleTags:            asArr('style_tags'),
+        occasionFit:          asArr('occasion_fit'),
         priceUsdc:   drop.price_usdc,
         basePriceUsdc: basePrice,
         ...(priceRange ? { priceRangeUsdc: priceRange } : {}),
         hasPerSizePricing,
         editionSize: drop.edition_size,
+        ...(physicalUnits != null ? { availablePhysicalUnits: physicalUnits } : {}),
+        assetType:   drop.is_physical_product
+          ? 'physical_product_with_nft_proof_of_ownership'
+          : 'digital_asset',
         imageUrl,
         ipfsUrl:     drop.ipfs_url,
         brandId,
         brandName:   brand?.name ?? 'RRG',
+        brandWebsite: brand?.website_url ?? null,
         onChain,
         isPhysicalProduct: drop.is_physical_product ?? false,
         ...(variants.length > 0 ? {
           variants,
           pricingNote: hasPerSizePricing
-            ? 'This listing has per-size pricing. priceUsdc is the base; use variants[].priceUsdc for the size you want, and pass selected_size to initiate_agent_purchase / initiate_purchase so the payment amount matches.'
+            ? 'This listing has per-size pricing. priceUsdc is the BASE only (often the floor for sold-out sizes). Use variants[].priceUsdc for the size you actually want, and pass selected_size to initiate_agent_purchase / initiate_purchase so the payment amount matches.'
             : 'All in-stock sizes share the same price. Still pass selected_size when purchasing a sized product so the order records the correct size.',
         } : {}),
       };
