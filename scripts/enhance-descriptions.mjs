@@ -198,7 +198,8 @@ Return strict JSON (no prose around it):
     "style_tags":                ["5-10 short filterable tags"],
     "occasion_fit":              ["3-6 usage contexts"],
     "buyer_intent_signals":      ["5-8 phrases a buyer's agent might match against, e.g. 'grail tier', 'investment piece', 'deadstock collector'"],
-    "resale_value_context":      "1-2 sentences on how this model/release performs in secondary markets"
+    "resale_value_context":      "1-2 sentences on how this model/release performs in secondary markets",
+    "alt_names":                 ["EVERY credible alternative name, shortening, colloquial reference, collab name, abbreviation, or SKU format an agent or collector might use to search for THIS specific item. Include the model number with AND without dashes/spaces. Include the designer/collaborator's name alone if widely used. Include era/collection nicknames. Include the colorway nickname if one exists. This field is the primary recall mechanism when naming clusters diverge (e.g. 'VAA', 'V.A.A.', 'Off-White', 'The Ten', 'Virgil Abloh Archive' for one item). 8-15 entries for well-known resale items."]
   },
   "enhanced_description": "150-200 word agent-readable paragraph. Lead with canonical identity (what it is, from where, what year). Weave in authentication + condition + provenance. Close with pricing context and buyer fit. No marketing fluff."
 }`;
@@ -224,6 +225,7 @@ Return strict JSON (no prose around it):
     "occasion_fit":         ["3-6 contexts"],
     "buyer_intent_signals": ["5-8 phrases a buyer's agent matches against"],
     "resale_value_context": "1-2 sentences on how this item/category performs in secondary markets",
+    "alt_names":            ["Alternative names, colloquial references, designer shortforms, era nicknames, or house codes an agent might search for. Include the designer's name alone, any collection nickname, and any widely-used shortform. 5-10 entries."],
     "image_is_dark":        "boolean: true if SUBJECT is predominantly dark (card bg contrast hint)"
   },
   "enhanced_description": "150-200 word agent-readable paragraph encoding style + provenance + condition + resale-value signal + buyer-fit. No invented facts. No size advice."
