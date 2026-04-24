@@ -41,6 +41,8 @@ export async function POST(req: NextRequest) {
             shipping_name, shipping_address_line1, shipping_address_line2,
             shipping_city, shipping_state, shipping_postal_code,
             shipping_country, shipping_phone, physical_terms_accepted,
+            shipping_rate_handle, shipping_rate_title, shipping_rate_amount,
+            shipping_rate_currency, shipping_rate_code,
             cardFeeUsdc, selected_size } = body as {
       txHash:       string;
       buyerWallet:  string;
@@ -55,6 +57,11 @@ export async function POST(req: NextRequest) {
       shipping_country?: string;
       shipping_phone?: string;
       physical_terms_accepted?: boolean;
+      shipping_rate_handle?: string;
+      shipping_rate_title?: string;
+      shipping_rate_amount?: number;
+      shipping_rate_currency?: string;
+      shipping_rate_code?: string;
       cardFeeUsdc?: number;
       selected_size?: string;
     };
@@ -238,6 +245,11 @@ export async function POST(req: NextRequest) {
           shipping_country:        shipping_country || null,
           shipping_phone:          shipping_phone || null,
           physical_terms_accepted: physical_terms_accepted ?? false,
+          shipping_rate_handle:    shipping_rate_handle   || null,
+          shipping_rate_title:     shipping_rate_title    || null,
+          shipping_rate_amount:    shipping_rate_amount   ?? null,
+          shipping_rate_currency:  shipping_rate_currency || null,
+          shipping_rate_code:      shipping_rate_code     || null,
         } : {}),
         // Size / variant (garment products)
         ...(selected_size ? { selected_size } : {}),
