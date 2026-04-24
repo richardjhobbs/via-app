@@ -1655,13 +1655,19 @@ function BrandsTab() {
                       </button>
                     </form>
                   ) : (
-                    <div className="border-t border-white/10 p-4 flex gap-3">
+                    <div className="border-t border-white/10 p-4 flex gap-3 flex-wrap">
                       <button
                         onClick={() => startEdit(b)}
                         className="px-4 py-1.5 text-sm border border-white/20 hover:border-white/50 transition-all"
                       >
                         Edit
                       </button>
+                      <a
+                        href={`/admin/rrg/brands/${b.slug}/concierge`}
+                        className="px-4 py-1.5 text-sm border border-white/20 hover:border-white/50 transition-all"
+                      >
+                        Concierge Chat →
+                      </a>
                       <button
                         onClick={() => { setInviting(b.id); setEditing(null); setInviteForm({ email: '', temp_password: '' }); }}
                         className="px-4 py-1.5 text-sm border border-white/20 hover:border-white/50 transition-all"
