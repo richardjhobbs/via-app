@@ -314,8 +314,12 @@ function createRRGServer() {
       '  - collaborator name(s) for collab items',
       '  - attribute keywords from the description ("black suede", "heavyweight cotton", etc.)',
       'Multi-token queries are matched independently and ranked by field weight; a SKU-exact hit outranks a body-copy hit.',
-      'Returns ranked matches with tokenId, priceRangeUsdc, authenticationStatus, retailSku, canonicalName, rrgUrl. Per-size pricing is indicated by hasPerSizePricing + priceRangeUsdc.',
-      'Next step: call get_drop_details with the matching tokenId for full variants / agent description, then initiate_agent_purchase to buy.',
+      'Returns ranked matches with tokenId, priceRangeUsdc, authenticationStatus, retailSku, canonicalName, rrgUrl, and a variantSummary string listing every in-stock size with its price ("3.5=$1583, 4=$1899, 10.5=$770, …").',
+      '',
+      'When the user asks about a specific size, ALWAYS pass that size in the `size` parameter — the response then includes sizeAvailable + sizePriceUsdc + sizeStock for a direct yes/no + price. For queries like "size 10.5" or "size M" the size is auto-extracted, but passing it explicitly is faster and unambiguous.',
+      'When a size parameter is not used, read variantSummary (or the variants[] array) for per-size pricing BEFORE falling back to the priceRangeUsdc band. Per-size prices are exact; the band is only a floor→ceiling range.',
+      '',
+      'Next step: the returned payload has everything needed for the buy — call initiate_agent_purchase with selected_size set to the chosen size. get_drop_details is optional (adds signed image URLs + shipping context).',
       '',
       'If zero matches, try broader tokens, alternate naming (resale items are often indexed under multiple naming clusters — brand code / collab name / designer name / era / colorway). If still zero, call list_drops to browse.',
     ].join('\n'),
@@ -328,7 +332,26 @@ function createRRGServer() {
     async ({ query, brand_slug, size, limit }) => {
       const maxResults = limit ?? 10;
       const tokens = query.toLowerCase().split(/\s+/).filter(t => t.length >= 2);
-      const sizeFilter = size?.trim() ?? null;
+
+      // Auto-extract a size from the query when the caller didn't pass the
+      // size parameter explicitly. Catches the common "user says 'size 10.5'
+      // but the agent forgets to route it into the size slot" failure mode.
+      // Patterns looked for (in order):
+      //   1. `size <X>` or `sz <X>`  → X
+      //   2. `<UK|EU|US> <digits>` → "UK 8" style
+      //   3. a letter size token (XS|S|M|L|XL|XXL|2XL|3XL|XXXL) as its own token
+      // We deliberately do NOT guess bare numeric tokens like "10.5" without
+      // a "size" prefix — "2018" or "580" would be misread as sizes otherwise.
+      let autoSize: string | null = null;
+      if (!size) {
+        const m1 = query.match(/\b(?:size|sz)\s+([\w.\-\/]+)\b/i);
+        const m2 = query.match(/\b(UK|EU|US)\s+(\d{1,2}(?:\.5)?)\b/i);
+        const m3 = query.match(/\b(XXXL|XXL|3XL|2XL|XL|XS|S|M|L)\b/);
+        if (m1) autoSize = m1[1];
+        else if (m2) autoSize = `${m2[1]} ${m2[2]}`;
+        else if (m3) autoSize = m3[1];
+      }
+      const sizeFilter = (size?.trim() ?? autoSize)?.trim() ?? null;
       if (tokens.length === 0) {
         return { isError: true, content: [{ type: 'text', text: 'Query must contain at least one token of 2+ characters.' }] };
       }
@@ -473,6 +496,27 @@ function createRRGServer() {
           responseVariants = match ? [match] : [];
         }
 
+        // Natural-language variant summary so an LLM reading the JSON
+        // doesn't need to iterate variants[] to answer "what's the price
+        // for size X". Lists every in-stock size with its price + the
+        // sold-out sizes separately. No-op when the listing has no
+        // variants (digital / single-SKU products).
+        let variantSummary: string | null = null;
+        if (shape.variants.length > 0) {
+          const inStock = shape.variants
+            .filter(v => v.inStock)
+            .map(v => `${v.size}=$${Math.round(v.priceUsdc)}`)
+            .join(', ');
+          const outOfStock = shape.variants
+            .filter(v => !v.inStock)
+            .map(v => v.size)
+            .join(', ');
+          variantSummary = [
+            inStock    ? `In stock (size = price): ${inStock}`        : 'In stock: (none)',
+            outOfStock ? `Sold out: ${outOfStock}`                    : null,
+          ].filter(Boolean).join('. ');
+        }
+
         return {
           tokenId:        shape.tokenId,
           title:          shape.title,
@@ -488,6 +532,7 @@ function createRRGServer() {
           basePriceUsdc:  shape.basePriceUsdc,
           ...(shape.priceRangeUsdc ? { priceRangeUsdc: shape.priceRangeUsdc, hasPerSizePricing: shape.hasPerSizePricing } : {}),
           availablePhysicalUnits: shape.availablePhysicalUnits,
+          ...(variantSummary ? { variantSummary } : {}),
           variants:       responseVariants,
           ...sizeInfo,
           rrgUrl:         shape.rrgUrl,
@@ -522,6 +567,7 @@ function createRRGServer() {
             query,
             brandSlug:    brand_slug ?? null,
             sizeFilter,
+            ...(autoSize && !size ? { sizeAutoExtracted: autoSize, note: `Size "${autoSize}" auto-extracted from query. Pass 'size' explicitly next time to be unambiguous.` } : {}),
             searchMethod,
             ...(ftsError ? { ftsError } : {}),
             totalMatches: scored.length,
