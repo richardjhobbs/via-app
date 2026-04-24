@@ -15,6 +15,7 @@ import {
   db, getApprovedDrops, getCurrentBrief, getDropByTokenId,
   getAllActiveBrands, getBrandBySlug, getBrandById, getOpenBriefs,
   getBrandSalesStats, getVariantsBySubmissionId, RRG_BRAND_ID,
+  type RrgSubmission,
 } from '@/lib/rrg/db';
 import { resolveEffectivePrice } from '@/lib/rrg/pricing';
 import { toAgentProduct } from '@/lib/rrg/mcp-product-shape';
@@ -341,40 +342,91 @@ function createRRGServer() {
         brandId = b.id;
       }
 
-      const drops = await getApprovedDrops(brandId);
+      // Primary path: Postgres FTS via search_products_fts RPC (GIN index,
+      // weighted ranking, handles SKU dash/space normalisation + alt_names
+      // via product_attributes::text). Falls back to in-memory token
+      // scoring if the RPC errors (e.g. migration not yet applied on this
+      // environment) or returns no hits.
+      type Scored = { drop: RrgSubmission, score: number, matchedTokens: string[] };
+      let scored: Scored[] = [];
+      let searchMethod: 'fts' | 'in_memory' = 'fts';
+      let ftsError: string | null = null;
 
-      // Score each drop by token matches across title / description /
-      // enhanced_description / product_attributes. Title matches are weighted
-      // heavier than description matches. Retail SKU exact matches get a big
-      // bonus so an agent searching "AA3834-100" lands the right listing
-      // even if the token count is small.
-      const scored = [];
-      for (const drop of drops) {
-        const title = (drop.title ?? '').toLowerCase();
-        const desc  = (drop.description ?? '').toLowerCase();
-        const aDesc = (drop.enhanced_description ?? '').toLowerCase();
-        const attrsStr = JSON.stringify(drop.product_attributes ?? {}).toLowerCase();
-        const attrs = (drop.product_attributes ?? {}) as Record<string, unknown>;
-        const retailSku = typeof attrs.retail_sku === 'string' ? attrs.retail_sku.toLowerCase() : '';
-
-        let score = 0;
-        const matchedTokens: string[] = [];
-        for (const tok of tokens) {
-          let matched = false;
-          if (title.includes(tok))    { score += 3; matched = true; }
-          if (retailSku && (retailSku.includes(tok) || retailSku.replace(/[-\s]/g, '').includes(tok.replace(/[-\s]/g, ''))))
-                                        { score += 5; matched = true; }
-          if (aDesc.includes(tok))    { score += 2; matched = true; }
-          if (desc.includes(tok))     { score += 2; matched = true; }
-          if (attrsStr.includes(tok)) { score += 1; matched = true; }
-          if (matched) matchedTokens.push(tok);
+      try {
+        const { data: ftsRows, error: ftsErr } = await db.rpc('search_products_fts', {
+          q:            query,
+          brand_filter: brandId ?? null,
+          net_filter:   'base',
+          result_limit: Math.min(50, maxResults * 3), // extra room for size filter
+        });
+        if (ftsErr) throw ftsErr;
+        if (ftsRows && ftsRows.length > 0) {
+          const ids = ftsRows.map((r: { id: string }) => r.id);
+          const rankById = new Map(ftsRows.map((r: { id: string, rank: number }) => [r.id, r.rank]));
+          const { data: drops } = await db
+            .from('rrg_submissions')
+            .select('*')
+            .in('id', ids)
+            .eq('status', 'approved')
+            .eq('hidden', false);
+          scored = (drops ?? [])
+            .map(drop => ({
+              drop,
+              score: Number(rankById.get(drop.id) ?? 0),
+              // Matched tokens are approximated as any query token present
+              // in the title+description+attrs blob, for the response only.
+              matchedTokens: tokens.filter(t =>
+                (drop.title ?? '').toLowerCase().includes(t) ||
+                (drop.description ?? '').toLowerCase().includes(t) ||
+                (drop.enhanced_description ?? '').toLowerCase().includes(t) ||
+                JSON.stringify(drop.product_attributes ?? {}).toLowerCase().includes(t)
+              ),
+            }))
+            .sort((a, b) => b.score - a.score);
+        } else {
+          // FTS returned zero — fall through to in-memory which uses
+          // substring matching (may catch things FTS misses).
+          throw new Error('fts-zero-results');
         }
-        // Bonus: every token matched somewhere
-        if (matchedTokens.length === tokens.length && tokens.length > 1) score += 4;
-        if (score > 0) scored.push({ drop, score, matchedTokens });
+      } catch (err) {
+        if (!(err instanceof Error) || err.message !== 'fts-zero-results') {
+          ftsError = err instanceof Error ? err.message : String(err);
+          console.warn('[search_products] FTS error, falling back:', ftsError);
+        }
+        searchMethod = 'in_memory';
+
+        const drops = await getApprovedDrops(brandId);
+        // Score each drop by token matches across title / description /
+        // enhanced_description / product_attributes. Title matches weighted
+        // heavier than description matches. Retail SKU exact matches get a
+        // big bonus so an agent searching "AA3834-100" lands the right
+        // listing even if the token count is small.
+        for (const drop of drops) {
+          const title = (drop.title ?? '').toLowerCase();
+          const desc  = (drop.description ?? '').toLowerCase();
+          const aDesc = (drop.enhanced_description ?? '').toLowerCase();
+          const attrsStr = JSON.stringify(drop.product_attributes ?? {}).toLowerCase();
+          const attrs = (drop.product_attributes ?? {}) as Record<string, unknown>;
+          const retailSku = typeof attrs.retail_sku === 'string' ? attrs.retail_sku.toLowerCase() : '';
+
+          let score = 0;
+          const matchedTokens: string[] = [];
+          for (const tok of tokens) {
+            let matched = false;
+            if (title.includes(tok))    { score += 3; matched = true; }
+            if (retailSku && (retailSku.includes(tok) || retailSku.replace(/[-\s]/g, '').includes(tok.replace(/[-\s]/g, ''))))
+                                          { score += 5; matched = true; }
+            if (aDesc.includes(tok))    { score += 2; matched = true; }
+            if (desc.includes(tok))     { score += 2; matched = true; }
+            if (attrsStr.includes(tok)) { score += 1; matched = true; }
+            if (matched) matchedTokens.push(tok);
+          }
+          if (matchedTokens.length === tokens.length && tokens.length > 1) score += 4;
+          if (score > 0) scored.push({ drop, score, matchedTokens });
+        }
+        scored.sort((a, b) => b.score - a.score);
       }
 
-      scored.sort((a, b) => b.score - a.score);
       const top = scored.slice(0, maxResults);
 
       if (top.length === 0) {
@@ -384,6 +436,7 @@ function createRRGServer() {
             text: JSON.stringify({
               query,
               brandSlug:    brand_slug ?? null,
+              searchMethod,
               totalMatches: 0,
               message:      `No matches for "${query}"${brand_slug ? ` within brand "${brand_slug}"` : ''}. Try broader tokens (brand name alone, a SKU/style-code fragment, or a single descriptive keyword), or alternate naming (resale items often list under multiple naming clusters — brand code / collab name / designer name / era / colorway). Call list_brands to see available brands, or list_drops to browse the catalogue.`,
               nextStep:     'list_drops()' + (brand_slug ? ` or list_drops({brand_slug:"${brand_slug}"})` : ''),
@@ -469,6 +522,8 @@ function createRRGServer() {
             query,
             brandSlug:    brand_slug ?? null,
             sizeFilter,
+            searchMethod,
+            ...(ftsError ? { ftsError } : {}),
             totalMatches: scored.length,
             returned:     finalResults.length,
             results:      finalResults,
