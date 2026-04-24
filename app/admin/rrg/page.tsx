@@ -129,7 +129,7 @@ interface Contributor {
   brands_contributed: string[];
 }
 
-type Tab = 'briefs' | 'submissions' | 'drops' | 'brands' | 'distributions' | 'contributors' | 'referrals';
+type Tab = 'briefs' | 'submissions' | 'drops' | 'brands' | 'concierge' | 'distributions' | 'contributors' | 'referrals';
 
 // ── Main component ─────────────────────────────────────────────────────
 export default function AdminPage() {
@@ -228,7 +228,7 @@ export default function AdminPage() {
 
       {/* Tabs */}
       <div className="border-b border-white/10 px-6 flex gap-6">
-        {(['submissions', 'briefs', 'drops', 'brands', 'distributions', 'contributors', 'referrals'] as Tab[]).map((t) => (
+        {(['submissions', 'briefs', 'drops', 'brands', 'concierge', 'distributions', 'contributors', 'referrals'] as Tab[]).map((t) => (
           <button
             key={t}
             onClick={() => setTab(t)}
@@ -249,6 +249,7 @@ export default function AdminPage() {
         {tab === 'submissions'   && <SubmissionsTab />}
         {tab === 'drops'         && <DropsTab />}
         {tab === 'brands'        && <BrandsTab />}
+        {tab === 'concierge'     && <ConciergeTab />}
         {tab === 'distributions' && <DistributionsTab />}
         {tab === 'contributors' && <ContributorsTab />}
         {tab === 'referrals'    && <ReferralsTab />}
@@ -1692,6 +1693,70 @@ function BrandsTab() {
           ))}
         </div>
       )}
+    </div>
+  );
+}
+
+// ── Concierge Tab ─────────────────────────────────────────────────────
+function ConciergeTab() {
+  const [brands,  setBrands]  = useState<Brand[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        const res  = await fetch('/api/rrg/admin/brands');
+        const data = await res.json();
+        if (alive) setBrands((data.brands || []).filter((b: Brand) => b.status === 'active'));
+      } finally {
+        if (alive) setLoading(false);
+      }
+    })();
+    return () => { alive = false; };
+  }, []);
+
+  if (loading) {
+    return <p className="font-mono text-white/50 text-sm">Loading brands…</p>;
+  }
+
+  if (brands.length === 0) {
+    return <p className="font-mono text-white/50 text-sm">No active brands.</p>;
+  }
+
+  return (
+    <div>
+      <p className="text-sm text-white/60 mb-6 max-w-2xl">
+        Pick a brand to open its Concierge chat. Whatever you lock in there is shared with the brand&apos;s
+        Telegram concierge on the next message. Use this to brief the concierge on events, promotions,
+        stock notes, brand updates, or policies without touching code.
+      </p>
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+        {brands.map((b) => (
+          <a
+            key={b.id}
+            href={`/admin/rrg/brands/${b.slug}/concierge`}
+            className="group border border-white/10 hover:border-white/40 transition-all p-5 flex flex-col gap-2 bg-white/[0.02] hover:bg-white/[0.05]"
+          >
+            <div className="flex items-baseline justify-between gap-3">
+              <span className="font-mono text-xs uppercase tracking-[0.2em] text-white/50">
+                {b.slug}
+              </span>
+              <span className="text-[10px] font-mono uppercase tracking-wider text-green-400/80">
+                Active
+              </span>
+            </div>
+            <h3 className="text-lg font-serif text-white">{b.name}</h3>
+            {b.headline && (
+              <p className="text-xs text-white/60 line-clamp-2">{b.headline}</p>
+            )}
+            <div className="mt-auto pt-2 text-xs font-mono text-white/40 group-hover:text-white/80 transition-colors">
+              Open chat →
+            </div>
+          </a>
+        ))}
+      </div>
     </div>
   );
 }

@@ -76,12 +76,10 @@ export default function ConciergeChatClient({ brandId, brandSlug, brandName, bra
     loadMemories();
   }, [loadMemories]);
 
-  // ── Auto-scroll chat ────────────────────────────────────────────────
   useEffect(() => {
     if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
   }, [messages, sending]);
 
-  // ── Send a message ──────────────────────────────────────────────────
   const send = async () => {
     const text = input.trim();
     if (!text || sending) return;
@@ -116,7 +114,6 @@ export default function ConciergeChatClient({ brandId, brandSlug, brandName, bra
         },
       ]);
 
-      // Refresh memory sidebar if any write happened
       const hasWrite = (data.toolCalls ?? []).some(
         (c: ToolCall) => c.name === 'store_brand_memory' || c.name === 'expire_brand_memory',
       );
@@ -140,22 +137,22 @@ export default function ConciergeChatClient({ brandId, brandSlug, brandName, bra
 
   if (authState === 'checking') {
     return (
-      <div className="min-h-screen bg-black text-white flex items-center justify-center">
-        <p className="font-mono text-white/50 text-sm">Loading…</p>
+      <div className="min-h-screen bg-neutral-50 text-neutral-900 flex items-center justify-center">
+        <p className="font-mono text-neutral-500 text-sm">Loading...</p>
       </div>
     );
   }
 
   if (authState === 'denied') {
     return (
-      <div className="min-h-screen bg-black text-white flex items-center justify-center px-6">
+      <div className="min-h-screen bg-neutral-50 text-neutral-900 flex items-center justify-center px-6">
         <div className="max-w-md text-center">
-          <h1 className="text-sm font-mono uppercase tracking-[0.3em] text-white/60 mb-3">Access denied</h1>
-          <p className="text-white/80 mb-6">{deniedReason}</p>
+          <h1 className="text-sm font-mono uppercase tracking-[0.3em] text-neutral-600 mb-3">Access denied</h1>
+          <p className="text-neutral-800 mb-6">{deniedReason}</p>
           <div className="flex gap-3 justify-center text-xs font-mono">
-            <a href="/admin/rrg" className="text-white/50 hover:text-white">RRG admin login</a>
-            <span className="text-white/20">·</span>
-            <a href={`/brand/${brandSlug}/login`} className="text-white/50 hover:text-white">Brand login</a>
+            <a href="/admin/rrg" className="text-neutral-600 hover:text-neutral-900 underline">RRG admin login</a>
+            <span className="text-neutral-400">|</span>
+            <a href={`/brand/${brandSlug}/login`} className="text-neutral-600 hover:text-neutral-900 underline">Brand login</a>
           </div>
         </div>
       </div>
@@ -165,16 +162,16 @@ export default function ConciergeChatClient({ brandId, brandSlug, brandName, bra
   const filtered = memFilter === 'all' ? memories : memories.filter((m) => m.type === memFilter);
 
   return (
-    <div className="min-h-screen bg-black text-white flex flex-col">
+    <div className="min-h-screen bg-neutral-50 text-neutral-900 flex flex-col">
       {/* Header */}
-      <header className="border-b border-white/10 px-6 py-4 flex justify-between items-center">
+      <header className="bg-white border-b border-neutral-200 px-6 py-4 flex justify-between items-center">
         <div className="flex items-baseline gap-3">
-          <span className="font-mono text-xs uppercase tracking-[0.3em] text-white/80">
+          <span className="font-mono text-xs uppercase tracking-[0.3em] text-neutral-900">
             {brandName} · Concierge
           </span>
-          {brandHeadline && <span className="text-xs text-white/40 hidden md:inline">{brandHeadline}</span>}
+          {brandHeadline && <span className="text-xs text-neutral-500 hidden md:inline">{brandHeadline}</span>}
         </div>
-        <a href="/admin/rrg" className="text-xs text-white/50 hover:text-white transition-colors font-mono">
+        <a href="/admin/rrg" className="text-xs text-neutral-600 hover:text-neutral-900 transition-colors font-mono">
           ← Admin
         </a>
       </header>
@@ -188,66 +185,66 @@ export default function ConciergeChatClient({ brandId, brandSlug, brandName, bra
             className="flex-1 overflow-y-auto px-6 py-6"
           >
             <div className="max-w-3xl mx-auto space-y-4">
-            {messages.length === 0 && (
-              <div className="text-white/40 font-mono text-xs">
-                Tell your concierge about an event, promotion, stock note, or brand update.
-                It will extract the facts, confirm with a &quot;Locked in:&quot; line, and store it so the Telegram concierge surfaces it to customers.
-              </div>
-            )}
-            {messages.map((m, i) => (
-              <div key={i} className={m.role === 'user' ? 'text-right' : ''}>
-                <div
-                  className={`inline-block max-w-[85%] text-left whitespace-pre-wrap px-4 py-3 rounded ${
-                    m.role === 'user'
-                      ? 'bg-white text-black'
-                      : 'bg-white/5 border border-white/10 text-white/90'
-                  }`}
-                >
-                  {m.content}
+              {messages.length === 0 && (
+                <div className="text-neutral-500 font-mono text-xs border border-dashed border-neutral-300 rounded p-4">
+                  Tell your concierge about an event, promotion, stock note, or brand update.
+                  It will extract the facts, confirm with a &quot;Locked in:&quot; line, and store it so the Telegram concierge surfaces it to customers.
                 </div>
-                {m.toolCalls && m.toolCalls.length > 0 && (
-                  <div className="mt-2 space-y-1">
-                    {m.toolCalls.map((tc, j) => (
-                      <details key={j} className="text-xs font-mono text-white/40">
-                        <summary className="cursor-pointer hover:text-white/70">
-                          tool: {tc.name}
-                        </summary>
-                        <pre className="mt-1 p-2 bg-white/5 border border-white/10 rounded overflow-x-auto">
+              )}
+              {messages.map((m, i) => (
+                <div key={i} className={m.role === 'user' ? 'text-right' : ''}>
+                  <div
+                    className={`inline-block max-w-[85%] text-left whitespace-pre-wrap px-4 py-3 rounded-lg shadow-sm ${
+                      m.role === 'user'
+                        ? 'bg-neutral-900 text-neutral-50'
+                        : 'bg-white border border-neutral-200 text-neutral-900'
+                    }`}
+                  >
+                    {m.content}
+                  </div>
+                  {m.toolCalls && m.toolCalls.length > 0 && (
+                    <div className="mt-2 space-y-1 text-left">
+                      {m.toolCalls.map((tc, j) => (
+                        <details key={j} className="text-xs font-mono text-neutral-600">
+                          <summary className="cursor-pointer hover:text-neutral-900">
+                            tool: {tc.name}
+                          </summary>
+                          <pre className="mt-1 p-2 bg-white border border-neutral-200 rounded overflow-x-auto text-neutral-800">
 {JSON.stringify(tc.input, null, 2)}
 
 {tc.result}
-                        </pre>
-                      </details>
-                    ))}
-                  </div>
-                )}
-              </div>
-            ))}
-            {sending && (
-              <div className="text-white/40 font-mono text-xs">thinking…</div>
-            )}
+                          </pre>
+                        </details>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ))}
+              {sending && (
+                <div className="text-neutral-500 font-mono text-xs">thinking...</div>
+              )}
             </div>
           </div>
 
           {/* Composer */}
-          <div className="border-t border-white/10 px-6 py-4">
+          <div className="bg-white border-t border-neutral-200 px-6 py-4">
             <div className="max-w-3xl mx-auto">
               <textarea
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 onKeyDown={onKeyDown}
-                placeholder={`Message ${brandName} Concierge — Ctrl/Cmd+Enter to send`}
+                placeholder={`Message ${brandName} Concierge. Ctrl/Cmd+Enter to send.`}
                 rows={3}
-                className="w-full bg-transparent border border-white/20 focus:border-white outline-none
-                           px-4 py-3 text-sm resize-none font-sans placeholder:text-white/40"
+                className="w-full bg-white border border-neutral-300 focus:border-neutral-900 outline-none
+                           px-4 py-3 text-sm resize-none font-sans text-neutral-900 placeholder:text-neutral-400 rounded"
                 disabled={sending}
               />
               <div className="flex justify-between items-center mt-2">
-                <span className="text-xs text-white/40 font-mono">session {sessionId.slice(0, 8)}</span>
+                <span className="text-xs text-neutral-500 font-mono">session {sessionId.slice(0, 8)}</span>
                 <button
                   onClick={send}
                   disabled={!input.trim() || sending}
-                  className="px-4 py-2 text-sm bg-white text-black disabled:bg-white/20 disabled:text-white/40 hover:bg-white/90 transition-all"
+                  className="px-5 py-2 text-sm bg-neutral-900 text-neutral-50 disabled:bg-neutral-300 disabled:text-neutral-500 hover:bg-neutral-700 transition-all rounded"
                 >
                   Send
                 </button>
@@ -257,15 +254,15 @@ export default function ConciergeChatClient({ brandId, brandSlug, brandName, bra
         </section>
 
         {/* Memories sidebar */}
-        <aside className="hidden md:flex w-96 border-l border-white/10 flex-col min-h-0">
-          <div className="border-b border-white/10 px-4 py-3 flex items-center justify-between">
-            <span className="font-mono text-xs uppercase tracking-[0.2em] text-white/60">
+        <aside className="hidden md:flex w-96 bg-white border-l border-neutral-200 flex-col min-h-0">
+          <div className="border-b border-neutral-200 px-4 py-3 flex items-center justify-between">
+            <span className="font-mono text-xs uppercase tracking-[0.2em] text-neutral-700">
               Live memories · {memories.length}
             </span>
             <select
               value={memFilter}
               onChange={(e) => setMemFilter(e.target.value)}
-              className="bg-black border border-white/20 text-xs font-mono text-white/80 px-2 py-1"
+              className="bg-white border border-neutral-300 text-xs font-mono text-neutral-900 px-2 py-1 rounded"
             >
               <option value="all">All</option>
               {Object.entries(TYPE_LABEL).map(([k, v]) => (
@@ -275,26 +272,26 @@ export default function ConciergeChatClient({ brandId, brandSlug, brandName, bra
           </div>
           <div className="flex-1 overflow-y-auto px-4 py-3 space-y-3">
             {filtered.length === 0 && (
-              <p className="text-white/40 text-xs font-mono">No memories yet.</p>
+              <p className="text-neutral-500 text-xs font-mono">No memories yet.</p>
             )}
             {filtered.map((m) => (
-              <div key={m.id} className="border border-white/10 p-3 text-xs">
+              <div key={m.id} className="bg-neutral-50 border border-neutral-200 rounded p-3 text-xs">
                 <div className="flex justify-between items-start gap-2 mb-1">
-                  <span className="font-mono uppercase tracking-wider text-white/50 text-[10px]">
+                  <span className="font-mono uppercase tracking-wider text-neutral-600 text-[10px]">
                     {TYPE_LABEL[m.type] ?? m.type}
                   </span>
                   {m.valid_until && (
-                    <span className="text-white/40 text-[10px]">
+                    <span className="text-neutral-500 text-[10px]">
                       until {new Date(m.valid_until).toISOString().slice(0, 10)}
                     </span>
                   )}
                 </div>
-                <div className="text-white/90 mb-1">{m.title}</div>
-                <div className="text-white/60 leading-relaxed">{m.body}</div>
+                <div className="text-neutral-900 font-medium mb-1">{m.title}</div>
+                <div className="text-neutral-700 leading-relaxed">{m.body}</div>
                 {m.tags.length > 0 && (
                   <div className="mt-2 flex flex-wrap gap-1">
                     {m.tags.map((t) => (
-                      <span key={t} className="text-[10px] font-mono text-white/50 border border-white/10 px-1.5 py-0.5">
+                      <span key={t} className="text-[10px] font-mono text-neutral-600 bg-white border border-neutral-200 px-1.5 py-0.5 rounded">
                         {t}
                       </span>
                     ))}
