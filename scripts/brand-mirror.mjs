@@ -455,6 +455,11 @@ const BRANDS = {
     // (retail_sku, original_release, authenticator, provenance).
     merchantType:    'reseller_authenticated',
     defaultAuthenticationStatus: 'Authenticated by Stadium Goods in-house sneaker authentication team (SoHo NYC, since 2015; ~47,000 sq ft NJ authentication warehouse). Every pair is inspected and tagged before shipping.',
+    // Category hint flows into rrg_brands.brand_data.category_hint and is
+    // read by scripts/enhance-descriptions.mjs resolveCategory() so the
+    // watches/footwear/bags-specific attribute schema is used for every
+    // product without relying on title keyword matches.
+    categoryHint:    'footwear',
     socialLinks:     { instagram: 'https://www.instagram.com/stadiumgoods/' },
     bannerLocal:     null,
     logoLocal:       null,
@@ -607,6 +612,7 @@ async function ensureBrand() {
     const brandData = {
       merchant_type: merchantType,
       ...(CFG.defaultAuthenticationStatus ? { default_authentication_status: CFG.defaultAuthenticationStatus } : {}),
+      ...(CFG.categoryHint ? { category_hint: CFG.categoryHint } : {}),
     };
     const insert = {
       id,
@@ -641,6 +647,7 @@ async function ensureBrand() {
       ...existingData,
       merchant_type: merchantType,
       ...(CFG.defaultAuthenticationStatus ? { default_authentication_status: CFG.defaultAuthenticationStatus } : {}),
+      ...(CFG.categoryHint ? { category_hint: CFG.categoryHint } : {}),
     };
     const updates = { brand_data: nextData };
     if (!existing.shopify_domain && CFG.shopifyDomain) {

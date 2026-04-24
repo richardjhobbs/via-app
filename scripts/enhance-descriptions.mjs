@@ -231,10 +231,153 @@ Return strict JSON (no prose around it):
   "enhanced_description": "150-200 word agent-readable paragraph encoding style + provenance + condition + resale-value signal + buyer-fit. No invented facts. No size advice."
 }`;
 
-function systemPromptFor(mode) {
-  if (mode === 'reseller_authenticated') return RESELLER_PROMPT;
-  if (mode === 'curated_consignment')    return CONSIGNMENT_PROMPT;
-  return DIRECT_BRAND_PROMPT;
+// ── Category-aware attribute blocks ──────────────────────────────────
+//
+// Mode (direct_brand | reseller_authenticated | curated_consignment)
+// controls what commerce-side anchors the prompt demands (authentication,
+// condition, resale context). Category controls the PRODUCT-side
+// attribute schema — sneakers need outsole + colorway code, watches
+// need movement + reference, fragrances need concentration + volume.
+//
+// Categories compose WITH modes: a reseller_authenticated + watch
+// product gets the reseller anchors (retail_sku, original_release,
+// authentication_status, alt_names) PLUS the watch-specific attributes
+// (reference_number, movement, case_size_mm, complications, etc.).
+//
+// Keep the garment schema as the base and layer category-specific
+// fields on top — keeps the prompt diff small per category and lets
+// a generic product fall through to the garment shape cleanly.
+
+const CATEGORY_ATTRIBUTE_BLOCKS = {
+  footwear: `## Footwear-specific attributes
+Add these to the attributes object (alongside the mode's schema):
+  "silhouette":         "model family (e.g. 'Air Jordan 1 high-top basketball', 'Nike Dunk Low', 'Adidas Samba')",
+  "upper_materials":    "leather / suede / mesh / knit / synthetic — per panel if mixed",
+  "outsole":            "rubber herringbone / cupsole / vulcanised / translucent / etc.",
+  "colorway_code":      "official colorway name if any (e.g. 'Chicago', 'Bred', 'Alaska')",
+  "sizing_notation":    "primary size system used in the listing (US | UK | EU | JP)",
+  "collab_mark":        "visible collab markers on the shoe itself (zip ties, stitched text, overlays)"`,
+
+  garment: `## Garment-specific attributes (already covered by the mode schema's fabric_guess/fit/silhouette/construction/graphic_details/styling_hints — no category block needed unless the item is specialised)`,
+
+  outerwear: `## Outerwear-specific attributes
+  "closure":            "zip / snap / double-breasted / toggles / hook-and-eye",
+  "lining":             "material + weight (quilted / shearling / cotton / unlined)",
+  "insulation":         "if any (down fill weight, synthetic, wool pile, none)",
+  "weatherproofing":    "waterproof / water-repellent / windproof / breathable / none",
+  "collar_hood":        "collar style + hood presence/removable"`,
+
+  jewellery: `## Jewellery-specific attributes
+  "metal":              "material + finish (e.g. '18k yellow gold polished', 'sterling silver matte')",
+  "stones":             "gemstones with cut + setting if any",
+  "carat_weight":       "total carat weight if stones are present",
+  "hallmark":           "any hallmark / maker's stamp visible",
+  "piece_type":         "ring / necklace / bracelet / earrings / cufflinks / brooch",
+  "scale":              "subtle | statement | oversized"`,
+
+  bag: `## Bag / accessory attributes
+  "material":           "leather type / canvas / nylon / etc. with finish",
+  "hardware":           "metal tone + finish (gold / silver / gunmetal — polished / brushed)",
+  "closure":            "zip / magnetic / flap / drawstring / open",
+  "dimensions":         "W x H x D in cm or inches",
+  "interior":           "lining material + pocket count",
+  "carry":              "shoulder / crossbody / top-handle / clutch / tote / backpack"`,
+
+  fragrance: `## Fragrance-specific attributes
+  "concentration":      "parfum | eau de parfum | eau de toilette | eau de cologne | extrait",
+  "volume_ml":          "size in ml",
+  "nose":               "perfumer name if known",
+  "launch_year":        "year of first release",
+  "scent_family":       "woody / floral / citrus / gourmand / oriental / etc.",
+  "top_heart_base":     "top / heart / base notes if discernible or documented"`,
+
+  watch: `## Watch-specific attributes
+  "reference_number":   "canonical reference (e.g. 'Ref. 5711/1A-010', '116500LN') — put in retail_sku too",
+  "movement":           "manual / automatic / quartz, with caliber if known",
+  "case_material":      "steel / gold / titanium / ceramic / two-tone",
+  "case_size_mm":       "diameter in millimetres",
+  "bracelet":           "bracelet or strap material + integration",
+  "complications":      ["sub-dial / date / chronograph / GMT / moonphase / etc."],
+  "dial_colour":        "dial base colour + indices treatment"`,
+
+  eyewear: `## Eyewear-specific attributes
+  "frame_material":     "acetate / metal / titanium / wood / combination",
+  "lens_type":          "optical / sunglass / prescription-ready / polarised / transition",
+  "shape":              "aviator / round / square / cat-eye / shield / wayfarer / etc.",
+  "fit_size":           "frame width / lens width in mm if available"`,
+
+  home: `## Home / hardware attributes
+  "dimensions":         "W x H x D in cm or inches",
+  "materials":          "primary materials with finish",
+  "power_spec":         "voltage / wattage / battery if electronic, else null",
+  "category_subtype":   "speaker / light / vase / textile / furniture / etc."`,
+
+  art_digital: `## Art / digital-asset attributes
+  "medium":             "format (jpg / mp4 / gltf / print / physical mixed media)",
+  "edition_position":   "e.g. '1/25' if editioned, or 'open edition' / '1/1'",
+  "signature_status":   "hand-signed / digitally-signed / unsigned",
+  "creator_statement":  "1-2 sentences: creator's intent or context",
+  "display_notes":      "viewing requirements (resolution / aspect / medium)"`,
+
+  accessory: `## Small accessory attributes
+  "material":           "primary material with finish",
+  "piece_type":         "belt / scarf / wallet / cap / hat / gloves / tie / etc.",
+  "dimensions":         "relevant dimensions (length / width)",
+  "signature_marker":   "visible brand/hardware/stitch detail that confirms provenance"`,
+};
+
+// Category detection. Ordering matters — most specific first.
+function resolveCategory(product, brand) {
+  const attrs = product.product_attributes ?? {};
+  // Explicit category set upstream wins
+  if (typeof attrs.category === 'string' && CATEGORY_ATTRIBUTE_BLOCKS[attrs.category]) {
+    return attrs.category;
+  }
+
+  const haystack = [
+    attrs.product_type,
+    attrs.vendor,
+    product.title,
+    Array.isArray(attrs.shopify_tags) ? attrs.shopify_tags.join(' ') : '',
+    (brand.brand_data ?? {}).category_hint ?? '',
+  ].filter(Boolean).join(' ').toLowerCase();
+
+  // Keyword patterns → category. Patterns cover plurals (shoes, rings, bags)
+  // where the category singular is ambiguous (e.g. "bag" vs "bags"), and
+  // popular sneaker model names for footwear recall when product_type
+  // isn't seeded (common for older rows imported before brand-mirror
+  // started seeding product_type from Shopify).
+  const patterns = [
+    [/\b(sneakers?|trainers?|shoes?|footwear|boots?|loafers?|sandals?|slippers?|flip[\s-]?flops?|jordan|dunks?|yeezys?|samba|gazelle|air\s+(?:force|max|jordan)|stan\s+smith|superstar|chuck\s+taylor|vans\b)\b/, 'footwear'],
+    [/\b(jackets?|coats?|parkas?|anoraks?|windbreakers?|bombers?|blazers?|overshirts?|puffers?|vests?|gilets?)\b/, 'outerwear'],
+    [/\b(rings?|necklaces?|bracelets?|earrings?|pendants?|cufflinks?|brooch(?:es)?|chains?|signets?|jewellery|jewelry)\b/, 'jewellery'],
+    [/\b(bags?|totes?|clutch(?:es)?|backpacks?|rucksacks?|purses?|handbags?|cross[\s-]?bod(?:y|ies)|holdalls?|duffels?)\b/, 'bag'],
+    [/\b(fragrances?|perfumes?|parfum|eau\s+de|cologne|edt|edp)\b/, 'fragrance'],
+    [/\b(watch(?:es)?|chronographs?|timepieces?|wrist[\s-]?watch(?:es)?)\b/, 'watch'],
+    [/\b(sunglasses|eyewear|glasses|spectacles?|goggles?)\b/, 'eyewear'],
+    [/\b(speakers?|lamps?|lights?|rugs?|vases?|candles?|throws?|cushions?|chairs?|stools?|tables?|furniture|homeware)\b/, 'home'],
+    [/\b(prints?|artworks?|sculptures?|tapestr(?:y|ies)|editions?|gltf|mp4|digital\s+assets?)\b/, 'art_digital'],
+    [/\b(belts?|scarves|scarfs?|wallets?|caps?|hats?|gloves?|ties?|pocket\s*squares?|beanies?|bandanas?|socks?|ties|scarf)\b/, 'accessory'],
+    [/\b(tees?|t-shirts?|shirts?|hoodies?|sweatshirts?|sweaters?|jumpers?|knits?|trousers?|pants?|shorts?|jeans?|denim|skirts?|dress(?:es)?|gowns?|suits?)\b/, 'garment'],
+  ];
+  for (const [re, cat] of patterns) {
+    if (re.test(haystack)) return cat;
+  }
+  // Default — treat as generic garment / unstructured product. Attribute
+  // block is empty for 'garment' so nothing is added.
+  return 'garment';
+}
+
+function systemPromptFor(mode, category) {
+  let basePrompt;
+  if (mode === 'reseller_authenticated') basePrompt = RESELLER_PROMPT;
+  else if (mode === 'curated_consignment') basePrompt = CONSIGNMENT_PROMPT;
+  else basePrompt = DIRECT_BRAND_PROMPT;
+
+  const categoryBlock = category && CATEGORY_ATTRIBUTE_BLOCKS[category]
+    ? `\n\n${CATEGORY_ATTRIBUTE_BLOCKS[category]}`
+    : '';
+  return basePrompt + categoryBlock;
 }
 
 function resolveMerchantMode(product, brand) {
@@ -276,7 +419,7 @@ async function getImageBase64(path) {
   return { base64: buf.toString('base64'), mime };
 }
 
-async function analyzeProduct(product, image, mode) {
+async function analyzeProduct(product, image, mode, category) {
   const seeded = product.product_attributes ?? {};
   // Tell the LLM what's already on the row so it preserves auto-seeded
   // facts (vendor, SKU, tags) and only augments / refines.
@@ -297,17 +440,19 @@ async function analyzeProduct(product, image, mode) {
 BRAND'S ORIGINAL DESCRIPTION:
 ${product.description ?? '(none provided)'}
 
+RESOLVED CATEGORY: ${category}
+
 AUTO-SEEDED FACTS (preserve these verbatim unless clearly wrong):
 ${seededDump || '(none)'}
 
-Analyze the image and return the JSON structure specified in the system prompt. For fields already present in the auto-seeded facts, keep the seeded value; only add the ones not yet populated.`,
+Analyze the image and return the JSON structure specified in the system prompt. Include the mode-level attributes AND the category-specific attributes for "${category}". For fields already present in the auto-seeded facts, keep the seeded value; only add the ones not yet populated.`,
     },
   ];
 
   const resp = await anthropic.messages.create({
     model:       'claude-sonnet-4-5',
     max_tokens:  1500,
-    system:      systemPromptFor(mode),
+    system:      systemPromptFor(mode, category),
     messages:    [{ role: 'user', content: userContent }],
   });
 
@@ -373,7 +518,8 @@ function loadPrecomputed(pathArg) {
     }
 
     const mode = resolveMerchantMode(p, brand);
-    console.log(`[analyze ${label}] mode=${mode}`);
+    const category = resolveCategory(p, brand);
+    console.log(`[analyze ${label}] mode=${mode} category=${category}`);
 
     try {
       let result;
@@ -393,7 +539,7 @@ function loadPrecomputed(pathArg) {
         console.log(`  [precomputed] using enrichment from ${PRECOMPUTED_PATH}`);
       } else {
         const image = await getImageBase64(p.jpeg_storage_path);
-        result = await analyzeProduct(p, image, mode);
+        result = await analyzeProduct(p, image, mode, category);
       }
       totalTokensIn  += result.tokensIn;
       totalTokensOut += result.tokensOut;
@@ -408,12 +554,12 @@ function loadPrecomputed(pathArg) {
         // retail_sku / vendor / tags — we deep-prefer seeded strings.
         const seeded = p.product_attributes ?? {};
         const merged = { ...result.attributes, ...seeded };
-        // For keys where the LLM has new content and seeded is missing,
-        // keep the LLM value. The spread order above keeps seeded on top
-        // where keys collide — that's the intent.
         for (const [k, v] of Object.entries(result.attributes)) {
           if (merged[k] == null || merged[k] === '') merged[k] = v;
         }
+        // Record the resolved category so future MCP projections / filters
+        // can use it without re-running the detector.
+        merged.category = category;
 
         const { error } = await db.from('rrg_submissions').update({
           enhanced_description: result.enhancedDescription,
