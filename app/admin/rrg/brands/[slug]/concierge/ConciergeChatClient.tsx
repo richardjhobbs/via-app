@@ -185,8 +185,9 @@ export default function ConciergeChatClient({ brandId, brandSlug, brandName, bra
         <section className="flex-1 flex flex-col min-w-0">
           <div
             ref={scrollRef}
-            className="flex-1 overflow-y-auto px-6 py-6 space-y-4"
+            className="flex-1 overflow-y-auto px-6 py-6"
           >
+            <div className="max-w-3xl mx-auto space-y-4">
             {messages.length === 0 && (
               <div className="text-white/40 font-mono text-xs">
                 Tell your concierge about an event, promotion, stock note, or brand update.
@@ -225,29 +226,32 @@ export default function ConciergeChatClient({ brandId, brandSlug, brandName, bra
             {sending && (
               <div className="text-white/40 font-mono text-xs">thinking…</div>
             )}
+            </div>
           </div>
 
           {/* Composer */}
           <div className="border-t border-white/10 px-6 py-4">
-            <textarea
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              onKeyDown={onKeyDown}
-              placeholder={`Message ${brandName} Concierge — Ctrl/Cmd+Enter to send`}
-              rows={3}
-              className="w-full bg-transparent border border-white/20 focus:border-white outline-none
-                         px-4 py-3 text-sm resize-none font-sans placeholder:text-white/40"
-              disabled={sending}
-            />
-            <div className="flex justify-between items-center mt-2">
-              <span className="text-xs text-white/40 font-mono">session {sessionId.slice(0, 8)}</span>
-              <button
-                onClick={send}
-                disabled={!input.trim() || sending}
-                className="px-4 py-2 text-sm bg-white text-black disabled:bg-white/20 disabled:text-white/40 hover:bg-white/90 transition-all"
-              >
-                Send
-              </button>
+            <div className="max-w-3xl mx-auto">
+              <textarea
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                onKeyDown={onKeyDown}
+                placeholder={`Message ${brandName} Concierge — Ctrl/Cmd+Enter to send`}
+                rows={3}
+                className="w-full bg-transparent border border-white/20 focus:border-white outline-none
+                           px-4 py-3 text-sm resize-none font-sans placeholder:text-white/40"
+                disabled={sending}
+              />
+              <div className="flex justify-between items-center mt-2">
+                <span className="text-xs text-white/40 font-mono">session {sessionId.slice(0, 8)}</span>
+                <button
+                  onClick={send}
+                  disabled={!input.trim() || sending}
+                  className="px-4 py-2 text-sm bg-white text-black disabled:bg-white/20 disabled:text-white/40 hover:bg-white/90 transition-all"
+                >
+                  Send
+                </button>
+              </div>
             </div>
           </div>
         </section>
