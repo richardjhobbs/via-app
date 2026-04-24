@@ -32,6 +32,12 @@ interface Props {
   brandSlug: string;
   brandName: string;
   brandHeadline: string | null;
+  /**
+   * When true, renders with a bounded height suitable for embedding inside
+   * another admin page tab (no full-viewport takeover, no top-level header).
+   * Used by the Brand Admin Concierge tab at /brand/[slug]/admin.
+   */
+  embedded?: boolean;
 }
 
 const TYPE_LABEL: Record<string, string> = {
@@ -43,7 +49,10 @@ const TYPE_LABEL: Record<string, string> = {
   general: 'General',
 };
 
-export default function ConciergeChatClient({ brandId, brandSlug, brandName, brandHeadline }: Props) {
+export default function ConciergeChatClient({ brandId, brandSlug, brandName, brandHeadline, embedded = false }: Props) {
+  const rootClass = embedded
+    ? 'h-[calc(100vh-14rem)] min-h-[520px] bg-neutral-50 text-neutral-900 flex flex-col border border-neutral-200 rounded-lg overflow-hidden'
+    : 'min-h-screen bg-neutral-50 text-neutral-900 flex flex-col';
   const [authState, setAuthState] = useState<'checking' | 'ok' | 'denied'>('checking');
   const [deniedReason, setDeniedReason] = useState<string>('');
   const [messages, setMessages] = useState<Msg[]>([]);
@@ -137,7 +146,7 @@ export default function ConciergeChatClient({ brandId, brandSlug, brandName, bra
 
   if (authState === 'checking') {
     return (
-      <div className="min-h-screen bg-neutral-50 text-neutral-900 flex items-center justify-center">
+      <div className={embedded ? 'h-[calc(100vh-14rem)] min-h-[520px] bg-neutral-50 text-neutral-900 flex items-center justify-center border border-neutral-200 rounded-lg' : 'min-h-screen bg-neutral-50 text-neutral-900 flex items-center justify-center'}>
         <p className="font-mono text-neutral-500 text-sm">Loading...</p>
       </div>
     );
@@ -145,7 +154,7 @@ export default function ConciergeChatClient({ brandId, brandSlug, brandName, bra
 
   if (authState === 'denied') {
     return (
-      <div className="min-h-screen bg-neutral-50 text-neutral-900 flex items-center justify-center px-6">
+      <div className={embedded ? 'h-[calc(100vh-14rem)] min-h-[520px] bg-neutral-50 text-neutral-900 flex items-center justify-center px-6 border border-neutral-200 rounded-lg' : 'min-h-screen bg-neutral-50 text-neutral-900 flex items-center justify-center px-6'}>
         <div className="max-w-md text-center">
           <h1 className="text-sm font-mono uppercase tracking-[0.3em] text-neutral-600 mb-3">Access denied</h1>
           <p className="text-neutral-800 mb-6">{deniedReason}</p>
@@ -162,19 +171,21 @@ export default function ConciergeChatClient({ brandId, brandSlug, brandName, bra
   const filtered = memFilter === 'all' ? memories : memories.filter((m) => m.type === memFilter);
 
   return (
-    <div className="min-h-screen bg-neutral-50 text-neutral-900 flex flex-col">
-      {/* Header */}
-      <header className="bg-white border-b border-neutral-200 px-6 py-4 flex justify-between items-center">
-        <div className="flex items-baseline gap-3">
-          <span className="font-mono text-xs uppercase tracking-[0.3em] text-neutral-900">
-            {brandName} · Concierge
-          </span>
-          {brandHeadline && <span className="text-xs text-neutral-500 hidden md:inline">{brandHeadline}</span>}
-        </div>
-        <a href="/admin/rrg" className="text-xs text-neutral-600 hover:text-neutral-900 transition-colors font-mono">
-          ← Admin
-        </a>
-      </header>
+    <div className={rootClass}>
+      {/* Header — hidden in embedded mode (the brand-admin tab bar is the header) */}
+      {!embedded && (
+        <header className="bg-white border-b border-neutral-200 px-6 py-4 flex justify-between items-center">
+          <div className="flex items-baseline gap-3">
+            <span className="font-mono text-xs uppercase tracking-[0.3em] text-neutral-900">
+              {brandName} · Concierge
+            </span>
+            {brandHeadline && <span className="text-xs text-neutral-500 hidden md:inline">{brandHeadline}</span>}
+          </div>
+          <a href="/admin/rrg" className="text-xs text-neutral-600 hover:text-neutral-900 transition-colors font-mono">
+            ← Admin
+          </a>
+        </header>
+      )}
 
       {/* Body: chat + memory sidebar */}
       <div className="flex flex-1 min-h-0">

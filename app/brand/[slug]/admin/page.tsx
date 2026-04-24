@@ -6,6 +6,7 @@ import BrandTermsModal from '@/components/rrg/BrandTermsModal';
 import HelpTip from '@/components/rrg/HelpTip';
 import { brandAdmin, briefFields, voucherFields } from '@/lib/rrg/help-content';
 import { BRAND_TC_VERSION } from '@/lib/rrg/terms';
+import ConciergeChatClient from '@/app/admin/rrg/brands/[slug]/concierge/ConciergeChatClient';
 
 // ── Types ──────────────────────────────────────────────────────────
 interface Submission {
@@ -94,7 +95,7 @@ interface Brief {
   response_count: number;
 }
 
-type Tab = 'submissions' | 'products' | 'briefs' | 'vouchers' | 'sales' | 'settings';
+type Tab = 'submissions' | 'products' | 'briefs' | 'vouchers' | 'sales' | 'concierge' | 'settings';
 
 export default function BrandAdminPage() {
   const ctx = useBrandContext();
@@ -106,7 +107,7 @@ export default function BrandAdminPage() {
     <>
       {/* Tabs */}
       <div className="border-b border-white/10 px-6 flex gap-6">
-        {(['submissions', 'products', 'briefs', 'vouchers', 'sales', 'settings'] as Tab[]).map((t) => (
+        {(['submissions', 'products', 'briefs', 'vouchers', 'sales', 'concierge', 'settings'] as Tab[]).map((t) => (
           <button
             key={t}
             onClick={() => setTab(t)}
@@ -128,6 +129,24 @@ export default function BrandAdminPage() {
         {tab === 'briefs'      && <><div className="flex items-center gap-2 mb-4"><h2 className="text-xs font-mono text-white/40 uppercase tracking-widest">Briefs</h2><HelpTip {...brandAdmin.briefs} /></div><BriefsTab brandId={ctx.brandId} /></>}
         {tab === 'vouchers'    && <VouchersTab brandId={ctx.brandId} />}
         {tab === 'sales'       && <SalesTab brandId={ctx.brandId} />}
+        {tab === 'concierge'   && (
+          <>
+            <div className="flex items-center gap-2 mb-4">
+              <h2 className="text-xs font-mono text-white/40 uppercase tracking-widest">Concierge</h2>
+            </div>
+            <p className="text-sm text-white/60 mb-4 max-w-2xl">
+              Chat with {ctx.brandName}&apos;s concierge to lock in events, promotions, stock notes, brand updates, or policies.
+              Anything you confirm here is shared with the Telegram concierge on the next customer message.
+            </p>
+            <ConciergeChatClient
+              brandId={ctx.brandId}
+              brandSlug={ctx.brandSlug}
+              brandName={ctx.brandName}
+              brandHeadline={null}
+              embedded={true}
+            />
+          </>
+        )}
         {tab === 'settings'    && <><div className="flex items-center gap-2 mb-4"><h2 className="text-xs font-mono text-white/40 uppercase tracking-widest">Settings</h2><HelpTip {...brandAdmin.settings} /></div><SettingsTab brandId={ctx.brandId} /></>}
       </div>
     </>
