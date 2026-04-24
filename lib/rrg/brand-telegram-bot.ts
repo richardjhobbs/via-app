@@ -419,6 +419,41 @@ async function handleBrandCommand(
 // ── LLM fallback ─────────────────────────────────────────────────────
 
 /**
+ * Pull live (active, non-expired) brand memories locked in via the admin
+ * concierge chat. These are customer-facing facts (events, stock notes,
+ * promotions, brand updates, policies) whose `body` is written in the
+ * brand voice by the admin. Mirrors the RPC call used at
+ * app/api/brand/[brandId]/concierge/memories/route.ts.
+ */
+async function getLiveMemoriesContext(brand: RrgBrand): Promise<string> {
+  const { data, error } = await db.rpc('rrg_brand_memory_list', {
+    p_slug: brand.slug,
+    p_type: null,
+    p_tag: null,
+    p_include_expired: false,
+    p_limit: 20,
+  });
+  if (error) {
+    console.warn(`[brand-tg-bot] memory list error for ${brand.slug}: ${error.message}`);
+    return '';
+  }
+  const rows = (data as Record<string, unknown>[] | null) ?? [];
+  if (rows.length === 0) return '';
+
+  const lines = rows.map((m) => {
+    const validUntil = m.valid_until as string | null;
+    const expires = validUntil
+      ? ` (valid until ${new Date(validUntil).toISOString().slice(0, 16).replace('T', ' ')} UTC)`
+      : '';
+    const tags = Array.isArray(m.tags) && (m.tags as string[]).length > 0
+      ? ` [${(m.tags as string[]).join(', ')}]`
+      : '';
+    return `- ${String(m.type).toUpperCase()}: ${m.title}${expires}${tags}\n  ${m.body}`;
+  });
+  return lines.join('\n\n');
+}
+
+/**
  * Build a rich per-product context block using enhanced_description +
  * product_attributes (agent-ready fields populated by enhance-descriptions.mjs).
  * Falls back gracefully when those fields are null.
@@ -459,13 +494,18 @@ async function callBrandLLM(
     return `Try /products or /sizes for quick info about ${brand.name}!`;
   }
 
-  // Rich context: agent-ready product details (enhanced description + structured attributes) + sizing chart
-  const [productCtx, sizing] = await Promise.all([
+  // Rich context: agent-ready product details (enhanced description + structured attributes) + sizing chart + live brand memories
+  const [productCtx, sizing, memories] = await Promise.all([
     getAgentReadyProductContext(brand),
     getSizingSummary(brand),
+    getLiveMemoriesContext(brand),
   ]);
 
-  const context = `PRODUCTS (agent-ready details — fabric, fit, colors, sizes):\n${productCtx}\n\nSIZING CHART:\n${sizing}`;
+  const memoriesBlock = memories
+    ? `\n\nLIVE BRAND MEMORIES (locked in by ${brand.name} admin. Treat as authoritative. Surface when relevant to the customer's question):\n${memories}`
+    : '';
+
+  const context = `PRODUCTS (agent-ready details — fabric, fit, colors, sizes):\n${productCtx}\n\nSIZING CHART:\n${sizing}${memoriesBlock}`;
 
   const resp = await fetch('https://api.together.xyz/v1/chat/completions', {
     method: 'POST',
