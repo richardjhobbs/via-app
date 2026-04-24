@@ -71,21 +71,24 @@ export interface ShippingQuoteError {
 async function decryptStorefrontToken(brand: RrgBrand): Promise<string | null> {
   if (!brand.shopify_storefront_token_encrypted) return null;
 
+  const raw = brand.shopify_storefront_token_encrypted;
+
+  // Dev-mode / pre-encryption path: plaintext tokens are stored with a
+  // "plaintext:" prefix. Accept these without requiring RRG_ENCRYPTION_KEY,
+  // since there is nothing to decrypt. Real AES-GCM / sodium decryption is
+  // still gated on the key below.
+  if (raw.startsWith('plaintext:')) {
+    return raw.slice('plaintext:'.length);
+  }
+
   const key = process.env.RRG_ENCRYPTION_KEY;
   if (!key) {
-    console.warn('[shopify-shipping] RRG_ENCRYPTION_KEY not set — cannot decrypt token');
+    console.warn('[shopify-shipping] RRG_ENCRYPTION_KEY not set, cannot decrypt token');
     return null;
   }
 
   try {
-    // Placeholder decryption — swap in the real AES-GCM or sodium flow
-    // already used elsewhere in the project when the token is stored.
-    // For now, support plaintext-in-encrypted-column as an explicit dev mode.
-    const raw = brand.shopify_storefront_token_encrypted;
-    if (raw.startsWith('plaintext:')) {
-      return raw.slice('plaintext:'.length);
-    }
-    // TODO: implement real decryption when token provisioning is added.
+    // TODO: implement real decryption when encrypted-at-rest provisioning lands.
     console.warn('[shopify-shipping] Encrypted token decryption not yet implemented');
     return null;
   } catch (e) {
