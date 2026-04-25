@@ -440,6 +440,21 @@ const BRANDS = {
       },
     },
   },
+  'phil-leywood': {
+    slug:            'phil-leywood',
+    name:            'Phil Leywood',
+    wallet:          '0x734a25fB869ab6415b78bbe9a39f1f99dab349E7',
+    email:           'richard@entrepot.asia',
+    headline:        'Hand-made gloves and upcycled leather accessories. Small-batch, made in the USA.',
+    description:     'Phil Leywood is a USA-based maker founded in 2011 by Paul Wood, building hand-made premium gloves and upcycled leather accessories one small batch at a time from goatskin, deerskin and hairsheep sourced worldwide. Paul came out of Sector9 Skateboards’ apparel program and the technical slide-glove world of downhill skateboarding; the first Philleywood sample was tested over 5,200 miles of cycling across 13 months before the brand launched. The line covers driving, motorcycle, cycling and half-finger gloves alongside leather glove straps and keychains, including ongoing collaborations with Triple Aught Design and Mission Workshop. Lifetime guarantee on the gloves. Mirror of philleywood.com’s gloves-and-accessories collection, checkout in USDC on Base, ships from Phil Leywood USA.',
+    website:         'https://philleywood.com',
+    shopifyDomain:   'philleywood.com',
+    supportsSizing:  true, // gloves run XS-XXL; straps/keychains are single-size
+    // USD native, 1:1 USDC (no sourceCurrency / priceToUsdcRate needed)
+    socialLinks:     { instagram: 'https://www.instagram.com/philleywood/' },
+    bannerLocal:     null,
+    logoLocal:       null,
+  },
   'stadium-goods': {
     slug:            'stadium-goods',
     name:            'Stadium Goods',
