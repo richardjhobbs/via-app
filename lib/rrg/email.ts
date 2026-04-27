@@ -244,81 +244,89 @@ interface PhysicalPurchaseEmailData {
 
 /** Send to brand: new physical product order with buyer shipping address */
 export async function sendPhysicalOrderToBrand(data: PhysicalPurchaseEmailData): Promise<void> {
-  const scanBase  = 'https://basescan.org';
+  const scanBase   = 'https://basescan.org';
   const listingUrl = `${SITE_URL}/rrg/drop/${data.tokenId}`;
+  // Maison design tokens (inlined for email client compatibility)
+  // bg=#faf7f2  paper=#ffffff  ink=#1a1612  ink-2=#3a342d  ink-3=#6e665c
+  // accent=#6b4f3a  line=#e8e3db  line-strong=#d5cfc7  live=#2b9a66
   const html = `
 <!DOCTYPE html>
 <html>
 <head><meta charset="utf-8"><style>
-  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #0a0a0a; color: #e5e5e5; margin: 0; padding: 40px 20px; }
-  .card { max-width: 560px; margin: 0 auto; background: #111; border: 1px solid #222; border-radius: 12px; overflow: hidden; }
-  .header { background: #0a0a0a; padding: 24px 28px 20px; border-bottom: 3px solid #d4ff22; display: flex; justify-content: space-between; align-items: flex-start; }
-  .header-brand { font-size: 11px; color: #888; letter-spacing: 2px; text-transform: uppercase; margin: 0 0 6px; }
-  .header h1 { margin: 0; font-size: 22px; color: #e5e5e5; font-weight: 700; }
-  .header-badge { background: #d4ff22; color: #0a0a0a; font-size: 10px; font-weight: 700; letter-spacing: 1.5px; text-transform: uppercase; padding: 4px 10px; border-radius: 4px; white-space: nowrap; }
-  .body { padding: 28px; }
-  .section-label { font-size: 10px; color: #888; letter-spacing: 2px; text-transform: uppercase; margin: 0 0 10px; }
-  .block { background: #1a1a1a; border: 1px solid #2a2a2a; border-radius: 8px; padding: 18px; margin: 0 0 16px; }
-  .row { display: flex; justify-content: space-between; align-items: baseline; padding: 7px 0; border-bottom: 1px solid #252525; font-size: 13px; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', sans-serif; background: #faf7f2; color: #1a1612; margin: 0; padding: 40px 20px; }
+  .wrap { max-width: 560px; margin: 0 auto; }
+  .wordmark { font-family: Georgia, 'Times New Roman', serif; font-size: 18px; font-weight: 400; font-style: italic; letter-spacing: 0.01em; color: #1a1612; margin: 0 0 24px; }
+  .card { background: #ffffff; border: 1px solid #e8e3db; }
+  .card-head { padding: 28px 32px 24px; border-bottom: 1px solid #e8e3db; display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; }
+  .card-head h1 { margin: 0 0 4px; font-family: Georgia, 'Times New Roman', serif; font-size: 24px; font-weight: 400; font-style: italic; color: #1a1612; letter-spacing: -0.01em; }
+  .card-head .sub { font-family: 'Courier New', Courier, monospace; font-size: 10px; letter-spacing: 0.16em; text-transform: uppercase; color: #6e665c; margin: 0; }
+  .badge { font-family: 'Courier New', Courier, monospace; font-size: 9px; letter-spacing: 0.16em; text-transform: uppercase; padding: 5px 10px; background: #6b4f3a; color: #ffffff; white-space: nowrap; flex-shrink: 0; }
+  .body { padding: 28px 32px; }
+  .lbl { font-family: 'Courier New', Courier, monospace; font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; color: #6e665c; margin: 0 0 14px; }
+  .block { border: 1px solid #e8e3db; margin: 0 0 20px; }
+  .row { display: flex; justify-content: space-between; align-items: baseline; padding: 10px 16px; border-bottom: 1px solid #e8e3db; font-size: 13px; }
   .row:last-child { border-bottom: none; }
-  .lbl { color: #777; }
-  .val { color: #e5e5e5; font-weight: 500; text-align: right; }
-  .val-accent { color: #d4ff22; font-weight: 700; font-size: 16px; }
-  .val-mono { font-family: monospace; font-size: 12px; }
-  .address-block { white-space: pre-line; font-family: monospace; font-size: 13px; color: #e5e5e5; line-height: 1.7; }
-  .revenue-block { background: #0d1f00; border: 1px solid #3a5c00; border-radius: 8px; padding: 18px; margin: 0 0 16px; }
-  .revenue-label { font-size: 10px; color: #86c300; letter-spacing: 2px; text-transform: uppercase; margin: 0 0 8px; }
-  .revenue-amount { font-size: 28px; font-weight: 700; color: #d4ff22; margin: 0 0 4px; }
-  .revenue-note { font-size: 12px; color: #86c300; margin: 0; }
-  .btn { display: inline-block; background: #d4ff22; color: #0a0a0a; padding: 11px 22px; border-radius: 6px; text-decoration: none; font-weight: 700; font-size: 13px; }
-  .footer { padding: 20px 28px; border-top: 1px solid #1a1a1a; font-size: 12px; color: #555; display: flex; justify-content: space-between; }
+  .row-lbl { color: #6e665c; }
+  .row-val { color: #1a1612; font-weight: 500; text-align: right; }
+  .row-val-accent { color: #6b4f3a; font-weight: 600; font-size: 15px; }
+  .row-val-mono { font-family: 'Courier New', Courier, monospace; font-size: 11px; }
+  .address-block { padding: 14px 16px; font-family: 'Courier New', Courier, monospace; font-size: 13px; color: #1a1612; line-height: 1.7; white-space: pre-line; }
+  .revenue-block { border: 1px solid #d5cfc7; background: #f7f3ee; padding: 20px 24px; margin: 0 0 20px; }
+  .revenue-lbl { font-family: 'Courier New', Courier, monospace; font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; color: #6b4f3a; margin: 0 0 8px; }
+  .revenue-amount { font-family: Georgia, 'Times New Roman', serif; font-size: 36px; font-weight: 400; color: #1a1612; margin: 0 0 4px; letter-spacing: -0.02em; }
+  .revenue-note { font-size: 12px; color: #6e665c; margin: 0; }
+  .btn { display: inline-block; background: #1a1612; color: #faf7f2; padding: 12px 22px; text-decoration: none; font-size: 12px; letter-spacing: 0.04em; font-weight: 500; }
+  .footer { margin-top: 32px; padding-top: 20px; border-top: 1px solid #e8e3db; font-family: 'Courier New', Courier, monospace; font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase; color: #6e665c; display: flex; justify-content: space-between; }
 </style></head>
 <body>
-<div class="card">
-  <div class="header">
-    <div>
-      <p class="header-brand">Real Real Genuine</p>
-      <h1>New Order</h1>
+<div class="wrap">
+  <p class="wordmark">Real Real Genuine</p>
+  <div class="card">
+    <div class="card-head">
+      <div>
+        <h1>New order</h1>
+        <p class="sub">Action required — please arrange shipping</p>
+      </div>
+      <span class="badge">New order</span>
     </div>
-    <span class="header-badge">Action required</span>
-  </div>
-  <div class="body">
+    <div class="body">
 
-    <p class="section-label">Order details</p>
-    <div class="block">
-      <div class="row"><span class="lbl">Product</span><span class="val">${escHtml(data.title)}</span></div>
-      <div class="row"><span class="lbl">Token</span><span class="val val-mono">#${data.tokenId}</span></div>
-      ${data.selectedSize ? `<div class="row"><span class="lbl">Size</span><span class="val val-accent">${escHtml(data.selectedSize)}</span></div>` : ''}
-      ${data.priceUsdc != null ? `<div class="row"><span class="lbl">Price paid</span><span class="val">$${data.priceUsdc.toFixed(2)} USDC</span></div>` : ''}
+      <p class="lbl">Order details</p>
+      <div class="block">
+        <div class="row"><span class="row-lbl">Product</span><span class="row-val">${escHtml(data.title)}</span></div>
+        <div class="row"><span class="row-lbl">Token</span><span class="row-val row-val-mono">#${data.tokenId}</span></div>
+        ${data.selectedSize ? `<div class="row"><span class="row-lbl">Size</span><span class="row-val row-val-accent">${escHtml(data.selectedSize)}</span></div>` : ''}
+        ${data.priceUsdc != null ? `<div class="row"><span class="row-lbl">Price paid</span><span class="row-val">$${data.priceUsdc.toFixed(2)} USDC</span></div>` : ''}
+      </div>
+
+      ${data.brandRevenueUsdc != null ? `
+      <div class="revenue-block">
+        <p class="revenue-lbl">Your revenue — auto-distributed</p>
+        <p class="revenue-amount">$${data.brandRevenueUsdc.toFixed(2)} USDC</p>
+        <p class="revenue-note">Sent automatically to your brand wallet on Base. No action needed.</p>
+      </div>` : ''}
+
+      <p class="lbl">Ship to</p>
+      <div class="block">
+        <div class="address-block">${escHtml(data.shippingName)}
+${escHtml(data.shippingAddress)}</div>
+        ${data.shippingPhone ? `<div class="row"><span class="row-lbl">Phone</span><span class="row-val">${escHtml(data.shippingPhone)}</span></div>` : ''}
+        ${data.buyerEmail ? `<div class="row"><span class="row-lbl">Buyer email</span><span class="row-val">${escHtml(data.buyerEmail)}</span></div>` : ''}
+      </div>
+
+      <p class="lbl">On-chain proof</p>
+      <div class="block">
+        <div class="row"><span class="row-lbl">Transaction</span><span class="row-val"><a href="${scanBase}/tx/${data.txHash}" style="color:#6b4f3a; font-family:'Courier New',Courier,monospace; font-size:11px">${data.txHash.slice(0, 14)}…${data.txHash.slice(-6)}</a></span></div>
+      </div>
+
+      <p style="font-size:13px;color:#3a342d;line-height:1.6;margin:0 0 20px">Please arrange delivery to the address above. If you have any questions about this order, reply to this email.</p>
+      <a class="btn" href="${listingUrl}">View listing on RRG →</a>
+
     </div>
-
-    ${data.brandRevenueUsdc != null ? `
-    <div class="revenue-block">
-      <p class="revenue-label">Your revenue (auto-distributed)</p>
-      <p class="revenue-amount">$${data.brandRevenueUsdc.toFixed(2)} USDC</p>
-      <p class="revenue-note">Already sent to your brand wallet on Base.</p>
-    </div>` : ''}
-
-    <p class="section-label">Ship to</p>
-    <div class="block">
-      <p class="address-block">${escHtml(data.shippingName)}
-${escHtml(data.shippingAddress)}</p>
-      ${data.shippingPhone ? `<div class="row" style="margin-top:10px;padding-top:10px;border-top:1px solid #252525"><span class="lbl">Phone</span><span class="val">${escHtml(data.shippingPhone)}</span></div>` : ''}
-      ${data.buyerEmail ? `<div class="row" style="margin-top:4px"><span class="lbl">Buyer email</span><span class="val">${escHtml(data.buyerEmail)}</span></div>` : ''}
-    </div>
-
-    <p class="section-label">On-chain proof</p>
-    <div class="block">
-      <div class="row"><span class="lbl">Transaction</span><span class="val"><a href="${scanBase}/tx/${data.txHash}" style="color:#d4ff22; font-family:monospace; font-size:11px">${data.txHash.slice(0, 14)}…${data.txHash.slice(-6)}</a></span></div>
-    </div>
-
-    <p style="margin:20px 0 8px;font-size:13px;color:#ccc">Please arrange delivery to the address above. If you have any questions about this order, reply to this email.</p>
-    <a class="btn" href="${listingUrl}" style="margin-top:4px">View listing on RRG →</a>
-
   </div>
   <div class="footer">
     <span>RRG — Real Real Genuine</span>
-    <a href="${SITE_URL}/rrg" style="color:#555; text-decoration:none">realrealgenuine.com</a>
+    <a href="${SITE_URL}/rrg" style="color:#6e665c; text-decoration:none">realrealgenuine.com</a>
   </div>
 </div>
 </body>
@@ -341,81 +349,83 @@ export async function sendPhysicalPurchaseToBuyer(data: PhysicalPurchaseEmailDat
 <!DOCTYPE html>
 <html>
 <head><meta charset="utf-8"><style>
-  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #0a0a0a; color: #e5e5e5; margin: 0; padding: 40px 20px; }
-  .card { max-width: 560px; margin: 0 auto; background: #111; border: 1px solid #222; border-radius: 12px; overflow: hidden; }
-  .header { background: #0a0a0a; padding: 24px 28px 20px; border-bottom: 3px solid #d4ff22; }
-  .header-brand { font-size: 11px; color: #888; letter-spacing: 2px; text-transform: uppercase; margin: 0 0 6px; }
-  .header h1 { margin: 0; font-size: 22px; color: #e5e5e5; font-weight: 700; }
-  .body { padding: 28px; }
-  .section-label { font-size: 10px; color: #888; letter-spacing: 2px; text-transform: uppercase; margin: 0 0 10px; }
-  .block { background: #1a1a1a; border: 1px solid #2a2a2a; border-radius: 8px; padding: 18px; margin: 0 0 16px; }
-  .row { display: flex; justify-content: space-between; align-items: baseline; padding: 7px 0; border-bottom: 1px solid #252525; font-size: 13px; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', sans-serif; background: #faf7f2; color: #1a1612; margin: 0; padding: 40px 20px; }
+  .wrap { max-width: 560px; margin: 0 auto; }
+  .wordmark { font-family: Georgia, 'Times New Roman', serif; font-size: 18px; font-weight: 400; font-style: italic; letter-spacing: 0.01em; color: #1a1612; margin: 0 0 24px; }
+  .card { background: #ffffff; border: 1px solid #e8e3db; }
+  .card-head { padding: 28px 32px 24px; border-bottom: 1px solid #e8e3db; }
+  .card-head .eyebrow { font-family: 'Courier New', Courier, monospace; font-size: 10px; letter-spacing: 0.16em; text-transform: uppercase; color: #2b9a66; margin: 0 0 6px; }
+  .card-head h1 { margin: 0; font-family: Georgia, 'Times New Roman', serif; font-size: 26px; font-weight: 400; font-style: italic; color: #1a1612; letter-spacing: -0.01em; }
+  .body { padding: 28px 32px; }
+  .lbl { font-family: 'Courier New', Courier, monospace; font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; color: #6e665c; margin: 0 0 12px; }
+  .block { border: 1px solid #e8e3db; margin: 0 0 20px; }
+  .row { display: flex; justify-content: space-between; align-items: baseline; padding: 10px 16px; border-bottom: 1px solid #e8e3db; font-size: 13px; }
   .row:last-child { border-bottom: none; }
-  .lbl { color: #777; }
-  .val { color: #e5e5e5; font-weight: 500; text-align: right; }
-  .val-accent { color: #d4ff22; font-weight: 700; font-size: 16px; }
-  .address-block { white-space: pre-line; font-family: monospace; font-size: 13px; color: #e5e5e5; line-height: 1.7; }
-  .download-block { background: #0d1a2e; border: 1px solid #1e3a5f; border-radius: 8px; padding: 20px; margin: 0 0 16px; text-align: center; }
-  .download-note { font-size: 12px; color: #777; margin: 10px 0 0; }
-  .btn-primary { display: inline-block; background: #d4ff22; color: #0a0a0a; padding: 12px 28px; border-radius: 6px; text-decoration: none; font-weight: 700; font-size: 14px; }
-  .btn-secondary { display: inline-block; color: #d4ff22; padding: 10px 20px; border-radius: 6px; text-decoration: none; font-weight: 600; font-size: 13px; border: 1px solid #d4ff2244; }
-  .physical-block { background: #0d1f00; border: 1px solid #3a5c00; border-radius: 8px; padding: 18px; margin: 0 0 16px; }
-  .physical-label { font-size: 10px; color: #86c300; letter-spacing: 2px; text-transform: uppercase; margin: 0 0 8px; }
-  .physical-block p { margin: 0 0 6px; font-size: 13px; color: #ccc; line-height: 1.6; }
-  .physical-block p:last-child { margin: 0; }
-  .footer { padding: 20px 28px; border-top: 1px solid #1a1a1a; font-size: 12px; color: #555; display: flex; justify-content: space-between; }
+  .row-lbl { color: #6e665c; }
+  .row-val { color: #1a1612; font-weight: 500; text-align: right; }
+  .row-val-accent { color: #6b4f3a; font-weight: 600; font-size: 15px; }
+  .address-block { padding: 14px 16px; font-family: 'Courier New', Courier, monospace; font-size: 13px; color: #1a1612; line-height: 1.7; white-space: pre-line; }
+  .download-block { border: 1px solid #e8e3db; padding: 24px 32px; margin: 0 0 20px; text-align: center; background: #f7f3ee; }
+  .download-note { font-family: 'Courier New', Courier, monospace; font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; color: #6e665c; margin: 12px 0 0; }
+  .btn-primary { display: inline-block; background: #1a1612; color: #faf7f2; padding: 12px 28px; text-decoration: none; font-size: 13px; letter-spacing: 0.04em; font-weight: 500; }
+  .btn-ghost { display: inline-block; border: 1px solid #d5cfc7; color: #3a342d; padding: 10px 20px; text-decoration: none; font-size: 12px; letter-spacing: 0.04em; }
+  .shipping-note { border-left: 3px solid #6b4f3a; padding: 14px 18px; background: #f7f3ee; margin: 0 0 20px; }
+  .shipping-note p { margin: 0 0 6px; font-size: 13px; color: #3a342d; line-height: 1.6; }
+  .shipping-note p:last-child { margin: 0; }
+  .footer { margin-top: 32px; padding-top: 20px; border-top: 1px solid #e8e3db; font-family: 'Courier New', Courier, monospace; font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase; color: #6e665c; display: flex; justify-content: space-between; }
 </style></head>
 <body>
-<div class="card">
-  <div class="header">
-    <p class="header-brand">Real Real Genuine</p>
-    <h1>Order Confirmed</h1>
-  </div>
-  <div class="body">
-
-    <p class="section-label">Your purchase</p>
-    <div class="block">
-      <div class="row"><span class="lbl">Product</span><span class="val">${escHtml(data.title)}</span></div>
-      <div class="row"><span class="lbl">Brand</span><span class="val">${escHtml(data.brandName)}</span></div>
-      <div class="row"><span class="lbl">Token</span><span class="val" style="font-family:monospace;font-size:12px">#${data.tokenId}</span></div>
-      ${data.selectedSize ? `<div class="row"><span class="lbl">Size</span><span class="val val-accent">${escHtml(data.selectedSize)}</span></div>` : ''}
-      ${data.priceUsdc != null ? `<div class="row"><span class="lbl">Paid</span><span class="val">$${data.priceUsdc.toFixed(2)} USDC</span></div>` : ''}
+<div class="wrap">
+  <p class="wordmark">Real Real Genuine</p>
+  <div class="card">
+    <div class="card-head">
+      <p class="eyebrow">Order confirmed</p>
+      <h1>${escHtml(data.title)}</h1>
     </div>
+    <div class="body">
 
-    <p class="section-label">Your digital files</p>
-    <div class="download-block">
-      <a class="btn-primary" href="${data.downloadUrl}">Download files →</a>
-      <p class="download-note">Link expires in 24 hours — download now.</p>
+      <p class="lbl">Your purchase</p>
+      <div class="block">
+        <div class="row"><span class="row-lbl">Brand</span><span class="row-val">${escHtml(data.brandName)}</span></div>
+        <div class="row"><span class="row-lbl">Token</span><span class="row-val" style="font-family:'Courier New',Courier,monospace;font-size:11px">#${data.tokenId}</span></div>
+        ${data.selectedSize ? `<div class="row"><span class="row-lbl">Size</span><span class="row-val row-val-accent">${escHtml(data.selectedSize)}</span></div>` : ''}
+        ${data.priceUsdc != null ? `<div class="row"><span class="row-lbl">Paid</span><span class="row-val">$${data.priceUsdc.toFixed(2)} USDC</span></div>` : ''}
+      </div>
+
+      <p class="lbl">Digital files</p>
+      <div class="download-block">
+        <a class="btn-primary" href="${data.downloadUrl}">Download your files →</a>
+        <p class="download-note">⚠ Link expires in 24 hours</p>
+      </div>
+
+      <p class="lbl">Physical product</p>
+      <div class="shipping-note">
+        <p>${escHtml(data.brandName)} will arrange delivery to the address below. Allow a few days for dispatch confirmation from the brand.</p>
+        ${data.brandContactEmail ? `<p>Questions about shipping? <a href="mailto:${escHtml(data.brandContactEmail)}" style="color:#6b4f3a">${escHtml(data.brandContactEmail)}</a></p>` : ''}
+      </div>
+
+      <p class="lbl">Delivery address</p>
+      <div class="block">
+        <div class="address-block">${escHtml(data.shippingName)}
+${escHtml(data.shippingAddress)}</div>
+        ${data.shippingPhone ? `<div class="row"><span class="row-lbl">Phone</span><span class="row-val">${escHtml(data.shippingPhone)}</span></div>` : ''}
+      </div>
+
+      <p class="lbl">On-chain proof</p>
+      <div class="block">
+        <div class="row"><span class="row-lbl">Transaction</span><span class="row-val"><a href="${scanBase}/tx/${data.txHash}" style="color:#6b4f3a;font-family:'Courier New',Courier,monospace;font-size:11px">${data.txHash.slice(0, 14)}…${data.txHash.slice(-6)}</a></span></div>
+        ${data.ipfsMetadataUrl ? `<div class="row"><span class="row-lbl">IPFS metadata</span><span class="row-val"><a href="${data.ipfsMetadataUrl}" style="color:#6b4f3a;font-size:12px">View →</a></span></div>` : ''}
+      </div>
+
+      <div style="text-align:center;margin-top:8px">
+        <a class="btn-ghost" href="${listingUrl}">View listing →</a>
+      </div>
+
     </div>
-
-    <p class="section-label">Physical product</p>
-    <div class="physical-block">
-      <p class="physical-label">Shipping</p>
-      <p>${escHtml(data.brandName)} will arrange delivery to the address below. Allow a few days for dispatch confirmation from the brand.</p>
-      ${data.brandContactEmail ? `<p>Questions? Contact the brand: <a href="mailto:${escHtml(data.brandContactEmail)}" style="color:#86c300">${escHtml(data.brandContactEmail)}</a></p>` : ''}
-    </div>
-
-    <p class="section-label">Delivery address</p>
-    <div class="block">
-      <p class="address-block">${escHtml(data.shippingName)}
-${escHtml(data.shippingAddress)}</p>
-      ${data.shippingPhone ? `<div class="row" style="margin-top:10px;padding-top:10px;border-top:1px solid #252525"><span class="lbl">Phone</span><span class="val">${escHtml(data.shippingPhone)}</span></div>` : ''}
-    </div>
-
-    <p class="section-label">On-chain proof</p>
-    <div class="block">
-      <div class="row"><span class="lbl">Transaction</span><span class="val"><a href="${scanBase}/tx/${data.txHash}" style="color:#d4ff22; font-family:monospace; font-size:11px">${data.txHash.slice(0, 14)}…${data.txHash.slice(-6)}</a></span></div>
-      ${data.ipfsMetadataUrl ? `<div class="row"><span class="lbl">IPFS metadata</span><span class="val"><a href="${data.ipfsMetadataUrl}" style="color:#d4ff22; font-size:12px">View →</a></span></div>` : ''}
-    </div>
-
-    <div style="text-align:center;margin-top:8px">
-      <a class="btn-secondary" href="${listingUrl}">View listing →</a>
-    </div>
-
   </div>
   <div class="footer">
     <span>RRG — Real Real Genuine</span>
-    <a href="${SITE_URL}/rrg" style="color:#555; text-decoration:none">realrealgenuine.com</a>
+    <a href="${SITE_URL}/rrg" style="color:#6e665c;text-decoration:none">realrealgenuine.com</a>
   </div>
 </div>
 </body>

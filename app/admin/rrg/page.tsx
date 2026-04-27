@@ -129,7 +129,7 @@ interface Contributor {
   brands_contributed: string[];
 }
 
-type Tab = 'briefs' | 'submissions' | 'drops' | 'brands' | 'concierge' | 'distributions' | 'contributors' | 'referrals';
+type Tab = 'briefs' | 'submissions' | 'drops' | 'brands' | 'concierge' | 'distributions' | 'contributors' | 'referrals' | 'purchases';
 
 // ── Main component ─────────────────────────────────────────────────────
 export default function AdminPage() {
@@ -228,7 +228,7 @@ export default function AdminPage() {
 
       {/* Tabs */}
       <div className="border-b border-white/10 px-6 flex gap-6">
-        {(['submissions', 'briefs', 'drops', 'brands', 'concierge', 'distributions', 'contributors', 'referrals'] as Tab[]).map((t) => (
+        {(['submissions', 'briefs', 'drops', 'brands', 'concierge', 'distributions', 'contributors', 'referrals', 'purchases'] as Tab[]).map((t) => (
           <button
             key={t}
             onClick={() => setTab(t)}
@@ -253,6 +253,7 @@ export default function AdminPage() {
         {tab === 'distributions' && <DistributionsTab />}
         {tab === 'contributors' && <ContributorsTab />}
         {tab === 'referrals'    && <ReferralsTab />}
+        {tab === 'purchases'    && <PurchasesTab />}
       </div>
     </div>
   );
@@ -2428,6 +2429,151 @@ function ReferralsTab() {
                   )}
                 </Fragment>
               ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Purchases Tab ──────────────────────────────────────────────────────
+function PurchasesTab() {
+  const [purchases, setPurchases] = useState<Record<string, unknown>[]>([]);
+  const [loading,   setLoading]   = useState(true);
+  const [physical,  setPhysical]  = useState(true);
+  const [acting,    setActing]    = useState<string | null>(null);
+  const [msg,       setMsg]       = useState('');
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    const qs = physical ? '?physical=1' : '';
+    const res = await fetch(`/api/rrg/admin/purchases${qs}`);
+    const data = await res.json();
+    setPurchases(data.purchases ?? []);
+    setLoading(false);
+  }, [physical]);
+
+  useEffect(() => { load(); }, [load]);
+
+  const resend = async (purchaseId: string, to: 'brand' | 'buyer' | 'both') => {
+    setActing(`${purchaseId}-${to}`);
+    setMsg('');
+    const res = await fetch('/api/rrg/admin/purchases/resend-email', {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ purchaseId, to }),
+    });
+    const data = await res.json();
+    if (res.ok) {
+      const note = data.note ? ` (${data.note})` : '';
+      setMsg(`Sent to: ${data.sent.join(', ')}${note} ✓`);
+    } else {
+      setMsg(`Error: ${data.error}`);
+    }
+    setActing(null);
+  };
+
+  return (
+    <div className="p-6">
+      <div className="flex justify-between items-center mb-6">
+        <h2 className="text-lg font-mono uppercase tracking-wider">Purchases</h2>
+        <div className="flex gap-4 items-center">
+          <label className="flex items-center gap-2 text-xs font-mono text-white/70 cursor-pointer">
+            <input type="checkbox" checked={physical} onChange={e => setPhysical(e.target.checked)} />
+            Physical only
+          </label>
+          <button onClick={load} className="text-xs border border-white/30 px-3 py-1.5 hover:border-white transition-all">
+            Refresh
+          </button>
+        </div>
+      </div>
+
+      {msg && (
+        <div className={`mb-4 p-3 border text-sm font-mono ${msg.startsWith('Error') ? 'border-red-400/30 text-red-400' : 'border-green-400/30 text-green-400'}`}>
+          {msg}
+        </div>
+      )}
+
+      {loading ? (
+        <div className="text-white/40 font-mono text-sm">Loading…</div>
+      ) : purchases.length === 0 ? (
+        <div className="text-white/40 font-mono text-sm">No purchases found.</div>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="text-white/40 font-mono text-xs uppercase border-b border-white/10">
+                <th className="text-left py-2 pr-3">Date</th>
+                <th className="text-left py-2 pr-3">Token</th>
+                <th className="text-left py-2 pr-3">Title</th>
+                <th className="text-left py-2 pr-3">Ship to</th>
+                <th className="text-left py-2 pr-3">Buyer email</th>
+                <th className="text-right py-2 pr-3">USDC</th>
+                <th className="text-right py-2">Resend</th>
+              </tr>
+            </thead>
+            <tbody>
+              {purchases.map((p) => {
+                const sub = p.rrg_submissions as Record<string, unknown> | null;
+                const title = (sub?.title as string) ?? '—';
+                const isPhysical = Boolean(sub?.is_physical_product);
+                const id = p.id as string;
+                const buyerEmail = p.buyer_email as string | null;
+                const shipName = p.shipping_name as string | null;
+                return (
+                  <tr key={id} className="border-b border-white/10 hover:bg-white/5">
+                    <td className="py-2 pr-3 font-mono text-xs text-white/60">
+                      {new Date(p.created_at as string).toLocaleDateString('en-GB')}
+                    </td>
+                    <td className="py-2 pr-3 font-mono text-xs">
+                      <a href={`/rrg/drop/${p.token_id}`} target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:underline">
+                        #{p.token_id as number}
+                      </a>
+                    </td>
+                    <td className="py-2 pr-3 text-xs max-w-[160px] truncate">{title}</td>
+                    <td className="py-2 pr-3 text-xs font-mono text-white/70">
+                      {shipName ? `${shipName}, ${p.shipping_country as string ?? ''}` : <span className="text-white/30">—</span>}
+                    </td>
+                    <td className="py-2 pr-3 text-xs font-mono text-white/70">
+                      {buyerEmail ?? <span className="text-white/30">none</span>}
+                    </td>
+                    <td className="py-2 pr-3 text-right font-mono text-xs tabular-nums">
+                      ${parseFloat(p.amount_usdc as string).toFixed(2)}
+                    </td>
+                    <td className="py-2 text-right">
+                      {isPhysical ? (
+                        <div className="flex gap-1 justify-end">
+                          <button
+                            onClick={() => resend(id, 'brand')}
+                            disabled={!!acting}
+                            className="px-2 py-1 text-xs border border-white/20 hover:border-white/50 disabled:opacity-40 transition-all"
+                          >
+                            {acting === `${id}-brand` ? '…' : 'Brand'}
+                          </button>
+                          <button
+                            onClick={() => resend(id, 'buyer')}
+                            disabled={!!acting || !buyerEmail}
+                            title={!buyerEmail ? 'No buyer email on record' : undefined}
+                            className="px-2 py-1 text-xs border border-white/20 hover:border-white/50 disabled:opacity-40 transition-all"
+                          >
+                            {acting === `${id}-buyer` ? '…' : 'Buyer'}
+                          </button>
+                          <button
+                            onClick={() => resend(id, 'both')}
+                            disabled={!!acting}
+                            className="px-2 py-1 text-xs border border-amber-400/30 text-amber-400 hover:border-amber-400 disabled:opacity-40 transition-all"
+                          >
+                            {acting === `${id}-both` ? '…' : 'Both'}
+                          </button>
+                        </div>
+                      ) : (
+                        <span className="text-white/20 text-xs">digital</span>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
