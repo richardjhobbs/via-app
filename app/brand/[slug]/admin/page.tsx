@@ -44,6 +44,12 @@ interface Distribution {
   platform_usdc: string;
   split_type: string;
   status: string;
+  notes: string | null;
+  token_id: number | null;
+  buyer_email: string | null;
+  shipping_name: string | null;
+  shipping_country: string | null;
+  submission_title: string | null;
 }
 
 interface SalesStats {
@@ -99,7 +105,7 @@ type Tab = 'submissions' | 'products' | 'briefs' | 'vouchers' | 'sales' | 'conci
 
 export default function BrandAdminPage() {
   const ctx = useBrandContext();
-  const [tab, setTab] = useState<Tab>('submissions');
+  const [tab, setTab] = useState<Tab>('settings');
 
   if (!ctx) return null;
 
@@ -107,7 +113,7 @@ export default function BrandAdminPage() {
     <>
       {/* Tabs */}
       <div className="border-b border-white/10 px-6 flex gap-6">
-        {(['submissions', 'products', 'briefs', 'vouchers', 'sales', 'concierge', 'settings'] as Tab[]).map((t) => (
+        {(['settings', 'products', 'sales', 'concierge', 'vouchers', 'briefs', 'submissions'] as Tab[]).map((t) => (
           <button
             key={t}
             onClick={() => setTab(t)}
@@ -1620,31 +1626,28 @@ function SalesTab({ brandId }: { brandId: string }) {
   const [distributions, setDistributions] = useState<Distribution[]>([]);
   const [loading,       setLoading]       = useState(true);
 
-  useEffect(() => {
-    fetch(`/api/brand/${brandId}/sales`)
-      .then((r) => r.json())
-      .then((d) => {
-        setStats(d.stats || null);
-        setDistributions(d.distributions || []);
-        setLoading(false);
-      })
-      .catch(() => setLoading(false));
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const r = await fetch(`/api/brand/${brandId}/sales`);
+      const d = await r.json();
+      setStats(d.stats || null);
+      setDistributions(d.distributions || []);
+    } finally {
+      setLoading(false);
+    }
   }, [brandId]);
 
-  const splitLabel = (s: string) => {
-    const labels: Record<string, string> = {
-      'challenge_35_35_30':  'Challenge',
-      'brand_product_tiered': 'Product (Tiered)',
-      'brand_product_70_30': 'Product',
-      'rrg_challenge_35_65': 'RRG Challenge',
-      'legacy_70_30':        'Legacy',
-    };
-    return labels[s] || s;
-  };
+  useEffect(() => { load(); }, [load]);
 
   return (
     <div>
-      <h2 className="text-sm font-mono uppercase tracking-widest text-white/60 mb-6">Sales</h2>
+      <div className="flex justify-between items-center mb-6">
+        <h2 className="text-sm font-mono uppercase tracking-widest text-white/60">Sales</h2>
+        <button onClick={load} className="text-xs border border-white/30 px-3 py-1.5 hover:border-white transition-all font-mono">
+          Refresh
+        </button>
+      </div>
 
       {loading ? (
         <p className="text-white/40 text-sm font-mono">Loading…</p>
@@ -1668,43 +1671,79 @@ function SalesTab({ brandId }: { brandId: string }) {
             </div>
           )}
 
-          {/* Distribution list */}
+          {/* Table */}
           {distributions.length === 0 ? (
             <p className="text-white/40 text-sm font-mono">No sales yet.</p>
           ) : (
-            <div className="space-y-3">
-              {distributions.map((d) => (
-                <div key={d.id} className="p-4 border border-white/10">
-                  <div className="flex justify-between items-start mb-2">
-                    <span className="text-sm font-mono text-white/70">
-                      {splitLabel(d.split_type)}
-                    </span>
-                    <div className="flex items-center gap-3">
-                      <span className={`text-sm font-mono px-2 py-0.5 ${
-                        d.status === 'completed' ? 'bg-green-400/20 text-green-400' :
-                        d.status === 'pending'   ? 'bg-amber-400/20 text-amber-400' :
-                                                   'bg-red-400/20 text-red-400'
-                      }`}>
-                        {d.status.toUpperCase()}
-                      </span>
-                      <span className="text-sm text-white/40 font-mono">
-                        {new Date(d.created_at).toLocaleDateString()}
-                      </span>
-                    </div>
-                  </div>
-                  <div className="grid grid-cols-3 gap-2 text-sm font-mono">
-                    <span className="text-white/60">
-                      Total: <span className="text-white">${parseFloat(d.total_usdc).toFixed(2)}</span>
-                    </span>
-                    <span className="text-white/60">
-                      Your share: <span className="text-green-400">${parseFloat(d.brand_usdc).toFixed(2)}</span>
-                    </span>
-                    <span className="text-white/60">
-                      Platform: <span className="text-amber-400">${parseFloat(d.platform_usdc).toFixed(2)}</span>
-                    </span>
-                  </div>
-                </div>
-              ))}
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="text-white/40 font-mono text-xs uppercase border-b border-white/10">
+                    <th className="text-left py-2 pr-3">Date</th>
+                    <th className="text-left py-2 pr-3">Token</th>
+                    <th className="text-left py-2 pr-3">Title</th>
+                    <th className="text-left py-2 pr-3">Ship To</th>
+                    <th className="text-left py-2 pr-3">Buyer Email</th>
+                    <th className="text-right py-2 pr-3">Your Share</th>
+                    <th className="text-left py-2">Payout Tx</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {distributions.map((d) => {
+                    const txHash = d.notes?.split(' | ').find(h => h.startsWith('0x') && h.length > 20) ?? null;
+                    return (
+                      <tr key={d.id} className="border-b border-white/10 hover:bg-white/5">
+                        <td className="py-2 pr-3 font-mono text-xs text-white/60">
+                          {new Date(d.created_at).toLocaleDateString('en-GB')}
+                        </td>
+                        <td className="py-2 pr-3 font-mono text-xs">
+                          {d.token_id != null ? (
+                            <a href={`/rrg/drop/${d.token_id}`} target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:underline">
+                              #{d.token_id}
+                            </a>
+                          ) : (
+                            <span className="text-white/30">—</span>
+                          )}
+                        </td>
+                        <td className="py-2 pr-3 text-xs max-w-[160px] truncate">
+                          {d.submission_title ?? '—'}
+                        </td>
+                        <td className="py-2 pr-3 text-xs font-mono text-white/70">
+                          {d.shipping_name
+                            ? `${d.shipping_name}, ${d.shipping_country ?? ''}`
+                            : <span className="text-white/30">—</span>}
+                        </td>
+                        <td className="py-2 pr-3 text-xs font-mono text-white/70">
+                          {d.buyer_email ?? <span className="text-white/30">none</span>}
+                        </td>
+                        <td className="py-2 pr-3 text-right font-mono text-xs tabular-nums text-green-400">
+                          ${parseFloat(d.brand_usdc).toFixed(2)}
+                        </td>
+                        <td className="py-2 text-xs font-mono">
+                          {txHash ? (
+                            <a
+                              href={`https://basescan.org/tx/${txHash}`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-blue-400 hover:underline"
+                            >
+                              {txHash.slice(0, 8)}…{txHash.slice(-4)}
+                            </a>
+                          ) : d.status === 'completed' ? (
+                            <span className="text-white/30">on-chain</span>
+                          ) : (
+                            <span className={`px-1.5 py-0.5 text-xs ${
+                              d.status === 'pending' ? 'text-amber-400' : 'text-red-400'
+                            }`}>
+                              {d.status}
+                            </span>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
             </div>
           )}
         </>

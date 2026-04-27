@@ -16,17 +16,44 @@ export async function GET(
   try {
     const stats = await getBrandSalesStats(brandId);
 
-    // Get recent distributions for this brand
-    const { data: distributions, error } = await db
+    const { data: rows, error } = await db
       .from('rrg_distributions')
-      .select('*')
+      .select(`
+        *,
+        rrg_purchases (
+          token_id,
+          buyer_email,
+          shipping_name,
+          shipping_country,
+          rrg_submissions ( title )
+        )
+      `)
       .eq('brand_id', brandId)
       .order('created_at', { ascending: false })
-      .limit(50);
+      .limit(100);
 
     if (error) throw error;
 
-    return NextResponse.json({ stats, distributions: distributions || [] });
+    const distributions = (rows ?? []).map((row: Record<string, unknown>) => {
+      const purchase = row.rrg_purchases as {
+        token_id?: number | null;
+        buyer_email?: string | null;
+        shipping_name?: string | null;
+        shipping_country?: string | null;
+        rrg_submissions?: { title?: string | null } | null;
+      } | null;
+      const { rrg_purchases: _, ...rest } = row;
+      return {
+        ...rest,
+        token_id:         purchase?.token_id        ?? null,
+        buyer_email:      purchase?.buyer_email      ?? null,
+        shipping_name:    purchase?.shipping_name    ?? null,
+        shipping_country: purchase?.shipping_country ?? null,
+        submission_title: purchase?.rrg_submissions?.title ?? null,
+      };
+    });
+
+    return NextResponse.json({ stats, distributions });
   } catch (err) {
     console.error('[/api/brand/[brandId]/sales]', err);
     return NextResponse.json({ error: 'Failed to fetch sales' }, { status: 500 });
