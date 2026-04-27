@@ -38,6 +38,7 @@ interface Drop {
 interface Distribution {
   id: string;
   created_at: string;
+  purchase_id: string;
   total_usdc: string;
   creator_usdc: string;
   brand_usdc: string;
@@ -50,6 +51,7 @@ interface Distribution {
   shipping_name: string | null;
   shipping_country: string | null;
   submission_title: string | null;
+  is_physical: boolean;
 }
 
 interface SalesStats {
@@ -1625,6 +1627,8 @@ function SalesTab({ brandId }: { brandId: string }) {
   const [stats,         setStats]         = useState<SalesStats | null>(null);
   const [distributions, setDistributions] = useState<Distribution[]>([]);
   const [loading,       setLoading]       = useState(true);
+  const [acting,        setActing]        = useState<string | null>(null);
+  const [msg,           setMsg]           = useState('');
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -1640,6 +1644,24 @@ function SalesTab({ brandId }: { brandId: string }) {
 
   useEffect(() => { load(); }, [load]);
 
+  const resend = async (purchaseId: string, to: 'brand' | 'buyer' | 'both') => {
+    setActing(`${purchaseId}-${to}`);
+    setMsg('');
+    const res = await fetch(`/api/brand/${brandId}/sales/resend-email`, {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ purchaseId, to }),
+    });
+    const data = await res.json();
+    if (res.ok) {
+      const note = data.note ? ` (${data.note})` : '';
+      setMsg(`Sent to: ${data.sent.join(', ')}${note} ✓`);
+    } else {
+      setMsg(`Error: ${data.error}`);
+    }
+    setActing(null);
+  };
+
   return (
     <div>
       <div className="flex justify-between items-center mb-6">
@@ -1648,6 +1670,12 @@ function SalesTab({ brandId }: { brandId: string }) {
           Refresh
         </button>
       </div>
+
+      {msg && (
+        <div className={`mb-4 p-3 border text-sm font-mono ${msg.startsWith('Error') ? 'border-red-400/30 text-red-400' : 'border-green-400/30 text-green-400'}`}>
+          {msg}
+        </div>
+      )}
 
       {loading ? (
         <p className="text-white/40 text-sm font-mono">Loading…</p>
@@ -1685,12 +1713,14 @@ function SalesTab({ brandId }: { brandId: string }) {
                     <th className="text-left py-2 pr-3">Ship To</th>
                     <th className="text-left py-2 pr-3">Buyer Email</th>
                     <th className="text-right py-2 pr-3">Your Share</th>
-                    <th className="text-left py-2">Payout Tx</th>
+                    <th className="text-left py-2 pr-3">Payout Tx</th>
+                    <th className="text-right py-2">Resend</th>
                   </tr>
                 </thead>
                 <tbody>
                   {distributions.map((d) => {
-                    const txHash = d.notes?.split(' | ').find(h => h.startsWith('0x') && h.length > 20) ?? null;
+                    const brandEntry = d.notes?.split(' | ').find(h => h.startsWith('brand:'));
+                    const txHash     = brandEntry ? brandEntry.slice('brand:'.length) : null;
                     return (
                       <tr key={d.id} className="border-b border-white/10 hover:bg-white/5">
                         <td className="py-2 pr-3 font-mono text-xs text-white/60">
@@ -1719,7 +1749,7 @@ function SalesTab({ brandId }: { brandId: string }) {
                         <td className="py-2 pr-3 text-right font-mono text-xs tabular-nums text-green-400">
                           ${parseFloat(d.brand_usdc).toFixed(2)}
                         </td>
-                        <td className="py-2 text-xs font-mono">
+                        <td className="py-2 pr-3 text-xs font-mono">
                           {txHash ? (
                             <a
                               href={`https://basescan.org/tx/${txHash}`}
@@ -1732,11 +1762,39 @@ function SalesTab({ brandId }: { brandId: string }) {
                           ) : d.status === 'completed' ? (
                             <span className="text-white/30">on-chain</span>
                           ) : (
-                            <span className={`px-1.5 py-0.5 text-xs ${
-                              d.status === 'pending' ? 'text-amber-400' : 'text-red-400'
-                            }`}>
+                            <span className={`text-xs ${d.status === 'pending' ? 'text-amber-400' : 'text-red-400'}`}>
                               {d.status}
                             </span>
+                          )}
+                        </td>
+                        <td className="py-2 text-right">
+                          {d.is_physical ? (
+                            <div className="flex gap-1 justify-end">
+                              <button
+                                onClick={() => resend(d.purchase_id, 'brand')}
+                                disabled={!!acting}
+                                className="px-2 py-1 text-xs border border-white/20 hover:border-white/50 disabled:opacity-40 transition-all font-mono"
+                              >
+                                {acting === `${d.purchase_id}-brand` ? '…' : 'Brand'}
+                              </button>
+                              <button
+                                onClick={() => resend(d.purchase_id, 'buyer')}
+                                disabled={!!acting || !d.buyer_email}
+                                title={!d.buyer_email ? 'No buyer email on record' : undefined}
+                                className="px-2 py-1 text-xs border border-white/20 hover:border-white/50 disabled:opacity-40 transition-all font-mono"
+                              >
+                                {acting === `${d.purchase_id}-buyer` ? '…' : 'Buyer'}
+                              </button>
+                              <button
+                                onClick={() => resend(d.purchase_id, 'both')}
+                                disabled={!!acting}
+                                className="px-2 py-1 text-xs border border-amber-400/30 text-amber-400 hover:border-amber-400 disabled:opacity-40 transition-all font-mono"
+                              >
+                                {acting === `${d.purchase_id}-both` ? '…' : 'Both'}
+                              </button>
+                            </div>
+                          ) : (
+                            <span className="text-white/20 text-xs font-mono">digital</span>
                           )}
                         </td>
                       </tr>

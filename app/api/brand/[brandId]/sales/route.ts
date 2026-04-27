@@ -25,7 +25,7 @@ export async function GET(
           buyer_email,
           shipping_name,
           shipping_country,
-          rrg_submissions ( title )
+          rrg_submissions ( title, is_physical_product )
         )
       `)
       .eq('brand_id', brandId)
@@ -40,16 +40,17 @@ export async function GET(
         buyer_email?: string | null;
         shipping_name?: string | null;
         shipping_country?: string | null;
-        rrg_submissions?: { title?: string | null } | null;
+        rrg_submissions?: { title?: string | null; is_physical_product?: boolean | null } | null;
       } | null;
       const { rrg_purchases: _, ...rest } = row;
       return {
         ...rest,
-        token_id:         purchase?.token_id        ?? null,
-        buyer_email:      purchase?.buyer_email      ?? null,
-        shipping_name:    purchase?.shipping_name    ?? null,
-        shipping_country: purchase?.shipping_country ?? null,
-        submission_title: purchase?.rrg_submissions?.title ?? null,
+        token_id:           purchase?.token_id              ?? null,
+        buyer_email:        purchase?.buyer_email            ?? null,
+        shipping_name:      purchase?.shipping_name          ?? null,
+        shipping_country:   purchase?.shipping_country       ?? null,
+        submission_title:   purchase?.rrg_submissions?.title ?? null,
+        is_physical:        purchase?.rrg_submissions?.is_physical_product ?? false,
       };
     });
 
