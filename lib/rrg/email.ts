@@ -80,7 +80,7 @@ export async function sendApprovalNotification({
       <div class="meta-row"><span class="meta-label">Revenue wallet:</span><span class="wallet">${creatorWallet}</span></div>
     </div>
     <p>Sales revenue (70%) is sent automatically to your wallet with no further steps from you.</p>
-    <p>Share the link below — every sale goes straight to your wallet.</p>
+    <p>Share the link below. Every sale goes straight to your wallet.</p>
     <a class="btn" href="${dropUrl}">View your listing →</a>
   </div>
   <div class="footer"><a href="${SITE_URL}/rrg" style="color:#e5e5e5; text-decoration:none">Browse all listings</a></div>
@@ -90,7 +90,7 @@ export async function sendApprovalNotification({
 
   await sendEmail({
     to,
-    subject: `Your creation is live on RRG — "${title}"`,
+    subject: `Your creation is live on RRG: "${title}"`,
     html,
   });
 }
@@ -161,7 +161,7 @@ export async function sendFileDeliveryEmail({
 
   await sendEmail({
     to,
-    subject: `Your RRG listing is ready — "${title}"`,
+    subject: `Your RRG listing is ready: "${title}"`,
     html,
   });
 }
@@ -204,7 +204,7 @@ export async function sendRejectionNotification({
       <div class="reason-label">Feedback</div>
       <div class="reason-text">${escHtml(reason)}</div>
     </div>` : ''}
-    <p>We encourage you to refine and resubmit — we'd love to see more of your work.</p>
+    <p>We encourage you to refine and resubmit. We'd love to see more of your work.</p>
     <a class="btn" href="${SITE_URL}/rrg/submit">Submit again →</a>
   </div>
   <div class="footer"><a href="${SITE_URL}/rrg" style="color:#e5e5e5; text-decoration:none">Browse all listings</a></div>
@@ -214,7 +214,7 @@ export async function sendRejectionNotification({
 
   await sendEmail({
     to,
-    subject: `Update on your RRG submission — "${title}"`,
+    subject: `Update on your RRG submission: "${title}"`,
     html,
   });
 }
@@ -290,7 +290,7 @@ export async function sendPhysicalOrderToBrand(data: PhysicalPurchaseEmailData):
     <div class="card-head">
       <div>
         <h1>New order</h1>
-        <p class="sub">Action required — please arrange shipping</p>
+        <p class="sub">Action required: please arrange shipping</p>
       </div>
       <span class="badge">New order</span>
     </div>
@@ -306,7 +306,7 @@ export async function sendPhysicalOrderToBrand(data: PhysicalPurchaseEmailData):
 
       ${data.brandRevenueUsdc != null ? `
       <div class="revenue-block">
-        <p class="revenue-lbl">Your revenue — auto-distributed</p>
+        <p class="revenue-lbl">Your revenue (auto-distributed)</p>
         <p class="revenue-amount">$${data.brandRevenueUsdc.toFixed(2)} USDC</p>
         <p class="revenue-note">Sent automatically to your brand wallet on Base. No action needed.</p>
       </div>` : ''}
@@ -331,7 +331,7 @@ ${escHtml(data.shippingAddress)}</div>
     </div>
   </div>
   <div class="footer">
-    <span>RRG — Real Real Genuine</span>
+    <span>RRG / Real Real Genuine</span>
     <a href="${SITE_URL}/rrg" style="color:#6e665c; text-decoration:none">realrealgenuine.com</a>
   </div>
 </div>
@@ -340,7 +340,7 @@ ${escHtml(data.shippingAddress)}</div>
 
   await sendEmail({
     to: data.brandContactEmail,
-    subject: `New order: "${data.title}" (Token #${data.tokenId}) — please arrange shipping`,
+    subject: `New order: "${data.title}" (Token #${data.tokenId}) - please arrange shipping`,
     html,
   });
 }
@@ -389,7 +389,7 @@ export async function sendPhysicalPurchaseToBuyer(data: PhysicalPurchaseEmailDat
     <div class="card-head">
       <p class="eyebrow">Thank you for your order</p>
       <h1>${escHtml(data.title)}</h1>
-      <p class="brand-sub">${escHtml(data.brandName)}${data.selectedSize ? ` &mdash; Size ${escHtml(data.selectedSize)}` : ''}</p>
+      <p class="brand-sub">${escHtml(data.brandName)}${data.selectedSize ? `, Size ${escHtml(data.selectedSize)}` : ''}</p>
     </div>
 
     ${data.imageUrl ? `<img class="product-img" src="${data.imageUrl}" alt="${escHtml(data.title)}" />` : ''}
@@ -398,7 +398,7 @@ export async function sendPhysicalPurchaseToBuyer(data: PhysicalPurchaseEmailDat
 
       <p class="lbl">Your order</p>
       <div class="dispatch-box">
-        <p>${escHtml(data.brandName)} will arrange delivery to the address below. Allow a few days for dispatch confirmation — the seller will follow up directly if they need any further details.</p>
+        <p>${escHtml(data.brandName)} will arrange delivery to the address below. Allow a few days for dispatch confirmation. The seller will follow up directly if they need any further details.</p>
       </div>
 
       <p class="lbl">Delivery address</p>
@@ -424,7 +424,7 @@ ${escHtml(data.shippingAddress)}</div>
   </div>
 
   <table width="100%" cellpadding="0" cellspacing="0" style="margin-top:32px;padding-top:20px;border-top:1px solid #e8e3db;"><tbody><tr>
-    <td style="font-family:'Courier New',Courier,monospace;font-size:10px;letter-spacing:0.12em;text-transform:uppercase;color:#6e665c;">RRG &mdash; Real Real Genuine</td>
+    <td style="font-family:'Courier New',Courier,monospace;font-size:10px;letter-spacing:0.12em;text-transform:uppercase;color:#6e665c;">RRG / Real Real Genuine</td>
     <td align="right" style="font-family:'Courier New',Courier,monospace;font-size:10px;letter-spacing:0.12em;text-transform:uppercase;color:#6e665c;text-align:right;"><a href="${SITE_URL}/rrg" style="color:#6e665c;text-decoration:none;">realrealgenuine.com</a></td>
   </tr></tbody></table>
 </div>
@@ -473,14 +473,14 @@ export async function sendBrandApprovalEmail({
     <p style="color:#e5e5e5">• Submit products for the RRG collection<br>• Track sales and revenue<br>• Manage your brand profile</p>
     <a class="btn" href="${dashboardUrl}">Go to your dashboard →</a>
   </div>
-  <div class="footer">RRG — Real Real Genuine</div>
+  <div class="footer">RRG / Real Real Genuine</div>
 </div>
 </body>
 </html>`;
 
   await sendEmail({
     to,
-    subject: `Your brand "${brandName}" is approved — welcome to RRG`,
+    subject: `Your brand "${brandName}" is approved. Welcome to RRG`,
     html,
   });
 }
@@ -520,7 +520,7 @@ export async function sendOutreachOwnerEmail({
   <div class="header"><h1>Your agent received a collaboration request</h1></div>
   <div class="body">
     <p>Your ERC-8004 agent <strong style="color:#e5e5e5">"${escHtml(agentName)}"</strong>${idStr} was contacted by the RRG platform agent (#33313) via ${escHtml(channel.toUpperCase())}.</p>
-    <p>RRG is an agent-native design and commerce platform on Base where AI agents can browse and purchase fashion listings, submit designs to brand briefs, and launch their own brands — all using USDC with on-chain ERC-8004 reputation.</p>
+    <p>RRG is an agent-native design and commerce platform on Base where AI agents can browse and purchase fashion listings, submit designs to brand briefs, and launch their own brands. All transactions use USDC with on-chain ERC-8004 reputation.</p>
     <div class="actions">
       <p>What your agent can do on RRG:</p>
       <p>- Browse and purchase limited edition listings (gasless USDC)</p>
