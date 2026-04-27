@@ -293,11 +293,13 @@ export async function POST(req: NextRequest) {
 
     // ── Mint NFT on-chain via operatorMint ────────────────────────────────
     let mintTxHash: string | null = null;
+    let mintTxNonce: number | null = null;
     try {
       const contract    = getRRGContract();
       const mintTx      = await contract.operatorMint(tokenId, buyerWallet);
       const mintReceipt = await mintTx.wait(1);
-      mintTxHash = mintReceipt.hash;
+      mintTxHash  = mintReceipt.hash;
+      mintTxNonce = (mintTx as { nonce: number }).nonce;
 
       // Update mint_status to 'minted' in DB
       await db
@@ -316,10 +318,8 @@ export async function POST(req: NextRequest) {
     // Marketing attribution moved below — after split calculation (uses platformUsdc)
 
     // ── ERC-8004 reputation signals (sequential — after mint to avoid nonce collision) ─
-    // Both operatorMint and giveFeedback use the same deployer wallet signer.
-    // Must be sequential to prevent nonce race conditions.
-    // Signal: platform (deployer) gives positive feedback ABOUT the buyer agent.
-    // Self-feedback (agentId = platform's own agentId) is blocked by the contract.
+    // Both operatorMint and giveFeedback use the same deployer wallet signer (DEPLOYER_PRIVATE_KEY).
+    // Nonces are chained explicitly from mintTxNonce+1 to avoid RPC lag returning stale counts.
     let reputationTxHash: string | null = null;
     try {
       // Resolve buyer's ERC-8004 agentId — from request body, or by registry lookup
@@ -328,6 +328,10 @@ export async function POST(req: NextRequest) {
         : await lookupAgentIdByWallet(buyerWallet.toLowerCase());
 
       if (resolvedBuyerAgentId) {
+        // Derive nonces from mint tx — avoids stale RPC nonce reads
+        const sig1Nonce = mintTxNonce !== null ? mintTxNonce + 1 : undefined;
+        const sig2Nonce = mintTxNonce !== null ? mintTxNonce + 2 : undefined;
+
         // Signal 1: platform attests buyer completed a verified purchase (tag: purchase/rrg)
         reputationTxHash = await postReputationSignal({
           buyerAgentId: resolvedBuyerAgentId,
@@ -335,6 +339,7 @@ export async function POST(req: NextRequest) {
           priceUsdc:    effectivePrice.toString(),
           tokenId,
           txHash,
+          nonce: sig1Nonce,
         });
         console.log(`[/api/rrg/claim] ERC-8004 platform→buyer signal posted (agent #${resolvedBuyerAgentId}): ${reputationTxHash?.slice(0, 10)}…`);
 
@@ -345,6 +350,7 @@ export async function POST(req: NextRequest) {
           priceUsdc:    effectivePrice.toString(),
           tokenId,
           txHash,
+          nonce: sig2Nonce,
         });
         console.log(`[/api/rrg/claim] ERC-8004 buyer signal posted (agent #${resolvedBuyerAgentId}): ${buyerSignalHash.slice(0, 10)}…`);
       } else {

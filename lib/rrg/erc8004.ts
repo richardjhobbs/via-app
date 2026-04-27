@@ -211,6 +211,7 @@ export interface ReputationSignalParams {
   priceUsdc:    string;  // e.g. "1.00"
   tokenId:      number;  // RRG drop token ID → feedbackURI links to drop page
   txHash:       string;  // purchase tx hash → becomes feedbackHash
+  nonce?:       number;  // explicit deployer nonce — pass mintTx.nonce+1 to avoid RPC lag collisions
 }
 
 /**
@@ -245,6 +246,7 @@ export async function postReputationSignal(p: ReputationSignalParams): Promise<s
     ? ethers.keccak256(ethers.toUtf8Bytes(p.txHash))
     : ethers.ZeroHash;
 
+  const overrides = p.nonce !== undefined ? { nonce: p.nonce } : {};
   const tx = await (contract.giveFeedback as (
     agentId:      bigint,
     value:        bigint,
@@ -254,6 +256,7 @@ export async function postReputationSignal(p: ReputationSignalParams): Promise<s
     endpoint:      string,
     feedbackURI:   string,
     feedbackHash:  string,
+    overrides?:    object,
   ) => Promise<ethers.ContractTransactionResponse>)(
     agentId,
     value,
@@ -263,6 +266,7 @@ export async function postReputationSignal(p: ReputationSignalParams): Promise<s
     AGENT_ENDPOINT,
     feedbackURI,
     feedbackHash,
+    overrides,
   );
 
   const receipt = await tx.wait(1);
@@ -337,6 +341,7 @@ export interface BuyerReputationSignalParams {
   priceUsdc:   string;
   tokenId:     number;
   txHash:      string;
+  nonce?:      number;     // explicit deployer nonce — chain from previous signal's nonce+1
 }
 
 /**
@@ -364,6 +369,7 @@ export async function postBuyerReputationSignal(p: BuyerReputationSignalParams):
   // Use the buyer's endpoint if provided, otherwise RRG's (platform is the attester)
   const endpoint = p.buyerEndpoint ?? AGENT_ENDPOINT;
 
+  const overrides = p.nonce !== undefined ? { nonce: p.nonce } : {};
   const tx = await (contract.giveFeedback as (
     agentId:      bigint,
     value:        bigint,
@@ -373,6 +379,7 @@ export async function postBuyerReputationSignal(p: BuyerReputationSignalParams):
     endpoint:      string,
     feedbackURI:   string,
     feedbackHash:  string,
+    overrides?:    object,
   ) => Promise<ethers.ContractTransactionResponse>)(
     p.buyerAgentId,
     value,
@@ -382,6 +389,7 @@ export async function postBuyerReputationSignal(p: BuyerReputationSignalParams):
     endpoint,
     feedbackURI,
     feedbackHash,
+    overrides,
   );
 
   const receipt = await tx.wait(1);
@@ -418,6 +426,7 @@ export interface BrandSaleSignalParams {
   priceUsdc:   string;
   tokenId:     number;
   txHash:      string;
+  nonce?:      number;   // explicit deployer nonce — chain from previous signal's nonce+1
 }
 
 /**
@@ -449,6 +458,7 @@ export async function postBrandSaleSignal(p: BrandSaleSignalParams): Promise<str
     ? ethers.keccak256(ethers.toUtf8Bytes(p.txHash))
     : ethers.ZeroHash;
 
+  const overrides = p.nonce !== undefined ? { nonce: p.nonce } : {};
   const tx = await (contract.giveFeedback as (
     agentId:      bigint,
     value:        bigint,
@@ -458,6 +468,7 @@ export async function postBrandSaleSignal(p: BrandSaleSignalParams): Promise<str
     endpoint:      string,
     feedbackURI:   string,
     feedbackHash:  string,
+    overrides?:    object,
   ) => Promise<ethers.ContractTransactionResponse>)(
     brandAgentId,
     value,
@@ -467,6 +478,7 @@ export async function postBrandSaleSignal(p: BrandSaleSignalParams): Promise<str
     AGENT_ENDPOINT,
     feedbackURI,
     feedbackHash,
+    overrides,
   );
 
   const receipt = await tx.wait(1);

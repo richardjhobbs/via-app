@@ -88,8 +88,9 @@ export async function POST(req: NextRequest) {
       throw contractErr;
     }
 
-    const receipt = await tx.wait(1);
-    const txHash  = receipt.hash;
+    const receipt   = await tx.wait(1);
+    const txHash    = receipt.hash;
+    const mintNonce = (tx as { nonce: number }).nonce;
 
     // ── Resolve effective price (per-size override if applicable) ─────
     const effectivePrice = await resolveEffectivePrice(
@@ -180,11 +181,12 @@ export async function POST(req: NextRequest) {
       }
     })();
 
-    // ── ERC-8004 reputation signal (sequential — after mint to avoid nonce collision) ─
-    // Both mintWithPermit and giveFeedback use the same deployer wallet signer.
-    // Must be sequential to prevent nonce race conditions.
-    // Anti-gaming: skip if buyer is the creator (self-purchase inflates score).
+    // ── ERC-8004 reputation signals — nonces chained from mintNonce to prevent RPC lag ─
+    // mintWithPermit and giveFeedback share the deployer wallet (DEPLOYER_PRIVATE_KEY).
+    // Passing mintNonce+N explicitly avoids stale getTransactionCount reads from fresh providers.
+    // Anti-gaming: skip buyer signals if buyer is the creator (self-purchase inflates score).
     let reputationTxHash: string | null = null;
+    let nextSignalNonce = mintNonce + 1;
     const isCreatorPurchase = buyerWallet.toLowerCase() === drop.creator_wallet?.toLowerCase();
     if (isCreatorPurchase) {
       console.log('[erc8004] skipping reputation signal — creator self-purchase detected');
@@ -201,7 +203,9 @@ export async function POST(req: NextRequest) {
             priceUsdc:    effectivePrice.toString(),
             tokenId:      parseInt(tokenId),
             txHash,
+            nonce:        nextSignalNonce,
           });
+          nextSignalNonce++;
           console.log(`[confirm] ERC-8004 platform→buyer signal posted (agent #${resolvedBuyerAgentId}): ${reputationTxHash?.slice(0, 10)}…`);
 
           // Signal 2: buyer reputation signal (tag: purchase/buyer)
@@ -211,7 +215,9 @@ export async function POST(req: NextRequest) {
             priceUsdc:    effectivePrice.toString(),
             tokenId:      parseInt(tokenId),
             txHash,
+            nonce:        nextSignalNonce,
           });
+          nextSignalNonce++;
           console.log(`[confirm] ERC-8004 buyer signal posted (agent #${resolvedBuyerAgentId}): ${buyerSignalHash.slice(0, 10)}…`);
         } else {
           console.log('[confirm] Buyer has no ERC-8004 registration — skipping reputation signals');
@@ -222,7 +228,7 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // ── ERC-8004 brand sale signal (sequential — avoids nonce collision) ──
+    // ── ERC-8004 brand sale signal (sequential — nonce chained from buyer signals) ──
     // Attests the brand agent completed a verified sale on RRG (tag: sale/brand).
     // Only fires when the drop belongs to a brand (brand_id set + is_brand_product).
     // Hash is stored on the distribution record (reputation: prefix) after payout.
@@ -236,7 +242,9 @@ export async function POST(req: NextRequest) {
             priceUsdc:   effectivePrice.toString(),
             tokenId:     parseInt(tokenId),
             txHash,
+            nonce:       nextSignalNonce,
           });
+          nextSignalNonce++;
           if (brandSaleSignalHash) {
             console.log(`[confirm] ERC-8004 brand sale signal posted: ${brandSaleSignalHash.slice(0, 10)}…`);
           }
