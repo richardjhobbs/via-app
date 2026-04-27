@@ -2467,7 +2467,7 @@ function createRRGServer() {
       tokenId:       z.number().int().positive().describe('The listing token ID'),
       buyerWallet:   z.string().regex(/^0x[0-9a-fA-F]{40}$/).describe('Your wallet address'),
       txHash:        z.string().regex(/^0x[0-9a-fA-F]{64}$/).describe('Your USDC transfer transaction hash on Base'),
-      buyerEmail:    z.string().email().optional().describe('Optional email for delivery confirmation'),
+      buyerEmail:    z.string().email().optional().describe('Email address for order confirmation and file delivery. Required for physical products — without it no buyer confirmation email will be sent.'),
       buyerAgentId:  z.number().int().positive().optional().describe('Your ERC-8004 agent ID for on-chain reputation signals (e.g. 17666)'),
       selected_size: z.string().optional().describe('For sized products, the size you chose at initiate_agent_purchase. MUST match — the server verifies your USDC transfer against the price for that size.'),
       shipping_name:          z.string().optional().describe('Recipient name (required for physical products)'),

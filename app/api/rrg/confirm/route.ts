@@ -346,6 +346,10 @@ export async function POST(req: NextRequest) {
           shipping_country,
         ].filter(Boolean).join('\n');
 
+        const priceForEmail    = parseFloat(effectivePrice.toString());
+        const brandPctForEmail = brand?.brand_pct_override ?? 97.5;
+        const brandRevenueUsdc = Math.round(priceForEmail * (brandPctForEmail / 100) * 100) / 100;
+
         const emailData = {
           title:             drop.title,
           tokenId:           parseInt(tokenId),
@@ -360,6 +364,8 @@ export async function POST(req: NextRequest) {
           downloadUrl,
           ipfsMetadataUrl:   ipfsResult?.metadataUrl ?? null,
           selectedSize:      selected_size || null,
+          priceUsdc:         priceForEmail,
+          brandRevenueUsdc,
         };
 
         if (brand?.contact_email) {
