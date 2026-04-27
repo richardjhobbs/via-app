@@ -1190,12 +1190,14 @@ function createRRGServer() {
     [
       '[BUY — Step 2] Complete the purchase by submitting the signed EIP-712 permit from initiate_purchase.',
       'Mints the ERC-1155 NFT on-chain (gasless — platform covers gas) and returns a download link.',
-      'For physical products, you MUST include shipping address fields. The response includes revenue split details.',
+      'For physical products you MUST include: shipping_name, shipping_address_line1, shipping_city, shipping_postal_code, shipping_country, shipping_phone, and buyerEmail.',
+      'shipping_phone is required for delivery confirmation. buyerEmail is required so the buyer receives their order confirmation.',
+      'The response includes revenue split details.',
     ].join('\n'),
     {
       tokenId:     z.number().int().positive().describe('Token ID of the listing'),
       buyerWallet: z.string().regex(/^0x[0-9a-fA-F]{40}$/).describe('Buyer 0x wallet address'),
-      buyerEmail:  z.string().email().optional().describe('Optional email for file delivery'),
+      buyerEmail:  z.string().email().optional().describe('Email for order confirmation and file delivery. Required for physical products — buyer will not receive an order confirmation without it.'),
       deadline:    z.string().describe('Permit deadline (Unix timestamp string from initiate_purchase)'),
       signature:   z.string().regex(/^0x/).describe('EIP-712 signature from wallet.signTypedData'),
       // Shipping fields for physical products
@@ -2462,6 +2464,10 @@ function createRRGServer() {
       'signals for both buyer and seller, distributes revenue to creator and brand, and returns your download URL.',
       '',
       'Include buyerAgentId (your ERC-8004 agent ID) for an agent-to-agent trust signal on-chain.',
+      '',
+      'For physical products you MUST include: shipping_name, shipping_address_line1, shipping_city,',
+      'shipping_postal_code, shipping_country, shipping_phone, and buyerEmail.',
+      'shipping_phone is required for delivery confirmation. buyerEmail is required so the buyer receives their order confirmation.',
     ].join('\n'),
     {
       tokenId:       z.number().int().positive().describe('The listing token ID'),
