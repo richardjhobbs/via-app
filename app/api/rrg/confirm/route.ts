@@ -219,18 +219,20 @@ export async function POST(req: NextRequest) {
     // ── ERC-8004 brand sale signal (sequential — avoids nonce collision) ──
     // Attests the brand agent completed a verified sale on RRG (tag: sale/brand).
     // Only fires when the drop belongs to a brand (brand_id set + is_brand_product).
+    // Hash is stored on the distribution record (reputation: prefix) after payout.
+    let brandSaleSignalHash: string | null = null;
     if (drop.brand_id && drop.is_brand_product) {
       try {
         const brandForSignal = await getBrandById(drop.brand_id);
         if (brandForSignal?.wallet_address) {
-          const brandSaleHash = await postBrandSaleSignal({
+          brandSaleSignalHash = await postBrandSaleSignal({
             brandWallet: brandForSignal.wallet_address,
             priceUsdc:   effectivePrice.toString(),
             tokenId:     parseInt(tokenId),
             txHash,
           });
-          if (brandSaleHash) {
-            console.log(`[confirm] ERC-8004 brand sale signal posted: ${brandSaleHash.slice(0, 10)}…`);
+          if (brandSaleSignalHash) {
+            console.log(`[confirm] ERC-8004 brand sale signal posted: ${brandSaleSignalHash.slice(0, 10)}…`);
           }
         }
       } catch (brandSignalErr) {
@@ -279,6 +281,7 @@ export async function POST(req: NextRequest) {
 
     // ── Record revenue distribution + auto-payout ────────────────────
     // MUST run AFTER all ERC-8004 signals to avoid deployer wallet nonce collisions.
+    let distributionId: string | null = null;
     try {
       const brandId = drop.brand_id ?? RRG_BRAND_ID;
       const brand   = brandId !== RRG_BRAND_ID ? await getBrandById(brandId) : null;
@@ -294,11 +297,27 @@ export async function POST(req: NextRequest) {
         brandPctOverride: brand?.brand_pct_override ?? null,
       });
 
-      await insertDistributionAndPay({
+      const payoutResult = await insertDistributionAndPay({
         purchaseId: purchase.id,
         brandId,
         split,
       });
+      distributionId = payoutResult.distributionId;
+
+      // Append ERC-8004 reputation signal hash to distribution notes for audit trail.
+      if (distributionId && brandSaleSignalHash) {
+        const { data: distRow } = await db
+          .from('rrg_distributions')
+          .select('notes')
+          .eq('id', distributionId)
+          .single();
+        const updatedNotes = distRow?.notes
+          ? `${distRow.notes} | reputation:${brandSaleSignalHash}`
+          : `reputation:${brandSaleSignalHash}`;
+        await db.from('rrg_distributions')
+          .update({ notes: updatedNotes })
+          .eq('id', distributionId);
+      }
 
       // Marketing attribution — commission is on platform share only.
       // This covers both organic candidates and referred wallets; there is

@@ -112,6 +112,7 @@ interface Distribution {
   split_type: string;
   status: string;
   notes?: string | null;
+  purchase_tx_hash?: string | null;
 }
 
 interface Contributor {
@@ -1976,18 +1977,51 @@ function DistributionsTab() {
                 <span className="text-white/60">Platform: <span className="text-amber-400">${parseFloat(d.platform_usdc).toFixed(2)}</span></span>
               </div>
 
-              <div className="flex gap-4 text-sm text-white/40 font-mono">
+              <div className="mt-2 grid grid-cols-2 gap-x-6 gap-y-1 text-xs font-mono">
                 {d.creator_wallet && (
-                  <span className="flex items-center gap-1">Creator: <CopyWallet address={d.creator_wallet} /></span>
+                  <span className="flex items-center gap-1 text-white/40">
+                    Creator wallet: <CopyWallet address={d.creator_wallet} />
+                  </span>
                 )}
                 {d.brand_wallet && (
-                  <span className="flex items-center gap-1">Brand: <CopyWallet address={d.brand_wallet} /></span>
+                  <span className="flex items-center gap-1 text-white/40">
+                    Brand wallet: <CopyWallet address={d.brand_wallet} />
+                  </span>
                 )}
+                {d.purchase_tx_hash && (
+                  <span className="text-white/40 col-span-2">
+                    Buyer tx:{' '}
+                    <a
+                      href={`https://basescan.org/tx/${d.purchase_tx_hash}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-blue-400 hover:underline"
+                    >
+                      {d.purchase_tx_hash.slice(0, 10)}…{d.purchase_tx_hash.slice(-6)}
+                    </a>
+                  </span>
+                )}
+                {d.notes && (() => {
+                  const parts = d.notes.split(' | ');
+                  const payoutTxs = parts.filter((p) => p.startsWith('brand:') || p.startsWith('creator:'));
+                  return payoutTxs.map((entry) => {
+                    const [label, hash] = entry.split(':');
+                    return hash ? (
+                      <span key={entry} className="text-white/40 col-span-2">
+                        {label === 'brand' ? 'Seller' : 'Creator'} payout tx:{' '}
+                        <a
+                          href={`https://basescan.org/tx/${hash}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-green-400 hover:underline"
+                        >
+                          {hash.slice(0, 10)}…{hash.slice(-6)}
+                        </a>
+                      </span>
+                    ) : null;
+                  });
+                })()}
               </div>
-
-              {d.notes && (
-                <p className="text-sm text-white/50 mt-1">{d.notes}</p>
-              )}
 
               {d.status === 'pending' && (
                 <div className="mt-3 pt-3 border-t border-white/10">

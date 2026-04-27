@@ -214,6 +214,8 @@ export interface RrgDistribution {
   split_type: string;
   status: DistributionStatus;
   notes: string | null;
+  /** Joined from rrg_purchases — the buyer's on-chain purchase tx hash */
+  purchase_tx_hash?: string | null;
 }
 
 // ── Brand helpers ─────────────────────────────────────────────────────
@@ -730,7 +732,7 @@ export async function getDistributions(
 ): Promise<RrgDistribution[]> {
   let query = db
     .from('rrg_distributions')
-    .select('*');
+    .select('*, rrg_purchases(tx_hash)');
 
   if (status) {
     query = query.eq('status', status);
@@ -740,7 +742,11 @@ export async function getDistributions(
   }
 
   const { data } = await query.order('created_at', { ascending: false });
-  return data ?? [];
+  return (data ?? []).map((row: Record<string, unknown>) => {
+    const purchase = row.rrg_purchases as { tx_hash?: string | null } | null;
+    const { rrg_purchases: _, ...rest } = row;
+    return { ...rest, purchase_tx_hash: purchase?.tx_hash ?? null } as unknown as RrgDistribution;
+  });
 }
 
 // ── Product variant helpers ──────────────────────────────────────────
