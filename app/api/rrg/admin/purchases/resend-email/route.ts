@@ -60,6 +60,20 @@ export async function POST(req: NextRequest) {
   const priceUsdc         = parseFloat((sub.price_usdc as string) ?? purchase.amount_usdc ?? '0');
   const brandRevenueUsdc  = Math.round(priceUsdc * (brandPct / 100) * 100) / 100;
 
+  // Fetch distribution notes to extract brand payout tx hash
+  const { data: distRow } = await db
+    .from('rrg_distributions')
+    .select('notes')
+    .eq('purchase_id', purchaseId)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .single();
+  const brandPayoutTxHash = (() => {
+    if (!distRow?.notes) return null;
+    const brandEntry = distRow.notes.split(' | ').find((p: string) => p.startsWith('brand:'));
+    return brandEntry ? brandEntry.slice('brand:'.length) : null;
+  })();
+
   const siteUrl    = process.env.NEXT_PUBLIC_SITE_URL!;
   const downloadUrl = `${siteUrl}/rrg/download?token=${purchase.download_token}`;
 
@@ -74,6 +88,7 @@ export async function POST(req: NextRequest) {
     title:             sub.title as string,
     tokenId:           purchase.token_id,
     txHash:            purchase.tx_hash,
+    brandPayoutTxHash,
     buyerEmail:        purchase.buyer_email ?? null,
     brandContactEmail,
     brandName,

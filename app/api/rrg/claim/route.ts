@@ -228,9 +228,9 @@ export async function POST(req: NextRequest) {
 
     // ── Validate shipping for physical products ───────────────────────────
     if (submission.is_physical_product) {
-      if (!shipping_name || !shipping_address_line1 || !shipping_city || !shipping_postal_code || !shipping_country) {
+      if (!shipping_name || !shipping_address_line1 || !shipping_city || !shipping_postal_code || !shipping_country || !shipping_phone) {
         return NextResponse.json(
-          { error: 'Shipping address required for physical products (shipping_name, shipping_address_line1, shipping_city, shipping_postal_code, shipping_country)' },
+          { error: 'Shipping address and phone required for physical products (shipping_name, shipping_address_line1, shipping_city, shipping_postal_code, shipping_country, shipping_phone)' },
           { status: 400 }
         );
       }

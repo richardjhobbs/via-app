@@ -46,9 +46,9 @@ export async function POST(req: NextRequest) {
     // ── Validate shipping for physical products (BEFORE on-chain mint) ──
     // Must validate before mintWithPermit — the on-chain tx is irreversible.
     if (drop.is_physical_product) {
-      if (!shipping_name || !shipping_address_line1 || !shipping_city || !shipping_postal_code || !shipping_country) {
+      if (!shipping_name || !shipping_address_line1 || !shipping_city || !shipping_postal_code || !shipping_country || !shipping_phone) {
         return NextResponse.json(
-          { error: 'Shipping address required for physical products' },
+          { error: 'Shipping address and phone required for physical products' },
           { status: 400 }
         );
       }
@@ -282,6 +282,7 @@ export async function POST(req: NextRequest) {
     // ── Record revenue distribution + auto-payout ────────────────────
     // MUST run AFTER all ERC-8004 signals to avoid deployer wallet nonce collisions.
     let distributionId: string | null = null;
+    let brandPayoutTxHash: string | null = null;
     try {
       const brandId = drop.brand_id ?? RRG_BRAND_ID;
       const brand   = brandId !== RRG_BRAND_ID ? await getBrandById(brandId) : null;
@@ -302,7 +303,8 @@ export async function POST(req: NextRequest) {
         brandId,
         split,
       });
-      distributionId = payoutResult.distributionId;
+      distributionId    = payoutResult.distributionId;
+      brandPayoutTxHash = payoutResult.brandTxHash;
 
       // Append ERC-8004 reputation signal hash to distribution notes for audit trail.
       if (distributionId && brandSaleSignalHash) {
@@ -370,20 +372,21 @@ export async function POST(req: NextRequest) {
         const brandRevenueUsdc = Math.round(priceForEmail * (brandPctForEmail / 100) * 100) / 100;
 
         const emailData = {
-          title:             drop.title,
-          tokenId:           parseInt(tokenId),
+          title:               drop.title,
+          tokenId:             parseInt(tokenId),
           txHash,
-          buyerEmail:        buyerEmail || null,
-          brandContactEmail: brand?.contact_email ?? '',
-          brandName:         brand?.name ?? 'RRG',
-          shippingName:      shipping_name,
+          brandPayoutTxHash,
+          buyerEmail:          buyerEmail || null,
+          brandContactEmail:   brand?.contact_email ?? '',
+          brandName:           brand?.name ?? 'RRG',
+          shippingName:        shipping_name,
           shippingAddress,
-          shippingPhone:     shipping_phone || null,
-          shippingType:      drop.shipping_type || null,
+          shippingPhone:       shipping_phone || null,
+          shippingType:        drop.shipping_type || null,
           downloadUrl,
-          ipfsMetadataUrl:   ipfsResult?.metadataUrl ?? null,
-          selectedSize:      selected_size || null,
-          priceUsdc:         priceForEmail,
+          ipfsMetadataUrl:     ipfsResult?.metadataUrl ?? null,
+          selectedSize:        selected_size || null,
+          priceUsdc:           priceForEmail,
           brandRevenueUsdc,
         };
 

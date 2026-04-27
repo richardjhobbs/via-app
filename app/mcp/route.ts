@@ -1206,7 +1206,7 @@ function createRRGServer() {
       shipping_state:         z.string().optional().describe('State or province'),
       shipping_postal_code:   z.string().optional().describe('Postal/ZIP code (required for physical products)'),
       shipping_country:       z.string().optional().describe('Country (required for physical products)'),
-      shipping_phone:         z.string().optional().describe('Phone number for shipping'),
+      shipping_phone:         z.string().optional().describe('Phone number (required for physical products — needed for delivery confirmation)'),
       selected_size:          z.string().optional().describe('For sized products, the size you chose at initiate_purchase. MUST match the size whose price was used to build the permit.'),
     },
     async ({ tokenId, buyerWallet, buyerEmail, deadline, signature,
@@ -1221,10 +1221,10 @@ function createRRGServer() {
 
       // Validate shipping for physical products
       if (drop.is_physical_product) {
-        if (!shipping_name || !shipping_address_line1 || !shipping_city || !shipping_postal_code || !shipping_country) {
+        if (!shipping_name || !shipping_address_line1 || !shipping_city || !shipping_postal_code || !shipping_country || !shipping_phone) {
           return {
             isError: true,
-            content: [{ type: 'text', text: 'This listing includes a physical product. Shipping address is required: shipping_name, shipping_address_line1, shipping_city, shipping_postal_code, shipping_country.' }],
+            content: [{ type: 'text', text: 'This listing includes a physical product. Shipping address and phone are required: shipping_name, shipping_address_line1, shipping_city, shipping_postal_code, shipping_country, shipping_phone.' }],
           };
         }
       }
@@ -2477,7 +2477,7 @@ function createRRGServer() {
       shipping_state:         z.string().optional().describe('State or province'),
       shipping_postal_code:   z.string().optional().describe('Postal/ZIP code (required for physical products)'),
       shipping_country:       z.string().optional().describe('Country (required for physical products)'),
-      shipping_phone:         z.string().optional().describe('Phone number for shipping'),
+      shipping_phone:         z.string().optional().describe('Phone number (required for physical products — needed for delivery confirmation)'),
     },
     async ({ tokenId, buyerWallet, txHash, buyerEmail, buyerAgentId, selected_size,
              shipping_name, shipping_address_line1, shipping_address_line2,

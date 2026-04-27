@@ -382,7 +382,7 @@ export default function PurchaseFlow({ tokenId, priceUsdc, soldOut, active, isPh
     // to that destination — block.
     const needsRate = shippingRates !== null && shippingRates.length > 0;
     const shippingValid = shipping.name && shipping.addressLine1 && shipping.city
-      && shipping.postalCode && shipping.country && shipping.termsAccepted
+      && shipping.postalCode && shipping.country && shipping.phone && shipping.termsAccepted
       && !notDeliverable
       && (!needsRate || !!selectedRate);
 
@@ -471,9 +471,9 @@ export default function PurchaseFlow({ tokenId, priceUsdc, soldOut, active, isPh
             </select>
           </div>
           <div className="col-span-2">
-            <label className="text-sm font-mono text-white/50 block mb-1">Phone <span className="text-white/40">(optional)</span></label>
+            <label className="text-sm font-mono text-white/50 block mb-1">Phone <span className="text-white/60">*</span></label>
             <input
-              type="tel" value={shipping.phone}
+              type="tel" required value={shipping.phone}
               onChange={(e) => setShipping({ ...shipping, phone: e.target.value })}
               className="w-full bg-transparent border border-white/20 px-3 py-2 text-base focus:border-white outline-none placeholder:text-white/40"
               placeholder="+1 555 123 4567"
