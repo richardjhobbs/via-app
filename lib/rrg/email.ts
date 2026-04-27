@@ -319,11 +319,8 @@ ${escHtml(data.shippingAddress)}</div>
 
       <p class="lbl">On-chain proof</p>
       <div class="block">
-        ${data.brandPayoutTxHash
-          ? `<div class="row"><span class="row-lbl">Your payout tx</span><span class="row-val"><a href="${scanBase}/tx/${data.brandPayoutTxHash}" style="color:#6b4f3a; font-family:'Courier New',Courier,monospace; font-size:11px">${data.brandPayoutTxHash.slice(0, 14)}…${data.brandPayoutTxHash.slice(-6)}</a></span></div>
-        <div class="row"><span class="row-lbl">Buyer purchase tx</span><span class="row-val"><a href="${scanBase}/tx/${data.txHash}" style="color:#6b4f3a; font-family:'Courier New',Courier,monospace; font-size:11px">${data.txHash.slice(0, 14)}…${data.txHash.slice(-6)}</a></span></div>`
-          : `<div class="row"><span class="row-lbl">Payout tx</span><span class="row-val"><a href="${scanBase}/tx/${data.txHash}" style="color:#6b4f3a; font-family:'Courier New',Courier,monospace; font-size:11px">${data.txHash.slice(0, 14)}…${data.txHash.slice(-6)}</a></span></div>`
-        }
+        ${data.brandPayoutTxHash ? `<div class="row"><span class="row-lbl">Your payout tx</span><span class="row-val"><a href="${scanBase}/tx/${data.brandPayoutTxHash}" style="color:#6b4f3a; font-family:'Courier New',Courier,monospace; font-size:11px">${data.brandPayoutTxHash.slice(0, 14)}…${data.brandPayoutTxHash.slice(-6)}</a></span></div>` : ''}
+        <div class="row"><span class="row-lbl">Buyer purchase tx</span><span class="row-val"><a href="${scanBase}/tx/${data.txHash}" style="color:#6b4f3a; font-family:'Courier New',Courier,monospace; font-size:11px">${data.txHash.slice(0, 14)}…${data.txHash.slice(-6)}</a></span></div>
       </div>
 
       <p style="font-size:13px;color:#3a342d;line-height:1.6;margin:0 0 20px">Please arrange delivery to the address above. If you have any questions about this order, reply to this email.</p>
