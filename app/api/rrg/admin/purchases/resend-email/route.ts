@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/rrg/db';
 import { isAdminFromCookies, adminUnauthorized } from '@/lib/rrg/auth';
 import { sendPhysicalOrderToBrand, sendPhysicalPurchaseToBuyer } from '@/lib/rrg/email';
+import { getSignedUrl } from '@/lib/rrg/storage';
 
 export const dynamic = 'force-dynamic';
 
@@ -31,7 +32,7 @@ export async function POST(req: NextRequest) {
       shipping_name, shipping_address_line1, shipping_address_line2,
       shipping_city, shipping_state, shipping_postal_code, shipping_country,
       shipping_phone, selected_size, brand_id, submission_id,
-      rrg_submissions ( title, is_physical_product, price_usdc, brand_id,
+      rrg_submissions ( title, is_physical_product, price_usdc, brand_id, jpeg_storage_path,
         rrg_brands ( name, contact_email, wallet_address, brand_pct_override )
       )
     `)
@@ -84,6 +85,10 @@ export async function POST(req: NextRequest) {
     purchase.shipping_country,
   ].filter(Boolean).join('\n');
 
+  const imageUrl = (sub.jpeg_storage_path as string | null)
+    ? await getSignedUrl(sub.jpeg_storage_path as string, 604800).catch(() => null)
+    : null;
+
   const emailData = {
     title:             sub.title as string,
     tokenId:           purchase.token_id,
@@ -98,6 +103,7 @@ export async function POST(req: NextRequest) {
     shippingType:      null,
     downloadUrl,
     ipfsMetadataUrl:   null,
+    imageUrl,
     selectedSize:      purchase.selected_size ?? null,
     priceUsdc,
     brandRevenueUsdc,
