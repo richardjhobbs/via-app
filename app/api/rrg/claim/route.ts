@@ -234,6 +234,12 @@ export async function POST(req: NextRequest) {
           { status: 400 }
         );
       }
+      if (!email) {
+        return NextResponse.json(
+          { error: 'buyerEmail is required for physical products so the buyer receives their order confirmation' },
+          { status: 400 }
+        );
+      }
     }
 
     // ── Create purchase record ────────────────────────────────────────────
@@ -430,6 +436,7 @@ export async function POST(req: NextRequest) {
 
     // ── Record revenue distribution + auto-payout ────────────────────
     // MUST run AFTER all ERC-8004 signals to avoid deployer wallet nonce collisions.
+    let brandPayoutTxHash: string | null = null;
     try {
       const brandId = submission.brand_id ?? RRG_BRAND_ID;
       const brand   = brandId !== RRG_BRAND_ID ? await getBrandById(brandId) : null;
@@ -445,11 +452,12 @@ export async function POST(req: NextRequest) {
         brandPctOverride: brand?.brand_pct_override ?? null,
       });
 
-      await insertDistributionAndPay({
+      const payoutResult = await insertDistributionAndPay({
         purchaseId: purchase.id,
         brandId,
         split,
       });
+      brandPayoutTxHash = payoutResult.brandTxHash;
 
       // Marketing attribution — commission is on platform share only.
       // This covers both organic candidates and referred wallets; there is
@@ -493,10 +501,15 @@ export async function POST(req: NextRequest) {
           shipping_country,
         ].filter(Boolean).join('\n');
 
+        const priceForEmail    = parseFloat(effectivePrice.toString());
+        const brandPctForEmail = brand?.brand_pct_override ?? 97.5;
+        const brandRevenueUsdc = Math.round(priceForEmail * (brandPctForEmail / 100) * 100) / 100;
+
         const emailData = {
           title:             submission.title,
           tokenId,
           txHash,
+          brandPayoutTxHash,
           buyerEmail:        email || null,
           brandContactEmail: brand?.contact_email ?? '',
           brandName:         brand?.name ?? 'RRG',
@@ -507,6 +520,8 @@ export async function POST(req: NextRequest) {
           downloadUrl,
           ipfsMetadataUrl:   ipfsResult?.metadataUrl ?? null,
           selectedSize:      selected_size || null,
+          priceUsdc:         priceForEmail,
+          brandRevenueUsdc,
         };
 
         if (brand?.contact_email) {

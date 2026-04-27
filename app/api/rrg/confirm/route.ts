@@ -52,6 +52,12 @@ export async function POST(req: NextRequest) {
           { status: 400 }
         );
       }
+      if (!buyerEmail) {
+        return NextResponse.json(
+          { error: 'buyerEmail is required for physical products so the buyer receives their order confirmation' },
+          { status: 400 }
+        );
+      }
       if (!physical_terms_accepted) {
         return NextResponse.json(
           { error: 'Physical product delivery terms must be accepted' },
