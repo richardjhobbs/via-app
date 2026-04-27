@@ -57,7 +57,7 @@ export async function GET(req: NextRequest) {
     agentRegistry: `${CHAIN}:${IDENTITY_REGISTRY}`,
     agentId:       Number(agentId),
     ...(from ? { clientAddress: `${CHAIN}:${from.toLowerCase()}` } : {}),
-    value:         5,
+    value:         100,
     valueDecimals: 0,
     tag1:          'purchase',
     tag2:          'rrg',

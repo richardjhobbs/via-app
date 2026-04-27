@@ -229,8 +229,8 @@ export async function postReputationSignal(p: ReputationSignalParams): Promise<s
   const signer  = getPlatformSigner();
   const contract = new ethers.Contract(REPUTATION_REGISTRY_ADDR, REPUTATION_ABI, signer);
 
-  // 5-star rating (value=5, no decimals)
-  const value         = 5n;
+  // Maximum rating (value=100, scale 0-100)
+  const value         = 100n;
   const valueDecimals = 0;
 
   // Tag the signal as an RRG purchase (plain strings — not bytes32)
@@ -292,8 +292,8 @@ export async function postVoucherSignal(p: VoucherSignalParams): Promise<string>
   const signer  = getPlatformSigner();
   const contract = new ethers.Contract(REPUTATION_REGISTRY_ADDR, REPUTATION_ABI, signer);
 
-  // Lower value for voucher signals (3 = moderate positive signal)
-  const value         = 3n;
+  // Maximum rating (value=100, scale 0-100)
+  const value         = 100n;
   const valueDecimals = 0;
 
   const tag1 = 'voucher';
@@ -351,7 +351,7 @@ export async function postBuyerReputationSignal(p: BuyerReputationSignalParams):
   const signer   = getPlatformSigner();
   const contract = new ethers.Contract(REPUTATION_REGISTRY_ADDR, REPUTATION_ABI, signer);
 
-  const value         = 5n;
+  const value         = 100n;
   const valueDecimals = 0;
   const tag1          = 'purchase';
   const tag2          = 'buyer';
@@ -439,7 +439,7 @@ export async function postBrandSaleSignal(p: BrandSaleSignalParams): Promise<str
   const signer   = getPlatformSigner();
   const contract = new ethers.Contract(REPUTATION_REGISTRY_ADDR, REPUTATION_ABI, signer);
 
-  const value         = 5n;
+  const value         = 100n;
   const valueDecimals = 0;
   const tag1          = 'sale';
   const tag2          = 'brand';
