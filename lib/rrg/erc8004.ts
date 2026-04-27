@@ -119,6 +119,8 @@ async function populateAgentCache(): Promise<void> {
       37752n,            // Jordan    — VIA Labs Product & Dev Coordination
       38520n,            // Sasha     — VIA Labs Brand Partnerships
       38538n,            // VIA_Labs  — company entity (getvia.xyz)
+      45690n,            // Nolo      — brand agent (wallet 0x27daa49f…)
+      45691n,            // Clooudie  — brand agent (wallet 0xca5c9C4d…)
     ];
 
     const checks = KNOWN_IDS.map(async (id) => {
@@ -407,6 +409,68 @@ export function fireReputationSignal(
   }).catch((err) => {
     console.error('[erc8004] reputation signal failed:', err);
   });
+}
+
+// ── Brand Sale Reputation Signal ─────────────────────────────────────────
+
+export interface BrandSaleSignalParams {
+  brandWallet: string;   // wallet address of the brand agent
+  priceUsdc:   string;
+  tokenId:     number;
+  txHash:      string;
+}
+
+/**
+ * Post a verified-sale reputation signal for the BRAND AGENT.
+ * The RRG platform attests that the brand completed a verified on-chain sale.
+ * Tag: sale/brand — distinct from the buyer-side purchase/rrg signal.
+ *
+ * Looks up the brand's ERC-8004 agentId from their wallet.
+ * Skips gracefully if the brand wallet has no ERC-8004 registration.
+ * Returns the tx hash, or null if skipped/failed.
+ */
+export async function postBrandSaleSignal(p: BrandSaleSignalParams): Promise<string | null> {
+  const brandAgentId = await lookupAgentIdByWallet(p.brandWallet.toLowerCase());
+  if (!brandAgentId || brandAgentId < 0n) {
+    console.log('[erc8004] brand wallet has no ERC-8004 registration — skipping brand sale signal');
+    return null;
+  }
+
+  const signer   = getPlatformSigner();
+  const contract = new ethers.Contract(REPUTATION_REGISTRY_ADDR, REPUTATION_ABI, signer);
+
+  const value         = 5n;
+  const valueDecimals = 0;
+  const tag1          = 'sale';
+  const tag2          = 'brand';
+
+  const feedbackURI  = `${SITE_URL}/rrg/drop/${p.tokenId}`;
+  const feedbackHash = p.txHash.startsWith('0x') && p.txHash.length === 66
+    ? ethers.keccak256(ethers.toUtf8Bytes(p.txHash))
+    : ethers.ZeroHash;
+
+  const tx = await (contract.giveFeedback as (
+    agentId:      bigint,
+    value:        bigint,
+    valueDecimals: number,
+    tag1:          string,
+    tag2:          string,
+    endpoint:      string,
+    feedbackURI:   string,
+    feedbackHash:  string,
+  ) => Promise<ethers.ContractTransactionResponse>)(
+    brandAgentId,
+    value,
+    valueDecimals,
+    tag1,
+    tag2,
+    AGENT_ENDPOINT,
+    feedbackURI,
+    feedbackHash,
+  );
+
+  const receipt = await tx.wait(1);
+  return receipt!.hash;
 }
 
 /**

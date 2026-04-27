@@ -43,16 +43,30 @@ interface ShippingAddress {
   termsAccepted: boolean;
 }
 
-const COUNTRIES = [
-  'United States', 'United Kingdom', 'Canada', 'Australia', 'Germany', 'France',
-  'Netherlands', 'Japan', 'South Korea', 'Singapore', 'Hong Kong', 'India',
-  'Brazil', 'Mexico', 'South Africa', 'United Arab Emirates', 'New Zealand',
-  'Sweden', 'Norway', 'Denmark', 'Finland', 'Ireland', 'Belgium', 'Switzerland',
-  'Austria', 'Italy', 'Spain', 'Portugal', 'Poland', 'Czech Republic',
-  'Thailand', 'Indonesia', 'Philippines', 'Malaysia', 'Vietnam', 'Taiwan',
-  'Israel', 'Turkey', 'Saudi Arabia', 'Nigeria', 'Kenya', 'Egypt',
-  'Argentina', 'Chile', 'Colombia', 'Peru', 'Other',
+const COUNTRY_CODES: Array<[string, string]> = [
+  ['United States','US'], ['United Kingdom','GB'], ['Canada','CA'], ['Australia','AU'],
+  ['Germany','DE'], ['France','FR'], ['Netherlands','NL'], ['Japan','JP'],
+  ['South Korea','KR'], ['Singapore','SG'], ['Hong Kong','HK'], ['India','IN'],
+  ['Brazil','BR'], ['Mexico','MX'], ['South Africa','ZA'], ['United Arab Emirates','AE'],
+  ['New Zealand','NZ'], ['Sweden','SE'], ['Norway','NO'], ['Denmark','DK'],
+  ['Finland','FI'], ['Ireland','IE'], ['Belgium','BE'], ['Switzerland','CH'],
+  ['Austria','AT'], ['Italy','IT'], ['Spain','ES'], ['Portugal','PT'],
+  ['Poland','PL'], ['Czech Republic','CZ'], ['Thailand','TH'], ['Indonesia','ID'],
+  ['Philippines','PH'], ['Malaysia','MY'], ['Vietnam','VN'], ['Taiwan','TW'],
+  ['Israel','IL'], ['Turkey','TR'], ['Saudi Arabia','SA'], ['Argentina','AR'],
+  ['Chile','CL'], ['Colombia','CO'], ['Peru','PE'],
 ];
+const COUNTRIES = COUNTRY_CODES.map(([name]) => name);
+const COUNTRY_NAME_TO_CODE: Record<string, string> = Object.fromEntries(COUNTRY_CODES);
+
+interface ShippingRateOption {
+  handle: string;
+  title: string;
+  amount: number;
+  currency_code: string;
+  delivery_method_type: string;
+  code: string | null;
+}
 
 interface PurchaseResult {
   txHash:      string;
@@ -88,6 +102,70 @@ export default function PurchaseFlow({ tokenId, priceUsdc, soldOut, active, isPh
     name: '', addressLine1: '', addressLine2: '', city: '',
     state: '', postalCode: '', country: '', phone: '', termsAccepted: false,
   });
+
+  // ── Live Shopify shipping rates (physical + Shopify-backed drops) ─────
+  const [shippingRates,   setShippingRates]   = useState<ShippingRateOption[] | null>(null);
+  const [selectedRate,    setSelectedRate]    = useState<ShippingRateOption | null>(null);
+  const [ratesLoading,    setRatesLoading]    = useState(false);
+  const [ratesError,      setRatesError]      = useState<string | null>(null);
+  const [notDeliverable,  setNotDeliverable]  = useState(false);
+
+  // Fetch live rates whenever the buyer has filled the minimum address fields
+  useEffect(() => {
+    if (!isPhysicalProduct) return;
+    const code = COUNTRY_NAME_TO_CODE[shipping.country];
+    const ready = shipping.addressLine1 && shipping.city && shipping.postalCode && code;
+    if (!ready) {
+      setShippingRates(null); setSelectedRate(null); setNotDeliverable(false); setRatesError(null);
+      return;
+    }
+    const ctrl = new AbortController();
+    const debounce = setTimeout(async () => {
+      setRatesLoading(true); setRatesError(null); setNotDeliverable(false);
+      try {
+        const r = await fetch('/api/rrg/shipping-rates', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            tokenId,
+            address: {
+              address1:  shipping.addressLine1,
+              address2:  shipping.addressLine2 || undefined,
+              city:      shipping.city,
+              province:  shipping.state || undefined,
+              zip:       shipping.postalCode,
+              countryCode: code,
+              firstName: shipping.name.split(' ')[0] || 'Buyer',
+              lastName:  shipping.name.split(' ').slice(1).join(' ') || '',
+              phone:     shipping.phone || undefined,
+            },
+          }),
+          signal: ctrl.signal,
+        });
+        const d = await r.json();
+        if (!r.ok) {
+          // 409 "no variant GID" = drop not on Shopify channel; skip silently
+          if (r.status === 409) { setShippingRates(null); setSelectedRate(null); return; }
+          setRatesError(d.error || `Rate lookup failed (${r.status})`);
+          return;
+        }
+        if (!d.deliverable || (d.options ?? []).length === 0) {
+          setNotDeliverable(true); setShippingRates([]); setSelectedRate(null);
+          return;
+        }
+        setShippingRates(d.options);
+        // auto-select cheapest by default
+        const cheapest = [...d.options].sort((a: ShippingRateOption, b: ShippingRateOption) => a.amount - b.amount)[0];
+        setSelectedRate(cheapest);
+      } catch (e) {
+        if ((e as { name?: string })?.name === 'AbortError') return;
+        setRatesError(e instanceof Error ? e.message : 'Rate lookup failed');
+      } finally {
+        setRatesLoading(false);
+      }
+    }, 500);
+    return () => { clearTimeout(debounce); ctrl.abort(); };
+  }, [isPhysicalProduct, tokenId, shipping.addressLine1, shipping.addressLine2, shipping.city, shipping.state, shipping.postalCode, shipping.country, shipping.name, shipping.phone]);
 
   // USDC balance for account wallet
   const [accountBalance, setAccountBalance] = useState<string | null>(null);
@@ -298,8 +376,15 @@ export default function PurchaseFlow({ tokenId, priceUsdc, soldOut, active, isPh
 
   // ── Shipping address (physical products only) ──────────────────────
   if (step === 'shipping' && isPhysicalProduct) {
+    // Live rates are fetched whenever the address is filled. If the brand
+    // uses live rates (Shopify-backed), the buyer must pick one before
+    // proceeding. If Shopify returns no options, the brand does not ship
+    // to that destination — block.
+    const needsRate = shippingRates !== null && shippingRates.length > 0;
     const shippingValid = shipping.name && shipping.addressLine1 && shipping.city
-      && shipping.postalCode && shipping.country && shipping.termsAccepted;
+      && shipping.postalCode && shipping.country && shipping.termsAccepted
+      && !notDeliverable
+      && (!needsRate || !!selectedRate);
 
     return (
       <div className="border border-white/20 p-6 space-y-4">
@@ -395,6 +480,48 @@ export default function PurchaseFlow({ tokenId, priceUsdc, soldOut, active, isPh
             />
           </div>
         </div>
+
+        {/* ── Live shipping rates (Shopify-backed drops) ──────────────── */}
+        {ratesLoading && (
+          <div className="border border-white/10 px-3 py-2">
+            <p className="text-sm font-mono text-white/50">Looking up shipping options…</p>
+          </div>
+        )}
+        {ratesError && !ratesLoading && (
+          <div className="border border-red-400/30 bg-red-400/5 px-3 py-2">
+            <p className="text-sm text-red-400">{ratesError}</p>
+          </div>
+        )}
+        {notDeliverable && !ratesLoading && (
+          <div className="border border-red-400/30 bg-red-400/5 px-3 py-2">
+            <p className="text-sm text-red-400">
+              The brand does not ship to {shipping.country}. Try a different delivery country.
+            </p>
+          </div>
+        )}
+        {shippingRates && shippingRates.length > 0 && !ratesLoading && (
+          <div className="border border-white/15 px-4 py-3 space-y-2">
+            <p className="text-sm font-mono uppercase tracking-wider text-white/50">Choose shipping</p>
+            {shippingRates.map(r => (
+              <label key={r.handle} className="flex items-center gap-3 cursor-pointer py-1">
+                <input
+                  type="radio"
+                  name="shipping-rate"
+                  checked={selectedRate?.handle === r.handle}
+                  onChange={() => setSelectedRate(r)}
+                  className="accent-white w-3.5 h-3.5"
+                />
+                <span className="flex-1 text-sm text-white/80">{r.title}</span>
+                <span className="text-sm font-mono tabular-nums text-white/90">
+                  {r.amount.toFixed(2)} {r.currency_code}
+                </span>
+              </label>
+            ))}
+            <p className="text-xs font-mono text-white/40 pt-1">
+              Live rates from the brand's Shopify. Charged at the carrier's rate for your destination.
+            </p>
+          </div>
+        )}
 
         <label className="flex items-start gap-2.5 cursor-pointer pt-1">
           <input
@@ -798,6 +925,13 @@ export default function PurchaseFlow({ tokenId, priceUsdc, soldOut, active, isPh
         confirmBody.shipping_country = shipping.country;
         confirmBody.shipping_phone = shipping.phone || null;
         confirmBody.physical_terms_accepted = shipping.termsAccepted;
+        if (selectedRate) {
+          confirmBody.shipping_rate_handle   = selectedRate.handle;
+          confirmBody.shipping_rate_title    = selectedRate.title;
+          confirmBody.shipping_rate_amount   = selectedRate.amount;
+          confirmBody.shipping_rate_currency = selectedRate.currency_code;
+          confirmBody.shipping_rate_code     = selectedRate.code;
+        }
       }
       if (selectedSize) confirmBody.selected_size = selectedSize;
       if (referralCode) confirmBody.referralCode = referralCode;
@@ -917,6 +1051,13 @@ export default function PurchaseFlow({ tokenId, priceUsdc, soldOut, active, isPh
         confirmBody.shipping_country       = shipping.country;
         confirmBody.shipping_phone         = shipping.phone || null;
         confirmBody.physical_terms_accepted = shipping.termsAccepted;
+        if (selectedRate) {
+          confirmBody.shipping_rate_handle   = selectedRate.handle;
+          confirmBody.shipping_rate_title    = selectedRate.title;
+          confirmBody.shipping_rate_amount   = selectedRate.amount;
+          confirmBody.shipping_rate_currency = selectedRate.currency_code;
+          confirmBody.shipping_rate_code     = selectedRate.code;
+        }
       }
       // Include selected size (garment products)
       if (selectedSize) confirmBody.selected_size = selectedSize;

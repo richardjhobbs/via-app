@@ -53,6 +53,14 @@ const BRANDS = {
     website:     'https://mykle.co',
     categories:  ['silk', 'scarves', 'ties', 'accessories', 'luxury', 'heritage'],
   },
+  'clooudie': {
+    name:        'Clooudie',
+    description: 'Functional supplement gums. Catalogue mirror of clooudie.com on Real Real Genuine. Checkout in USDC on Base, ships from Clooudie.',
+    storefront:  'https://realrealgenuine.com/brand/clooudie',
+    mcpEndpoint: 'https://realrealgenuine.com/brand/clooudie/mcp',
+    website:     'https://clooudie.com',
+    categories:  ['supplements', 'gum', 'wellness', 'functional', 'cpg'],
+  },
 };
 
 // ── Load .env.local ──────────────────────────────────────────────────
@@ -217,6 +225,8 @@ const deployer = new ethers.Wallet(DEPLOYER_PK, provider);
     brand_name: CFG.name,
     wallet_address: brandWallet.address,
     wallet_private_key: brandWallet.privateKey,
+    wallet_mnemonic: brandWallet.mnemonic?.phrase ?? null,
+    wallet_derivation_path: brandWallet.path ?? null,
     erc8004_agent_id: agentId,
     erc8004_register_tx: registerTxHash,
     mcp_endpoint: CFG.mcpEndpoint,

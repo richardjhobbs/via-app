@@ -65,25 +65,18 @@ function round2(n: number): number {
 // ── Tiered brand split (brand-created drops only) ──────────────────────
 
 /**
- * Returns the brand percentage for a brand-created drop based on sale price.
- * Single sliding scale for both digital and physical channels.
- *
- * $0–$9.99:   70%  (fixed)
- * $10–$100:   70% → 97.5%  (linear)
- * $100+:      97.5% (fixed cap)
- *
- * Physical channel: same scale, $10 minimum, card fee deducted from seller.
+ * Returns the brand percentage for a brand-created drop.
+ * All retail brand products pay 97.5% to the brand, 2.5% platform fee.
+ * Variable splits are for co-creation drops only (challenge_35_35_30 path).
  *
  * If `brandPctOverride` is supplied (per-brand override on rrg_brands), it
- * is returned directly and the tiered formula is bypassed. Use this for
- * brands with a pre-negotiated flat split (e.g. a 97.5% wholesale deal).
+ * is returned directly.
  */
 export function getBrandPct(priceUsdc: number, brandPctOverride?: number | null): number {
   if (brandPctOverride != null && brandPctOverride >= 0 && brandPctOverride <= 100) {
     return brandPctOverride;
   }
-  if (priceUsdc < 10)  return 70;
-  if (priceUsdc <= 100) return 70 + (priceUsdc - 10) / 90 * 27.5;
+  void priceUsdc; // flat rate — price-tiering removed
   return 97.5;
 }
 

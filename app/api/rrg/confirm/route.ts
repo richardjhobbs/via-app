@@ -8,7 +8,7 @@ import { sendFileDeliveryEmail, sendPhysicalOrderToBrand, sendPhysicalPurchaseTo
 import { randomBytes } from 'crypto';
 import { autopostSale } from '@/lib/rrg/autopost';
 import { sendInstagramNotification } from '@/lib/rrg/instagram';
-import { postReputationSignal, postBuyerReputationSignal, fireVoucherSignal, lookupAgentIdByWallet } from '@/lib/rrg/erc8004';
+import { postReputationSignal, postBuyerReputationSignal, postBrandSaleSignal, fireVoucherSignal, lookupAgentIdByWallet } from '@/lib/rrg/erc8004';
 import { calculateSplit } from '@/lib/rrg/splits';
 import { resolveEffectivePrice } from '@/lib/rrg/pricing';
 import { insertDistributionAndPay } from '@/lib/rrg/auto-payout';
@@ -26,6 +26,8 @@ export async function POST(req: NextRequest) {
             shipping_name, shipping_address_line1, shipping_address_line2,
             shipping_city, shipping_state, shipping_postal_code,
             shipping_country, shipping_phone, physical_terms_accepted,
+            shipping_rate_handle, shipping_rate_title, shipping_rate_amount,
+            shipping_rate_currency, shipping_rate_code,
             selected_size } = body;
 
     // ── Validate inputs ───────────────────────────────────────────────
@@ -120,6 +122,12 @@ export async function POST(req: NextRequest) {
           shipping_country:        shipping_country || null,
           shipping_phone:          shipping_phone || null,
           physical_terms_accepted: physical_terms_accepted ?? false,
+          // Selected live shipping rate (Shopify-backed drops)
+          shipping_rate_handle:    shipping_rate_handle   || null,
+          shipping_rate_title:     shipping_rate_title    || null,
+          shipping_rate_amount:    shipping_rate_amount   ?? null,
+          shipping_rate_currency:  shipping_rate_currency || null,
+          shipping_rate_code:      shipping_rate_code     || null,
         } : {}),
         // Size / variant (garment products)
         ...(selected_size ? { selected_size } : {}),
@@ -205,6 +213,28 @@ export async function POST(req: NextRequest) {
       } catch (repErr) {
         // Non-fatal — purchase + mint still succeeded
         console.error('[confirm] ERC-8004 reputation signal failed:', repErr);
+      }
+    }
+
+    // ── ERC-8004 brand sale signal (sequential — avoids nonce collision) ──
+    // Attests the brand agent completed a verified sale on RRG (tag: sale/brand).
+    // Only fires when the drop belongs to a brand (brand_id set + is_brand_product).
+    if (drop.brand_id && drop.is_brand_product) {
+      try {
+        const brandForSignal = await getBrandById(drop.brand_id);
+        if (brandForSignal?.wallet_address) {
+          const brandSaleHash = await postBrandSaleSignal({
+            brandWallet: brandForSignal.wallet_address,
+            priceUsdc:   effectivePrice.toString(),
+            tokenId:     parseInt(tokenId),
+            txHash,
+          });
+          if (brandSaleHash) {
+            console.log(`[confirm] ERC-8004 brand sale signal posted: ${brandSaleHash.slice(0, 10)}…`);
+          }
+        }
+      } catch (brandSignalErr) {
+        console.error('[confirm] ERC-8004 brand sale signal failed:', brandSignalErr);
       }
     }
 
