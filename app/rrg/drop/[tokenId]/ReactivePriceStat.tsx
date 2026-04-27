@@ -25,7 +25,7 @@ export default function ReactivePriceStat() {
   return (
     <div>
       <div className="pdp-stat-lbl">{label}</div>
-      <div className="pdp-stat-val">${Math.round(displayPrice).toLocaleString()}</div>
+      <div className="pdp-stat-val">${displayPrice < 1 ? displayPrice.toFixed(2) : Math.round(displayPrice).toLocaleString()}</div>
       <div className="pdp-stat-sub">{sub}</div>
     </div>
   );

@@ -111,7 +111,7 @@ export default async function DropPage({ params, searchParams }: Props) {
 
   let onChain = { minted: 0, maxSupply: drop.edition_size ?? 0, active: true, soldOut: false };
 
-  if (isShopifyBacked) {
+  if (isShopifyBacked && rawVariants.length > 0) {
     const totalStock = rawVariants.reduce((sum, v) => sum + Math.max(0, v.cached_stock), 0);
     onChain = { minted: 0, maxSupply: totalStock, active: true, soldOut: totalStock === 0 };
   } else {
@@ -130,7 +130,8 @@ export default async function DropPage({ params, searchParams }: Props) {
     } catch { /* non-fatal */ }
   }
 
-  const remaining = isShopifyBacked ? onChain.maxSupply : (onChain.maxSupply - onChain.minted);
+  const isShopifyStocked = isShopifyBacked && rawVariants.length > 0;
+  const remaining = isShopifyStocked ? onChain.maxSupply : (onChain.maxSupply - onChain.minted);
   const priceUsdc = parseFloat(drop.price_usdc || '0');
   const scanBase = 'https://basescan.org';
 
@@ -289,9 +290,9 @@ export default async function DropPage({ params, searchParams }: Props) {
             basePriceUsdc={priceUsdc}
             initialSize={preSelectedSize}
           >
-          <div className={`pdp-stats ${isShopifyBacked ? 'two' : ''}`}>
+          <div className={`pdp-stats ${isShopifyStocked ? 'two' : ''}`}>
             <ReactivePriceStat />
-            {isShopifyBacked ? (
+            {isShopifyStocked ? (
               <div>
                 <div className="pdp-stat-lbl">Stock</div>
                 <div className={`pdp-stat-val ${remaining === 0 ? 'soldout' : ''}`}>
