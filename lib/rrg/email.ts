@@ -237,6 +237,8 @@ interface PhysicalPurchaseEmailData {
   shippingType: string | null;
   downloadUrl: string;
   ipfsMetadataUrl?: string | null;
+  /** Product image signed URL for buyer email hero (optional) */
+  imageUrl?: string | null;
   /** Selected size for garment products (null for non-garment) */
   selectedSize?: string | null;
   /** Price paid by buyer in USDC */
@@ -343,12 +345,11 @@ ${escHtml(data.shippingAddress)}</div>
   });
 }
 
-/** Send to buyer: purchase confirmation with shipping address + physical product info */
+/** Send to buyer: purchase confirmation — physical product prominent, download link minimal at end */
 export async function sendPhysicalPurchaseToBuyer(data: PhysicalPurchaseEmailData): Promise<void> {
   if (!data.buyerEmail) return;
 
   const scanBase   = 'https://basescan.org';
-  const listingUrl = `${SITE_URL}/rrg/drop/${data.tokenId}`;
   const html = `
 <!DOCTYPE html>
 <html>
@@ -358,24 +359,28 @@ export async function sendPhysicalPurchaseToBuyer(data: PhysicalPurchaseEmailDat
   .wordmark { font-family: Georgia, 'Times New Roman', serif; font-size: 18px; font-weight: 400; font-style: italic; letter-spacing: 0.01em; color: #1a1612; margin: 0 0 24px; }
   .card { background: #ffffff; border: 1px solid #e8e3db; }
   .card-head { padding: 28px 32px 24px; border-bottom: 1px solid #e8e3db; }
-  .card-head .eyebrow { font-family: 'Courier New', Courier, monospace; font-size: 10px; letter-spacing: 0.16em; text-transform: uppercase; color: #2b9a66; margin: 0 0 6px; }
-  .card-head h1 { margin: 0; font-family: Georgia, 'Times New Roman', serif; font-size: 26px; font-weight: 400; font-style: italic; color: #1a1612; letter-spacing: -0.01em; }
+  .card-head .eyebrow { font-family: 'Courier New', Courier, monospace; font-size: 10px; letter-spacing: 0.16em; text-transform: uppercase; color: #2b9a66; margin: 0 0 8px; }
+  .card-head h1 { margin: 0 0 4px; font-family: Georgia, 'Times New Roman', serif; font-size: 26px; font-weight: 400; font-style: italic; color: #1a1612; letter-spacing: -0.01em; }
+  .card-head .brand-sub { font-size: 13px; color: #6e665c; margin: 0; }
+  .product-img { width: 100%; display: block; max-height: 360px; object-fit: cover; border-bottom: 1px solid #e8e3db; }
   .body { padding: 28px 32px; }
   .lbl { font-family: 'Courier New', Courier, monospace; font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; color: #6e665c; margin: 0 0 12px; }
-  .block { border: 1px solid #e8e3db; margin: 0 0 20px; }
+  .block { border: 1px solid #e8e3db; margin: 0 0 24px; }
   .row { display: flex; justify-content: space-between; align-items: baseline; padding: 10px 16px; border-bottom: 1px solid #e8e3db; font-size: 13px; }
   .row:last-child { border-bottom: none; }
   .row-lbl { color: #6e665c; }
   .row-val { color: #1a1612; font-weight: 500; text-align: right; }
   .row-val-accent { color: #6b4f3a; font-weight: 600; font-size: 15px; }
   .address-block { padding: 14px 16px; font-family: 'Courier New', Courier, monospace; font-size: 13px; color: #1a1612; line-height: 1.7; white-space: pre-line; }
-  .download-block { border: 1px solid #e8e3db; padding: 24px 32px; margin: 0 0 20px; text-align: center; background: #f7f3ee; }
-  .download-note { font-family: 'Courier New', Courier, monospace; font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; color: #6e665c; margin: 12px 0 0; }
-  .btn-primary { display: inline-block; background: #1a1612; color: #faf7f2; padding: 12px 28px; text-decoration: none; font-size: 13px; letter-spacing: 0.04em; font-weight: 500; }
-  .btn-ghost { display: inline-block; border: 1px solid #d5cfc7; color: #3a342d; padding: 10px 20px; text-decoration: none; font-size: 12px; letter-spacing: 0.04em; }
-  .shipping-note { border-left: 3px solid #6b4f3a; padding: 14px 18px; background: #f7f3ee; margin: 0 0 20px; }
-  .shipping-note p { margin: 0 0 6px; font-size: 13px; color: #3a342d; line-height: 1.6; }
-  .shipping-note p:last-child { margin: 0; }
+  .dispatch-box { border: 2px solid #6b4f3a; padding: 20px 24px; margin: 0 0 24px; background: #fdf9f5; }
+  .dispatch-box p { margin: 0 0 8px; font-size: 14px; color: #1a1612; line-height: 1.6; }
+  .dispatch-box p:last-child { margin: 0; }
+  .dispatch-box a { color: #6b4f3a; }
+  .proof-row { display: flex; justify-content: space-between; align-items: baseline; padding: 10px 16px; border-bottom: 1px solid #e8e3db; font-size: 13px; }
+  .proof-row:last-child { border-bottom: none; }
+  .download-minimal { text-align: center; margin: 4px 0 0; padding: 20px 32px; border-top: 1px solid #e8e3db; }
+  .download-minimal a { font-family: 'Courier New', Courier, monospace; font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase; color: #6b4f3a; text-decoration: none; }
+  .download-minimal p { font-family: 'Courier New', Courier, monospace; font-size: 10px; color: #6e665c; margin: 6px 0 0; letter-spacing: 0.06em; text-transform: uppercase; }
   .footer { margin-top: 32px; padding-top: 20px; border-top: 1px solid #e8e3db; font-family: 'Courier New', Courier, monospace; font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase; color: #6e665c; display: flex; justify-content: space-between; }
 </style></head>
 <body>
@@ -383,29 +388,19 @@ export async function sendPhysicalPurchaseToBuyer(data: PhysicalPurchaseEmailDat
   <p class="wordmark">Real Real Genuine</p>
   <div class="card">
     <div class="card-head">
-      <p class="eyebrow">Order confirmed</p>
+      <p class="eyebrow">Thank you for your order</p>
       <h1>${escHtml(data.title)}</h1>
+      <p class="brand-sub">${escHtml(data.brandName)}${data.selectedSize ? ` &mdash; Size ${escHtml(data.selectedSize)}` : ''}</p>
     </div>
+
+    ${data.imageUrl ? `<img class="product-img" src="${data.imageUrl}" alt="${escHtml(data.title)}" />` : ''}
+
     <div class="body">
 
-      <p class="lbl">Your purchase</p>
-      <div class="block">
-        <div class="row"><span class="row-lbl">Brand</span><span class="row-val">${escHtml(data.brandName)}</span></div>
-        <div class="row"><span class="row-lbl">Token</span><span class="row-val" style="font-family:'Courier New',Courier,monospace;font-size:11px">#${data.tokenId}</span></div>
-        ${data.selectedSize ? `<div class="row"><span class="row-lbl">Size</span><span class="row-val row-val-accent">${escHtml(data.selectedSize)}</span></div>` : ''}
-        ${data.priceUsdc != null ? `<div class="row"><span class="row-lbl">Paid</span><span class="row-val">$${data.priceUsdc.toFixed(2)} USDC</span></div>` : ''}
-      </div>
-
-      <p class="lbl">Digital files</p>
-      <div class="download-block">
-        <a class="btn-primary" href="${data.downloadUrl}">Download your files →</a>
-        <p class="download-note">⚠ Link expires in 24 hours</p>
-      </div>
-
-      <p class="lbl">Physical product</p>
-      <div class="shipping-note">
-        <p>${escHtml(data.brandName)} will arrange delivery to the address below. Allow a few days for dispatch confirmation from the brand.</p>
-        ${data.brandContactEmail ? `<p>Questions about shipping? <a href="mailto:${escHtml(data.brandContactEmail)}" style="color:#6b4f3a">${escHtml(data.brandContactEmail)}</a></p>` : ''}
+      <p class="lbl">Your order</p>
+      <div class="dispatch-box">
+        <p>${escHtml(data.brandName)} will arrange delivery to the address below. Allow a few days for dispatch confirmation.</p>
+        ${data.brandContactEmail ? `<p>Questions about your order? <a href="mailto:${escHtml(data.brandContactEmail)}">${escHtml(data.brandContactEmail)}</a></p>` : ''}
       </div>
 
       <p class="lbl">Delivery address</p>
@@ -415,16 +410,18 @@ ${escHtml(data.shippingAddress)}</div>
         ${data.shippingPhone ? `<div class="row"><span class="row-lbl">Phone</span><span class="row-val">${escHtml(data.shippingPhone)}</span></div>` : ''}
       </div>
 
-      <p class="lbl">On-chain proof</p>
+      <p class="lbl">Purchase details</p>
       <div class="block">
-        <div class="row"><span class="row-lbl">Transaction</span><span class="row-val"><a href="${scanBase}/tx/${data.txHash}" style="color:#6b4f3a;font-family:'Courier New',Courier,monospace;font-size:11px">${data.txHash.slice(0, 14)}…${data.txHash.slice(-6)}</a></span></div>
-        ${data.ipfsMetadataUrl ? `<div class="row"><span class="row-lbl">IPFS metadata</span><span class="row-val"><a href="${data.ipfsMetadataUrl}" style="color:#6b4f3a;font-size:12px">View →</a></span></div>` : ''}
+        ${data.priceUsdc != null ? `<div class="row"><span class="row-lbl">Paid</span><span class="row-val row-val-accent">$${data.priceUsdc.toFixed(2)} USDC</span></div>` : ''}
+        <div class="row"><span class="row-lbl">On-chain tx</span><span class="row-val"><a href="${scanBase}/tx/${data.txHash}" style="color:#6b4f3a;font-family:'Courier New',Courier,monospace;font-size:11px">${data.txHash.slice(0, 14)}...${data.txHash.slice(-6)}</a></span></div>
+        ${data.ipfsMetadataUrl ? `<div class="row"><span class="row-lbl">IPFS record</span><span class="row-val"><a href="${data.ipfsMetadataUrl}" style="color:#6b4f3a;font-size:12px">View →</a></span></div>` : ''}
       </div>
 
-      <div style="text-align:center;margin-top:8px">
-        <a class="btn-ghost" href="${listingUrl}">View listing →</a>
-      </div>
+    </div>
 
+    <div class="download-minimal">
+      <a href="${data.downloadUrl}">Download digital files →</a>
+      <p>Link expires in 24 hours</p>
     </div>
   </div>
   <div class="footer">
@@ -437,7 +434,7 @@ ${escHtml(data.shippingAddress)}</div>
 
   await sendEmail({
     to: data.buyerEmail,
-    subject: `Order confirmed: "${data.title}" — digital files ready, physical on its way`,
+    subject: `Thank you for your order: ${data.title}`,
     html,
   });
 }

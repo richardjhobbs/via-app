@@ -475,6 +475,10 @@ export async function POST(req: NextRequest) {
           shipping_country,
         ].filter(Boolean).join('\n');
 
+        const emailImageUrl = (submission as any).jpeg_storage_path
+          ? await getSignedUrl((submission as any).jpeg_storage_path as string, 300).catch(() => null)
+          : null;
+
         const emailData = {
           title:             submission.title,
           tokenId,
@@ -488,6 +492,7 @@ export async function POST(req: NextRequest) {
           shippingType:      submission.shipping_type || null,
           downloadUrl,
           ipfsMetadataUrl:   ipfsResult?.metadataUrl ?? null,
+          imageUrl:          emailImageUrl,
           selectedSize:      selected_size || null,
         };
 

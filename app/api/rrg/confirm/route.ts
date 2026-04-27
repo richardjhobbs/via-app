@@ -384,6 +384,9 @@ export async function POST(req: NextRequest) {
         const priceForEmail    = parseFloat(effectivePrice.toString());
         const brandPctForEmail = brand?.brand_pct_override ?? 97.5;
         const brandRevenueUsdc = Math.round(priceForEmail * (brandPctForEmail / 100) * 100) / 100;
+        const emailImageUrl    = drop.jpeg_storage_path
+          ? await getSignedUrl(drop.jpeg_storage_path, 300).catch(() => null)
+          : null;
 
         const emailData = {
           title:               drop.title,
@@ -399,6 +402,7 @@ export async function POST(req: NextRequest) {
           shippingType:        drop.shipping_type || null,
           downloadUrl,
           ipfsMetadataUrl:     ipfsResult?.metadataUrl ?? null,
+          imageUrl:            emailImageUrl,
           selectedSize:        selected_size || null,
           priceUsdc:           priceForEmail,
           brandRevenueUsdc,
