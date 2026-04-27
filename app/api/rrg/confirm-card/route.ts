@@ -476,7 +476,7 @@ export async function POST(req: NextRequest) {
         ].filter(Boolean).join('\n');
 
         const emailImageUrl = (submission as any).jpeg_storage_path
-          ? await getSignedUrl((submission as any).jpeg_storage_path as string, 300).catch(() => null)
+          ? await getSignedUrl((submission as any).jpeg_storage_path as string, 604800).catch(() => null)
           : null;
 
         const emailData = {
