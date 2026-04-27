@@ -262,7 +262,7 @@ export async function POST(req: NextRequest) {
         files_delivered:     false,
         mint_status:         'pending',
         brand_id:            submission.brand_id ?? RRG_BRAND_ID,
-        ...(email ? { delivery_email: email } : {}),
+        ...(email ? { delivery_email: email, buyer_email: email } : {}),
         // Shipping fields (physical products)
         ...(submission.is_physical_product ? {
           shipping_name:           shipping_name || null,
