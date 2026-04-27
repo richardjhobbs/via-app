@@ -113,6 +113,9 @@ interface Distribution {
   status: string;
   notes?: string | null;
   purchase_tx_hash?: string | null;
+  token_id?: number | null;
+  submission_title?: string | null;
+  brand_name?: string | null;
 }
 
 interface Contributor {
@@ -1960,6 +1963,13 @@ function DistributionsTab() {
                   <span className="text-sm font-mono text-white/40 ml-3">
                     {new Date(d.created_at).toLocaleString()}
                   </span>
+                  {(d.brand_name || d.submission_title || d.token_id) && (
+                    <p className="text-xs font-mono text-white/50 mt-1">
+                      {d.brand_name && <span className="text-white/70">{d.brand_name}</span>}
+                      {d.submission_title && <span className="text-white/40"> — {d.submission_title}</span>}
+                      {d.token_id != null && <span className="text-white/30 ml-2">#{d.token_id}</span>}
+                    </p>
+                  )}
                 </div>
                 <span className={`text-sm font-mono px-2 py-0.5 ${
                   d.status === 'completed' ? 'bg-green-400/20 text-green-400' :

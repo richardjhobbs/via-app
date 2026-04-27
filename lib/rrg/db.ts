@@ -216,6 +216,12 @@ export interface RrgDistribution {
   notes: string | null;
   /** Joined from rrg_purchases — the buyer's on-chain purchase tx hash */
   purchase_tx_hash?: string | null;
+  /** Joined from rrg_purchases — the token ID */
+  token_id?: number | null;
+  /** Joined from rrg_purchases → rrg_submissions — the product title */
+  submission_title?: string | null;
+  /** Joined from rrg_brands — the brand name */
+  brand_name?: string | null;
 }
 
 // ── Brand helpers ─────────────────────────────────────────────────────
@@ -732,7 +738,7 @@ export async function getDistributions(
 ): Promise<RrgDistribution[]> {
   let query = db
     .from('rrg_distributions')
-    .select('*, rrg_purchases(tx_hash)');
+    .select('*, rrg_purchases(tx_hash, token_id, rrg_submissions(title)), rrg_brands(name)');
 
   if (status) {
     query = query.eq('status', status);
@@ -743,9 +749,16 @@ export async function getDistributions(
 
   const { data } = await query.order('created_at', { ascending: false });
   return (data ?? []).map((row: Record<string, unknown>) => {
-    const purchase = row.rrg_purchases as { tx_hash?: string | null } | null;
-    const { rrg_purchases: _, ...rest } = row;
-    return { ...rest, purchase_tx_hash: purchase?.tx_hash ?? null } as unknown as RrgDistribution;
+    const purchase    = row.rrg_purchases as { tx_hash?: string | null; token_id?: number | null; rrg_submissions?: { title?: string | null } | null } | null;
+    const brandRow    = row.rrg_brands as { name?: string | null } | null;
+    const { rrg_purchases: _, rrg_brands: __, ...rest } = row;
+    return {
+      ...rest,
+      purchase_tx_hash: purchase?.tx_hash     ?? null,
+      token_id:         purchase?.token_id    ?? null,
+      submission_title: purchase?.rrg_submissions?.title ?? null,
+      brand_name:       brandRow?.name        ?? null,
+    } as unknown as RrgDistribution;
   });
 }
 
