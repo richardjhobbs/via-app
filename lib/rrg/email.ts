@@ -371,7 +371,7 @@ export async function sendPhysicalPurchaseToBuyer(data: PhysicalPurchaseEmailDat
   .eyebrow { font-family: 'Courier New', Courier, monospace; font-size: 10px; letter-spacing: 0.16em; text-transform: uppercase; color: #2b9a66; margin: 0 0 8px; }
   h1 { margin: 0 0 4px; font-family: Georgia, 'Times New Roman', serif; font-size: 26px; font-weight: 400; font-style: italic; color: #1a1612; letter-spacing: -0.01em; }
   .brand-sub { font-size: 13px; color: #6e665c; margin: 0; }
-  .product-img { width: 100%; display: block; max-height: 360px; object-fit: cover; border-bottom: 1px solid #e8e3db; }
+  .product-img { width: 100%; display: block; height: auto; border-bottom: 1px solid #e8e3db; }
   .body { padding: 28px 32px; }
   .lbl { font-family: 'Courier New', Courier, monospace; font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; color: #6e665c; margin: 0 0 12px; }
   .block { border: 1px solid #e8e3db; margin: 0 0 24px; width: 100%; border-collapse: collapse; }
