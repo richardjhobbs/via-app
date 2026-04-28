@@ -137,22 +137,28 @@ export async function getShippingQuote(params: {
 
   const endpoint = `https://${brand.shopify_domain}/api/${STOREFRONT_API_VERSION}/graphql.json`;
 
-  // Step 1: create a cart with the variant + shipping address
+  // Create a cart and ask for delivery rates with carrier rates included.
+  // `withCarrierRates: true` requires the @defer directive — Shopify returns
+  // a multipart/mixed response: an initial part (cart id) and an incremental
+  // part (the rates) once carriers have responded. We parse both parts and
+  // pluck deliveryGroups out of the deferred patch.
   const createCartQuery = `
     mutation cartCreate($input: CartInput!) {
       cartCreate(input: $input) {
         cart {
           id
           cost { subtotalAmount { amount currencyCode } }
-          deliveryGroups(first: 1) {
-            edges {
-              node {
-                deliveryOptions {
-                  handle
-                  title
-                  code
-                  estimatedCost { amount currencyCode }
-                  deliveryMethodType
+          ... @defer(label: "rates") {
+            deliveryGroups(first: 5, withCarrierRates: true) {
+              edges {
+                node {
+                  deliveryOptions {
+                    handle
+                    title
+                    code
+                    estimatedCost { amount currencyCode }
+                    deliveryMethodType
+                  }
                 }
               }
             }
@@ -197,10 +203,13 @@ export async function getShippingQuote(params: {
       method:  'POST',
       headers: {
         'Content-Type':                      'application/json',
+        'Accept':                            'multipart/mixed',
         'X-Shopify-Storefront-Access-Token': token,
       },
       body:   JSON.stringify({ query: createCartQuery, variables: { input } }),
-      signal: AbortSignal.timeout(10_000),
+      // Carrier rate fetches go to UPS/USPS/FedEx — bumped from 10s to 30s
+      // to absorb the slowest carriers without false-failing.
+      signal: AbortSignal.timeout(30_000),
     });
 
     if (!res.ok) {
@@ -209,14 +218,15 @@ export async function getShippingQuote(params: {
       return { ok: false, error: `Shopify API error: ${res.status}`, code: 'api_error' };
     }
 
-    const json = await res.json();
-    if (json.errors?.length) {
-      console.error(`[shopify-shipping] ${brand.slug} GraphQL errors:`, json.errors);
-      return { ok: false, error: json.errors[0]?.message ?? 'GraphQL error', code: 'api_error' };
-    }
+    // Shopify returns multipart/mixed for @defer queries. Parse both parts
+    // and stitch the incremental "rates" patch into the initial cart.
+    const raw = await res.text();
+    const { cart, errors, userErrors } = parseDeferredCartResponse(raw);
 
-    const cart = json.data?.cartCreate?.cart;
-    const userErrors = json.data?.cartCreate?.userErrors ?? [];
+    if (errors.length > 0) {
+      console.error(`[shopify-shipping] ${brand.slug} GraphQL errors:`, errors);
+      return { ok: false, error: errors[0]?.message ?? 'GraphQL error', code: 'api_error' };
+    }
     if (userErrors.length > 0) {
       return { ok: false, error: userErrors[0].message, code: 'invalid_address' };
     }
@@ -297,4 +307,105 @@ export async function getShippingQuoteByToken(params: {
     shopifyVariantId: variant.shopify_variant_id,
     address,
   });
+}
+
+// ── multipart/mixed parser for @defer responses ──────────────────────
+
+interface ParsedCartResult {
+  cart: {
+    id?: string;
+    cost?: { subtotalAmount?: { amount: string; currencyCode: string } };
+    deliveryGroups?: {
+      edges: Array<{
+        node: {
+          deliveryOptions: Array<{
+            handle:        string;
+            title:         string;
+            code?:         string;
+            estimatedCost?: { amount: string; currencyCode: string };
+          }>;
+        };
+      }>;
+    };
+  } | null;
+  errors:     Array<{ message: string }>;
+  userErrors: Array<{ field?: string[]; message: string; code?: string }>;
+}
+
+/**
+ * Parse Shopify's multipart/mixed @defer response into a single cart shape.
+ *
+ * The response looks like:
+ *   --graphql
+ *   Content-Type: application/json
+ *   <initial JSON: { data: { cartCreate: { cart: { id, cost } } }, hasNext: true }>
+ *
+ *   --graphql
+ *   Content-Type: application/json
+ *   <incremental JSON: { incremental: [{ path: [...], data: { deliveryGroups: ... } }] }>
+ *
+ *   --graphql--
+ *
+ * We collect every JSON body, take cart/userErrors/errors from the initial
+ * payload, then merge the deferred patch (the deliveryGroups patch) into
+ * the cart object. The function tolerates the non-deferred shape too — if
+ * Shopify ever returns plain application/json we just read data directly.
+ */
+function parseDeferredCartResponse(raw: string): ParsedCartResult {
+  const result: ParsedCartResult = { cart: null, errors: [], userErrors: [] };
+
+  // Find every JSON object in the body. The simplest robust path: split on
+  // the boundary marker (lines starting with --) and parse anything that
+  // looks like JSON.
+  const segments = raw.split(/\r?\n--/);
+  const jsonBlobs: unknown[] = [];
+  for (const seg of segments) {
+    const start = seg.indexOf('{');
+    if (start < 0) continue;
+    const candidate = seg.slice(start).trim();
+    try {
+      jsonBlobs.push(JSON.parse(candidate));
+    } catch {
+      // Some segments are headers only or trailing boundary — skip silently.
+    }
+  }
+
+  // Plain JSON response — single object, no boundaries.
+  if (jsonBlobs.length === 0) {
+    try {
+      jsonBlobs.push(JSON.parse(raw));
+    } catch {
+      return result;
+    }
+  }
+
+  for (const blob of jsonBlobs) {
+    const b = blob as Record<string, unknown>;
+    if (Array.isArray(b.errors)) {
+      for (const e of b.errors as Array<{ message: string }>) result.errors.push(e);
+    }
+    const data = b.data as { cartCreate?: { cart?: ParsedCartResult['cart']; userErrors?: ParsedCartResult['userErrors'] } } | undefined;
+    if (data?.cartCreate) {
+      if (data.cartCreate.cart) {
+        result.cart = { ...(result.cart ?? {}), ...data.cartCreate.cart };
+      }
+      if (Array.isArray(data.cartCreate.userErrors)) {
+        for (const ue of data.cartCreate.userErrors) result.userErrors.push(ue);
+      }
+    }
+
+    // Incremental patch: { incremental: [{ path: [...], data: {...} }] }
+    const incremental = b.incremental as Array<{ path?: string[]; data?: Record<string, unknown> }> | undefined;
+    if (Array.isArray(incremental)) {
+      for (const patch of incremental) {
+        if (!patch.data) continue;
+        // We only care about patches under cartCreate.cart — merge their
+        // fields into the cart object.
+        if (!result.cart) result.cart = {};
+        Object.assign(result.cart, patch.data);
+      }
+    }
+  }
+
+  return result;
 }
