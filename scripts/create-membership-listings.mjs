@@ -50,7 +50,7 @@ const PRICE_USDC  = 0.50;
 const EDITION     = 50;
 
 // Brands to create listings for — slug must match rrg_brands.slug
-const BRANDS = ['nolo', 'clooudie', 'frey-tailored'];
+const BRANDS = ['nolo', 'clooudie', 'frey-tailored', 'unknown-union'];
 
 // ── Image composition ────────────────────────────────────────────────────
 
