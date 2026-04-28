@@ -473,9 +473,17 @@ export async function POST(req: NextRequest) {
       console.error('[claim] Distribution/payout failed:', distErr);
     }
 
-    // ── Send delivery email if provided ───────────────────────────────────
-    if (email) {
+    // ── Send delivery email (digital-only purchases) ──────────────────────
+    // Physical purchases get the branded order email below (with shipping).
+    // One email per purchase, never both.
+    if (email && !submission.is_physical_product) {
       try {
+        const digitalImageUrl = submission.jpeg_storage_path
+          ? await getSignedUrl(submission.jpeg_storage_path, 604800).catch(() => null)
+          : null;
+        const digitalBrand = submission.brand_id
+          ? await getBrandById(submission.brand_id).catch(() => null)
+          : null;
         await sendFileDeliveryEmail({
           to:              email,
           title:           submission.title,
@@ -484,6 +492,9 @@ export async function POST(req: NextRequest) {
           downloadUrl,
           ipfsMetadataUrl: ipfsResult?.metadataUrl ?? null,
           voucher:         voucherData ?? undefined,
+          brandName:       digitalBrand?.name ?? null,
+          imageUrl:        digitalImageUrl,
+          priceUsdc:       parseFloat(submission.price_usdc?.toString() ?? '0'),
         });
         await db
           .from('rrg_purchases')
@@ -541,6 +552,10 @@ export async function POST(req: NextRequest) {
         if (email) {
           await sendPhysicalPurchaseToBuyer(emailData);
           console.log(`[claim] Physical purchase email sent to buyer: ${email}`);
+          await db
+            .from('rrg_purchases')
+            .update({ files_delivered: true })
+            .eq('tx_hash', txHash);
         }
       } catch (physEmailErr) {
         console.error('[claim] Physical product email failed:', physEmailErr);

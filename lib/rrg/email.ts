@@ -95,7 +95,11 @@ export async function sendApprovalNotification({
   });
 }
 
-// ── 2. File delivery ───────────────────────────────────────────────────
+// ── 2. File delivery (digital-only purchases) ─────────────────────────
+//
+// Single buyer email per purchase. Uses the branded RRG template that
+// matches sendPhysicalPurchaseToBuyer, minus the shipping block.
+// The previous purple "Your RRG listing is ready" template is retired.
 
 export async function sendFileDeliveryEmail({
   to,
@@ -105,6 +109,9 @@ export async function sendFileDeliveryEmail({
   downloadUrl,
   ipfsMetadataUrl,
   voucher,
+  brandName,
+  imageUrl,
+  priceUsdc,
 }: {
   to: string;
   title: string;
@@ -113,55 +120,93 @@ export async function sendFileDeliveryEmail({
   downloadUrl: string;
   ipfsMetadataUrl?: string | null;
   voucher?: { code: string; offer: string; brand_url: string | null; terms: string | null; expires_at: string } | null;
+  brandName?: string | null;
+  imageUrl?: string | null;
+  priceUsdc?: number | null;
 }): Promise<void> {
-  const scanBase    = 'https://basescan.org';
-  const dropUrl     = `${SITE_URL}/rrg/drop/${tokenId}`;
-  const basescanUrl = `${scanBase}/tx/${txHash}`;
-  const shortTx     = txHash; // full hash so the link is unambiguous
+  const scanBase  = 'https://basescan.org';
+  const rowStyle  = 'padding:10px 16px;font-size:13px;border-bottom:1px solid #e8e3db;';
+  const lblStyle  = 'color:#6e665c;font-size:13px;white-space:nowrap;padding-right:16px;';
+  const valStyle  = 'color:#1a1612;font-weight:500;text-align:right;font-size:13px;';
+  const monoStyle = "font-family:'Courier New',Courier,monospace;font-size:11px;";
+  const dropUrl   = `${SITE_URL}/rrg/drop/${tokenId}`;
+
+  const mkRow = (label: string, valueHtml: string, last = false) =>
+    `<tr><td style="${rowStyle}${last ? 'border-bottom:none;' : ''}${lblStyle}">${label}</td><td style="${rowStyle}${last ? 'border-bottom:none;' : ''}${valStyle}">${valueHtml}</td></tr>`;
 
   const html = `
 <!DOCTYPE html>
 <html>
 <head><meta charset="utf-8"><style>
-  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #0a0a0a; color: #e5e5e5; margin: 0; padding: 40px 20px; }
-  .card { max-width: 520px; margin: 0 auto; background: #111; border: 1px solid #222; border-radius: 12px; overflow: hidden; }
-  .header { background: #7c3aed; padding: 24px 28px; }
-  .header h1 { margin: 0; font-size: 20px; color: #fff; font-weight: 700; }
-  .body { padding: 28px; }
-  .body p { margin: 0 0 16px; line-height: 1.6; color: #ccc; font-size: 14px; }
-  .btn { display: inline-block; background: #d4ff22; color: #0a0a0a; padding: 14px 28px; border-radius: 8px; text-decoration: none; font-weight: 700; font-size: 15px; margin: 8px 0; }
-  .tx { font-family: monospace; font-size: 12px; color: #7c3aed; }
-  .note { font-size: 12px; color: #555; margin-top: 12px; }
-  .footer { padding: 20px 28px; border-top: 1px solid #1a1a1a; font-size: 12px; color: #555; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', sans-serif; background: #faf7f2; color: #1a1612; margin: 0; padding: 40px 20px; }
+  .wrap { max-width: 560px; margin: 0 auto; }
+  .wordmark { font-family: Georgia, 'Times New Roman', serif; font-size: 18px; font-weight: 400; font-style: italic; letter-spacing: 0.01em; color: #1a1612; margin: 0 0 24px; }
+  .card { background: #ffffff; border: 1px solid #e8e3db; }
+  .card-head { padding: 28px 32px 24px; border-bottom: 1px solid #e8e3db; }
+  .eyebrow { font-family: 'Courier New', Courier, monospace; font-size: 10px; letter-spacing: 0.16em; text-transform: uppercase; color: #2b9a66; margin: 0 0 8px; }
+  h1 { margin: 0 0 4px; font-family: Georgia, 'Times New Roman', serif; font-size: 26px; font-weight: 400; font-style: italic; color: #1a1612; letter-spacing: -0.01em; }
+  .brand-sub { font-size: 13px; color: #6e665c; margin: 0; }
+  .product-img { width: 100%; display: block; height: auto; border-bottom: 1px solid #e8e3db; }
+  .body { padding: 28px 32px; }
+  .lbl { font-family: 'Courier New', Courier, monospace; font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; color: #6e665c; margin: 0 0 12px; }
+  .download-minimal { text-align: center; padding: 20px 32px; border-top: 1px solid #e8e3db; }
+  .download-minimal a { font-family: 'Courier New', Courier, monospace; font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase; color: #6b4f3a; text-decoration: none; }
+  .download-minimal p { font-family: 'Courier New', Courier, monospace; font-size: 10px; color: #6e665c; margin: 6px 0 0; letter-spacing: 0.06em; text-transform: uppercase; }
+  .voucher { border: 2px solid #2b9a66; background: #f4faf6; padding: 20px 24px; margin: 0 0 24px; }
+  .voucher .v-label { font-family: 'Courier New', Courier, monospace; font-size: 10px; letter-spacing: 0.16em; text-transform: uppercase; color: #2b9a66; margin: 0 0 8px; }
+  .voucher .v-offer { font-family: Georgia, 'Times New Roman', serif; font-size: 16px; font-style: italic; color: #1a1612; margin: 0 0 8px; }
+  .voucher .v-code { font-family: 'Courier New', Courier, monospace; font-size: 18px; letter-spacing: 0.18em; color: #1a1612; margin: 0 0 8px; }
+  .voucher .v-meta { font-size: 12px; color: #6e665c; margin: 0; }
 </style></head>
 <body>
-<div class="card">
-  <div class="header"><h1>Your RRG listing is ready</h1></div>
-  <div class="body">
-    <p>Thanks for purchasing <strong style="color:#e5e5e5">"${escHtml(title)}"</strong>. Your files are ready to download.</p>
-    <p><a class="btn" href="${downloadUrl}">Download your files →</a></p>
-    <p class="note">⚠️ This link expires in 24 hours. Download and save your files now.</p>
-    <p>On-chain receipt: <a href="${basescanUrl}" class="tx">${shortTx}</a></p>
-    <p><a href="${dropUrl}" style="color:#7c3aed; text-decoration:none; font-size:13px">View listing →</a></p>
-    ${ipfsMetadataUrl ? `<p><a href="${ipfsMetadataUrl}" style="color:#7c3aed; text-decoration:none; font-size:13px">View metadata on IPFS →</a></p>` : ''}
-    ${voucher ? `
-    <div style="background:#052e16; border:1px solid rgba(16,185,129,0.3); border-radius:8px; padding:16px; margin:20px 0;">
-      <p style="color:#10b981; font-size:12px; text-transform:uppercase; letter-spacing:1px; margin:0 0 8px; font-weight:700">Your Voucher</p>
-      <p style="color:#e5e5e5; font-size:16px; font-weight:600; margin:0 0 4px">${escHtml(voucher.offer)}</p>
-      <p style="color:#fff; font-size:22px; font-family:monospace; letter-spacing:3px; margin:0 0 8px">${escHtml(voucher.code)}</p>
-      ${voucher.brand_url ? `<p style="color:#ccc; font-size:13px; margin:0 0 4px">Redeem at: <a href="${voucher.brand_url}" style="color:#10b981">${escHtml(voucher.brand_url)}</a></p>` : ''}
-      ${voucher.terms ? `<p style="color:#888; font-size:12px; margin:0 0 4px">${escHtml(voucher.terms)}</p>` : ''}
-      <p style="color:#888; font-size:12px; margin:0">Valid until ${new Date(voucher.expires_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })}</p>
-    </div>` : ''}
+<div class="wrap">
+  <p class="wordmark">Real Real Genuine</p>
+  <div class="card">
+    <div class="card-head">
+      <p class="eyebrow">Thank you for your order</p>
+      <h1>${escHtml(title)}</h1>
+      ${brandName ? `<p class="brand-sub">${escHtml(brandName)}</p>` : ''}
+    </div>
+
+    ${imageUrl ? `<img class="product-img" src="${imageUrl}" alt="${escHtml(title)}" />` : ''}
+
+    <div class="body">
+      <p class="lbl">Purchase details</p>
+      <table width="100%" cellpadding="0" cellspacing="0" style="border:1px solid #e8e3db;margin:0 0 24px;border-collapse:collapse;"><tbody>
+        ${priceUsdc != null ? mkRow('Paid', `<span style="color:#6b4f3a;font-weight:600;font-size:15px;">$${priceUsdc.toFixed(2)} USDC</span>`) : ''}
+        ${mkRow('On-chain tx', `<a href="${scanBase}/tx/${txHash}" style="color:#6b4f3a;${monoStyle}">${txHash.slice(0, 14)}&hellip;${txHash.slice(-6)}</a>`, !ipfsMetadataUrl && !voucher)}
+        ${ipfsMetadataUrl ? mkRow('IPFS record', `<a href="${ipfsMetadataUrl}" style="color:#6b4f3a;font-size:12px;">View &rarr;</a>`, !voucher) : ''}
+        ${mkRow('Listing', `<a href="${dropUrl}" style="color:#6b4f3a;font-size:12px;">View &rarr;</a>`, true)}
+      </tbody></table>
+
+      ${voucher ? `
+      <div class="voucher">
+        <p class="v-label">Your voucher</p>
+        <p class="v-offer">${escHtml(voucher.offer)}</p>
+        <p class="v-code">${escHtml(voucher.code)}</p>
+        ${voucher.brand_url ? `<p class="v-meta">Redeem at <a href="${voucher.brand_url}" style="color:#2b9a66;">${escHtml(voucher.brand_url)}</a></p>` : ''}
+        ${voucher.terms ? `<p class="v-meta">${escHtml(voucher.terms)}</p>` : ''}
+        <p class="v-meta">Valid until ${new Date(voucher.expires_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })}</p>
+      </div>` : ''}
+    </div>
+
+    <div class="download-minimal">
+      <a href="${downloadUrl}">Download digital files &rarr;</a>
+      <p>Link expires in 24 hours</p>
+    </div>
   </div>
-  <div class="footer"><a href="${SITE_URL}/rrg" style="color:#e5e5e5; text-decoration:none">Browse all listings</a></div>
+
+  <table width="100%" cellpadding="0" cellspacing="0" style="margin-top:32px;padding-top:20px;border-top:1px solid #e8e3db;"><tbody><tr>
+    <td style="font-family:'Courier New',Courier,monospace;font-size:10px;letter-spacing:0.12em;text-transform:uppercase;color:#6e665c;">RRG / Real Real Genuine</td>
+    <td align="right" style="font-family:'Courier New',Courier,monospace;font-size:10px;letter-spacing:0.12em;text-transform:uppercase;color:#6e665c;text-align:right;"><a href="${SITE_URL}/rrg" style="color:#6e665c;text-decoration:none;">realrealgenuine.com</a></td>
+  </tr></tbody></table>
 </div>
 </body>
 </html>`;
 
   await sendEmail({
     to,
-    subject: `Your RRG listing is ready: "${title}"`,
+    subject: `Thank you for your order: ${title}`,
     html,
   });
 }

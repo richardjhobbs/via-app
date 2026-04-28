@@ -348,8 +348,17 @@ export async function POST(req: NextRequest) {
     const siteUrl     = process.env.NEXT_PUBLIC_SITE_URL!;
     const downloadUrl = `${siteUrl}/rrg/download?token=${downloadToken}`;
 
-    if (buyerEmail) {
+    // Digital-only purchases get the file-delivery email here.
+    // Physical purchases get the branded order email below (with shipping).
+    // One email per purchase, never both.
+    if (buyerEmail && !drop.is_physical_product) {
       try {
+        const digitalImageUrl = drop.jpeg_storage_path
+          ? await getSignedUrl(drop.jpeg_storage_path, 604800).catch(() => null)
+          : null;
+        const digitalBrand = drop.brand_id
+          ? await getBrandById(drop.brand_id).catch(() => null)
+          : null;
         await sendFileDeliveryEmail({
           to:              buyerEmail,
           title:           drop.title,
@@ -358,6 +367,9 @@ export async function POST(req: NextRequest) {
           downloadUrl,
           ipfsMetadataUrl: ipfsResult?.metadataUrl ?? null,
           voucher:         voucherData ?? undefined,
+          brandName:       digitalBrand?.name ?? null,
+          imageUrl:        digitalImageUrl,
+          priceUsdc:       parseFloat(effectivePrice.toString()),
         });
         await db
           .from('rrg_purchases')
@@ -415,6 +427,12 @@ export async function POST(req: NextRequest) {
         if (buyerEmail) {
           await sendPhysicalPurchaseToBuyer(emailData);
           console.log(`[confirm] Physical purchase email sent to buyer: ${buyerEmail}`);
+          // Mark files_delivered here too so the branded buyer email is the
+          // single source of truth for "buyer was notified".
+          await db
+            .from('rrg_purchases')
+            .update({ files_delivered: true, delivery_email: buyerEmail })
+            .eq('id', purchase.id);
         }
       } catch (physEmailErr) {
         console.error('[confirm] Physical product email failed:', physEmailErr);
