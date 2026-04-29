@@ -175,12 +175,6 @@ export default function ApplyAsBrandPage() {
                 Hand-curated edits, vintage and provenance-led. The editor is the asset.
               </p>
             </div>
-            <div className="trust-cell">
-              <div className="pdp-section-head" style={{ color: 'var(--accent)' }}>Fine jewellery</div>
-              <p style={{ fontSize: 13, color: 'var(--ink-2)', lineHeight: 1.55, margin: '8px 0 0' }}>
-                Workshops and houses working in precious materials, with documentation to match.
-              </p>
-            </div>
           </div>
         </section>
 
@@ -203,7 +197,6 @@ export default function ApplyAsBrandPage() {
               <FactRow label="Rev share" body="Brand keeps the majority. Platform cut discussed during onboarding." />
               <FactRow label="Payouts" body="USDC on Base, automatic on sale. No invoicing." />
               <FactRow label="Co-creation" body="Creator share fixed, revenue split automatic, on-chain." />
-              <FactRow label="Exit" body="30 days written notice, both ways. No lock-in." />
             </ul>
           </div>
         </section>
