@@ -144,7 +144,7 @@ export default async function Landing() {
     return b.created_at.localeCompare(a.created_at);
   });
   const feature = brandsForS01[0];
-  const gridBrands = brandsForS01.slice(1, 9);
+  const gridBrands = brandsForS01.slice(1, 11);
   const tallBrand = gridBrands[2]; // 3rd grid slot becomes tall feature
 
   function brandCardImage(brandId: string, bannerPath: string | null, fallbackIdx: number): string {
