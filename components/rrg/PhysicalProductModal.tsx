@@ -188,14 +188,6 @@ export default function PhysicalProductModal({ open, onClose, details }: Physica
           )}
 
           <div>
-            <p style={labelStyle}>Price includes</p>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-              <CheckLine included={details.priceIncludesTax} label="All applicable taxes" />
-              <CheckLine included={details.priceIncludesPacking} label="Packing for shipment" />
-            </div>
-          </div>
-
-          <div>
             <p style={labelStyle}>Shipping</p>
             {details.shippingType === 'included' ? (
               <div>
@@ -279,13 +271,3 @@ export default function PhysicalProductModal({ open, onClose, details }: Physica
   );
 }
 
-function CheckLine({ included, label }: { included: boolean; label: string }) {
-  return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-      <span style={{ color: included ? 'var(--accent)' : 'var(--ink-3)', fontSize: 14 }}>
-        {included ? '✓' : '✕'}
-      </span>
-      <span style={{ fontSize: 14, color: 'var(--ink-2)' }}>{label}</span>
-    </div>
-  );
-}
