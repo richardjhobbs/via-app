@@ -31,6 +31,19 @@ import { join, resolve } from 'path';
 import { randomUUID } from 'crypto';
 
 // ── Brand configs ────────────────────────────────────────────────────
+//
+// `wallet:` and `email:` in every entry below are intentional FIRST-SEED
+// PLACEHOLDERS. They are the operator's holding wallet
+// (0x734a25fB869ab6415b78bbe9a39f1f99dab349E7) and admin email
+// (richard@entrepot.asia), used only when ensureBrand() inserts a new
+// `rrg_brands` row for an unseeded slug. Once the brand is onboarded the
+// row's `wallet_address` and `contact_email` are flipped in the DB to the
+// brand-owned values; the update path of ensureBrand() (further down in
+// this file) deliberately does NOT overwrite those columns from this
+// config, so per-brand edits here are inert for any brand that already
+// exists. Do NOT replace the placeholders with real brand wallets — the
+// source of truth for an onboarded brand's wallet is `rrg_brands.wallet_address`.
+//
 const BRANDS = {
   'unknown-union': {
     slug:            'unknown-union',
@@ -49,7 +62,7 @@ const BRANDS = {
   'frey-tailored': {
     slug:            'frey-tailored',
     name:            'Frey Tailored',
-    wallet:          '0x30b1e8CC377a75D9664C26415A820C4925afa595',
+    wallet:          '0x734a25fB869ab6415b78bbe9a39f1f99dab349E7',
     email:           'richard@entrepot.asia',
     headline:        'Savile Row techniques, made for her.',
     description:     'Frey Tailored — a Hong Kong womenswear label specialising in tailoring. Half canvas construction, surgeon\u2019s cuffs, satin peak lapels and jetted pockets applied to contemporary feminine silhouettes. Mirror of frey-tailored.com — checkout in USDC on Base, ships from Frey HK.',
@@ -67,7 +80,7 @@ const BRANDS = {
   'passport-adv': {
     slug:            'passport-adv',
     name:            'PassportADV',
-    wallet:          '0xb4feBbe6C0a0cD350C76054ccfD037D8Bf47e502',
+    wallet:          '0x734a25fB869ab6415b78bbe9a39f1f99dab349E7',
     email:           'richard@entrepot.asia',
     headline:        'Footwear and apparel from Addis to LA.',
     description:     'PassportADV — Ethiopian-inflected streetwear and technical apparel designed out of Los Angeles. Mirror of passportadv.com — checkout in USDC on Base, ships from PassportADV.',
@@ -498,7 +511,7 @@ const BRANDS = {
   'homie-au': {
     slug:            'homie-au',
     name:            'HoMie',
-    wallet:          '0xA5Bf50823906aFEfc647269e4b18043050e55355',
+    wallet:          '0x734a25fB869ab6415b78bbe9a39f1f99dab349E7',
     email:           'richard@entrepot.asia',
     headline:        '100% of profits fund programs for young people affected by homelessness.',
     description:     'HoMie is a Melbourne streetwear label and social enterprise. All profits fund education, employment and community programs for young people experiencing homelessness or hardship. Mirror of homie.com.au, checkout in USDC on Base, ships from HoMie Melbourne.',
@@ -550,6 +563,7 @@ const flag = (name) => {
 };
 
 const BRAND_KEY  = flag('--brand');
+const CONFIG_FILE = flag('--config'); // path to JSON BRANDS-entry, used by orchestrators (onboard-brand.mjs)
 const ONLY       = flag('--only');
 const HANDLES    = flag('--handles');
 const CACHE_FILE = flag('--cache-file');
@@ -566,13 +580,34 @@ if (args.includes('--skip-chain') && COMMIT_CHAIN) {
   process.exit(1);
 }
 
-if (!BRAND_KEY || !BRANDS[BRAND_KEY]) {
-  console.error(`Usage: node scripts/brand-mirror.mjs --brand <slug>`);
-  console.error(`Available: ${Object.keys(BRANDS).join(', ')}`);
-  process.exit(1);
+// CFG resolution: either a runtime JSON config (preferred for orchestrator
+// flows like onboard-brand.mjs that synthesize a BRANDS entry per URL) or
+// the in-file BRANDS map (used by hand-curated re-runs). The JSON shape
+// must match a value of the BRANDS map. If both are passed, --config wins
+// and --brand is treated as a sanity check.
+let CFG;
+if (CONFIG_FILE && typeof CONFIG_FILE === 'string') {
+  const cfgPath = resolve(CONFIG_FILE);
+  try {
+    CFG = JSON.parse(readFileSync(cfgPath, 'utf8'));
+  } catch (e) {
+    console.error(`FATAL: could not read --config ${cfgPath}: ${e.message}`);
+    process.exit(1);
+  }
+  if (!CFG.slug) { console.error('FATAL: --config JSON missing slug'); process.exit(1); }
+  if (BRAND_KEY && BRAND_KEY !== CFG.slug) {
+    console.error(`FATAL: --brand ${BRAND_KEY} does not match --config slug ${CFG.slug}`);
+    process.exit(1);
+  }
+} else {
+  if (!BRAND_KEY || !BRANDS[BRAND_KEY]) {
+    console.error(`Usage: node scripts/brand-mirror.mjs --brand <slug>`);
+    console.error(`       node scripts/brand-mirror.mjs --config <path-to-brand.json>`);
+    console.error(`Available --brand keys: ${Object.keys(BRANDS).join(', ')}`);
+    process.exit(1);
+  }
+  CFG = BRANDS[BRAND_KEY];
 }
-
-const CFG = BRANDS[BRAND_KEY];
 const handleFilter = ONLY
   ? new Set([ONLY])
   : (HANDLES ? new Set(String(HANDLES).split(',').map(h => h.trim()).filter(Boolean)) : null);

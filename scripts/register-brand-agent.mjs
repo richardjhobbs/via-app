@@ -108,15 +108,14 @@ const flag = (name) => {
 const BRAND_SLUG = flag('--brand');
 const DRY_RUN    = args.includes('--dry-run');
 
-if (!BRAND_SLUG || !BRANDS[BRAND_SLUG]) {
+if (!BRAND_SLUG) {
   console.error(`Usage: node scripts/register-brand-agent.mjs --brand <slug>`);
-  console.error(`Available: ${Object.keys(BRANDS).join(', ')}`);
+  console.error(`Slug must exist in rrg_brands. Hardcoded BRANDS map (${Object.keys(BRANDS).join(', ')}) is now optional;`);
+  console.error(`any other slug derives its CFG from the DB row at runtime.`);
   process.exit(1);
 }
 
-const CFG = BRANDS[BRAND_SLUG];
-
-console.log(`──── Brand Agent Registration: ${CFG.name} ────`);
+console.log(`──── Brand Agent Registration: ${BRAND_SLUG} ────`);
 console.log(`Dry run: ${DRY_RUN ? 'YES' : 'no'}`);
 console.log();
 
@@ -130,10 +129,23 @@ const deployer = new ethers.Wallet(DEPLOYER_PK, provider);
   // Step 0: verify the brand row exists
   const { data: brand } = await db
     .from('rrg_brands')
-    .select('id, slug, name, wallet_address, status')
+    .select('id, slug, name, description, website_url, wallet_address, status, brand_data')
     .eq('slug', BRAND_SLUG)
     .single();
   if (!brand) { console.error(`FATAL: brand "${BRAND_SLUG}" not found in rrg_brands`); process.exit(1); }
+
+  // Resolve CFG: prefer the hardcoded BRANDS entry (richer prose +
+  // category list curated by hand), else synthesize from the DB row
+  // so onboard-brand.mjs / confirm-brand.mjs can drive any new slug
+  // without a code edit.
+  const CFG = BRANDS[BRAND_SLUG] ?? {
+    name:        brand.name,
+    description: brand.description ?? `${brand.name} on Real Real Genuine.`,
+    storefront:  `https://realrealgenuine.com/brand/${brand.slug}`,
+    mcpEndpoint: `https://realrealgenuine.com/brand/${brand.slug}/mcp`,
+    website:     brand.website_url ?? null,
+    categories:  Array.isArray(brand.brand_data?.categories) ? brand.brand_data.categories : [],
+  };
 
   console.log(`[db] brand row: ${brand.id}`);
   console.log(`[db] current wallet: ${brand.wallet_address}`);

@@ -49,7 +49,9 @@ const BUCKET      = 'rrg-submissions';
 const PRICE_USDC  = 0.50;
 const EDITION     = 50;
 
-// Brands to create listings for — slug must match rrg_brands.slug
+// Default brands when no --brand flag is passed. Any slug present in
+// rrg_brands works via --brand <slug>, even if not in this list (the
+// loop falls back to the requested slug at run time).
 const BRANDS = ['nolo', 'clooudie', 'frey-tailored', 'unknown-union'];
 
 // ── Image composition ────────────────────────────────────────────────────
@@ -106,12 +108,22 @@ async function claimNextTokenId() {
   return id;
 }
 
-// ── CLI: optional single-brand filter ────────────────────────────────────
+// ── CLI: optional single-brand filter + hide-on-mint ─────────────────────
+// --brand <slug>   restrict run to one slug (must exist in rrg_brands; need
+//                  not be in the BRANDS default list above)
+// --hidden         insert with hidden=true so the badge does not appear on
+//                  the storefront until the operator unhides it. Used by
+//                  confirm-brand.mjs for trial-only badges.
 
 const BRAND_FILTER = (() => {
   const i = process.argv.indexOf('--brand');
   return i >= 0 ? process.argv[i + 1] : null;
 })();
+const HIDDEN_ON_MINT = process.argv.includes('--hidden');
+
+// Effective brand list: --brand wins (always one slug, even if not in
+// BRANDS default). Without --brand, run the default 4.
+const EFFECTIVE_BRANDS = BRAND_FILTER ? [BRAND_FILTER] : BRANDS;
 
 // ── Nonce tracker (avoids stale-nonce errors on sequential on-chain calls) ─
 
@@ -128,12 +140,12 @@ console.log(`Dry run: ${DRY_RUN ? 'YES' : 'no'}`);
 console.log(`Contract: ${CONTRACT_ADDR}`);
 console.log(`Deployer: ${deployer.address}`);
 if (BRAND_FILTER) console.log(`Brand filter: ${BRAND_FILTER}`);
+if (HIDDEN_ON_MINT) console.log(`Hidden on mint: YES (badge will be inserted with hidden=true)`);
 console.log();
 
 const results = [];
 
-for (const slug of BRANDS) {
-  if (BRAND_FILTER && slug !== BRAND_FILTER) continue;
+for (const slug of EFFECTIVE_BRANDS) {
   console.log(`\n── ${slug} ──`);
 
   // Load brand row
@@ -231,7 +243,7 @@ for (const slug of BRANDS) {
       creator_wallet:      brand.wallet_address,
       creator_type:        'agent',
       status:              'approved',
-      hidden:              false,
+      hidden:              HIDDEN_ON_MINT,
       jpeg_filename:       'membership.jpeg',
       jpeg_storage_path:   storagePath,
       jpeg_size_bytes:     imageBuffer.length,
