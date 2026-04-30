@@ -279,7 +279,6 @@ interface PhysicalPurchaseEmailData {
   shippingName: string;
   shippingAddress: string;   // pre-formatted multi-line
   shippingPhone: string | null;
-  shippingType: string | null;
   downloadUrl: string;
   ipfsMetadataUrl?: string | null;
   /** Product image signed URL for buyer email hero (optional) */

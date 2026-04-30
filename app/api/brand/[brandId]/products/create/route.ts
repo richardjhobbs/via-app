@@ -133,8 +133,8 @@ export async function POST(
       if (!trustBehaviorAccepted) {
         return NextResponse.json({ error: 'Trust & behavior acceptance is required for physical products' }, { status: 400 });
       }
-      if (!shippingTypeRaw || !['included', 'quote_after_payment'].includes(shippingTypeRaw)) {
-        return NextResponse.json({ error: 'Shipping type is required for physical products' }, { status: 400 });
+      if (!shippingTypeRaw || !['included', 'live_rates'].includes(shippingTypeRaw)) {
+        return NextResponse.json({ error: 'Shipping type is required for physical products (included or live_rates)' }, { status: 400 });
       }
       shippingType = shippingTypeRaw as ShippingType;
 
@@ -149,6 +149,16 @@ export async function POST(
           }
         }
         shippingIncludedRegions = regions;
+      }
+
+      if (shippingType === 'live_rates') {
+        if (!brand.shopify_domain) {
+          return NextResponse.json({ error: 'Live carrier rates require a connected Shopify store on this brand' }, { status: 400 });
+        }
+        const variantGid = (formData.get('shopify_variant_gid') as string | null)?.trim();
+        if (!variantGid) {
+          return NextResponse.json({ error: 'shopify_variant_gid is required when shipping_type is live_rates' }, { status: 400 });
+        }
       }
 
       if (physicalImageFiles.length > 4) {
@@ -317,6 +327,9 @@ export async function POST(
         ecommerce_url:             isPhysicalProduct ? ecommerceUrl?.trim() || null : null,
         shipping_type:             shippingType,
         shipping_included_regions: shippingIncludedRegions,
+        shopify_variant_gid:       isPhysicalProduct && shippingType === 'live_rates'
+                                     ? (formData.get('shopify_variant_gid') as string).trim()
+                                     : null,
         refund_commitment:         isPhysicalProduct ? refundCommitment : false,
         collection_in_person:      isPhysicalProduct ? collectionInPerson?.trim() || null : null,
         trust_behavior_accepted:   isPhysicalProduct ? trustBehaviorAccepted : false,

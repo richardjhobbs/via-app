@@ -100,7 +100,6 @@ export async function POST(req: NextRequest) {
     shippingName:      purchase.shipping_name,
     shippingAddress,
     shippingPhone:     purchase.shipping_phone ?? null,
-    shippingType:      null,
     downloadUrl,
     ipfsMetadataUrl:   null,
     imageUrl,

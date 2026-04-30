@@ -536,7 +536,6 @@ export async function POST(req: NextRequest) {
           shippingName:      shipping_name,
           shippingAddress,
           shippingPhone:     shipping_phone || null,
-          shippingType:      submission.shipping_type || null,
           downloadUrl,
           ipfsMetadataUrl:   ipfsResult?.metadataUrl ?? null,
           imageUrl:          emailImageUrl,

@@ -205,9 +205,13 @@ export default function PhysicalProductModal({ open, onClose, details }: Physica
                   ))}
                 </div>
               </div>
+            ) : details.shippingType === 'live_rates' ? (
+              <p style={bodyStyle}>
+                Live carrier rates calculated at checkout from your delivery address.
+              </p>
             ) : (
               <p style={bodyStyle}>
-                Shipping cost is calculated based on your delivery address and added to your total at checkout.
+                Shipping rates calculated at checkout.
               </p>
             )}
           </div>

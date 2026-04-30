@@ -29,7 +29,6 @@ import { readFileSync, writeFileSync, existsSync, readdirSync, appendFileSync } 
 import { homedir } from 'os';
 import { join, resolve } from 'path';
 import { randomUUID } from 'crypto';
-import { spawn } from 'child_process';
 
 // ── Brand configs ────────────────────────────────────────────────────
 const BRANDS = {
@@ -50,7 +49,7 @@ const BRANDS = {
   'frey-tailored': {
     slug:            'frey-tailored',
     name:            'Frey Tailored',
-    wallet:          '0x734a25fB869ab6415b78bbe9a39f1f99dab349E7',
+    wallet:          '0x30b1e8CC377a75D9664C26415A820C4925afa595',
     email:           'richard@entrepot.asia',
     headline:        'Savile Row techniques, made for her.',
     description:     'Frey Tailored — a Hong Kong womenswear label specialising in tailoring. Half canvas construction, surgeon\u2019s cuffs, satin peak lapels and jetted pockets applied to contemporary feminine silhouettes. Mirror of frey-tailored.com — checkout in USDC on Base, ships from Frey HK.',
@@ -68,7 +67,7 @@ const BRANDS = {
   'passport-adv': {
     slug:            'passport-adv',
     name:            'PassportADV',
-    wallet:          '0x734a25fB869ab6415b78bbe9a39f1f99dab349E7',
+    wallet:          '0xb4feBbe6C0a0cD350C76054ccfD037D8Bf47e502',
     email:           'richard@entrepot.asia',
     headline:        'Footwear and apparel from Addis to LA.',
     description:     'PassportADV — Ethiopian-inflected streetwear and technical apparel designed out of Los Angeles. Mirror of passportadv.com — checkout in USDC on Base, ships from PassportADV.',
@@ -493,6 +492,23 @@ const BRANDS = {
     // product without relying on title keyword matches.
     categoryHint:    'footwear',
     socialLinks:     { instagram: 'https://www.instagram.com/stadiumgoods/' },
+    bannerLocal:     null,
+    logoLocal:       null,
+  },
+  'homie-au': {
+    slug:            'homie-au',
+    name:            'HoMie',
+    wallet:          '0xA5Bf50823906aFEfc647269e4b18043050e55355',
+    email:           'richard@entrepot.asia',
+    headline:        '100% of profits fund programs for young people affected by homelessness.',
+    description:     'HoMie is a Melbourne streetwear label and social enterprise. All profits fund education, employment and community programs for young people experiencing homelessness or hardship. Mirror of homie.com.au, checkout in USDC on Base, ships from HoMie Melbourne.',
+    website:         'https://homie.com.au',
+    shopifyDomain:   'homie.com.au',
+    supportsSizing:  true,
+    sourceCurrency:  'AUD',
+    priceToUsdcRate: 0.718014, // locked 2026-04-29 from open.er-api.com
+    merchantType:    'direct_brand',
+    socialLinks:     { instagram: 'https://www.instagram.com/homie.com.au/' },
     bannerLocal:     null,
     logoLocal:       null,
   },
@@ -1140,7 +1156,10 @@ async function importProduct(product, brand) {
     physical_images_paths: physicalImagesPaths.length > 0 ? physicalImagesPaths : null,
     ecommerce_url:       product.sourceUrl
                           ?? `https://${CFG.shopifyDomain}/products/${handle}`,
-    shipping_type:       'quote_after_payment',
+    shipping_type:       'live_rates',
+    shopify_variant_gid: product.variants?.[0]?.id
+                          ? `gid://shopify/ProductVariant/${product.variants[0].id}`
+                          : null,
     refund_commitment:   true,
     trust_behavior_accepted: true,
     has_voucher:         false,
@@ -1378,31 +1397,15 @@ _(none yet — fill in after the build)_
     catch (e) { console.warn(`[memory] skipped: ${e.message}`); }
   }
 
-  // ── Stage 5: auto-chain enhance-descriptions ──────────────────────────
-  // New rows landed with hidden=true (pre-publish guard). enhance-descriptions
-  // writes enhanced_description + merged product_attributes and flips
-  // hidden=false on success. Skipped when --no-enhance is passed or when
-  // dry-run / seed-only short-circuited the import path. Runs in a child
-  // process so the mirror exits cleanly even if enhance needs a different
-  // module resolution or tool availability.
+  // Enhancement is done by Claude in-session against this account, not by
+  // an API-key-driven script. Rows land with hidden=true and wait for the
+  // operator to write enhanced_description + product_attributes and flip
+  // hidden=false. Pass --no-enhance to publish raw immediately (hidden=false).
   if (results.length > 0 && !DRY_RUN && !NO_ENHANCE) {
+    const tokens = results.map(r => r.token_id).filter(t => t != null).sort((a,b)=>a-b);
     console.log();
-    console.log(`──── Auto-chaining enhance-descriptions for ${CFG.slug} ────`);
-    await new Promise((resolveP) => {
-      const proc = spawn(process.execPath, [
-        resolve(process.cwd(), 'scripts/enhance-descriptions.mjs'),
-        '--brand', CFG.slug,
-      ], { stdio: 'inherit', env: process.env });
-      proc.on('close', (code) => {
-        if (code === 0) console.log(`[auto-enhance] done (code ${code})`);
-        else console.warn(`[auto-enhance] exited with code ${code} — rows may remain hidden until a manual run`);
-        resolveP();
-      });
-      proc.on('error', (err) => {
-        console.warn(`[auto-enhance] spawn failed: ${err.message}`);
-        resolveP();
-      });
-    });
+    console.log(`[enhance] ${tokens.length} row(s) inserted with hidden=true. Enhance in-session, then flip hidden=false.`);
+    if (tokens.length > 0) console.log(`[enhance] tokens: ${tokens.join(', ')}`);
   } else if (NO_ENHANCE) {
     console.log('[enhance] skipped (--no-enhance). Rows inserted with hidden=false directly.');
   }

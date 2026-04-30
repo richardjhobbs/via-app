@@ -9,7 +9,6 @@ interface Props {
   soldOut: boolean;
   active: boolean;
   isPhysicalProduct?: boolean;
-  shippingType?: string | null;
   hasVariants: boolean;
   requireSize: boolean;
 }
@@ -25,7 +24,6 @@ export default function PurchaseBlock({
   soldOut,
   active,
   isPhysicalProduct,
-  shippingType,
   hasVariants,
   requireSize,
 }: Props) {
@@ -61,7 +59,6 @@ export default function PurchaseBlock({
           soldOut={soldOut}
           active={active}
           isPhysicalProduct={isPhysicalProduct}
-          shippingType={shippingType}
           selectedSize={selectedSize ?? undefined}
         />
       )}

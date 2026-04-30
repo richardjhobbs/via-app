@@ -23,7 +23,6 @@ interface Props {
   soldOut:   boolean;
   active:    boolean;
   isPhysicalProduct?: boolean;
-  shippingType?: string | null;
   /** Pre-selected size for garment products (passed through to order + shipping notes) */
   selectedSize?: string;
 }
@@ -73,7 +72,7 @@ interface PurchaseResult {
   downloadUrl: string;
 }
 
-export default function PurchaseFlow({ tokenId, priceUsdc, soldOut, active, isPhysicalProduct, shippingType, selectedSize }: Props) {
+export default function PurchaseFlow({ tokenId, priceUsdc, soldOut, active, isPhysicalProduct, selectedSize }: Props) {
   const { address, isConnected } = useAccount();
   const { connect }              = useConnect();
   const connectors               = useConnectors();
@@ -397,15 +396,6 @@ export default function PurchaseFlow({ tokenId, priceUsdc, soldOut, active, isPh
             ← Back
           </button>
         </div>
-
-        {shippingType === 'quote_after_payment' && (
-          <div className="border border-amber-400/30 bg-amber-400/5 px-3 py-2">
-            <p className="text-sm text-amber-400/80">
-              Shipping cost is not included in the price. The brand will contact
-              you after purchase with a shipping quote.
-            </p>
-          </div>
-        )}
 
         <div className="grid grid-cols-2 gap-3">
           <div className="col-span-2">

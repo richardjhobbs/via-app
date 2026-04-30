@@ -105,7 +105,6 @@ export async function POST(
     shippingName:      purchase.shipping_name,
     shippingAddress,
     shippingPhone:     purchase.shipping_phone ?? null,
-    shippingType:      null,
     downloadUrl,
     ipfsMetadataUrl:   null,
     imageUrl,

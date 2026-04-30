@@ -77,6 +77,7 @@ interface BrandSettings {
   tc_accepted_at?: string | null;
   tc_version?: string | null;
   accepts_card_payments?: boolean;
+  shopify_domain?: string | null;
 }
 
 const SOCIAL_PLATFORMS = [
@@ -444,7 +445,7 @@ function ProductsTab({ brandId }: { brandId: string }) {
     price_includes_tax: false,
     price_includes_packing: false,
     ecommerce_url: '',
-    shipping_type: 'included' as 'included' | 'quote_after_payment',
+    shipping_type: 'included' as 'included' | 'live_rates',
     shipping_included_regions: [] as string[],
     refund_commitment: false,
     collection_in_person: '',
@@ -790,14 +791,22 @@ function ProductsTab({ brandId }: { brandId: string }) {
                       ))}
                     </div>
                   )}
-                  <label className="flex items-center gap-3 cursor-pointer">
+                  <label className={`flex items-center gap-3 ${brand?.shopify_domain ? 'cursor-pointer' : 'cursor-not-allowed opacity-50'}`}>
                     <input
-                      type="radio" name="shipping_type" value="quote_after_payment"
-                      checked={form.shipping_type === 'quote_after_payment'}
-                      onChange={() => setForm({ ...form, shipping_type: 'quote_after_payment', shipping_included_regions: [] })}
+                      type="radio" name="shipping_type" value="live_rates"
+                      disabled={!brand?.shopify_domain}
+                      checked={form.shipping_type === 'live_rates'}
+                      onChange={() => setForm({ ...form, shipping_type: 'live_rates', shipping_included_regions: [] })}
                       className="accent-lime-400"
                     />
-                    <span className="text-sm text-white/80">Brand will quote shipping after payment</span>
+                    <span className="text-sm text-white/80">
+                      Live carrier rates at checkout (Shopify)
+                      {!brand?.shopify_domain && (
+                        <span className="block text-xs text-white/50 mt-0.5">
+                          Requires a connected Shopify store. Contact RRG to wire up your domain.
+                        </span>
+                      )}
+                    </span>
                   </label>
                 </div>
               </div>

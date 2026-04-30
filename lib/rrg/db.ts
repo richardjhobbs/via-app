@@ -99,7 +99,7 @@ export interface RrgBrief {
   brand_id: string | null;
 }
 
-export type ShippingType = 'included' | 'quote_after_payment';
+export type ShippingType = 'included' | 'live_rates';
 
 export interface RrgSubmission {
   id: string;
