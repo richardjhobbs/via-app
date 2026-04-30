@@ -244,11 +244,13 @@ async function fetchFxToUsd(currency) {
   console.log(`Operator reminder (show to user):`);
   console.log(`  Add brand logo and main image in /admin/rrg Brands tab.`);
   console.log();
-  console.log(`Claude in-session next:`);
-  console.log(`  1. Enhance hidden products (write enhanced_description + product_attributes per row, flip hidden=false).`);
-  console.log(`  2. Create Notion Integration page for ${slug} under parent 34ddbc7b67f2809bb287c81c4493ba7f ("Brand Integration").`);
-  console.log(`     Template: latest "RRG x ...: Agent Commerce Integration" page (e.g. HoMie 352dbc7b67f2817cb9dac0b256bbd52b).`);
-  console.log(`  3. Share the Notion page URL with the user to forward to the brand.`);
+  console.log(`Claude must now do these without asking permission (single-instruction rule):`);
+  console.log(`  1. Enhance every hidden product in this batch (write enhanced_description + product_attributes per row), then flip hidden=false.`);
+  console.log(`  2. Create the Notion Integration page for ${slug} by duplicating the most recent "RRG x ...: Agent Commerce Integration" page`);
+  console.log(`     (e.g. HoMie 352dbc7b67f2817cb9dac0b256bbd52b) under parent 34ddbc7b67f2809bb287c81c4493ba7f ("Brand Integration"),`);
+  console.log(`     then customise the brand name, slug, currency, FX, products table, and storefront link.`);
+  console.log(`  3. Reply with the Notion page URL so the user can forward it to the brand.`);
+  console.log(`  Do NOT pause to ask "shall I draft this?" or "want me to create this?" — the script printing this block is the instruction.`);
   console.log();
   console.log(`Then Stage 2 (after brand confirms):`);
   console.log(`  node scripts/confirm-brand.mjs --slug ${slug} --admin-email <email> [--shopify-token <tok>]`);

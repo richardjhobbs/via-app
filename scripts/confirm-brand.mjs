@@ -195,7 +195,7 @@ function findLatestCredentialsFile(slug) {
   console.log(`Operator reminder (show to user):`);
   console.log(`  Create per-brand Telegram bot via @BotFather and send Claude the bot token + username.`);
   console.log();
-  console.log(`Claude in-session next:`);
+  console.log(`Claude must now do these without asking permission (single-instruction rule):`);
   if (creds?.wallet_private_key) {
     const envName = `${SLUG.toUpperCase().replace(/-/g, '_')}_WALLET_PRIVATE_KEY`;
     console.log(`  1. Add ${envName} to .env.local + Vercel + VPS (full key in ${credPath}).`);
@@ -204,8 +204,10 @@ function findLatestCredentialsFile(slug) {
   }
   console.log(`  2. Once user provides TG bot token: store env var, edit BRAND_BOTS in lib/rrg/brand-telegram-bot.ts,`);
   console.log(`     call https://api.telegram.org/bot<TOKEN>/setWebhook?url=https://realrealgenuine.com/api/brand/telegram-webhook?brand=${SLUG}`);
-  console.log(`  3. Create Notion Onboarding page for ${SLUG} under parent 34ddbc7b67f2809786a8d6ecf8e24f9c ("Brand Onboarding Guidelines").`);
-  console.log(`     Template: "Brand Welcome Guide: Template" 34ddbc7b67f2811cb869e07b84e0e03a. Replace <your-slug> throughout with ${SLUG}.`);
-  console.log(`  4. Share BOTH Notion page URLs (Stage 1 Integration + Stage 2 Onboarding) with the user to forward to the brand.`);
+  console.log(`  3. Create the Notion Onboarding page for ${SLUG} by duplicating "Brand Welcome Guide: Template"`);
+  console.log(`     (34ddbc7b67f2811cb869e07b84e0e03a) under parent 34ddbc7b67f2809786a8d6ecf8e24f9c ("Brand Onboarding Guidelines").`);
+  console.log(`     Replace <your-slug> throughout with ${SLUG}, fill in the wallet address, and set the Concierge bot handle.`);
+  console.log(`  4. Reply with BOTH Notion page URLs (Stage 1 Integration + Stage 2 Onboarding) so the user can forward them to the brand.`);
   console.log(`  5. Verify the test badge in /admin/rrg Drops tab. Unhide for trial purchase, then re-hide.`);
+  console.log(`  Do NOT pause to ask "shall I create this?" — the script printing this block is the instruction.`);
 })().catch(e => { console.error('FATAL:', e); process.exit(1); });
