@@ -295,9 +295,16 @@ interface PhysicalPurchaseEmailData {
 export async function sendPhysicalOrderToBrand(data: PhysicalPurchaseEmailData): Promise<void> {
   const scanBase   = 'https://basescan.org';
   const listingUrl = `${SITE_URL}/rrg/drop/${data.tokenId}`;
-  // Maison design tokens (inlined for email client compatibility)
-  // bg=#faf7f2  paper=#ffffff  ink=#1a1612  ink-2=#3a342d  ink-3=#6e665c
-  // accent=#6b4f3a  line=#e8e3db  line-strong=#d5cfc7  live=#2b9a66
+
+  // Shared table row styles (table-based layout for email client compatibility)
+  const rowStyle = 'padding:10px 16px;font-size:13px;border-bottom:1px solid #e8e3db;';
+  const lblStyle = 'color:#6e665c;font-size:13px;white-space:nowrap;padding-right:16px;';
+  const valStyle = 'color:#1a1612;font-weight:500;text-align:right;font-size:13px;';
+  const monoStyle = "font-family:'Courier New',Courier,monospace;font-size:11px;";
+
+  const mkRow = (label: string, valueHtml: string, last = false) =>
+    `<tr><td style="${rowStyle}${last ? 'border-bottom:none;' : ''}${lblStyle}">${label}</td><td style="${rowStyle}${last ? 'border-bottom:none;' : ''}${valStyle}">${valueHtml}</td></tr>`;
+
   const html = `
 <!DOCTYPE html>
 <html>
@@ -306,78 +313,65 @@ export async function sendPhysicalOrderToBrand(data: PhysicalPurchaseEmailData):
   .wrap { max-width: 560px; margin: 0 auto; }
   .wordmark { font-family: Georgia, 'Times New Roman', serif; font-size: 18px; font-weight: 400; font-style: italic; letter-spacing: 0.01em; color: #1a1612; margin: 0 0 24px; }
   .card { background: #ffffff; border: 1px solid #e8e3db; }
-  .card-head { padding: 28px 32px 24px; border-bottom: 1px solid #e8e3db; display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; }
-  .card-head h1 { margin: 0 0 4px; font-family: Georgia, 'Times New Roman', serif; font-size: 24px; font-weight: 400; font-style: italic; color: #1a1612; letter-spacing: -0.01em; }
-  .card-head .sub { font-family: 'Courier New', Courier, monospace; font-size: 10px; letter-spacing: 0.16em; text-transform: uppercase; color: #6e665c; margin: 0; }
-  .badge { font-family: 'Courier New', Courier, monospace; font-size: 9px; letter-spacing: 0.16em; text-transform: uppercase; padding: 5px 10px; background: #6b4f3a; color: #ffffff; white-space: nowrap; flex-shrink: 0; }
+  .badge { font-family: 'Courier New', Courier, monospace; font-size: 9px; letter-spacing: 0.16em; text-transform: uppercase; padding: 5px 10px; background: #6b4f3a; color: #ffffff; white-space: nowrap; }
   .body { padding: 28px 32px; }
   .lbl { font-family: 'Courier New', Courier, monospace; font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; color: #6e665c; margin: 0 0 14px; }
-  .block { border: 1px solid #e8e3db; margin: 0 0 20px; }
-  .row { display: flex; justify-content: space-between; align-items: baseline; padding: 10px 16px; border-bottom: 1px solid #e8e3db; font-size: 13px; }
-  .row:last-child { border-bottom: none; }
-  .row-lbl { color: #6e665c; }
-  .row-val { color: #1a1612; font-weight: 500; text-align: right; }
-  .row-val-accent { color: #6b4f3a; font-weight: 600; font-size: 15px; }
-  .row-val-mono { font-family: 'Courier New', Courier, monospace; font-size: 11px; }
   .address-block { padding: 14px 16px; font-family: 'Courier New', Courier, monospace; font-size: 13px; color: #1a1612; line-height: 1.7; white-space: pre-line; }
-  .revenue-block { border: 1px solid #d5cfc7; background: #f7f3ee; padding: 20px 24px; margin: 0 0 20px; }
-  .revenue-lbl { font-family: 'Courier New', Courier, monospace; font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; color: #6b4f3a; margin: 0 0 8px; }
-  .revenue-amount { font-family: Georgia, 'Times New Roman', serif; font-size: 36px; font-weight: 400; color: #1a1612; margin: 0 0 4px; letter-spacing: -0.02em; }
-  .revenue-note { font-size: 12px; color: #6e665c; margin: 0; }
   .btn { display: inline-block; background: #1a1612; color: #faf7f2; padding: 12px 22px; text-decoration: none; font-size: 12px; letter-spacing: 0.04em; font-weight: 500; }
-  .footer { margin-top: 32px; padding-top: 20px; border-top: 1px solid #e8e3db; font-family: 'Courier New', Courier, monospace; font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase; color: #6e665c; display: flex; justify-content: space-between; }
 </style></head>
 <body>
 <div class="wrap">
   <p class="wordmark">Real Real Genuine</p>
   <div class="card">
-    <div class="card-head">
-      <div>
-        <h1>New order</h1>
-        <p class="sub">Action required: please arrange shipping</p>
-      </div>
-      <span class="badge">New order</span>
-    </div>
+    <table width="100%" cellpadding="0" cellspacing="0" style="border-bottom:1px solid #e8e3db;"><tbody><tr>
+      <td style="padding:28px 32px 24px;">
+        <h1 style="margin:0 0 4px;font-family:Georgia,'Times New Roman',serif;font-size:24px;font-weight:400;font-style:italic;color:#1a1612;letter-spacing:-0.01em;">New order</h1>
+        <p style="font-family:'Courier New',Courier,monospace;font-size:10px;letter-spacing:0.16em;text-transform:uppercase;color:#6e665c;margin:0;">Action required: please arrange shipping</p>
+      </td>
+      <td align="right" style="padding:28px 32px 24px;vertical-align:top;">
+        <span class="badge">New order</span>
+      </td>
+    </tr></tbody></table>
     <div class="body">
 
       <p class="lbl">Order details</p>
-      <div class="block">
-        <div class="row"><span class="row-lbl">Product</span><span class="row-val">${escHtml(data.title)}</span></div>
-        <div class="row"><span class="row-lbl">Token</span><span class="row-val row-val-mono">#${data.tokenId}</span></div>
-        ${data.selectedSize ? `<div class="row"><span class="row-lbl">Size</span><span class="row-val row-val-accent">${escHtml(data.selectedSize)}</span></div>` : ''}
-        ${data.priceUsdc != null ? `<div class="row"><span class="row-lbl">Price paid</span><span class="row-val">$${data.priceUsdc.toFixed(2)} USDC</span></div>` : ''}
-      </div>
+      <table width="100%" cellpadding="0" cellspacing="0" style="border:1px solid #e8e3db;margin:0 0 20px;border-collapse:collapse;"><tbody>
+        ${mkRow('Product', escHtml(data.title))}
+        ${mkRow('Token', `<span style="${monoStyle}">#${data.tokenId}</span>`)}
+        ${data.selectedSize ? mkRow('Size', `<span style="color:#6b4f3a;font-weight:600;font-size:15px;">${escHtml(data.selectedSize)}</span>`) : ''}
+        ${data.priceUsdc != null ? mkRow('Price paid', `$${data.priceUsdc.toFixed(2)} USDC`, true) : ''}
+      </tbody></table>
 
       ${data.brandRevenueUsdc != null ? `
-      <div class="revenue-block">
-        <p class="revenue-lbl">Your revenue (auto-distributed)</p>
-        <p class="revenue-amount">$${data.brandRevenueUsdc.toFixed(2)} USDC</p>
-        <p class="revenue-note">Sent automatically to your brand wallet on Base. No action needed.</p>
+      <div style="border:1px solid #d5cfc7;background:#f7f3ee;padding:20px 24px;margin:0 0 20px;">
+        <p style="font-family:'Courier New',Courier,monospace;font-size:10px;letter-spacing:0.14em;text-transform:uppercase;color:#6b4f3a;margin:0 0 8px;">Your revenue (auto-distributed)</p>
+        <p style="font-family:Georgia,'Times New Roman',serif;font-size:36px;font-weight:400;color:#1a1612;margin:0 0 4px;letter-spacing:-0.02em;">$${data.brandRevenueUsdc.toFixed(2)} USDC</p>
+        <p style="font-size:12px;color:#6e665c;margin:0;">Sent automatically to your brand wallet on Base. No action needed.</p>
       </div>` : ''}
 
       <p class="lbl">Ship to</p>
-      <div class="block">
-        <div class="address-block">${escHtml(data.shippingName)}
-${escHtml(data.shippingAddress)}</div>
-        ${data.shippingPhone ? `<div class="row"><span class="row-lbl">Phone</span><span class="row-val">${escHtml(data.shippingPhone)}</span></div>` : ''}
-        ${data.buyerEmail ? `<div class="row"><span class="row-lbl">Buyer email</span><span class="row-val">${escHtml(data.buyerEmail)}</span></div>` : ''}
-      </div>
+      <table width="100%" cellpadding="0" cellspacing="0" style="border:1px solid #e8e3db;margin:0 0 20px;border-collapse:collapse;"><tbody>
+        <tr><td colspan="2"><div class="address-block">${escHtml(data.shippingName)}
+${escHtml(data.shippingAddress)}</div></td></tr>
+        ${data.shippingPhone ? `<tr><td style="${rowStyle}${lblStyle}border-top:1px solid #e8e3db;">Phone</td><td style="${rowStyle}${valStyle}border-top:1px solid #e8e3db;">${escHtml(data.shippingPhone)}</td></tr>` : ''}
+        ${data.buyerEmail ? `<tr><td style="${rowStyle}${lblStyle}border-top:1px solid #e8e3db;border-bottom:none;">Buyer email</td><td style="${rowStyle}${valStyle}border-top:1px solid #e8e3db;border-bottom:none;">${escHtml(data.buyerEmail)}</td></tr>` : ''}
+      </tbody></table>
 
       <p class="lbl">On-chain proof</p>
-      <div class="block">
-        ${data.brandPayoutTxHash ? `<div class="row"><span class="row-lbl">Your payout tx</span><span class="row-val"><a href="${scanBase}/tx/${data.brandPayoutTxHash}" style="color:#6b4f3a; font-family:'Courier New',Courier,monospace; font-size:11px">${data.brandPayoutTxHash.slice(0, 14)}…${data.brandPayoutTxHash.slice(-6)}</a></span></div>` : ''}
-        <div class="row"><span class="row-lbl">Buyer purchase tx</span><span class="row-val"><a href="${scanBase}/tx/${data.txHash}" style="color:#6b4f3a; font-family:'Courier New',Courier,monospace; font-size:11px">${data.txHash.slice(0, 14)}…${data.txHash.slice(-6)}</a></span></div>
-      </div>
+      <table width="100%" cellpadding="0" cellspacing="0" style="border:1px solid #e8e3db;margin:0 0 20px;border-collapse:collapse;"><tbody>
+        ${data.brandPayoutTxHash ? mkRow('Your payout tx', `<a href="${scanBase}/tx/${data.brandPayoutTxHash}" style="color:#6b4f3a;${monoStyle}">${data.brandPayoutTxHash.slice(0, 14)}&hellip;${data.brandPayoutTxHash.slice(-6)}</a>`) : ''}
+        ${mkRow('Buyer purchase tx', `<a href="${scanBase}/tx/${data.txHash}" style="color:#6b4f3a;${monoStyle}">${data.txHash.slice(0, 14)}&hellip;${data.txHash.slice(-6)}</a>`, true)}
+      </tbody></table>
 
       <p style="font-size:13px;color:#3a342d;line-height:1.6;margin:0 0 20px">Please arrange delivery to the address above. If you have any questions about this order, reply to this email.</p>
-      <a class="btn" href="${listingUrl}">View listing on RRG →</a>
+      <a class="btn" href="${listingUrl}">View listing on RRG</a>
 
     </div>
   </div>
-  <div class="footer">
-    <span>RRG / Real Real Genuine</span>
-    <a href="${SITE_URL}/rrg" style="color:#6e665c; text-decoration:none">realrealgenuine.com</a>
-  </div>
+  <table width="100%" cellpadding="0" cellspacing="0" style="margin-top:32px;padding-top:20px;border-top:1px solid #e8e3db;"><tbody><tr>
+    <td style="font-family:'Courier New',Courier,monospace;font-size:10px;letter-spacing:0.12em;text-transform:uppercase;color:#6e665c;">RRG / Real Real Genuine</td>
+    <td align="right" style="font-family:'Courier New',Courier,monospace;font-size:10px;letter-spacing:0.12em;text-transform:uppercase;color:#6e665c;text-align:right;"><a href="${SITE_URL}/rrg" style="color:#6e665c;text-decoration:none;">realrealgenuine.com</a></td>
+  </tr></tbody></table>
 </div>
 </body>
 </html>`;
