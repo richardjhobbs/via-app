@@ -43,6 +43,27 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Drop not found' }, { status: 404 });
     }
 
+    // ── Block mintWithPermit for brand-owned drops ────────────────────
+    // RRG.sol mintWithPermit hard-codes a 70% atomic transfer to
+    // drop.creator. For brand-owned drops the off-chain auto-payout
+    // settles the brand's negotiated split (typically 97.5%) from
+    // platform reserves separately. If on-chain creator is anything
+    // other than PLATFORM_WALLET, mintWithPermit causes a 67.5%
+    // platform loss per sale (see memory/feedback_register_drop_creator
+    // _must_be_platform.md). The safe path for brand purchases is
+    // direct USDC transfer + operatorMint via /api/rrg/claim, which
+    // routes 100% to platform on-chain and lets auto-payout settle the
+    // brand share off-chain — proven correct on the 5 membership sales.
+    if (drop.is_brand_product) {
+      return NextResponse.json(
+        {
+          error: 'Brand-owned drops do not accept gasless permit purchases. Send USDC directly to the platform wallet and submit the tx via /api/rrg/claim, or use the card / direct-transfer flow on the storefront.',
+          code:  'BRAND_PRODUCT_PERMIT_DISABLED',
+        },
+        { status: 409 },
+      );
+    }
+
     // ── Validate shipping for physical products (BEFORE on-chain mint) ──
     // Must validate before mintWithPermit — the on-chain tx is irreversible.
     if (drop.is_physical_product) {

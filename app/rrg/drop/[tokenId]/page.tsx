@@ -345,6 +345,7 @@ export default async function DropPage({ params, searchParams }: Props) {
             soldOut={onChain.soldOut}
             active={onChain.active}
             isPhysicalProduct={drop.is_physical_product}
+            isBrandProduct={drop.is_brand_product}
             hasVariants={variantsForUI.length > 0}
             requireSize={variantsForUI.length > 0}
           />

@@ -23,6 +23,13 @@ interface Props {
   soldOut:   boolean;
   active:    boolean;
   isPhysicalProduct?: boolean;
+  /** Brand-owned drop. The permit/mintWithPermit path is unsafe for brand
+   *  products (RRG.sol routes 70% on-chain to drop.creator while auto-payout
+   *  pays the brand 97.5% off-chain — guaranteed platform loss). When this is
+   *  true, the component force-routes through the card / direct-transfer
+   *  flow, and /api/rrg/confirm rejects the request server-side as a
+   *  backstop. See memory/feedback_register_drop_creator_must_be_platform.md */
+  isBrandProduct?: boolean;
   /** Pre-selected size for garment products (passed through to order + shipping notes) */
   selectedSize?: string;
 }
@@ -72,7 +79,7 @@ interface PurchaseResult {
   downloadUrl: string;
 }
 
-export default function PurchaseFlow({ tokenId, priceUsdc, soldOut, active, isPhysicalProduct, selectedSize }: Props) {
+export default function PurchaseFlow({ tokenId, priceUsdc, soldOut, active, isPhysicalProduct, isBrandProduct, selectedSize }: Props) {
   const { address, isConnected } = useAccount();
   const { connect }              = useConnect();
   const connectors               = useConnectors();
@@ -93,7 +100,11 @@ export default function PurchaseFlow({ tokenId, priceUsdc, soldOut, active, isPh
   const [step,    setStep]    = useState<Step>('idle');
   const [email,   setEmail]   = useState('');
   const [cardEmail, setCardEmail] = useState('');
-  const [isCardFlow, setIsCardFlow] = useState(false);
+  // Brand-owned drops MUST route through the card / direct-transfer flow.
+  // The permit path calls mintWithPermit which routes 70% to drop.creator
+  // on-chain — incorrect for brand products. /api/rrg/confirm also blocks
+  // the request server-side as a backstop.
+  const [isCardFlow, setIsCardFlow] = useState(!!isBrandProduct);
   const [error,   setError]   = useState('');
   const [result,  setResult]  = useState<PurchaseResult | null>(null);
   const [mounted, setMounted] = useState(false);
