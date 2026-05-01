@@ -19,6 +19,12 @@ jobs:
             cd /home/agent/apps/rrg
             git pull origin master
             npm install
+            # Guardrail C: split invariant test (fast, fails fast on regression)
+            npm run test
+            # Guardrail B: on-chain creator audit (RPC-bound, ~2-3 min)
+            # Blocks deploy if any brand-owned drop is registered with the
+            # wrong on-chain creator (post-mortem: memory/feedback_register_drop_creator_must_be_platform.md)
+            node scripts/ci-audit-check.mjs
             npm run build
             cp -r .next/static .next/standalone/.next/static
             mkdir -p .next/standalone/public
