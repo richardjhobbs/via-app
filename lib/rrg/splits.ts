@@ -44,7 +44,7 @@ export interface SplitResult {
   onChainCreator: string;
 }
 
-const PLATFORM_WALLET = process.env.NEXT_PUBLIC_PLATFORM_WALLET
+export const PLATFORM_WALLET = process.env.NEXT_PUBLIC_PLATFORM_WALLET
   ?? '0xbfd71eA27FFc99747dA2873372f84346d9A8b7ed';
 
 /**

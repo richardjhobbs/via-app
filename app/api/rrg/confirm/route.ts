@@ -337,6 +337,8 @@ export async function POST(req: NextRequest) {
         purchaseId: purchase.id,
         brandId,
         split,
+        tokenId:    parseInt(tokenId),
+        mintMethod: 'permit', // mintWithPermit fired the on-chain 70/30 split
       });
       distributionId    = payoutResult.distributionId;
       brandPayoutTxHash = payoutResult.brandTxHash;

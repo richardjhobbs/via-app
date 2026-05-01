@@ -1301,6 +1301,12 @@ function createRRGServer() {
           purchaseId: purchase.id,
           brandId,
           split,
+          tokenId,
+          // NOTE: this MCP path calls mintWithPermit (line 1239 above) — same code
+          // path semantics as /api/rrg/confirm. Until an MCP-side brand-product gate
+          // is added (mirror of confirm/route.ts:57-65), Guardrail A in auto-payout
+          // is the backstop that prevents off-chain compounding for this path.
+          mintMethod: 'permit',
         });
       } catch (distErr) {
         console.error('[confirm_purchase] distribution/payout failed:', distErr);

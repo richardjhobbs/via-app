@@ -328,6 +328,8 @@ export async function GET(
         purchaseId: purchase.id,
         brandId,
         split,
+        tokenId,
+        mintMethod: 'operator', // direct USDC transfer + operatorMint
       });
 
       firePurchaseAttribution(buyerWallet, paymentTxHash, split.platformUsdc);

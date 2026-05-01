@@ -11,13 +11,32 @@
  */
 
 import { db } from '@/lib/rrg/db';
-import { transferUsdc, getPlatformSigner } from '@/lib/rrg/contract';
-import { type SplitResult, getBrandPct } from '@/lib/rrg/splits';
+import { transferUsdc, getPlatformSigner, getRRGReadOnly } from '@/lib/rrg/contract';
+import { type SplitResult, getBrandPct, PLATFORM_WALLET } from '@/lib/rrg/splits';
 
 export interface AutoPayoutInput {
   purchaseId: string;
   brandId: string;
   split: SplitResult;
+  /**
+   * On-chain tokenId of the drop being paid out. Required so the defensive
+   * Guardrail A check can verify drop.creator on-chain matches PLATFORM_WALLET
+   * for non-legacy split types — a mismatch indicates the registerDrop-creator
+   * bug class (post-mortem at memory/feedback_register_drop_creator_must_be_platform.md).
+   */
+  tokenId: number;
+  /**
+   * How the buyer's USDC reached the platform.
+   *   'permit'   — mintWithPermit (on-chain 70/30 split fired). If on-chain creator
+   *                is wrong AND splitType is non-legacy, off-chain payout would
+   *                compound the loss; Guardrail A aborts.
+   *   'operator' — operatorMint after off-chain USDC transfer (100% to platform).
+   *                On-chain creator is irrelevant; check warns but does not abort.
+   *   'card'     — Stripe capture in fiat, then operatorMint. Same as 'operator'.
+   * Defaults to 'operator' when omitted (the safe default — only the permit path
+   * is at risk of compounding loss).
+   */
+  mintMethod?: 'permit' | 'operator' | 'card';
 }
 
 export interface AutoPayoutResult {
@@ -33,7 +52,7 @@ export interface AutoPayoutResult {
 export async function insertDistributionAndPay(
   input: AutoPayoutInput,
 ): Promise<AutoPayoutResult> {
-  const { purchaseId, brandId, split } = input;
+  const { purchaseId, brandId, split, tokenId, mintMethod = 'operator' } = input;
   const result: AutoPayoutResult = {
     distributionId: null,
     creatorTxHash: null,
@@ -95,6 +114,46 @@ export async function insertDistributionAndPay(
       .update({ status: 'completed', notes: 'Legacy on-chain split — no off-chain payout needed' })
       .eq('id', dist.id);
     return result;
+  }
+
+  // ── 2b. Guardrail A: on-chain creator invariant check ──────────────
+  // For all non-legacy split types the on-chain `creator` MUST be
+  // PLATFORM_WALLET so that mintWithPermit's hard-coded 70/30 sends 100%
+  // to platform and this off-chain payout settles the negotiated split.
+  // If on-chain creator is anything else AND the buyer paid via permit,
+  // the brand/creator already received 70% on-chain — paying again here
+  // compounds the loss (see memory/feedback_register_drop_creator_must_be_platform.md).
+  // For operator/card paths the buyer's USDC went straight to platform so
+  // an on-chain creator mismatch is irrelevant; we warn but proceed.
+  try {
+    const onChain = await getRRGReadOnly().getDrop(tokenId);
+    const onChainCreator = String(onChain.creator).toLowerCase();
+    const expected       = PLATFORM_WALLET.toLowerCase();
+    if (onChainCreator !== expected) {
+      const note = `on-chain creator mismatch: got ${onChain.creator} expected ${PLATFORM_WALLET} (mintMethod=${mintMethod}, splitType=${split.splitType})`;
+      if (mintMethod === 'permit') {
+        // Permit path: ABORT to prevent compounding the on-chain split loss.
+        console.error(`[auto-payout] ${dist.id} ABORTED — ${note}`);
+        await db.from('rrg_distributions')
+          .update({ status: 'failed', notes: `Guardrail A abort: ${note}` })
+          .eq('id', dist.id);
+        return result;
+      }
+      // Operator/card path: warn, continue (no on-chain split happened).
+      console.warn(`[auto-payout] ${dist.id} WARNING — ${note} (proceeding: mint method is ${mintMethod}, no on-chain split)`);
+    }
+  } catch (checkErr) {
+    // RPC failure on the read should not silently bypass the safety check
+    // for the permit path. For operator/card we proceed but log.
+    const msg = checkErr instanceof Error ? checkErr.message : String(checkErr);
+    if (mintMethod === 'permit') {
+      console.error(`[auto-payout] ${dist.id} ABORTED — Guardrail A read failed: ${msg}`);
+      await db.from('rrg_distributions')
+        .update({ status: 'failed', notes: `Guardrail A read failed (mintMethod=permit): ${msg.slice(0, 400)}` })
+        .eq('id', dist.id);
+      return result;
+    }
+    console.warn(`[auto-payout] ${dist.id} Guardrail A read failed (mintMethod=${mintMethod}, proceeding): ${msg}`);
   }
 
   // ── 3. Execute USDC transfers ───────────────────────────────────────

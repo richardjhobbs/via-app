@@ -431,6 +431,8 @@ export async function POST(req: NextRequest) {
         purchaseId: purchase.id,
         brandId,
         split,
+        tokenId:    Number(tokenId),
+        mintMethod: 'card', // Stripe capture in fiat then operatorMint
       });
 
       // Marketing attribution — commission is on platform share only.

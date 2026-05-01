@@ -462,6 +462,8 @@ export async function POST(req: NextRequest) {
         purchaseId: purchase.id,
         brandId,
         split,
+        tokenId,
+        mintMethod: 'operator', // direct USDC transfer to platform + operatorMint
       });
       brandPayoutTxHash = payoutResult.brandTxHash;
 
