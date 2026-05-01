@@ -208,20 +208,33 @@ for (const slug of EFFECTIVE_BRANDS) {
     console.log(`  Storage: DRY — would upload to ${storagePath}`);
   }
 
-  // On-chain registerDrop
+  // On-chain registerDrop.
+  //
+  // CRITICAL: brand-owned drops (memberships included) MUST be registered
+  // with creator = PLATFORM_WALLET so the on-chain 70% lands at the platform
+  // and the off-chain auto-payout settles the brand's negotiated share.
+  // Registering with the brand wallet produces a 67.5% platform loss per
+  // sale because mintWithPermit pays drop.creator AND auto-payout pays the
+  // brand its 97.5% from platform reserves. See lib/rrg/splits.ts:160 +
+  // memory/feedback_register_drop_creator_must_be_platform.md.
+  const PLATFORM_WALLET = process.env.NEXT_PUBLIC_PLATFORM_WALLET;
+  if (!PLATFORM_WALLET) {
+    console.error('FATAL: NEXT_PUBLIC_PLATFORM_WALLET not set — refusing to registerDrop');
+    process.exit(1);
+  }
   if (!DRY_RUN) {
     const priceUsdc6dp = BigInt(Math.round(PRICE_USDC * 1_000_000));
     try {
       const nonce = await nextNonce();
-      const tx = await rrg.registerDrop(tokenId, brand.wallet_address, priceUsdc6dp, EDITION, { nonce });
+      const tx = await rrg.registerDrop(tokenId, PLATFORM_WALLET, priceUsdc6dp, EDITION, { nonce });
       const receipt = await tx.wait(1);
-      console.log(`  Chain:   registerDrop tx ${receipt.hash}`);
+      console.log(`  Chain:   registerDrop tx ${receipt.hash} (creator=PLATFORM)`);
     } catch (chainErr) {
       console.error(`  ERROR: registerDrop failed — ${chainErr.message}`);
       continue;
     }
   } else {
-    console.log(`  Chain:   DRY — would registerDrop(${tokenId}, ${brand.wallet_address}, ${PRICE_USDC * 1e6}, ${EDITION})`);
+    console.log(`  Chain:   DRY — would registerDrop(${tokenId}, ${PLATFORM_WALLET}, ${PRICE_USDC * 1e6}, ${EDITION})  (creator=PLATFORM)`);
   }
 
   // Insert rrg_submissions row

@@ -1105,13 +1105,34 @@ async function importProduct(product, brand) {
   // Claim tokenId
   const tokenId = await claimNextTokenId();
 
-  // On-chain registerDrop
+  // On-chain registerDrop.
+  //
+  // CRITICAL: brand-owned drops MUST be registered with creator =
+  // PLATFORM_WALLET, never the brand wallet. RRG.sol mintWithPermit
+  // hard-codes a 70% atomic transfer to drop.creator. The off-chain
+  // auto-payout (lib/rrg/auto-payout.ts) tops the brand up to its
+  // negotiated split (typically 97.5%) from PLATFORM reserves and
+  // does not reclaim the on-chain leg. If drop.creator = brand wallet,
+  // the brand gets 70% on-chain + 97.5% off-chain (= 167.5% paid out)
+  // and the platform takes a 67.5% loss per sale.
+  //
+  // Canonical pattern: lib/rrg/splits.ts:160 returns
+  // onChainCreator: PLATFORM_WALLET for brand_product_tiered. The
+  // brand-product create flow at app/api/brand/[brandId]/products/create/
+  // route.ts:280 uses calculateSplit().onChainCreator. This script
+  // mirrors that contract.
+  //
+  // Post-mortem: feedback_register_drop_creator_must_be_platform.md
   if (!SKIP_CHAIN) {
+    const PLATFORM_WALLET = process.env.NEXT_PUBLIC_PLATFORM_WALLET;
+    if (!PLATFORM_WALLET) {
+      throw new Error('NEXT_PUBLIC_PLATFORM_WALLET not set — refusing to registerDrop without it');
+    }
     const nonce = await nextNonce();
-    console.log(`  → registerDrop(${tokenId}, ${CFG.wallet}, ${toUsdc6dp(price)}, ${CFG.fixedEdition})  [nonce=${nonce}]`);
+    console.log(`  → registerDrop(${tokenId}, ${PLATFORM_WALLET}, ${toUsdc6dp(price)}, ${CFG.fixedEdition})  [nonce=${nonce}]`);
     const tx = await rrg.registerDrop(
       tokenId,
-      CFG.wallet,
+      PLATFORM_WALLET,
       toUsdc6dp(price),
       editionSize,
       { nonce },

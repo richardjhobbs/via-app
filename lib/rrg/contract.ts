@@ -1,6 +1,18 @@
 import { ethers } from 'ethers';
 
 // ── ABI (minimal — only functions we call server-side) ─────────────────
+//
+// CRITICAL — registerDrop's `creator` argument:
+//   For brand-owned drops (is_brand_product = true), MUST be PLATFORM_WALLET.
+//   For co-creation / legacy drops, see lib/rrg/splits.ts which returns
+//   the correct address as `onChainCreator` per split type. Always derive
+//   it from calculateSplit({...}).onChainCreator instead of passing a
+//   hand-picked wallet — passing the brand wallet directly causes a
+//   67.5% platform loss per sale because RRG.sol mintWithPermit sends 70%
+//   atomically to drop.creator AND auto-payout.ts then sends the brand its
+//   negotiated 97.5% from platform reserves.
+//
+//   Post-mortem: memory/feedback_register_drop_creator_must_be_platform.md
 export const RRG_ABI = [
   'function registerDrop(uint256 tokenId, address creator, uint256 priceUsdc6dp, uint256 maxSupply) external',
   'function mintWithPermit(uint256 tokenId, address buyer, uint256 deadline, uint8 v, bytes32 r, bytes32 s) external',
