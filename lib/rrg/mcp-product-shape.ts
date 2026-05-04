@@ -139,6 +139,8 @@ export function toAgentProduct({ drop, brand, variants, sold = 0, siteUrl }: Pro
     ? { min: Math.min(...inStockPrices), max: Math.max(...inStockPrices) }
     : null;
   const hasPerSizePricing = new Set(inStockPrices).size > 1;
+  const hasSizeAxis  = variantShapes.some(v => v.size  != null);
+  const hasColorAxis = variantShapes.some(v => v.color != null);
 
   const totalVariantStock = variantShapes.reduce((s, v) => s + Math.max(0, v.stock), 0);
   const availablePhysicalUnits = drop.is_physical_product
@@ -151,10 +153,19 @@ export function toAgentProduct({ drop, brand, variants, sold = 0, siteUrl }: Pro
   const includeResellerAnchors = mode !== 'direct_brand';
   const includeCondition = mode !== 'direct_brand';
 
+  const axisHints: string[] = [];
+  if (hasSizeAxis)  axisHints.push('selected_size');
+  if (hasColorAxis) axisHints.push('selected_color');
+  const axisList = axisHints.join(' + ');
+  const axisLabel = (hasSizeAxis && hasColorAxis) ? 'size + colour'
+                    : hasSizeAxis  ? 'size'
+                    : hasColorAxis ? 'colour'
+                    : '';
+
   const pricingNote = variantShapes.length === 0 ? null :
     (hasPerSizePricing
-      ? 'This listing has per-size pricing. priceUsdc is the BASE only (often the floor for sold-out sizes). Use variants[].priceUsdc for the size you actually want, and pass selected_size to the purchase tools so the payment amount matches.'
-      : 'All in-stock sizes share the same price. Still pass selected_size when purchasing a sized product so the order records the correct size.');
+      ? `This listing has per-variant pricing. priceUsdc is the BASE only (often the floor for sold-out variants). Use variants[].priceUsdc for the ${axisLabel} you actually want, and pass ${axisList} to the purchase tools so the payment amount matches.`
+      : `All in-stock variants share the same price. Still pass ${axisList} when purchasing so the order records the correct ${axisLabel}.`);
 
   const rrgBase = siteUrl ?? 'https://realrealgenuine.com';
   const rrgUrl  = `${rrgBase}/rrg/drop/${drop.token_id}`;

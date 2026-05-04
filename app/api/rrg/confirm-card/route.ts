@@ -43,7 +43,7 @@ export async function POST(req: NextRequest) {
             shipping_country, shipping_phone, physical_terms_accepted,
             shipping_rate_handle, shipping_rate_title, shipping_rate_amount,
             shipping_rate_currency, shipping_rate_code,
-            cardFeeUsdc, selected_size } = body as {
+            cardFeeUsdc, selected_size, selected_color } = body as {
       txHash:       string;
       buyerWallet:  string;
       tokenId:      number;
@@ -64,6 +64,7 @@ export async function POST(req: NextRequest) {
       shipping_rate_code?: string;
       cardFeeUsdc?: number;
       selected_size?: string;
+      selected_color?: string;
     };
 
     // ── Input validation ──────────────────────────────────────────────────
@@ -153,11 +154,12 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Transaction failed on-chain' }, { status: 400 });
     }
 
-    // ── Resolve effective price (per-size override if applicable) ────────
+    // ── Resolve effective price (per-variant override if applicable) ─────
     const effectivePrice = await resolveEffectivePrice(
       submission.id,
       submission.price_usdc,
       selected_size,
+      selected_color,
     );
 
     // ── Parse Transfer logs from USDC contract ────────────────────────────
@@ -251,8 +253,9 @@ export async function POST(req: NextRequest) {
           shipping_rate_currency:  shipping_rate_currency || null,
           shipping_rate_code:      shipping_rate_code     || null,
         } : {}),
-        // Size / variant (garment products)
-        ...(selected_size ? { selected_size } : {}),
+        // Size / colour variant
+        ...(selected_size  ? { selected_size }  : {}),
+        ...(selected_color ? { selected_color } : {}),
       })
       .select()
       .single();
@@ -505,7 +508,8 @@ export async function POST(req: NextRequest) {
           downloadUrl,
           ipfsMetadataUrl:   ipfsResult?.metadataUrl ?? null,
           imageUrl:          emailImageUrl,
-          selectedSize:      selected_size || null,
+          selectedSize:      selected_size  || null,
+          selectedColor:     selected_color || null,
         };
 
         if (brand?.contact_email) {

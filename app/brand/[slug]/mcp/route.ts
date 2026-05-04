@@ -291,7 +291,8 @@ function createBrandServer(brand: RrgBrand, logTool: LogTool = () => {}) {
     `Get a live shipping quote for a ${brand.name} product from the buyer's country. Rates come from the brand's Shopify store via the Storefront API. Falls back to flat-rate config if no token is configured. Returns rates sorted cheapest-first.`,
     {
       token_id:        z.number().describe('The RRG token ID of the product'),
-      size:            z.string().optional().describe('Size/variant — required if the product has multiple sizes'),
+      size:            z.string().optional().describe('Size — required if the product has a size axis with multiple values'),
+      color:           z.string().optional().describe('Colourway — required if the product has a colour axis with multiple values (e.g. "Modern Chrome", "Brushed Steel")'),
       quantity:        z.number().int().positive().default(1).describe('Units to quote for (default 1)'),
       shipping_address: z.object({
         address1:    z.string().describe('Street address line 1'),
@@ -302,7 +303,7 @@ function createBrandServer(brand: RrgBrand, logTool: LogTool = () => {}) {
         zip:         z.string().describe('Postal / ZIP code'),
       }).describe('Destination address. Only country + zip + city are strictly required for rate calculation.'),
     },
-    async ({ token_id, size, quantity = 1, shipping_address }) => {
+    async ({ token_id, size, color, quantity = 1, shipping_address }) => {
       logTool('get_quote');
 
       const drop = await getDropByTokenId(token_id);
@@ -310,19 +311,39 @@ function createBrandServer(brand: RrgBrand, logTool: LogTool = () => {}) {
         return { isError: true, content: [{ type: 'text', text: `Product #${token_id} not found for ${brand.name}` }] };
       }
 
-      // Resolve the Shopify variant for this size.
+      // Resolve the Shopify variant for this (size, colour) selection.
       const variants = await getVariantsBySubmissionId(drop.id);
+      const hasSizeAxis  = variants.some(v => v.size  != null);
+      const hasColorAxis = variants.some(v => v.color != null);
+      const distinctSizes  = Array.from(new Set(variants.map(v => v.size).filter(Boolean))) as string[];
+      const distinctColors = Array.from(new Set(variants.map(v => v.color).filter(Boolean))) as string[];
+
       let matchVariant = variants[0];
-      if (size) {
-        const found = variants.find(v => v.size?.toLowerCase() === size.toLowerCase());
-        if (!found) {
-          const available = variants.map(v => v.size).filter(Boolean).join(', ');
-          return { isError: true, content: [{ type: 'text', text: `Size "${size}" not available. Available: ${available}` }] };
+      if (variants.length > 1) {
+        const matchingRows = variants.filter(v =>
+          (!hasSizeAxis  || !size  || v.size?.toLowerCase()  === size.toLowerCase())
+          && (!hasColorAxis || !color || v.color?.toLowerCase() === color.toLowerCase())
+        );
+
+        // Required-axis enforcement: if the product has an axis with > 1
+        // distinct value, the agent must supply that axis to get an exact
+        // shipping quote (carrier rates can vary by item weight per variant).
+        const sizeRequired  = hasSizeAxis  && distinctSizes.length  > 1 && !size;
+        const colorRequired = hasColorAxis && distinctColors.length > 1 && !color;
+        if (sizeRequired || colorRequired) {
+          const missing: string[] = [];
+          if (sizeRequired)  missing.push(`size (available: ${distinctSizes.join(', ')})`);
+          if (colorRequired) missing.push(`color (available: ${distinctColors.join(', ')})`);
+          return { isError: true, content: [{ type: 'text', text: `${drop.title} has multiple variants. Specify ${missing.join(' and ')} for an accurate shipping quote.` }] };
         }
-        matchVariant = found;
-      } else if (variants.length > 1) {
-        const sizes = variants.map(v => v.size).filter(Boolean).join(', ');
-        return { isError: true, content: [{ type: 'text', text: `${drop.title} has multiple sizes (${sizes}). Specify size to get an accurate shipping quote.` }] };
+
+        if (matchingRows.length === 0) {
+          const parts: string[] = [];
+          if (size)  parts.push(`size "${size}"`);
+          if (color) parts.push(`colour "${color}"`);
+          return { isError: true, content: [{ type: 'text', text: `${parts.join(' / ') || 'That variant'} is not available. Sizes: ${distinctSizes.join(', ') || 'n/a'}. Colours: ${distinctColors.join(', ') || 'n/a'}.` }] };
+        }
+        matchVariant = matchingRows[0];
       }
 
       // Primary path: Shopify Storefront API via ephemeral cart.
@@ -349,7 +370,8 @@ function createBrandServer(brand: RrgBrand, logTool: LogTool = () => {}) {
             source:   'shopify_storefront_live',
             tokenId:  token_id,
             product:  drop.title,
-            size:     matchVariant?.size ?? 'n/a',
+            size:     matchVariant?.size  ?? 'n/a',
+            color:    matchVariant?.color ?? 'n/a',
             quantity,
             shipsTo:  shipping_address.country.toUpperCase(),
             currency: quote.currency,
@@ -394,35 +416,70 @@ function createBrandServer(brand: RrgBrand, logTool: LogTool = () => {}) {
 
   server.tool(
     'buy_product',
-    `Initiate a purchase for a ${brand.name} product. Returns payment instructions (USDC on Base). For AI agents — send USDC to the returned address, then confirm at the central /mcp endpoint.`,
+    `Initiate a purchase for a ${brand.name} product. Returns payment instructions (USDC on Base). For AI agents — send USDC to the returned address, then confirm at the central /mcp endpoint. Pass size and/or color to pin the variant; required for products that have those axes.`,
     {
       token_id: z.number().describe('The RRG token ID of the product'),
-      size: z.string().optional().describe('Size to purchase (e.g. S, M, L, XL)'),
+      size: z.string().optional().describe('Size to purchase (e.g. S, M, L, XL). Required when the product has a size axis with multiple values.'),
+      color: z.string().optional().describe('Colourway to purchase (e.g. "Modern Chrome", "Brushed Steel"). Required when the product has a colour axis with multiple values; recorded on the order so fulfillment ships the right finish.'),
       buyer_wallet: z.string().describe('Your 0x wallet address on Base'),
     },
-    async ({ token_id, size, buyer_wallet }) => {
+    async ({ token_id, size, color, buyer_wallet }) => {
       logTool('buy_product');
       const drop = await getDropByTokenId(token_id);
       if (!drop || drop.brand_id !== brand.id) {
         return { isError: true, content: [{ type: 'text', text: `Product #${token_id} not found for ${brand.name}` }] };
       }
 
-      // Check size availability if specified
-      if (size) {
-        const variants = await getVariantsBySubmissionId(drop.id);
-        const sizeVariant = variants.find(v => v.size?.toLowerCase() === size.toLowerCase());
-        if (!sizeVariant) {
-          const available = variants.map(v => v.size).filter(Boolean);
-          return { isError: true, content: [{ type: 'text', text: `Size "${size}" not available. Available sizes: ${available.join(', ')}` }] };
+      const variants     = await getVariantsBySubmissionId(drop.id);
+      const hasSizeAxis  = variants.some(v => v.size  != null);
+      const hasColorAxis = variants.some(v => v.color != null);
+      const distinctSizes  = Array.from(new Set(variants.map(v => v.size).filter(Boolean))) as string[];
+      const distinctColors = Array.from(new Set(variants.map(v => v.color).filter(Boolean))) as string[];
+
+      // Required-axis enforcement: any axis with more than one distinct value
+      // must be specified by the buyer.
+      const sizeRequired  = hasSizeAxis  && distinctSizes.length  > 1 && !size;
+      const colorRequired = hasColorAxis && distinctColors.length > 1 && !color;
+      if (sizeRequired || colorRequired) {
+        const missing: string[] = [];
+        if (sizeRequired)  missing.push(`size (available: ${distinctSizes.join(', ')})`);
+        if (colorRequired) missing.push(`color (available: ${distinctColors.join(', ')})`);
+        return { isError: true, content: [{ type: 'text', text: `${drop.title} requires ${missing.join(' and ')}.` }] };
+      }
+
+      // Resolve the variant matching whatever the buyer pinned (size or
+      // colour or both). Used for the live stock check.
+      let matchedVariant = variants[0];
+      if (variants.length > 0) {
+        const found = variants.find(v =>
+          (!hasSizeAxis  || !size  || v.size?.toLowerCase()  === size.toLowerCase())
+          && (!hasColorAxis || !color || v.color?.toLowerCase() === color.toLowerCase())
+        );
+        if ((size || color) && !found) {
+          const parts: string[] = [];
+          if (size)  parts.push(`size "${size}"`);
+          if (color) parts.push(`colour "${color}"`);
+          return { isError: true, content: [{ type: 'text', text: `${parts.join(' / ')} not available for ${drop.title}. Sizes: ${distinctSizes.join(', ') || 'n/a'}. Colours: ${distinctColors.join(', ') || 'n/a'}.` }] };
         }
-        const stock = await getVariantStock(brand.shopify_domain, sizeVariant);
-        if (stock <= 0) {
-          return { isError: true, content: [{ type: 'text', text: `Size "${size}" is out of stock for ${drop.title}. Try a different size.` }] };
+        if (found) {
+          matchedVariant = found;
+          const stock = await getVariantStock(brand.shopify_domain, matchedVariant);
+          if (stock <= 0) {
+            const label = [matchedVariant.size, matchedVariant.color].filter(Boolean).join(' / ');
+            return { isError: true, content: [{ type: 'text', text: `${label || 'That variant'} is out of stock for ${drop.title}. Try a different size or colour.` }] };
+          }
         }
       }
 
       const price = parseFloat(drop.price_usdc ?? '0');
       const platformWallet = '0xbfd71eA27FFc99747dA2873372f84346d9A8b7ed';
+
+      const variantInstructions: string[] = [];
+      if (size)  variantInstructions.push(`Size selected: ${size}`);
+      if (color) variantInstructions.push(`Colour selected: ${color}`);
+      if (variantInstructions.length === 0) {
+        variantInstructions.push('No size/colour specified — include in shipping notes if the product has multiple variants.');
+      }
 
       return {
         content: [{
@@ -431,7 +488,8 @@ function createBrandServer(brand: RrgBrand, logTool: LogTool = () => {}) {
             status: 'payment_required',
             tokenId: token_id,
             product: drop.title,
-            size: size ?? 'not specified',
+            size:  size  ?? 'not specified',
+            color: color ?? 'not specified',
             priceUsdc: price.toFixed(2),
             payTo: platformWallet,
             usdcContract: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913',
@@ -439,8 +497,8 @@ function createBrandServer(brand: RrgBrand, logTool: LogTool = () => {}) {
             chain: 'Base',
             instructions: [
               `Send exactly ${price.toFixed(2)} USDC to ${platformWallet} on Base.`,
-              'Then call confirm_agent_purchase on the central /mcp endpoint with tokenId, buyerWallet, and txHash.',
-              size ? `Size selected: ${size}` : 'No size specified — include size in shipping notes.',
+              `Then call confirm_agent_purchase on the central /mcp endpoint with tokenId, buyerWallet, txHash${size ? `, selected_size="${size}"` : ''}${color ? `, selected_color="${color}"` : ''}.`,
+              ...variantInstructions,
             ],
             centralMcpUrl: `${siteUrl}/mcp`,
           }, null, 2),

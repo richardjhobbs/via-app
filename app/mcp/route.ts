@@ -319,7 +319,7 @@ function createRRGServer() {
       'When the user asks about a specific size, ALWAYS pass that size in the `size` parameter — the response then includes sizeAvailable + sizePriceUsdc + sizeStock for a direct yes/no + price. For queries like "size 10.5" or "size M" the size is auto-extracted, but passing it explicitly is faster and unambiguous.',
       'When a size parameter is not used, read variantSummary (or the variants[] array) for per-size pricing BEFORE falling back to the priceRangeUsdc band. Per-size prices are exact; the band is only a floor→ceiling range.',
       '',
-      'Next step: the returned payload has everything needed for the buy — call initiate_agent_purchase with selected_size set to the chosen size. get_drop_details is optional (adds signed image URLs + shipping context).',
+      'Next step: the returned payload has everything needed for the buy — call initiate_agent_purchase with selected_size and/or selected_color set to the chosen variant. Pass selected_color whenever the listing has a colour axis (variants[].color non-null) so fulfillment ships the right finish. get_drop_details is optional (adds signed image URLs + shipping context).',
       '',
       'If zero matches, try broader tokens, alternate naming (resale items are often indexed under multiple naming clusters — brand code / collab name / designer name / era / colorway). If still zero, call list_drops to browse.',
     ].join('\n'),
@@ -574,8 +574,8 @@ function createRRGServer() {
             returned:     finalResults.length,
             results:      finalResults,
             nextStep:     sizeFilter
-              ? 'Each result includes sizeAvailable + sizePriceUsdc for the requested size. If sizeAvailable=true, call initiate_agent_purchase (AI agents) / initiate_purchase (humans) with selected_size set to the requested size. The payment amount must match sizePriceUsdc.'
-              : 'Each result includes the full variants[] array with per-size inStock + priceUsdc. To buy, call initiate_agent_purchase (AI agents) or initiate_purchase (human wallet) with selected_size. Or call get_drop_details for additional physical product / shipping context.',
+              ? 'Each result includes sizeAvailable + sizePriceUsdc for the requested size. If sizeAvailable=true, call initiate_agent_purchase (AI agents) / initiate_purchase (humans) with selected_size set to the requested size, plus selected_color if the variant carries a colour. The payment amount must match sizePriceUsdc.'
+              : 'Each result includes the full variants[] array with per-variant inStock + priceUsdc. To buy, call initiate_agent_purchase (AI agents) or initiate_purchase (human wallet) with selected_size and/or selected_color matching the variant you want. Or call get_drop_details for additional physical product / shipping context.',
           }, null, 2),
         }],
       };
@@ -1133,8 +1133,9 @@ function createRRGServer() {
       tokenId: z.number().int().positive().describe('Token ID of the listing to purchase'),
       buyerWallet: z.string().regex(/^0x[0-9a-fA-F]{40}$/).describe('Buyer 0x wallet address on Base'),
       selected_size: z.string().optional().describe('For sized products, the size you want to buy (e.g. "10.5", "M"). REQUIRED for sized listings where sizes carry different prices — the permit is signed for the specific size\'s price. Call get_drop first to see available variants and their prices.'),
+      selected_color: z.string().optional().describe('For products with a colour axis (e.g. "Modern Chrome", "Brushed Steel"), the colourway you want to buy. REQUIRED for colour-only listings so fulfillment ships the right finish, and required alongside selected_size for size+colour matrix products. Read variants[] from get_drop_details to see available colours.'),
     },
-    async ({ tokenId, buyerWallet, selected_size }) => {
+    async ({ tokenId, buyerWallet, selected_size, selected_color }) => {
       const drop = await getDropByTokenId(tokenId);
       if (!drop) {
         return { isError: true, content: [{ type: 'text', text: 'Listing not found' }] };
@@ -1143,10 +1144,10 @@ function createRRGServer() {
         return { isError: true, content: [{ type: 'text', text: 'Listing price not set' }] };
       }
 
-      // Size-aware pricing: if a selected_size maps to a variant with a
-      // price_override, sign the permit for THAT amount. Otherwise fall back
-      // to the base drop price.
-      const priceUsdc    = await resolveEffectivePrice(drop.id, drop.price_usdc, selected_size);
+      // Variant-aware pricing: if a (selected_size, selected_color) pair maps
+      // to a variant row with a price_override, sign the permit for THAT
+      // amount. Otherwise fall back to the base drop price.
+      const priceUsdc    = await resolveEffectivePrice(drop.id, drop.price_usdc, selected_size, selected_color);
       const priceUsdc6dp = toUsdc6dp(priceUsdc);
 
       const permitPayload = await buildPermitPayload(
@@ -1165,7 +1166,8 @@ function createRRGServer() {
               title:       drop.title,
               priceUsdc,
               editionSize: drop.edition_size,
-              ...(selected_size ? { selectedSize: selected_size } : {}),
+              ...(selected_size  ? { selectedSize:  selected_size  } : {}),
+              ...(selected_color ? { selectedColor: selected_color } : {}),
             },
             ...(drop.is_physical_product ? {
               requiresShippingAddress: true,
@@ -1210,16 +1212,17 @@ function createRRGServer() {
       shipping_country:       z.string().optional().describe('Country (required for physical products)'),
       shipping_phone:         z.string().optional().describe('Phone number (required for physical products — needed for delivery confirmation)'),
       selected_size:          z.string().optional().describe('For sized products, the size you chose at initiate_purchase. MUST match the size whose price was used to build the permit.'),
+      selected_color:         z.string().optional().describe('For products with a colour axis, the colourway you chose at initiate_purchase. MUST match the colour whose price was used to build the permit; recorded on the order so fulfillment ships the right finish.'),
     },
     async ({ tokenId, buyerWallet, buyerEmail, deadline, signature,
              shipping_name, shipping_address_line1, shipping_address_line2,
              shipping_city, shipping_state, shipping_postal_code,
-             shipping_country, shipping_phone, selected_size }) => {
+             shipping_country, shipping_phone, selected_size, selected_color }) => {
       const drop = await getDropByTokenId(tokenId);
       if (!drop) {
         return { isError: true, content: [{ type: 'text', text: 'Listing not found' }] };
       }
-      const effectivePrice = await resolveEffectivePrice(drop.id, drop.price_usdc, selected_size);
+      const effectivePrice = await resolveEffectivePrice(drop.id, drop.price_usdc, selected_size, selected_color);
 
       // Validate shipping for physical products
       if (drop.is_physical_product) {
@@ -1263,7 +1266,8 @@ function createRRGServer() {
           download_token:      downloadToken,
           download_expires_at: downloadExpiry,
           brand_id:            drop.brand_id ?? RRG_BRAND_ID,
-          ...(selected_size ? { selected_size } : {}),
+          ...(selected_size  ? { selected_size }  : {}),
+          ...(selected_color ? { selected_color } : {}),
           // Shipping fields (physical products)
           ...(drop.is_physical_product ? {
             shipping_name:           shipping_name || null,
@@ -2405,19 +2409,20 @@ function createRRGServer() {
       'then call confirm_agent_purchase with your transaction hash.',
     ].join('\n'),
     {
-      tokenId:       z.number().int().positive().describe('The token ID of the drop to purchase'),
-      buyerWallet:   z.string().regex(/^0x[0-9a-fA-F]{40}$/).describe('Your wallet address on Base'),
-      selected_size: z.string().optional().describe('For sized products (e.g. sneakers, garments), the size you want to buy (e.g. "10.5", "M"). Different sizes may carry different prices — call get_drop first to see variants[] with per-size priceUsdc, then pass the size here so the amount you are instructed to pay matches that size.'),
+      tokenId:        z.number().int().positive().describe('The token ID of the drop to purchase'),
+      buyerWallet:    z.string().regex(/^0x[0-9a-fA-F]{40}$/).describe('Your wallet address on Base'),
+      selected_size:  z.string().optional().describe('For sized products (e.g. sneakers, garments), the size you want to buy (e.g. "10.5", "M"). Different sizes may carry different prices — call get_drop first to see variants[] with per-variant priceUsdc, then pass the size here so the amount you are instructed to pay matches that variant.'),
+      selected_color: z.string().optional().describe('For products with a colour axis (e.g. a filtered showerhead in five finishes), the colourway you want to buy. REQUIRED for colour-only listings so fulfillment ships the right finish; required alongside selected_size for size+colour matrix products. Inspect variants[] from get_drop_details to see available colours.'),
     },
-    async ({ tokenId, buyerWallet, selected_size }) => {
+    async ({ tokenId, buyerWallet, selected_size, selected_color }) => {
       const drop = await getDropByTokenId(tokenId);
       if (!drop || drop.status !== 'approved') {
         return { isError: true, content: [{ type: 'text' as const, text: 'Listing not found or not available for purchase.' }] };
       }
 
-      // Size-aware pricing: a selected size with its own price_override charges
-      // that override; otherwise fall back to the base drop price.
-      const priceUsdc      = await resolveEffectivePrice(drop.id, drop.price_usdc, selected_size);
+      // Variant-aware pricing: a (size, colour) pair with its own price_override
+      // charges that override; otherwise fall back to the base drop price.
+      const priceUsdc      = await resolveEffectivePrice(drop.id, drop.price_usdc, selected_size, selected_color);
       const amountRaw      = String(Math.round(priceUsdc * 1_000_000));
       const platformWallet = process.env.NEXT_PUBLIC_PLATFORM_WALLET ?? '0xbfd71eA27FFc99747dA2873372f84346d9A8b7ed';
 
@@ -2427,14 +2432,15 @@ function createRRGServer() {
           text: JSON.stringify({
             tokenId,
             title:        drop.title,
-            ...(selected_size ? { selectedSize: selected_size } : {}),
+            ...(selected_size  ? { selectedSize:  selected_size  } : {}),
+            ...(selected_color ? { selectedColor: selected_color } : {}),
             payTo:        platformWallet,
             amount:       priceUsdc.toFixed(2),
             amountRaw,
             usdcContract: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913',
             chainId:      8453,
             network:      'base',
-            nextStep:     `Send exactly ${priceUsdc.toFixed(2)} USDC to ${platformWallet} on Base mainnet, then call confirm_agent_purchase with tokenId=${tokenId}, buyerWallet="${buyerWallet}",${selected_size ? ` selected_size="${selected_size}",` : ''} and your txHash.`,
+            nextStep:     `Send exactly ${priceUsdc.toFixed(2)} USDC to ${platformWallet} on Base mainnet, then call confirm_agent_purchase with tokenId=${tokenId}, buyerWallet="${buyerWallet}",${selected_size ? ` selected_size="${selected_size}",` : ''}${selected_color ? ` selected_color="${selected_color}",` : ''} and your txHash.`,
             paymentMethods: {
               direct_usdc: {
                 payTo: platformWallet,
@@ -2480,8 +2486,9 @@ function createRRGServer() {
       buyerWallet:   z.string().regex(/^0x[0-9a-fA-F]{40}$/).describe('Your wallet address'),
       txHash:        z.string().regex(/^0x[0-9a-fA-F]{64}$/).describe('Your USDC transfer transaction hash on Base'),
       buyerEmail:    z.string().email().optional().describe('Email address for order confirmation and file delivery. Required for physical products — without it no buyer confirmation email will be sent.'),
-      buyerAgentId:  z.number().int().positive().optional().describe('Your ERC-8004 agent ID for on-chain reputation signals (e.g. 17666)'),
-      selected_size: z.string().optional().describe('For sized products, the size you chose at initiate_agent_purchase. MUST match — the server verifies your USDC transfer against the price for that size.'),
+      buyerAgentId:   z.number().int().positive().optional().describe('Your ERC-8004 agent ID for on-chain reputation signals (e.g. 17666)'),
+      selected_size:  z.string().optional().describe('For sized products, the size you chose at initiate_agent_purchase. MUST match — the server verifies your USDC transfer against the price for that variant.'),
+      selected_color: z.string().optional().describe('For products with a colour axis, the colourway you chose at initiate_agent_purchase. MUST match — recorded on the order so fulfillment ships the right finish, and used to verify the USDC amount when colour-keyed price overrides exist.'),
       shipping_name:          z.string().optional().describe('Recipient name (required for physical products)'),
       shipping_address_line1: z.string().optional().describe('Street address line 1 (required for physical products)'),
       shipping_address_line2: z.string().optional().describe('Street address line 2'),
@@ -2491,7 +2498,7 @@ function createRRGServer() {
       shipping_country:       z.string().optional().describe('Country (required for physical products)'),
       shipping_phone:         z.string().optional().describe('Phone number (required for physical products — needed for delivery confirmation)'),
     },
-    async ({ tokenId, buyerWallet, txHash, buyerEmail, buyerAgentId, selected_size,
+    async ({ tokenId, buyerWallet, txHash, buyerEmail, buyerAgentId, selected_size, selected_color,
              shipping_name, shipping_address_line1, shipping_address_line2,
              shipping_city, shipping_state, shipping_postal_code,
              shipping_country, shipping_phone }) => {
@@ -2504,9 +2511,10 @@ function createRRGServer() {
             tokenId,
             buyerWallet,
             txHash,
-            ...(buyerEmail   ? { email: buyerEmail }  : {}),
-            ...(buyerAgentId ? { buyerAgentId }        : {}),
-            ...(selected_size ? { selected_size }     : {}),
+            ...(buyerEmail    ? { email: buyerEmail }    : {}),
+            ...(buyerAgentId  ? { buyerAgentId }          : {}),
+            ...(selected_size  ? { selected_size }       : {}),
+            ...(selected_color ? { selected_color }      : {}),
             ...(shipping_name          ? { shipping_name }          : {}),
             ...(shipping_address_line1 ? { shipping_address_line1 } : {}),
             ...(shipping_address_line2 ? { shipping_address_line2 } : {}),
@@ -2928,8 +2936,8 @@ export async function GET(req: Request) {
       mcp_tools: [
         { name: 'search_products',         description: 'Free-text search across titles, descriptions, agent descriptions, and structured attributes (retail_sku, canonical_name, collab, original_release, vendor, style_tags). START HERE for "find me X" queries.' },
         { name: 'list_drops',              description: 'Browse all active listings. Optional filter { brand_slug: string }. Prefer search_products when you have a specific item name or SKU.' },
-        { name: 'get_drop_details',        description: 'Full details for one listing by tokenId (including per-size variants, pricing range, and agent description).' },
-        { name: 'initiate_agent_purchase', description: 'Buy a listing as an AI agent (operatorMint flow). Pass selected_size for sized products so the payment amount matches the chosen size.' },
+        { name: 'get_drop_details',        description: 'Full details for one listing by tokenId (including per-variant size and colour rows with pricing, agent description, shipping context).' },
+        { name: 'initiate_agent_purchase', description: 'Buy a listing as an AI agent (operatorMint flow). Pass selected_size and/or selected_color to pin the variant — payment amount matches the chosen variant and fulfillment ships the right size/colour.' },
         { name: 'join_marketing_program',  description: 'Join the RRG Referral / Marketing / Affiliate Programme. Same programme for humans and AI agents. Earn 10% of platform share on sales by agents you refer.' },
         { name: 'log_referral',            description: 'Log an agent you have referred to RRG (after joining the programme).' },
         { name: 'check_my_commissions',    description: 'See your referral/marketing commissions (pending, approved, paid).' },

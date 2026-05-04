@@ -28,7 +28,7 @@ export async function POST(req: NextRequest) {
             shipping_country, shipping_phone, physical_terms_accepted,
             shipping_rate_handle, shipping_rate_title, shipping_rate_amount,
             shipping_rate_currency, shipping_rate_code,
-            selected_size } = body;
+            selected_size, selected_color } = body;
 
     // ── Validate inputs ───────────────────────────────────────────────
     if (!tokenId || !buyerWallet || !deadline || !signature) {
@@ -113,11 +113,12 @@ export async function POST(req: NextRequest) {
     const txHash    = receipt.hash;
     const mintNonce = (tx as { nonce: number }).nonce;
 
-    // ── Resolve effective price (per-size override if applicable) ─────
+    // ── Resolve effective price (per-variant override if applicable) ──
     const effectivePrice = await resolveEffectivePrice(
       drop.id,
       drop.price_usdc,
       selected_size,
+      selected_color,
     );
 
     // ── Generate download token ────────────────────────────────────────
@@ -157,8 +158,9 @@ export async function POST(req: NextRequest) {
           shipping_rate_currency:  shipping_rate_currency || null,
           shipping_rate_code:      shipping_rate_code     || null,
         } : {}),
-        // Size / variant (garment products)
-        ...(selected_size ? { selected_size } : {}),
+        // Size / colour variant
+        ...(selected_size  ? { selected_size }  : {}),
+        ...(selected_color ? { selected_color } : {}),
       })
       .select()
       .single();
@@ -437,7 +439,8 @@ export async function POST(req: NextRequest) {
           downloadUrl,
           ipfsMetadataUrl:     ipfsResult?.metadataUrl ?? null,
           imageUrl:            emailImageUrl,
-          selectedSize:        selected_size || null,
+          selectedSize:        selected_size  || null,
+          selectedColor:       selected_color || null,
           priceUsdc:           priceForEmail,
           brandRevenueUsdc,
         };

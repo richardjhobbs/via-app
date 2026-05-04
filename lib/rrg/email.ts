@@ -285,6 +285,8 @@ interface PhysicalPurchaseEmailData {
   imageUrl?: string | null;
   /** Selected size for garment products (null for non-garment) */
   selectedSize?: string | null;
+  /** Selected colour variant (null when product has no colour axis) */
+  selectedColor?: string | null;
   /** Price paid by buyer in USDC */
   priceUsdc?: number | null;
   /** Revenue sent to brand wallet in USDC (after platform fee) */
@@ -339,6 +341,7 @@ export async function sendPhysicalOrderToBrand(data: PhysicalPurchaseEmailData):
         ${mkRow('Product', escHtml(data.title))}
         ${mkRow('Token', `<span style="${monoStyle}">#${data.tokenId}</span>`)}
         ${data.selectedSize ? mkRow('Size', `<span style="color:#6b4f3a;font-weight:600;font-size:15px;">${escHtml(data.selectedSize)}</span>`) : ''}
+        ${data.selectedColor ? mkRow('Colour', `<span style="color:#6b4f3a;font-weight:600;font-size:15px;">${escHtml(data.selectedColor)}</span>`) : ''}
         ${data.priceUsdc != null ? mkRow('Price paid', `$${data.priceUsdc.toFixed(2)} USDC`, true) : ''}
       </tbody></table>
 
@@ -427,7 +430,7 @@ export async function sendPhysicalPurchaseToBuyer(data: PhysicalPurchaseEmailDat
     <div class="card-head">
       <p class="eyebrow">Thank you for your order</p>
       <h1>${escHtml(data.title)}</h1>
-      <p class="brand-sub">${escHtml(data.brandName)}${data.selectedSize ? `, Size ${escHtml(data.selectedSize)}` : ''}</p>
+      <p class="brand-sub">${escHtml(data.brandName)}${data.selectedSize ? `, Size ${escHtml(data.selectedSize)}` : ''}${data.selectedColor ? `, ${escHtml(data.selectedColor)}` : ''}</p>
     </div>
 
     ${data.imageUrl ? `<img class="product-img" src="${data.imageUrl}" alt="${escHtml(data.title)}" />` : ''}
