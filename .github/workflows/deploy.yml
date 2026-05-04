@@ -17,8 +17,20 @@ jobs:
           script: |
             set -e
             cd /home/agent/apps/rrg
-            git pull origin master
-            npm install
+            # Idempotent sync with origin: VPS is one-way deploy target,
+            # any local edits are stale and must be discarded. Without
+            # this, a single dirty file (e.g. npm install regen of
+            # package-lock.json) blocks every subsequent `git pull` and
+            # silently strands commits. Matches the canonical recovery
+            # in memory/vps_deployment.md.
+            git fetch origin
+            git reset --hard origin/master
+            git clean -fd
+            # Deterministic install — leaves package-lock.json untouched
+            # so the next deploy's git reset has nothing to clean. `npm
+            # install` would mutate the lockfile and re-introduce the
+            # drift we just cleaned.
+            npm ci
             # Guardrail C: split invariant test (fast, fails fast on regression)
             npm run test
             # Guardrail B: on-chain creator audit (RPC-bound, ~2-3 min)
