@@ -37,7 +37,9 @@ import {
   getPendingCommissionTotal,
   upsertCandidate,
 } from '@/lib/rrg/marketing-db';
-import { randomUUID, randomBytes } from 'crypto';
+import { randomUUID, randomBytes, createHash } from 'crypto';
+import { ethers } from 'ethers';
+import { autopostGeneric } from '@/lib/rrg/autopost';
 
 export const dynamic = 'force-dynamic';
 
@@ -2842,6 +2844,93 @@ function createRRGServer() {
             ? 'Send USDC on Base to 0xbfd71eA27FFc99747dA2873372f84346d9A8b7ed, then call verify_credit_topup with the tx hash. 1 USDC = $1.00 credit.'
             : 'Personal Shopper tier is free. Upgrade to Concierge by updating the tier to "pro".',
         }, null, 2) }],
+      };
+    }
+  );
+
+  // ── Priscilla broadcast (signed, wallet-locked) ─────────────────────────
+  //
+  // Priscilla #37750 is the only agent allowed to call this. Same RRG
+  // autopost machinery that powers listing approvals + sales, gated by
+  // EIP-191 signature against her on-chain wallet on Base.
+  //
+  // Canonical signed message:
+  //   RRG-PRISCILLA-POST:<sha256-hex(content)>:<iso-timestamp>
+  // Replay window: 5 min.
+  // Channels locked to TELEGRAM / BLUESKY / DISCORD (DROPS webhook); no
+  // DISCORD_ANNOUNCEMENTS exposed (reserved for sales/decisions).
+
+  const PRISCILLA_WALLET = (process.env.RRG_PRISCILLA_BROADCAST_WALLET ?? '').toLowerCase();
+  const PRISCILLA_REPLAY_WINDOW_MS = 5 * 60 * 1000;
+  const PRISCILLA_ALLOWED_CHANNELS = ['TELEGRAM', 'BLUESKY', 'DISCORD'] as const;
+
+  server.tool(
+    'priscilla_post',
+    [
+      '[PRISCILLA ONLY] Broadcast a marketing post to RRG public channels',
+      '(Telegram, BlueSky, Discord) using the same autopost path that powers',
+      'listing approvals and sales. Auth: EIP-191 signature against',
+      'Priscilla #37750 wallet. Replay window: 5 min.',
+      '',
+      'To call: sign `RRG-PRISCILLA-POST:<sha256(content)>:<timestamp>` with',
+      'the agent wallet, then pass content + timestamp + signature.',
+    ].join('\n'),
+    {
+      content:   z.string().min(1).max(4000).describe('Post body. RRG signoff is appended automatically.'),
+      timestamp: z.string().describe('ISO-8601 timestamp; rejected if more than 5 min off server clock.'),
+      signature: z.string().describe('EIP-191 hex signature of canonical message.'),
+      image_url: z.string().url().optional().nullable().describe('Optional image URL fetched server-side.'),
+      channels:  z.array(z.enum(['TELEGRAM', 'BLUESKY', 'DISCORD'])).optional().describe('Subset of allowed channels. Defaults to all three.'),
+    },
+    async ({ content, timestamp, signature, image_url, channels }) => {
+      if (!PRISCILLA_WALLET) {
+        return { isError: true, content: [{ type: 'text', text: 'Server: RRG_PRISCILLA_BROADCAST_WALLET not configured.' }] };
+      }
+      const ts = Date.parse(timestamp);
+      if (!Number.isFinite(ts)) {
+        return { isError: true, content: [{ type: 'text', text: 'Invalid timestamp; expected ISO-8601.' }] };
+      }
+      if (Math.abs(Date.now() - ts) > PRISCILLA_REPLAY_WINDOW_MS) {
+        return { isError: true, content: [{ type: 'text', text: 'Timestamp outside 5 min replay window.' }] };
+      }
+
+      const contentHash = createHash('sha256').update(content, 'utf8').digest('hex');
+      const canonical   = `RRG-PRISCILLA-POST:${contentHash}:${timestamp}`;
+      let recovered: string;
+      try {
+        recovered = ethers.verifyMessage(canonical, signature).toLowerCase();
+      } catch {
+        return { isError: true, content: [{ type: 'text', text: 'Signature verification failed.' }] };
+      }
+      if (recovered !== PRISCILLA_WALLET) {
+        return { isError: true, content: [{ type: 'text', text: 'Signer is not Priscilla #37750.' }] };
+      }
+
+      const targets = channels && channels.length > 0
+        ? channels.filter(c => (PRISCILLA_ALLOWED_CHANNELS as readonly string[]).includes(c))
+        : [...PRISCILLA_ALLOWED_CHANNELS];
+      if (targets.length === 0) {
+        return { isError: true, content: [{ type: 'text', text: 'No valid channels selected.' }] };
+      }
+
+      const result = await autopostGeneric({
+        content,
+        imageUrl: image_url ?? null,
+        pipeline: {
+          pipeline_stage:  'AWARENESS',
+          content_type:    'priscilla_broadcast',
+          target_channels: targets,
+        },
+      });
+
+      return {
+        content: [{
+          type: 'text',
+          text: JSON.stringify({
+            posted_to: result.channels,
+            errors:    result.errors,
+          }, null, 2),
+        }],
       };
     }
   );
