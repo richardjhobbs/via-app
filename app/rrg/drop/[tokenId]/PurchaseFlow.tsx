@@ -32,6 +32,8 @@ interface Props {
   isBrandProduct?: boolean;
   /** Pre-selected size for garment products (passed through to order + shipping notes) */
   selectedSize?: string;
+  /** Pre-selected colour (passed through to order + shipping notes) */
+  selectedColor?: string;
 }
 
 type Step = 'idle' | 'connect' | 'email' | 'shipping' | 'signing' | 'confirming' | 'success' | 'error'
@@ -79,7 +81,7 @@ interface PurchaseResult {
   downloadUrl: string;
 }
 
-export default function PurchaseFlow({ tokenId, priceUsdc, soldOut, active, isPhysicalProduct, isBrandProduct, selectedSize }: Props) {
+export default function PurchaseFlow({ tokenId, priceUsdc, soldOut, active, isPhysicalProduct, isBrandProduct, selectedSize, selectedColor }: Props) {
   const { address, isConnected } = useAccount();
   const { connect }              = useConnect();
   const connectors               = useConnectors();
@@ -934,7 +936,8 @@ export default function PurchaseFlow({ tokenId, priceUsdc, soldOut, active, isPh
           confirmBody.shipping_rate_code     = selectedRate.code;
         }
       }
-      if (selectedSize) confirmBody.selected_size = selectedSize;
+      if (selectedSize)  confirmBody.selected_size  = selectedSize;
+      if (selectedColor) confirmBody.selected_color = selectedColor;
       if (referralCode) confirmBody.referralCode = referralCode;
 
       const res = await fetch('/api/rrg/confirm-card', {
@@ -1060,8 +1063,9 @@ export default function PurchaseFlow({ tokenId, priceUsdc, soldOut, active, isPh
           confirmBody.shipping_rate_code     = selectedRate.code;
         }
       }
-      // Include selected size (garment products)
-      if (selectedSize) confirmBody.selected_size = selectedSize;
+      // Include selected size + colour (garment products / colour-axis products)
+      if (selectedSize)  confirmBody.selected_size  = selectedSize;
+      if (selectedColor) confirmBody.selected_color = selectedColor;
       // Include referral code if present (from cookie/localStorage)
       if (referralCode) {
         confirmBody.referralCode = referralCode;

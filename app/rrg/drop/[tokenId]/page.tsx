@@ -51,12 +51,12 @@ function renderBio(bio: string): React.ReactNode {
 
 interface Props {
   params: Promise<{ tokenId: string }>;
-  searchParams: Promise<{ size?: string }>;
+  searchParams: Promise<{ size?: string; color?: string }>;
 }
 
 export default async function DropPage({ params, searchParams }: Props) {
   const { tokenId: tokenIdStr } = await params;
-  const { size: preSelectedSize } = await searchParams;
+  const { size: preSelectedSize, color: preSelectedColor } = await searchParams;
   const tokenId = parseInt(tokenIdStr, 10);
   if (isNaN(tokenId)) notFound();
 
@@ -92,22 +92,24 @@ export default async function DropPage({ params, searchParams }: Props) {
   const isShopifyBacked = !!brand?.shopify_domain;
 
   // Always fetch variants for Shopify-backed brands so stock calc works for
-  // single-variant catalogues too (e.g. MYKLÉ one-size accessories). The
-  // supports_sizing flag only gates size-selector UI, not stock reads.
+  // single-variant catalogues too (e.g. MYKLÉ one-size accessories) and for
+  // colour-only catalogues (e.g. Jolie filtered showerhead, 5 finishes,
+  // size=null). Selector rendering is driven from the variant rows
+  // themselves below: any non-null `size` → size selector; any non-null
+  // `color` → colour selector. The supports_sizing flag only seeds the
+  // sizing-chart link further down, not the selectors.
   const rawVariants = (brand?.supports_sizing || isShopifyBacked)
     ? await getVariantsBySubmissionId(drop.id)
     : [];
-  const variantsForUI: VariantInfo[] = brand?.supports_sizing
-    ? rawVariants
-        .filter((v): v is typeof v & { size: string } => !!v.size)
-        .map(v => ({
-          size:          v.size,
-          color:         v.color,
-          inStock:       v.cached_stock > 0,
-          stock:         v.cached_stock,
-          priceOverride: v.price_override != null ? Number(v.price_override) : null,
-        }))
-    : [];
+  const variantsForUI: VariantInfo[] = rawVariants.map(v => ({
+    size:          v.size,
+    color:         v.color,
+    inStock:       v.cached_stock > 0,
+    stock:         v.cached_stock,
+    priceOverride: v.price_override != null ? Number(v.price_override) : null,
+  }));
+  const hasSize  = variantsForUI.some(v => !!v.size);
+  const hasColor = variantsForUI.some(v => !!v.color);
 
   let onChain = { minted: 0, maxSupply: drop.edition_size ?? 0, active: true, soldOut: false };
 
@@ -289,6 +291,7 @@ export default async function DropPage({ params, searchParams }: Props) {
             variants={variantsForUI}
             basePriceUsdc={priceUsdc}
             initialSize={preSelectedSize}
+            initialColor={preSelectedColor}
           >
           <div className={`pdp-stats ${isShopifyStocked ? 'two' : ''}`}>
             <ReactivePriceStat />
@@ -347,7 +350,10 @@ export default async function DropPage({ params, searchParams }: Props) {
             isPhysicalProduct={drop.is_physical_product}
             isBrandProduct={drop.is_brand_product}
             hasVariants={variantsForUI.length > 0}
-            requireSize={variantsForUI.length > 0}
+            hasSize={hasSize}
+            hasColor={hasColor}
+            requireSize={hasSize}
+            requireColor={hasColor}
           />
           </SelectedSizeProvider>
 
