@@ -26,11 +26,14 @@ jobs:
             git fetch origin
             git reset --hard origin/master
             git clean -fd
-            # Deterministic install — leaves package-lock.json untouched
-            # so the next deploy's git reset has nothing to clean. `npm
-            # install` would mutate the lockfile and re-introduce the
-            # drift we just cleaned.
-            npm ci
+            # `npm install`, not `npm ci`. The lockfile is out of sync
+            # with package.json on Linux (transitive @coinbase/wallet-sdk
+            # version differs from what was recorded on Windows) and
+            # `npm ci` refuses to install. Any mutation `npm install`
+            # makes to the lockfile is discarded by the `git reset
+            # --hard` at the top of the next deploy, so it does not
+            # strand subsequent runs. Fix the lockfile properly later.
+            npm install
             # Guardrail C: split invariant test (fast, fails fast on regression)
             npm run test
             # Guardrail B: on-chain creator audit (RPC-bound, ~2-3 min)
