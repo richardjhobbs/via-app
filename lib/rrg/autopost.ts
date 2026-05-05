@@ -705,12 +705,11 @@ export async function autopostGeneric(p: GenericPostParams): Promise<{ channels:
   const promises: { channel: string; promise: Promise<unknown> }[] = [];
 
   if (channels.some(c => c === 'TELEGRAM')) {
-    const html = `${esc(p.content)}\n\n${SIGNOFF_TG}`;
+    const html = esc(p.content);
     promises.push({ channel: 'TELEGRAM', promise: sendTelegram(html, imageData) });
   }
   if (channels.some(c => c === 'BLUESKY')) {
-    const budget = 300 - 2 - SIGNOFF_BSK.length;
-    const text   = `${p.content.slice(0, budget)}\n\n${SIGNOFF_BSK}`;
+    const text   = p.content.slice(0, 300);
     const facets = bskyFacets(text, [{ match: 'RRG', url: RRG_URL }]);
     promises.push({ channel: 'BLUESKY', promise: sendBluesky({ text, facets }, imageData, 'RRG post') });
   }
