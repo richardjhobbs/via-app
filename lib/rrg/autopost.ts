@@ -431,27 +431,37 @@ async function uploadBskyBlob(
   imageData: { buffer: Buffer; mimeType: string },
   jwt: string,
 ): Promise<BskyBlob | null> {
-  try {
-    const uploadResp = await fetch('https://bsky.social/xrpc/com.atproto.repo.uploadBlob', {
-      method:  'POST',
-      headers: {
-        'Content-Type':  imageData.mimeType,
-        'Authorization': `Bearer ${jwt}`,
-      },
-      body:   new Uint8Array(imageData.buffer),
-      signal: AbortSignal.timeout(30_000),
-    });
-    if (!uploadResp.ok) {
-      console.warn('[autopost/bsky] blob upload failed:', await uploadResp.text());
-      return null;
+  // Retry on transient PDS failures. Bluesky returns UpstreamFailure / 5xx
+  // intermittently; without a retry, one flake silently drops the image
+  // from the post.
+  const MAX_ATTEMPTS = 3;
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    try {
+      const uploadResp = await fetch('https://bsky.social/xrpc/com.atproto.repo.uploadBlob', {
+        method:  'POST',
+        headers: {
+          'Content-Type':  imageData.mimeType,
+          'Authorization': `Bearer ${jwt}`,
+        },
+        body:   new Uint8Array(imageData.buffer),
+        signal: AbortSignal.timeout(30_000),
+      });
+      if (uploadResp.ok) {
+        const { blob } = await uploadResp.json();
+        console.log('[autopost/bsky] blob uploaded:', (blob as BskyBlob).ref.$link);
+        return blob as BskyBlob;
+      }
+      const body = await uploadResp.text();
+      const transient = uploadResp.status >= 500 || /UpstreamFailure/i.test(body);
+      console.warn(`[autopost/bsky] blob upload failed (attempt ${attempt}/${MAX_ATTEMPTS}, status ${uploadResp.status}):`, body);
+      if (!transient || attempt === MAX_ATTEMPTS) return null;
+    } catch (err) {
+      console.warn(`[autopost/bsky] blob upload error (attempt ${attempt}/${MAX_ATTEMPTS}):`, err);
+      if (attempt === MAX_ATTEMPTS) return null;
     }
-    const { blob } = await uploadResp.json();
-    console.log('[autopost/bsky] blob uploaded:', (blob as BskyBlob).ref.$link);
-    return blob as BskyBlob;
-  } catch (err) {
-    console.warn('[autopost/bsky] blob upload error:', err);
-    return null;
+    await new Promise(r => setTimeout(r, 500 * attempt));
   }
+  return null;
 }
 
 async function sendBluesky(
