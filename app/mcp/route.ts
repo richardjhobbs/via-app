@@ -2894,8 +2894,12 @@ function createRRGServer() {
         return { isError: true, content: [{ type: 'text', text: 'Timestamp outside 5 min replay window.' }] };
       }
 
-      const contentHash = createHash('sha256').update(content, 'utf8').digest('hex');
-      const canonical   = `RRG-PRISCILLA-POST:${contentHash}:${timestamp}`;
+      // Canonicalise CRLF -> LF before hashing so this MCP path produces
+      // the same hash as the multipart /api/rrg/priscilla-broadcast endpoint
+      // for the same logical content. Signers can use either path.
+      const canonContent = content.replace(/\r\n/g, '\n');
+      const contentHash  = createHash('sha256').update(canonContent, 'utf8').digest('hex');
+      const canonical    = `RRG-PRISCILLA-POST:${contentHash}:${timestamp}`;
       let recovered: string;
       try {
         recovered = ethers.verifyMessage(canonical, signature).toLowerCase();

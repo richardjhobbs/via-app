@@ -45,15 +45,22 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'multipart/form-data required' }, { status: 400 });
   }
 
-  const content   = (formData.get('content')   as string | null)?.trim();
-  const timestamp = (formData.get('timestamp') as string | null)?.trim();
-  const signature = (formData.get('signature') as string | null)?.trim();
-  const image     = formData.get('image')     as File   | null;
+  const contentRaw = formData.get('content') as string | null;
+  const timestamp  = (formData.get('timestamp') as string | null)?.trim();
+  const signature  = (formData.get('signature') as string | null)?.trim();
+  const image      = formData.get('image')      as File   | null;
   const channelsRaw = (formData.get('channels') as string | null)?.trim();
 
-  if (!content)   return NextResponse.json({ error: 'content required' },   { status: 400 });
-  if (!timestamp) return NextResponse.json({ error: 'timestamp required' }, { status: 400 });
-  if (!signature) return NextResponse.json({ error: 'signature required' }, { status: 400 });
+  if (!contentRaw) return NextResponse.json({ error: 'content required' },   { status: 400 });
+  if (!timestamp)  return NextResponse.json({ error: 'timestamp required' }, { status: 400 });
+  if (!signature)  return NextResponse.json({ error: 'signature required' }, { status: 400 });
+
+  // Canonicalise content for hashing. multipart/form-data per RFC 7578/2046
+  // can normalise bare LF to CRLF in field values, which would diverge from
+  // what the agent signed. We collapse \r\n -> \n before hashing on both
+  // sides of the wire so the hash is stable regardless of transport.
+  // Trim is applied only AFTER hashing so signers can sign raw content.
+  const content = contentRaw.replace(/\r\n/g, '\n');
 
   const ts = Date.parse(timestamp);
   if (!Number.isFinite(ts)) {
