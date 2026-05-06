@@ -116,48 +116,61 @@ async function getDropOnChain(tokenId) {
     affected_drops: [],
   };
 
-  for (const r of rows) {
-    const slug      = r.rrg_brands.slug;
-    const tokenId   = r.token_id;
-    if (!results.by_brand[slug]) results.by_brand[slug] = { total: 0, correct: 0, wrong: 0, unregistered: 0, paused: 0 };
-    results.by_brand[slug].total++;
+  // Chunked concurrency. getDropOnChain has its own rate-limit retry with
+  // exponential backoff, so 5-wide concurrency is safe against the public
+  // Base RPC; total wall time scales O(n / CONCURRENCY) instead of O(n).
+  const CONCURRENCY = 5;
+  const BATCH_PAUSE_MS = 200;
 
-    let drop;
-    try {
-      drop = await getDropOnChain(tokenId);
-    } catch (e) {
-      console.warn(`  [#${tokenId} ${slug}] error: ${e.shortMessage || e.message}`);
-      await sleep(400);
-      continue;
+  for (let i = 0; i < rows.length; i += CONCURRENCY) {
+    const batch = rows.slice(i, i + CONCURRENCY);
+    const settled = await Promise.allSettled(
+      batch.map((r) => getDropOnChain(r.token_id))
+    );
+
+    for (let j = 0; j < batch.length; j++) {
+      const r = batch[j];
+      const slug    = r.rrg_brands.slug;
+      const tokenId = r.token_id;
+      if (!results.by_brand[slug]) results.by_brand[slug] = { total: 0, correct: 0, wrong: 0, unregistered: 0, paused: 0 };
+      results.by_brand[slug].total++;
+
+      const s = settled[j];
+      if (s.status === 'rejected') {
+        const e = s.reason;
+        console.warn(`  [#${tokenId} ${slug}] error: ${e?.shortMessage || e?.message || e}`);
+        continue;
+      }
+      const drop = s.value;
+
+      if (drop.creator === ethers.ZeroAddress) {
+        results.unregistered++;
+        results.by_brand[slug].unregistered++;
+      } else if (!drop.active) {
+        results.paused++;
+        results.by_brand[slug].paused++;
+      } else if (drop.creator.toLowerCase() === PLATFORM_WALLET) {
+        results.correct++;
+        results.by_brand[slug].correct++;
+      } else {
+        results.wrong++;
+        results.by_brand[slug].wrong++;
+        results.affected_drops.push({
+          token_id:    tokenId,
+          title:       r.title,
+          brand_slug:  slug,
+          brand_wallet: r.rrg_brands.wallet_address,
+          on_chain_creator: drop.creator,
+          price_usdc: r.price_usdc,
+          edition:    r.edition_size,
+          minted:     drop.minted,
+          max:        drop.maxSupply,
+          active:     drop.active,
+        });
+      }
     }
 
-    if (drop.creator === ethers.ZeroAddress) {
-      results.unregistered++;
-      results.by_brand[slug].unregistered++;
-    } else if (!drop.active) {
-      results.paused++;
-      results.by_brand[slug].paused++;
-    } else if (drop.creator.toLowerCase() === PLATFORM_WALLET) {
-      results.correct++;
-      results.by_brand[slug].correct++;
-    } else {
-      results.wrong++;
-      results.by_brand[slug].wrong++;
-      results.affected_drops.push({
-        token_id:    tokenId,
-        title:       r.title,
-        brand_slug:  slug,
-        brand_wallet: r.rrg_brands.wallet_address,
-        on_chain_creator: drop.creator,
-        price_usdc: r.price_usdc,
-        edition:    r.edition_size,
-        minted:     drop.minted,
-        max:        drop.maxSupply,
-        active:     drop.active,
-      });
-    }
-
-    await sleep(300); // Rate-limit safety
+    if (i + CONCURRENCY < rows.length) await sleep(BATCH_PAUSE_MS);
   }
 
   // Persist
