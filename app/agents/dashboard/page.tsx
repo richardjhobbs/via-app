@@ -78,8 +78,19 @@ export default function DashboardPage() {
       };
       setAgent(a);
 
-      const balRes = await fetch(`/api/agent/wallet/balance?address=${a.wallet_address}`);
-      if (balRes.ok) { const { balance_usdc } = await balRes.json(); setBalance(balance_usdc); }
+      // Pro: sync inbound USDC → credits. Falls back to on-chain read for basic.
+      if (a.tier === 'pro') {
+        try {
+          const syncRes = await fetch(`/api/agent/${a.id}/credits/sync`, { method: 'POST' });
+          if (syncRes.ok) {
+            const { credit_balance } = await syncRes.json();
+            setAgent(prev => prev ? { ...prev, credit_balance_usdc: Number(credit_balance) } : prev);
+          }
+        } catch {}
+      } else {
+        const balRes = await fetch(`/api/agent/wallet/balance?address=${a.wallet_address}`);
+        if (balRes.ok) { const { balance_usdc } = await balRes.json(); setBalance(balance_usdc); }
+      }
 
       const actRes = await fetch(`/api/agent/${a.id}/activity`);
       if (actRes.ok) { const { activity: acts } = await actRes.json(); setActivity(acts); }
@@ -219,9 +230,19 @@ export default function DashboardPage() {
           </div>
           <div className="text-right">
             <div className="text-2xl font-light text-green-400">
-              {balance !== null ? `$${balance.toFixed(2)}` : '...'}
+              {agent.tier === 'pro'
+                ? `$${agent.credit_balance_usdc.toFixed(2)}`
+                : (balance !== null ? `$${balance.toFixed(2)}` : '...')}
             </div>
-            <div className="text-xs text-white/40">USDC balance</div>
+            <div className="text-xs text-white/40">Balance</div>
+            {agent.tier === 'pro' && (
+              <button
+                onClick={() => setShowTopUp(true)}
+                className="mt-2 text-xs text-green-400 hover:text-green-300 transition-colors cursor-pointer"
+              >
+                Top up
+              </button>
+            )}
           </div>
         </div>
 
@@ -322,24 +343,6 @@ export default function DashboardPage() {
               </div>
             )}
           </Card>
-
-          {/* Concierge Credits */}
-          {agent.tier === 'pro' && (
-            <Card>
-              <h2 className="text-base font-semibold mb-4">Concierge Credits</h2>
-              <div className="text-3xl font-light text-green-400 mb-1">
-                ${agent.credit_balance_usdc.toFixed(2)}
-              </div>
-              <div className="text-xs text-white/40 mb-4">USD balance</div>
-              <Button
-                variant="secondary"
-                size="sm"
-                onClick={() => setShowTopUp(true)}
-              >
-                Top up credits
-              </Button>
-            </Card>
-          )}
 
           {/* LLM Provider Status (Concierge only) */}
           {agent.tier === 'pro' && (
