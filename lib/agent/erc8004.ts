@@ -25,9 +25,11 @@ const IDENTITY_ABI = [
   'function setAgentURI(uint256 agentId, string calldata newURI) external',
   'function ownerOf(uint256 tokenId) external view returns (address)',
   'function balanceOf(address owner) external view returns (uint256)',
-  'function tokenOfOwnerByIndex(address owner, uint256 index) external view returns (uint256)',
   'function register(string calldata agentURI) external returns (uint256)',
 ] as const;
+
+// Standard ERC-721 Transfer event signature
+const TRANSFER_TOPIC = '0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef';
 
 const REPUTATION_ABI = [
   'function giveFeedback(uint256 agentId, int128 value, uint8 valueDecimals, string tag1, string tag2, string calldata endpoint, string calldata feedbackURI, bytes32 feedbackHash) external',
@@ -57,15 +59,90 @@ export async function getAgentUri(agentId: bigint): Promise<string> {
   return contract.tokenURI(agentId) as Promise<string>;
 }
 
-/** Check if a wallet has an ERC-8004 identity token. */
+/**
+ * Check if a wallet has an ERC-8004 identity token. Returns the first
+ * currently-owned tokenId, or null if the wallet has no identity.
+ *
+ * NOTE: The Identity Registry does NOT implement ERC-721 enumeration —
+ * tokenOfOwnerByIndex reverts with require(false) on the live Base contract
+ * (verified live 2026-05-06). The previous implementation called it directly
+ * and threw on every wallet with balance > 0, silently failing the auto-link
+ * step in agent creation flows.
+ *
+ * Fix: scan Transfer events with topics[2]=padded(wallet) in 9999-block
+ * chunks (mainnet.base.org caps eth_getLogs at 10k), then verify current
+ * ownership via ownerOf. Scans backward from latest with early termination
+ * once balanceOf is satisfied. Default depth: 50 chunks (~500k blocks).
+ */
 export async function getAgentIdForWallet(
-  walletAddress: string
+  walletAddress: string,
+  opts: { maxChunks?: number; concurrency?: number } = {},
 ): Promise<bigint | null> {
   const contract = getIdentityContract();
   const balance: bigint = await contract.balanceOf(walletAddress);
   if (balance === 0n) return null;
-  const tokenId: bigint = await contract.tokenOfOwnerByIndex(walletAddress, 0n);
-  return tokenId;
+
+  const provider = getBaseProvider();
+  const CHUNK = 9999;
+  const MAX_CHUNKS = opts.maxChunks ?? 50;
+  const CONCURRENCY = opts.concurrency ?? 5;
+
+  const latest = await provider.getBlockNumber();
+  const toTopic = ethers.zeroPadValue(walletAddress.toLowerCase(), 32);
+  const baseFilter = {
+    address: '0x8004A169FB4a3325136EB29fA0ceB6D2e539a432',
+    topics: [TRANSFER_TOPIC, null, toTopic] as (string | null)[],
+  };
+
+  // Build chunk ranges, scanning backward from latest
+  const ranges: Array<{ from: number; to: number }> = [];
+  for (let to = latest; to > 0 && ranges.length < MAX_CHUNKS; to -= (CHUNK + 1)) {
+    ranges.push({ from: Math.max(0, to - CHUNK), to });
+    if (to - CHUNK <= 0) break;
+  }
+
+  const candidateIds = new Set<string>();
+  const verifiedIds = new Set<bigint>();
+
+  async function verifyCandidates(): Promise<void> {
+    const unchecked = Array.from(candidateIds).filter(id => !Array.from(verifiedIds).some(v => v === BigInt(id)));
+    if (unchecked.length === 0) return;
+    await Promise.all(unchecked.map(async (idStr) => {
+      try {
+        const owner: string = await contract.ownerOf(BigInt(idStr));
+        if (owner.toLowerCase() === walletAddress.toLowerCase()) {
+          verifiedIds.add(BigInt(idStr));
+        }
+      } catch {
+        // burned or unreadable
+      }
+    }));
+  }
+
+  // Parallel rounds with early termination
+  for (let i = 0; i < ranges.length; i += CONCURRENCY) {
+    const round = ranges.slice(i, i + CONCURRENCY);
+    await Promise.all(round.map(async ({ from, to }) => {
+      try {
+        const logs = await provider.getLogs({ ...baseFilter, fromBlock: from, toBlock: to });
+        for (const log of logs) {
+          if (log.topics[3]) candidateIds.add(BigInt(log.topics[3]).toString());
+        }
+      } catch {
+        // chunk failed; continue
+      }
+    }));
+    if (candidateIds.size >= Number(balance)) {
+      await verifyCandidates();
+      if (verifiedIds.size >= Number(balance)) break;
+    }
+  }
+
+  await verifyCandidates();
+
+  if (verifiedIds.size === 0) return null;
+  // Return the smallest verified tokenId for deterministic behaviour
+  return Array.from(verifiedIds).sort((a, b) => (a < b ? -1 : a > b ? 1 : 0))[0];
 }
 
 /** Register a new agent identity. Returns the new token ID and tx hash. */
