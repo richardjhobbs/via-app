@@ -2,7 +2,7 @@
 
 /**
  * Erc8004Badge
- * Shows ERC-8004 on-chain agent identity verification.
+ * Shows VIA Agent identity (backed by ERC-8004 on-chain registration).
  * Renders nothing if the wallet has no ERC-8004 registration.
  */
 
@@ -23,10 +23,10 @@ export default function Erc8004Badge({ agentId }: Props) {
         className="flex items-center gap-1.5 px-3 py-1.5 border text-xs font-mono uppercase tracking-wider cursor-pointer select-none
                    border-amber-500/30 text-amber-400/80 hover:border-amber-400/50 hover:text-amber-300 transition-colors"
         onClick={() => setTip((t) => !t)}
-        title="ERC-8004 Registered Agent"
+        title="VIA Agent identity (ERC-8004 verified)"
       >
         <span className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-amber-400" />
-        8004 #{agentId}
+        VIA #{agentId}
         <span className="text-amber-400/50 ml-0.5">▾</span>
       </div>
 
@@ -40,7 +40,7 @@ export default function Erc8004Badge({ agentId }: Props) {
           <div className="fixed sm:absolute right-4 sm:right-0 left-4 sm:left-auto top-auto sm:top-full mt-2 z-20 sm:w-72 border border-amber-500/20 bg-black/95 p-4 text-sm font-mono shadow-xl">
             <div className="flex items-center justify-between mb-3">
               <span className="text-amber-400/60 uppercase tracking-widest text-xs">
-                On-Chain Agent Identity
+                VIA Agent Identity
               </span>
               <button
                 onClick={() => setTip(false)}
@@ -53,7 +53,7 @@ export default function Erc8004Badge({ agentId }: Props) {
             <div className="flex items-center gap-2 mb-3">
               <span className="w-2 h-2 rounded-full bg-amber-400 flex-shrink-0" />
               <span className="text-amber-400">
-                Agent #{agentId}
+                VIA Agent #{agentId}
               </span>
             </div>
 
@@ -73,29 +73,26 @@ export default function Erc8004Badge({ agentId }: Props) {
             </div>
 
             <p className="text-white/50 leading-relaxed mb-3 text-xs">
-              This wallet holds an ERC-8004 Trustless Agent identity token on
-              Base mainnet. The on-chain registration confirms the agent&apos;s
-              identity, capabilities, and endpoint metadata.
+              VIA Agent IDs are portable identities across the VIA network,
+              backed by ERC-8004 on-chain registration on Base mainnet.
             </p>
 
             <div className="flex items-center justify-between pt-2 border-t border-white/10">
               <Link
-                href={`https://8004scan.io/agent/${agentId}`}
-                target="_blank"
-                rel="noopener noreferrer"
+                href={`/agents/via/${agentId}`}
                 className="text-amber-400/60 hover:text-amber-300 transition-colors"
                 onClick={() => setTip(false)}
               >
-                8004scan ↗
+                Profile →
               </Link>
               <Link
-                href="https://eips.ethereum.org/EIPS/eip-8004"
+                href={`https://8004scan.io/agents/base/${agentId}`}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="text-white/50 hover:text-white/80 transition-colors"
                 onClick={() => setTip(false)}
               >
-                EIP-8004 ↗
+                8004scan ↗
               </Link>
             </div>
           </div>

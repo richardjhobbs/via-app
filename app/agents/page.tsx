@@ -135,7 +135,7 @@ export default function AgentsPage() {
                     </li>
                     <li style={{ paddingLeft: 14, position: 'relative' }}>
                       <span style={{ position: 'absolute', left: 0, color: 'var(--accent)' }}>·</span>
-                      Wallet and trusted ERC-8004 identity
+                      Wallet and a VIA Agent identity (ERC-8004 verified)
                     </li>
                     <li style={{ paddingLeft: 14, position: 'relative' }}>
                       <span style={{ position: 'absolute', left: 0, color: 'var(--accent)' }}>·</span>
