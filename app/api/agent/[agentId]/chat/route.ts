@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/rrg/db';
-import { buildChatPrompt, streamChatResponse } from '@/lib/agent/llm';
+import { buildChatPrompt, streamChatWithTools } from '@/lib/agent/llm';
 import { hasCredits, deductCredits } from '@/lib/agent/credits';
 import { loadMemories, formatMemoriesForPrompt, extractMemoriesFromSession } from '@/lib/agent/memory';
 import type { Agent } from '@/lib/agent/types';
@@ -76,10 +76,11 @@ export async function POST(
   const systemPrompt = buildChatPrompt(agent as Agent, is_eval_preview, memoriesBlock);
 
   try {
-    const { stream, getTokensUsed } = await streamChatResponse(
+    const { stream, getTokensUsed } = await streamChatWithTools(
       agent.llm_provider,
       systemPrompt,
-      messages
+      messages,
+      agentId,
     );
 
     // Collect full response while streaming to client

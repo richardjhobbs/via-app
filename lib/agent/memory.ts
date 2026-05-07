@@ -67,6 +67,11 @@ export function formatMemoriesForPrompt(memories: AgentMemory[]): string {
 
 /**
  * Save a memory entry from a chat session.
+ *
+ * Writes to the local agent_memory table AND, best-effort, pushes the same
+ * fact to the VIA protocol memory store at getvia.xyz/mcp via_record_fact.
+ * That makes the memory cross-platform: future VIA-network platforms reading
+ * the agent's memory will see preferences extracted on RRG.
  */
 export async function saveMemory(
   agentId: string,
@@ -81,6 +86,66 @@ export async function saveMemory(
     source_session_id: sessionId ?? null,
     active: true,
   });
+
+  // Best-effort cross-platform push. Does NOT block, does NOT throw.
+  pushFactToViaProtocol(agentId, type, content).catch(err => {
+    console.error('[memory] cross-platform push failed (non-blocking):', err?.message ?? err);
+  });
+}
+
+/**
+ * Push a memory fact to the VIA protocol-level store via getvia.xyz/mcp.
+ * Lookups erc8004_agent_id from agent_agents so via_record_fact can key by
+ * the protocol-level via_agent_id (= ERC-8004 token ID).
+ *
+ * Skips silently if the agent isn't yet on-chain-linked or VIA_PLATFORM_SECRET
+ * isn't configured.
+ */
+async function pushFactToViaProtocol(
+  agentId: string,
+  type: AgentMemory['type'],
+  content: string,
+): Promise<void> {
+  const platformSecret = process.env.VIA_PLATFORM_SECRET;
+  if (!platformSecret) return;
+
+  const { data: agent } = await db
+    .from('agent_agents')
+    .select('erc8004_agent_id, erc8004_linked')
+    .eq('id', agentId)
+    .single();
+
+  if (!agent || !agent.erc8004_linked || !agent.erc8004_agent_id) return;
+
+  const viaMcpUrl = process.env.VIA_MCP_URL ?? 'https://www.getvia.xyz/mcp';
+
+  const res = await fetch(viaMcpUrl, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Accept: 'application/json, text/event-stream',
+    },
+    body: JSON.stringify({
+      jsonrpc: '2.0',
+      id: Date.now(),
+      method: 'tools/call',
+      params: {
+        name: 'via_record_fact',
+        arguments: {
+          via_agent_id: Number(agent.erc8004_agent_id),
+          fact_type: type,                // 'preference' | 'brand' | 'style' | 'size' | 'general' | 'consolidated'
+          fact_value: content,
+          source_platform: 'rrg',
+          platform_secret: platformSecret,
+        },
+      },
+    }),
+    signal: AbortSignal.timeout(10_000),
+  });
+
+  if (!res.ok) {
+    throw new Error(`via_record_fact HTTP ${res.status}`);
+  }
 }
 
 /**

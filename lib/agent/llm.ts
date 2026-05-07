@@ -223,6 +223,131 @@ export async function streamChatResponse(
   }
 }
 
+// ── Streaming chat with VIA tool-use ────────────────────────────────
+//
+// Same shape as streamChatResponse but the agent has access to the
+// via_search_drops / via_get_drop / via_list_brands / via_get_brand /
+// via_recall_owner tools. The handler runs a tool-use loop server-side:
+// when the LLM emits tool_calls, execute them, append results, continue
+// until the LLM produces a final text-only response.
+//
+// DeepSeek implementation (OpenAI-format tools) — Anthropic falls back
+// to the non-tooled streamClaude until Phase 4.
+
+export async function streamChatWithTools(
+  provider: LlmProvider,
+  systemPrompt: string,
+  messages: ChatMessage[],
+  agentId: string,
+): Promise<{ stream: ReadableStream<string>; getTokensUsed: () => number }> {
+  switch (provider) {
+    case 'deepseek':
+      return streamDeepSeekWithTools(systemPrompt, messages, agentId);
+    case 'claude':
+      // TODO: Anthropic tool-use (separate phase). Falls back to plain stream.
+      return streamClaude(systemPrompt, messages);
+  }
+}
+
+async function streamDeepSeekWithTools(
+  systemPrompt: string,
+  initialMessages: ChatMessage[],
+  agentId: string,
+): Promise<{ stream: ReadableStream<string>; getTokensUsed: () => number }> {
+  const OpenAI = (await import('openai')).default;
+  const { VIA_TOOL_SCHEMAS, executeViaTool } = await import('./via-tools-spec');
+
+  const client = new OpenAI({
+    apiKey: process.env.DEEPSEEK_API_KEY,
+    baseURL: 'https://api.deepseek.com',
+  });
+
+  let tokensUsed = 0;
+  const MAX_ITERATIONS = 5;
+
+  const stream = new ReadableStream<string>({
+    async start(controller) {
+      try {
+        const convo: any[] = [
+          { role: 'system', content: systemPrompt },
+          ...initialMessages.map(m => ({ role: m.role, content: m.content })),
+        ];
+
+        for (let iter = 0; iter < MAX_ITERATIONS; iter++) {
+          const response = await client.chat.completions.create({
+            model: 'deepseek-chat',
+            max_tokens: 1024,
+            stream: true,
+            stream_options: { include_usage: true },
+            messages: convo,
+            tools: VIA_TOOL_SCHEMAS,
+          });
+
+          const toolCalls: Record<number, { id: string; name: string; args: string }> = {};
+          let assistantText = '';
+          let finishReason: string | null = null;
+
+          for await (const chunk of response) {
+            const choice = chunk.choices?.[0];
+            if (chunk.usage) {
+              tokensUsed += (chunk.usage.prompt_tokens ?? 0) + (chunk.usage.completion_tokens ?? 0);
+            }
+            if (!choice) continue;
+
+            const delta: any = choice.delta;
+            if (delta?.content) {
+              assistantText += delta.content;
+              controller.enqueue(delta.content);
+            }
+            if (delta?.tool_calls) {
+              for (const tc of delta.tool_calls) {
+                const idx = tc.index ?? 0;
+                if (!toolCalls[idx]) toolCalls[idx] = { id: '', name: '', args: '' };
+                if (tc.id) toolCalls[idx].id = tc.id;
+                if (tc.function?.name) toolCalls[idx].name += tc.function.name;
+                if (tc.function?.arguments) toolCalls[idx].args += tc.function.arguments;
+              }
+            }
+            if (choice.finish_reason) finishReason = choice.finish_reason;
+          }
+
+          if (finishReason !== 'tool_calls' || Object.keys(toolCalls).length === 0) {
+            break;
+          }
+
+          const toolCallsArr = Object.values(toolCalls).filter(tc => tc.id && tc.name);
+          if (toolCallsArr.length === 0) break;
+
+          convo.push({
+            role: 'assistant',
+            content: assistantText || null,
+            tool_calls: toolCallsArr.map(tc => ({
+              id: tc.id,
+              type: 'function',
+              function: { name: tc.name, arguments: tc.args },
+            })),
+          });
+
+          for (const tc of toolCallsArr) {
+            const result = await executeViaTool(tc.name, tc.args, { agentId });
+            convo.push({
+              role: 'tool',
+              tool_call_id: tc.id,
+              content: result,
+            });
+          }
+        }
+
+        controller.close();
+      } catch (err) {
+        controller.error(err);
+      }
+    },
+  });
+
+  return { stream, getTokensUsed: () => tokensUsed };
+}
+
 async function streamClaude(
   systemPrompt: string,
   messages: ChatMessage[]
