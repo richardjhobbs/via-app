@@ -1,12 +1,25 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { Badge } from '@/components/ui/Badge';
 import { TIER_DISPLAY } from '@/lib/agent/types';
 import type { WizardState } from '@/lib/agent/types';
+
+// Stages the user sees while the create POST is in flight. Advances
+// on a fixed cadence so there's visible progress; the actual API does
+// these steps in roughly this order. If the response arrives early we
+// jump straight to the success view; if it takes longer we hold on
+// the last stage with a spinner.
+const CREATE_STAGES = [
+  'Saving your profile',
+  'Seeding your taste memory',
+  'Setting up your VIA wallet identity',
+  'Preparing your dashboard',
+] as const;
+const STAGE_INTERVAL_MS = 800;
 
 interface Props {
   state: WizardState;
@@ -37,8 +50,23 @@ export function StepReview({ state, onBack, onComplete, agentId }: Props) {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [stageIndex, setStageIndex] = useState(0);
 
   const tierDisplay = TIER_DISPLAY[state.tier];
+
+  // Advance the stage indicator while the create POST is in flight.
+  // Caps at the final stage so we hold on "Preparing your dashboard"
+  // if the request runs longer than the interval window.
+  useEffect(() => {
+    if (!loading) {
+      setStageIndex(0);
+      return;
+    }
+    const id = setInterval(() => {
+      setStageIndex((i) => Math.min(i + 1, CREATE_STAGES.length - 1));
+    }, STAGE_INTERVAL_MS);
+    return () => clearInterval(id);
+  }, [loading]);
 
   const handleCreate = async () => {
     setLoading(true);
@@ -217,14 +245,90 @@ export function StepReview({ state, onBack, onComplete, agentId }: Props) {
         </div>
       )}
 
-      <div style={{ display: 'flex', gap: 10 }}>
-        <Button variant="ghost" onClick={onBack} disabled={loading}>
-          Back
-        </Button>
-        <Button onClick={handleCreate} loading={loading}>
-          Create {tierDisplay.label}
-        </Button>
+      {loading ? (
+        <CreateStages tierLabel={tierDisplay.label} stageIndex={stageIndex} />
+      ) : (
+        <div style={{ display: 'flex', gap: 10 }}>
+          <Button variant="ghost" onClick={onBack} disabled={loading}>
+            Back
+          </Button>
+          <Button onClick={handleCreate} loading={loading}>
+            Create {tierDisplay.label}
+          </Button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function CreateStages({ tierLabel, stageIndex }: { tierLabel: string; stageIndex: number }) {
+  return (
+    <div style={{
+      border: '1px solid var(--line)',
+      background: 'var(--bg-2)',
+      padding: 20,
+      display: 'flex',
+      flexDirection: 'column',
+      gap: 14,
+    }}>
+      <div style={{
+        fontFamily: 'var(--font-jetbrains), monospace',
+        fontSize: 10, letterSpacing: '0.18em', textTransform: 'uppercase',
+        color: 'var(--ink-3)',
+      }}>
+        Creating your {tierLabel}
       </div>
+      <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: 10 }}>
+        {CREATE_STAGES.map((stage, i) => {
+          const isDone = i < stageIndex;
+          const isActive = i === stageIndex;
+          return (
+            <li
+              key={stage}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 12,
+                fontSize: 13,
+                color: isDone ? 'var(--ink-2)' : isActive ? 'var(--ink)' : 'var(--ink-3)',
+                opacity: isDone || isActive ? 1 : 0.5,
+              }}
+            >
+              <span style={{
+                display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                width: 18, height: 18, flexShrink: 0,
+                fontSize: 11, fontWeight: 600,
+                color: isDone ? 'var(--accent)' : isActive ? 'var(--ink)' : 'var(--ink-3)',
+                border: isDone ? 'none' : '1px solid var(--line-strong)',
+                borderRadius: 99,
+                background: isDone ? 'transparent' : 'var(--paper)',
+              }}>
+                {isDone ? '✓' : isActive ? (
+                  <span
+                    aria-hidden
+                    style={{
+                      width: 8, height: 8, borderRadius: 99,
+                      border: '1.5px solid var(--ink)',
+                      borderTopColor: 'transparent',
+                      animation: 'spin 0.9s linear infinite',
+                    }}
+                  />
+                ) : ''}
+              </span>
+              <span>{stage}{isActive ? '…' : ''}</span>
+            </li>
+          );
+        })}
+      </ul>
+      <p style={{
+        fontSize: 11, color: 'var(--ink-3)', margin: 0, lineHeight: 1.5,
+      }}>
+        Your wallet identity may take a few seconds to mint on Base. You can use the dashboard immediately, the VIA Agent ID will appear once linked.
+      </p>
+      <style jsx>{`
+        @keyframes spin {
+          from { transform: rotate(0deg); }
+          to { transform: rotate(360deg); }
+        }
+      `}</style>
     </div>
   );
 }
