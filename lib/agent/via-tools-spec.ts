@@ -83,9 +83,12 @@ export const VIA_TOOL_SCHEMAS = [
     function: {
       name: 'via_list_brands',
       description:
-        'List all brands currently on the VIA network with how many active drops ' +
-        'each has. Use this to discover brand slugs before calling via_get_brand ' +
-        'or via_search_drops.',
+        'List all brands currently on the VIA network with their slug, ' +
+        'name, brand_url, and active drop count. Returns ~39 brands. ' +
+        'CALL AT MOST ONCE PER CHAT SESSION. The brand list does not ' +
+        'change mid-session, so after the first call the result is in ' +
+        'your conversation context — do NOT call it again. Only useful ' +
+        'when you need to discover a brand slug you don\'t already know.',
       parameters: { type: 'object', properties: {} },
     },
   },
