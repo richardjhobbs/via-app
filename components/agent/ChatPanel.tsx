@@ -25,7 +25,15 @@ export function ChatPanel({ agent }: Props) {
   const [evalMode, setEvalMode] = useState(false);
   const [sessionId, setSessionId] = useState(() => crypto.randomUUID());
   const scrollRef = useRef<HTMLDivElement>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
+
+  // Auto-resize textarea to fit content (1–8 lines, then scrolls)
+  useEffect(() => {
+    const el = inputRef.current;
+    if (!el) return;
+    el.style.height = 'auto';
+    el.style.height = `${Math.min(el.scrollHeight, 200)}px`;
+  }, [input]);
 
   const tierLabel = TIER_DISPLAY[agent.tier].label;
 
@@ -283,10 +291,10 @@ export function ChatPanel({ agent }: Props) {
           </div>
 
           {/* Input */}
-          <div style={{ display: 'flex', gap: 8 }}>
-            <input
+          <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end' }}>
+            <textarea
               ref={inputRef}
-              type="text"
+              rows={1}
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={handleKeyDown}
@@ -298,10 +306,16 @@ export function ChatPanel({ agent }: Props) {
                 border: '1px solid var(--line-strong)',
                 padding: '10px 14px',
                 fontSize: 14,
+                lineHeight: 1.5,
                 fontFamily: 'inherit',
                 color: 'var(--ink)',
                 outline: 'none',
                 opacity: sending ? 0.55 : 1,
+                resize: 'none',
+                minHeight: 42,
+                maxHeight: 200,
+                overflowY: 'auto',
+                wordBreak: 'break-word',
               }}
               onFocus={(e) => { e.currentTarget.style.borderColor = 'var(--ink)'; }}
               onBlur={(e) => { e.currentTarget.style.borderColor = 'var(--line-strong)'; }}
