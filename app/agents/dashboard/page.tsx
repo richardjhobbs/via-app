@@ -44,6 +44,38 @@ export default function DashboardPage() {
 
   useEffect(() => { loadDashboard(); }, [activeAccount]);
 
+  // Auto-refresh while VIA Agent ID is being minted on-chain.
+  // Polls /api/agent/session every 5s for up to 60s after the agent
+  // appears unlinked. Stops as soon as erc8004_linked flips true.
+  useEffect(() => {
+    if (!agent || agent.erc8004_linked) return;
+
+    let cancelled = false;
+    const start = Date.now();
+
+    const tick = async () => {
+      if (cancelled || Date.now() - start > 60_000) return;
+      try {
+        const res = await fetch('/api/agent/session');
+        if (res.ok) {
+          const { agent: latest } = await res.json();
+          if (latest?.erc8004_linked) {
+            setAgent(prev => prev ? {
+              ...prev,
+              erc8004_agent_id: latest.erc8004_agent_id ?? prev.erc8004_agent_id,
+              erc8004_linked: true,
+            } : prev);
+            return;
+          }
+        }
+      } catch {}
+      if (!cancelled) setTimeout(tick, 5000);
+    };
+
+    const initial = setTimeout(tick, 5000);
+    return () => { cancelled = true; clearTimeout(initial); };
+  }, [agent?.id, agent?.erc8004_linked]);
+
   async function loadDashboard() {
     try {
       // Try session cookie first
@@ -218,16 +250,17 @@ export default function DashboardPage() {
                 {agent.erc8004_linked && agent.erc8004_agent_id ? (
                   <a
                     href={`/agents/via/${agent.erc8004_agent_id}`}
-                    className="inline-flex items-center gap-1.5 px-2 py-0.5 text-xs font-mono bg-green-500/10 text-green-400 border border-green-500/30 rounded hover:bg-green-500/20 transition-colors"
+                    className="inline-flex items-center gap-1.5 px-2 py-0.5 text-xs font-mono bg-green-500/10 text-green-700 border border-green-500/30 rounded hover:bg-green-500/20 transition-colors"
                     title="View public profile"
                   >
                     VIA #{agent.erc8004_agent_id}
                   </a>
                 ) : (
                   <span
-                    className="inline-flex items-center gap-1.5 px-2 py-0.5 text-xs font-mono bg-white/5 text-white/40 border border-white/10 rounded"
+                    className="inline-flex items-center gap-1.5 px-2 py-0.5 text-xs font-mono bg-amber-500/10 text-amber-700 border border-amber-500/30 rounded"
                     title="Your VIA Agent ID is being assigned on-chain. This is your portable identity across the VIA network."
                   >
+                    <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />
                     VIA pending
                   </span>
                 )}
@@ -236,7 +269,7 @@ export default function DashboardPage() {
             </div>
           </div>
           <div className="text-right">
-            <div className="text-2xl font-light text-green-400">
+            <div className="text-2xl font-light text-green-700">
               {agent.tier === 'pro'
                 ? `$${agent.credit_balance_usdc.toFixed(2)}`
                 : (balance !== null ? `$${balance.toFixed(2)}` : '...')}
@@ -245,7 +278,7 @@ export default function DashboardPage() {
             {agent.tier === 'pro' && (
               <button
                 onClick={() => setShowTopUp(true)}
-                className="mt-2 text-xs text-green-400 hover:text-green-300 transition-colors cursor-pointer"
+                className="mt-2 text-xs text-green-700 hover:text-green-800 transition-colors cursor-pointer"
               >
                 Top up
               </button>
@@ -264,7 +297,7 @@ export default function DashboardPage() {
               {!editing && (
                 <button
                   onClick={startEdit}
-                  className="text-xs text-green-400 hover:text-green-300 transition-colors cursor-pointer"
+                  className="text-xs text-green-700 hover:text-green-800 transition-colors cursor-pointer"
                 >
                   Edit
                 </button>
@@ -320,7 +353,7 @@ export default function DashboardPage() {
                     <div className="text-white/40 mb-1">Style tags</div>
                     <div className="flex flex-wrap gap-1">
                       {agent.style_tags.map((tag) => (
-                        <span key={tag} className="px-2 py-0.5 text-xs border border-green-500/30 text-green-400/80 rounded">
+                        <span key={tag} className="px-2 py-0.5 text-xs border border-green-500/30 text-green-700/80 rounded">
                           {tag}
                         </span>
                       ))}
@@ -335,7 +368,7 @@ export default function DashboardPage() {
                 )}
                 <div className="flex justify-between">
                   <span className="text-white/40">Budget ceiling</span>
-                  <span className="text-green-400">{agent.budget_ceiling_usdc ? `$${agent.budget_ceiling_usdc}` : 'No limit'}</span>
+                  <span className="text-green-700">{agent.budget_ceiling_usdc ? `$${agent.budget_ceiling_usdc}` : 'No limit'}</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-white/40">Bid style</span>
@@ -397,7 +430,7 @@ export default function DashboardPage() {
                       <span className="text-white/80">{entry.action.replace(/_/g, ' ')}</span>
                       {entry.tx_hash && (
                         <a href={`https://basescan.org/tx/${entry.tx_hash}`} target="_blank" rel="noopener noreferrer"
-                           className="ml-2 text-xs text-green-400 hover:underline">tx</a>
+                           className="ml-2 text-xs text-green-700 hover:underline">tx</a>
                       )}
                     </div>
                     <span className="text-xs text-white/30">
