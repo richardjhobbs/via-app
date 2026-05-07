@@ -172,7 +172,7 @@ export default function AgentsPage() {
                   <h4><em>Concierge.</em></h4>
                   <p>
                     Learns your taste, understands nuance, and negotiates on your behalf.
-                    Powered by Claude or DeepSeek. The relationship deepens over time.
+                    Powered by DeepSeek. The relationship deepens over time.
                   </p>
                   <ul style={{ listStyle: 'none', padding: 0, margin: '0 0 24px', fontSize: 14, color: 'var(--ink-2)', lineHeight: 1.8 }}>
                     <li style={{ paddingLeft: 14, position: 'relative' }}>
