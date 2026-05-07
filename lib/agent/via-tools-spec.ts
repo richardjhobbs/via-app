@@ -25,9 +25,10 @@ export const VIA_TOOL_SCHEMAS = [
         'Search the VIA network catalogue for drops matching criteria. ' +
         'Today the VIA network = Real Real Genuine (RRG). Returns up to 20 ' +
         'matching drops with title, brand, price (USDC), editions remaining, ' +
-        'and the canonical drop URL. Always call this when the owner asks ' +
-        'about products, drops, brands, or what is available — never invent ' +
-        'inventory.',
+        'the canonical drop URL (`url`), and the brand storefront URL ' +
+        '(`brand_url`). Always call this when the owner asks about products, ' +
+        'drops, brands, or what is available — never invent inventory. For ' +
+        'generic queries link `brand_url`; for specific product queries link `url`.',
       parameters: {
         type: 'object',
         properties: {
@@ -150,6 +151,10 @@ function dropUrl(tokenId: number): string {
   return `${SITE_URL}/rrg/drop/${tokenId}`;
 }
 
+function brandUrl(slug: string | null): string | null {
+  return slug ? `${SITE_URL}/brand/${slug}` : null;
+}
+
 function summariseDrop(d: Drop) {
   return {
     token_id: d.token_id,
@@ -162,6 +167,7 @@ function summariseDrop(d: Drop) {
     is_physical: d.is_brand_product,
     description: d.description,
     url: dropUrl(d.token_id),
+    brand_url: brandUrl(d.brand_slug),
   };
 }
 
@@ -223,12 +229,17 @@ async function via_get_drop(args: { token_id: number }) {
 
 async function via_list_brands() {
   const drops = await fetchAllDrops();
-  const counts = new Map<string, { brand_name: string; brand_slug: string; drop_count: number }>();
+  const counts = new Map<string, { brand_name: string; brand_slug: string; brand_url: string | null; drop_count: number }>();
   for (const d of drops) {
     if (!d.brand_slug || !d.brand_name) continue;
     const existing = counts.get(d.brand_slug);
     if (existing) existing.drop_count++;
-    else counts.set(d.brand_slug, { brand_name: d.brand_name, brand_slug: d.brand_slug, drop_count: 1 });
+    else counts.set(d.brand_slug, {
+      brand_name: d.brand_name,
+      brand_slug: d.brand_slug,
+      brand_url: brandUrl(d.brand_slug),
+      drop_count: 1,
+    });
   }
   const brands = Array.from(counts.values()).sort((a, b) => b.drop_count - a.drop_count);
   return { network: 'via', backend: 'rrg', count: brands.length, brands };
@@ -244,6 +255,7 @@ async function via_get_brand(args: { slug: string }) {
     found: true,
     brand_slug: slug,
     brand_name: drops[0].brand_name,
+    brand_url: brandUrl(slug),
     drop_count: drops.length,
     drops: drops.map(summariseDrop),
   };

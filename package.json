@@ -29,6 +29,8 @@
     "pinata": "^2.5.5",
     "react": "19.2.3",
     "react-dom": "19.2.3",
+    "react-markdown": "^10.1.0",
+    "remark-gfm": "^4.0.1",
     "resend": "^6.9.3",
     "rnwy-sdk": "^0.1.1",
     "sharp": "^0.34.5",
