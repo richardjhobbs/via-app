@@ -234,15 +234,35 @@ export async function streamChatResponse(
 // DeepSeek implementation (OpenAI-format tools) — Anthropic falls back
 // to the non-tooled streamClaude until Phase 4.
 
+export interface ToolCallRecord {
+  iteration: number;            // 0-indexed iteration of the tool-use loop
+  tool_name: string;
+  args: Record<string, unknown>;
+  result_preview: string;       // first 500 chars of tool output (full saved by handler if needed)
+  tokens_in_iteration: number;  // tokens consumed by the LLM call that emitted this tool_call
+  duration_ms: number;          // tool execution time
+}
+
+export interface StreamChatOpts {
+  /** Per-tool-call hook for audit logging. Called once per tool execution.
+   *  Awaited; failure is logged but does not abort the stream. */
+  onToolCall?: (record: ToolCallRecord) => Promise<void> | void;
+  /** Hard cap on tool-use iterations (runaway protection only — cost is
+   *  governed by the agent's USDC pool via deductCredits at the chat-turn
+   *  level). Default: 20. */
+  maxIterations?: number;
+}
+
 export async function streamChatWithTools(
   provider: LlmProvider,
   systemPrompt: string,
   messages: ChatMessage[],
   agentId: string,
+  opts: StreamChatOpts = {},
 ): Promise<{ stream: ReadableStream<string>; getTokensUsed: () => number }> {
   switch (provider) {
     case 'deepseek':
-      return streamDeepSeekWithTools(systemPrompt, messages, agentId);
+      return streamDeepSeekWithTools(systemPrompt, messages, agentId, opts);
     case 'claude':
       // TODO: Anthropic tool-use (separate phase). Falls back to plain stream.
       return streamClaude(systemPrompt, messages);
@@ -253,6 +273,7 @@ async function streamDeepSeekWithTools(
   systemPrompt: string,
   initialMessages: ChatMessage[],
   agentId: string,
+  opts: StreamChatOpts,
 ): Promise<{ stream: ReadableStream<string>; getTokensUsed: () => number }> {
   const OpenAI = (await import('openai')).default;
   const { VIA_TOOL_SCHEMAS, executeViaTool } = await import('./via-tools-spec');
@@ -263,7 +284,11 @@ async function streamDeepSeekWithTools(
   });
 
   let tokensUsed = 0;
-  const MAX_ITERATIONS = 5;
+  // Iteration cap is runaway-protection only. Cost is governed by the agent's
+  // USDC pool via deductCredits at the end of the chat turn — agents that
+  // need 15 tool calls to answer a complex question pay for them out of
+  // their own balance and that's fine.
+  const MAX_ITERATIONS = opts.maxIterations ?? 20;
 
   const stream = new ReadableStream<string>({
     async start(controller) {
@@ -274,6 +299,8 @@ async function streamDeepSeekWithTools(
         ];
 
         for (let iter = 0; iter < MAX_ITERATIONS; iter++) {
+          const iterationStartTokens = tokensUsed;
+
           const response = await client.chat.completions.create({
             model: 'deepseek-chat',
             max_tokens: 1024,
@@ -318,6 +345,8 @@ async function streamDeepSeekWithTools(
           const toolCallsArr = Object.values(toolCalls).filter(tc => tc.id && tc.name);
           if (toolCallsArr.length === 0) break;
 
+          const tokensThisIteration = tokensUsed - iterationStartTokens;
+
           convo.push({
             role: 'assistant',
             content: assistantText || null,
@@ -329,12 +358,35 @@ async function streamDeepSeekWithTools(
           });
 
           for (const tc of toolCallsArr) {
+            const tStart = Date.now();
             const result = await executeViaTool(tc.name, tc.args, { agentId });
+            const duration_ms = Date.now() - tStart;
+
             convo.push({
               role: 'tool',
               tool_call_id: tc.id,
               content: result,
             });
+
+            // Best-effort audit log per tool call — captures what the agent
+            // actually called, with what args, and what it cost. Failure here
+            // does NOT abort the stream.
+            if (opts.onToolCall) {
+              try {
+                let parsedArgs: Record<string, unknown> = {};
+                try { parsedArgs = JSON.parse(tc.args || '{}'); } catch {}
+                await opts.onToolCall({
+                  iteration: iter,
+                  tool_name: tc.name,
+                  args: parsedArgs,
+                  result_preview: result.slice(0, 500),
+                  tokens_in_iteration: tokensThisIteration,
+                  duration_ms,
+                });
+              } catch (logErr) {
+                console.error('[onToolCall hook]', logErr);
+              }
+            }
           }
         }
 
