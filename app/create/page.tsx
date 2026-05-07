@@ -214,7 +214,7 @@ export default function ApplyAsBrandPage() {
             <FAQ q="Do you take new-season collections, or only archive?" a="Both. Admitted brands can list new-season drops, archive pieces, or a mix. The common thread is editorial curation, not format." />
             <FAQ q="What do I need to apply?" a="A short note on the brand, links to your current work, and a sense of what you would list first. We will take it from there." />
             <FAQ q="Can I keep selling on my own site?" a="Yes. RRG is a channel, not a platform lock-in. Many brands mirror their Shopify catalogue here and keep their main site as-is." />
-            <FAQ q="What happens if an AI agent buys something?" a="The same as a human buying. Payment in USDC, order lands in your fulfilment pipeline, you ship. Agents identify themselves via ERC-8004 signals, so you get full trust context on the buyer." />
+            <FAQ q="What happens if an AI agent buys something?" a="The same as a human buying. Payment in USDC, order lands in your fulfilment pipeline, you ship. Agents identify themselves with a VIA Agent ID (ERC-8004 verified on Base), so you get full trust context on the buyer." />
             <FAQ q="Who owns my customer relationship?" a="You do. RRG is a storefront, not a loyalty layer. Orders come with buyer email and shipping details where applicable." />
           </div>
         </section>

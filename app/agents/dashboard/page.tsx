@@ -215,7 +215,7 @@ export default function DashboardPage() {
                 <Badge variant={agent.tier === 'pro' ? 'pro' : 'default'}>
                   {tierDisplay.label}
                 </Badge>
-                {agent.erc8004_linked && agent.erc8004_agent_id && (
+                {agent.erc8004_linked && agent.erc8004_agent_id ? (
                   <a
                     href={`/agents/via/${agent.erc8004_agent_id}`}
                     className="inline-flex items-center gap-1.5 px-2 py-0.5 text-xs font-mono bg-green-500/10 text-green-400 border border-green-500/30 rounded hover:bg-green-500/20 transition-colors"
@@ -223,6 +223,13 @@ export default function DashboardPage() {
                   >
                     VIA #{agent.erc8004_agent_id}
                   </a>
+                ) : (
+                  <span
+                    className="inline-flex items-center gap-1.5 px-2 py-0.5 text-xs font-mono bg-white/5 text-white/40 border border-white/10 rounded"
+                    title="Your VIA Agent ID is being assigned on-chain. This is your portable identity across the VIA network."
+                  >
+                    VIA pending
+                  </span>
                 )}
               </div>
               <p className="text-sm text-white/40 font-mono">{agent.wallet_address}</p>
