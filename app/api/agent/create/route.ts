@@ -27,7 +27,10 @@ export async function POST(req: NextRequest) {
       free_instructions = null,
       budget_ceiling_usdc = null,
       bid_aggression = 'balanced',
-      llm_provider = 'claude',
+      // llm_provider from the request body is ignored on create.
+      // The CAC programme funds DeepSeek only (1.00 USDC at DeepSeek pricing
+      // gets ~5x the chat budget that Claude pricing would). Owners can
+      // switch to Claude from the dashboard after topping up their balance.
       persona_bio = null,
       persona_voice = null,
       persona_comm_style = null,
@@ -109,7 +112,10 @@ export async function POST(req: NextRequest) {
         bid_aggression,
         wallet_address: wallet_address.toLowerCase(),
         wallet_type,
-        llm_provider,
+        // CAC programme is DeepSeek-only. Hardcoded here so the wizard
+        // body's llm_provider is ignored at signup. Owners can switch via
+        // the dashboard LlmStatusCard once they have topped up.
+        llm_provider: 'deepseek' as LlmProvider,
         credit_balance_usdc: 1.0,
         status: 'active',
         persona_bio,

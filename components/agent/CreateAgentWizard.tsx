@@ -24,7 +24,7 @@ const initialState: WizardState = {
   free_instructions: '',
   budget_ceiling_usdc: '',
   bid_aggression: 'balanced',
-  llm_provider: 'claude',
+  llm_provider: 'deepseek',
   persona_bio: '',
   persona_voice: '',
   persona_comm_style: '',
