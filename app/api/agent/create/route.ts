@@ -77,6 +77,22 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    // Check email not already registered. Mirrors the wallet check so the
+    // signup CAC grant (1.00 USDC) is one-per-email AND one-per-wallet.
+    // Without this, one email + N wallets could farm $N of LLM credits.
+    const { data: existingEmail } = await db
+      .from('agent_agents')
+      .select('id')
+      .eq('email', email.toLowerCase().trim())
+      .maybeSingle();
+
+    if (existingEmail) {
+      return NextResponse.json(
+        { error: 'This email is already registered. Sign in from your dashboard.' },
+        { status: 409 }
+      );
+    }
+
     // Parse instructions into rules for Basic tier (or as fallback for Pro)
     const parsed_rules = parseInstructions(free_instructions);
 
@@ -94,7 +110,7 @@ export async function POST(req: NextRequest) {
         wallet_address: wallet_address.toLowerCase(),
         wallet_type,
         llm_provider,
-        credit_balance_usdc: 0,
+        credit_balance_usdc: 1.0,
         status: 'active',
         persona_bio,
         persona_voice,
@@ -117,6 +133,18 @@ export async function POST(req: NextRequest) {
       agent_id: agent.id,
       action: 'agent_created',
       details: { tier, wallet_type: 'embedded' },
+    });
+
+    // Record the 1.00 USDC signup grant in the credit ledger so it's auditable
+    // alongside topups and deductions. Type uses the existing 'topup' bucket
+    // (CHECK constraint is topup/deduction/refund); description distinguishes
+    // the CAC grant from real top-ups.
+    await db.from('agent_credit_transactions').insert({
+      agent_id: agent.id,
+      type: 'topup',
+      amount_usdc: 1.0,
+      balance_after: 1.0,
+      description: 'Signup grant (1.00 USDC LLM credit, CAC)',
     });
 
     // Seed agent_memory from the structured wizard inputs. These rows have

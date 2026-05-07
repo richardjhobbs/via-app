@@ -554,6 +554,7 @@ export default function DashboardPage() {
             <LlmStatusCard
               agent={agent}
               onProviderChange={(provider) => setAgent(prev => prev ? { ...prev, llm_provider: provider } : prev)}
+              onTopUp={() => setShowTopUp(true)}
             />
           )}
 

@@ -73,20 +73,12 @@ export async function deductCredits(
   const perToken = COST_PER_TOKEN[provider] ?? COST_PER_TOKEN.claude;
   const cost = Math.max(tokensUsed * perToken, 0.0001);
 
-  const { data: agent } = await db
-    .from('agent_agents')
-    .select('credit_balance_usdc')
-    .eq('id', agentId)
-    .single();
+  const { data: newBalance, error } = await db.rpc('agent_credits_deduct', {
+    p_agent_id: agentId,
+    p_cost: cost,
+  });
 
-  if (!agent) throw new Error('Agent not found');
-
-  const newBalance = Math.max(0, agent.credit_balance_usdc - cost);
-
-  await db
-    .from('agent_agents')
-    .update({ credit_balance_usdc: newBalance })
-    .eq('id', agentId);
+  if (error) throw new Error(`deductCredits failed: ${error.message}`);
 
   await db.from('agent_credit_transactions').insert({
     agent_id: agentId,
@@ -96,7 +88,7 @@ export async function deductCredits(
     description: `${provider} (${tokensUsed} tokens, incl. 25% platform fee)`,
   });
 
-  return newBalance;
+  return newBalance as number;
 }
 
 /** Deduct a flat USD amount (for non-LLM costs like avatar generation). Returns new balance. */
@@ -105,20 +97,12 @@ export async function deductFlatCredits(
   costUsd: number,
   description: string
 ): Promise<number> {
-  const { data: agent } = await db
-    .from('agent_agents')
-    .select('credit_balance_usdc')
-    .eq('id', agentId)
-    .single();
+  const { data: newBalance, error } = await db.rpc('agent_credits_deduct', {
+    p_agent_id: agentId,
+    p_cost: costUsd,
+  });
 
-  if (!agent) throw new Error('Agent not found');
-
-  const newBalance = Math.max(0, agent.credit_balance_usdc - costUsd);
-
-  await db
-    .from('agent_agents')
-    .update({ credit_balance_usdc: newBalance })
-    .eq('id', agentId);
+  if (error) throw new Error(`deductFlatCredits failed: ${error.message}`);
 
   await db.from('agent_credit_transactions').insert({
     agent_id: agentId,
@@ -128,7 +112,7 @@ export async function deductFlatCredits(
     description,
   });
 
-  return newBalance;
+  return newBalance as number;
 }
 
 /** Top up Concierge Credits (USD). Returns new balance. */
@@ -137,20 +121,12 @@ export async function topUpCredits(
   amountUsd: number,
   reference?: string
 ): Promise<number> {
-  const { data: agent } = await db
-    .from('agent_agents')
-    .select('credit_balance_usdc')
-    .eq('id', agentId)
-    .single();
+  const { data: newBalance, error } = await db.rpc('agent_credits_topup', {
+    p_agent_id: agentId,
+    p_amount: amountUsd,
+  });
 
-  if (!agent) throw new Error('Agent not found');
-
-  const newBalance = agent.credit_balance_usdc + amountUsd;
-
-  await db
-    .from('agent_agents')
-    .update({ credit_balance_usdc: newBalance })
-    .eq('id', agentId);
+  if (error) throw new Error(`topUpCredits failed: ${error.message}`);
 
   await db.from('agent_credit_transactions').insert({
     agent_id: agentId,
@@ -161,7 +137,7 @@ export async function topUpCredits(
     tx_hash: reference ?? null,
   });
 
-  return newBalance;
+  return newBalance as number;
 }
 
 /** Get credit transaction history for an agent. */

@@ -22,7 +22,10 @@ interface LlmStatus {
 interface Props {
   agent: Agent;
   onProviderChange?: (provider: LlmProvider) => void;
+  onTopUp?: () => void;
 }
+
+const LOW_BALANCE_THRESHOLD = 0.2;
 
 const lbl: React.CSSProperties = {
   fontFamily: 'var(--font-jetbrains), monospace',
@@ -34,7 +37,7 @@ const lbl: React.CSSProperties = {
 const val: React.CSSProperties = { fontSize: 12, color: 'var(--ink)' };
 const row: React.CSSProperties = { display: 'flex', justifyContent: 'space-between', alignItems: 'center' };
 
-export function LlmStatusCard({ agent, onProviderChange }: Props) {
+export function LlmStatusCard({ agent, onProviderChange, onTopUp }: Props) {
   const [status, setStatus] = useState<LlmStatus | null>(null);
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<{ success: boolean; latency_ms?: number; error?: string } | null>(null);
@@ -167,7 +170,37 @@ export function LlmStatusCard({ agent, onProviderChange }: Props) {
                 drop evaluation actually runs in production. Showing a cost
                 for a feature that doesn't fire just confuses users. */}
             <div style={row}><span style={lbl}>Per chat message</span><span style={val}>{status.chat_cost_estimate}</span></div>
+            <div style={row}>
+              <span style={lbl}>Credit balance</span>
+              <span style={{
+                ...val,
+                color: status.credit_balance < LOW_BALANCE_THRESHOLD ? '#b5453a' : 'var(--ink)',
+                fontWeight: status.credit_balance < LOW_BALANCE_THRESHOLD ? 500 : 400,
+              }}>
+                ${status.credit_balance.toFixed(4)}
+              </span>
+            </div>
           </div>
+
+          {status.credit_balance < LOW_BALANCE_THRESHOLD && onTopUp && (
+            <div style={{
+              borderTop: '1px solid var(--line)',
+              paddingTop: 12,
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 8,
+            }}>
+              <div style={{
+                fontFamily: 'var(--font-jetbrains), monospace',
+                fontSize: 11,
+                letterSpacing: '0.06em',
+                color: '#b5453a',
+              }}>
+                Low balance. Top up to keep chatting.
+              </div>
+              <Button size="sm" onClick={onTopUp}>Top up credits</Button>
+            </div>
+          )}
 
           <div style={{ borderTop: '1px solid var(--line)', paddingTop: 12 }}>
             <Button size="sm" variant="secondary" onClick={testConnection} loading={testing}>
