@@ -162,27 +162,49 @@ export async function POST(req: NextRequest) {
       console.error('[agent_memory seed] failed (non-blocking):', err);
     }
 
-    // Auto-mint ERC-8004 identity (fire-and-forget, don't block the response)
+    // Mint a fresh ERC-8004 identity (fire-and-forget, don't block the response).
+    //
+    // Design note: we do NOT auto-link to existing tokens on this wallet.
+    // Several real wallets in this system are shared multi-agent wallets
+    // (e.g. an agent-team wallet that holds tokens for colin, priscilla,
+    // rosie, jordan, sasha, etc). Linking would hijack a sibling agent's
+    // identity. Each new agent_agents row gets its own fresh ERC-8004
+    // token, owned by the agent's wallet. If a true "import existing
+    // identity" flow is needed later, it belongs in a separate wizard
+    // branch, not here.
     (async () => {
       let assignedAgentId: number | null = null;
       try {
-        const { registerAgentIdentity, getAgentIdForWallet } = await import('@/lib/agent/erc8004');
-
-        // Check if wallet already has an identity token
-        const existingId = await getAgentIdForWallet(wallet_address.toLowerCase());
-        if (existingId !== null) {
-          assignedAgentId = Number(existingId);
-          await db.from('agent_agents').update({ erc8004_agent_id: assignedAgentId, erc8004_linked: true }).eq('id', agent.id);
-          await db.from('agent_activity_log').insert({ agent_id: agent.id, action: 'erc8004_linked', details: { agent_id_on_chain: assignedAgentId, method: 'existing' } });
-        } else {
-          const { tokenId, txHash } = await registerAgentIdentity(agent.id, name.trim(), wallet_address.toLowerCase(), tier);
-          assignedAgentId = Number(tokenId);
-          await db.from('agent_agents').update({ erc8004_agent_id: assignedAgentId, erc8004_linked: true }).eq('id', agent.id);
-          await db.from('agent_activity_log').insert({ agent_id: agent.id, action: 'erc8004_minted', details: { agent_id_on_chain: assignedAgentId, method: 'auto' }, tx_hash: txHash });
-          console.log(`ERC-8004 auto-minted: VIA #${tokenId} for agent ${agent.id}`);
-        }
+        const { registerAgentIdentity } = await import('@/lib/agent/erc8004');
+        const { tokenId, txHash } = await registerAgentIdentity(agent.id, name.trim(), wallet_address.toLowerCase(), tier);
+        assignedAgentId = Number(tokenId);
+        await db.from('agent_agents').update({ erc8004_agent_id: assignedAgentId, erc8004_linked: true }).eq('id', agent.id);
+        await db.from('agent_activity_log').insert({
+          agent_id: agent.id,
+          action: 'erc8004_minted',
+          details: { agent_id_on_chain: assignedAgentId, method: 'auto' },
+          tx_hash: txHash,
+        });
+        console.log(`ERC-8004 auto-minted: VIA #${tokenId} for agent ${agent.id}`);
       } catch (err) {
-        console.error('ERC-8004 auto-mint failed (non-blocking):', err);
+        // Persist failure to the activity log so it's visible on the
+        // dashboard rather than dying silently in stdout. The dashboard's
+        // amber "VIA pending" pill stays until a manual retry succeeds.
+        const message = err instanceof Error ? err.message : String(err);
+        console.error('ERC-8004 auto-mint failed (non-blocking):', message);
+        try {
+          await db.from('agent_activity_log').insert({
+            agent_id: agent.id,
+            action: 'erc8004_mint_failed',
+            details: {
+              error: message.slice(0, 500),
+              wallet_address: wallet_address.toLowerCase(),
+              tier,
+            },
+          });
+        } catch (logErr) {
+          console.error('[erc8004_mint_failed log]', logErr);
+        }
       }
 
       // Once we have an erc8004_agent_id, match this agent against active

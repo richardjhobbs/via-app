@@ -34,6 +34,8 @@ const ACTIVITY_LABELS: Record<string, string> = {
   agent_created: 'Concierge created',
   agent_imported: 'Concierge imported',
   erc8004_minted: 'Trust Registration',
+  erc8004_linked: 'Trust Registration linked',
+  erc8004_mint_failed: 'Trust Registration failed',
   chat_completed: 'Chat',
   preferences_updated: 'Preferences updated',
   avatar_updated: 'Avatar updated',
@@ -115,6 +117,9 @@ function renderActivityDetail(entry: ActivityLogEntry): string | null {
     parts.push(`$${cost.toFixed(4)}`);
     if (toolCount > 0) parts.push(`${toolCount} tool ${toolCount === 1 ? 'call' : 'calls'}`);
     return parts.join(' · ');
+  }
+  if (entry.action === 'erc8004_mint_failed') {
+    return typeof d.error === 'string' ? d.error : null;
   }
   return null;
 }
