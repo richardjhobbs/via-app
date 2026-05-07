@@ -39,6 +39,9 @@ export default function DashboardPage() {
     bid_aggression: 'balanced',
     llm_provider: 'claude',
   });
+  const [recoverEmail, setRecoverEmail] = useState('');
+  const [recovering, setRecovering] = useState(false);
+  const [recoverError, setRecoverError] = useState<string | null>(null);
 
   const activeAccount = useActiveAccount();
 
@@ -204,13 +207,67 @@ export default function DashboardPage() {
   }
 
   if (!agent) {
+    async function tryRecoverByEmail(e: React.FormEvent) {
+      e.preventDefault();
+      const email = recoverEmail.toLowerCase().trim();
+      if (!email) return;
+      setRecovering(true);
+      setRecoverError(null);
+      try {
+        const res = await fetch(`/api/agent/session?email=${encodeURIComponent(email)}`);
+        if (res.ok) {
+          // Cookie set by the route — reload to pick it up
+          await loadDashboard();
+          return;
+        }
+        setRecoverError('No agent found for that email. Either the address is different from what you registered with, or you have not created an agent yet.');
+      } catch {
+        setRecoverError('Recovery failed. Try again.');
+      } finally {
+        setRecovering(false);
+      }
+    }
+
+    const checkedWallet = activeAccount?.address ?? null;
+
     return (
       <div style={{ minHeight: '100vh', background: 'var(--bg)', color: 'var(--ink)' }}>
         <RRGHeader active="concierge" />
-        <main className="px-6 py-12 max-w-4xl mx-auto">
-          <h1 className="text-xl font-semibold mb-4">No service found</h1>
-          <p className="text-white/60 mb-6">Get your own Personal Shopper or Concierge.</p>
-          <Button onClick={() => router.push('/agents/create')}>Get started</Button>
+        <main className="px-6 py-12 max-w-2xl mx-auto">
+          <h1 className="text-xl font-semibold mb-3">No service found for this session</h1>
+          <p className="text-sm mb-6" style={{ color: 'var(--ink-2)' }}>
+            We checked for a session cookie{checkedWallet ? <> and the connected wallet <span className="font-mono text-xs">{checkedWallet.slice(0, 6)}…{checkedWallet.slice(-4)}</span></> : null}, but no agent matches.
+          </p>
+
+          <div className="mb-8 p-4 rounded" style={{ background: 'var(--paper)', border: '1px solid var(--line)' }}>
+            <h2 className="text-sm font-semibold mb-2">Already have an agent?</h2>
+            <p className="text-xs mb-3" style={{ color: 'var(--ink-3)' }}>
+              If you signed up before with a different login method, recover by entering the email you used.
+            </p>
+            <form onSubmit={tryRecoverByEmail} className="flex gap-2 items-stretch">
+              <input
+                type="email"
+                value={recoverEmail}
+                onChange={(e) => setRecoverEmail(e.target.value)}
+                placeholder="you@example.com"
+                disabled={recovering}
+                className="flex-1 px-3 py-2 text-sm rounded outline-none"
+                style={{ background: 'var(--bg)', border: '1px solid var(--line-strong)', color: 'var(--ink)' }}
+              />
+              <Button type="submit" loading={recovering} disabled={!recoverEmail.trim()}>
+                Recover
+              </Button>
+            </form>
+            {recoverError && (
+              <p className="text-xs mt-2" style={{ color: 'var(--accent-warn, #b5453a)' }}>{recoverError}</p>
+            )}
+          </div>
+
+          <h2 className="text-sm font-semibold mb-2">First time here?</h2>
+          <p className="text-xs mb-3" style={{ color: 'var(--ink-3)' }}>
+            Get your own Personal Shopper or Concierge — they search the VIA network for you.
+          </p>
+          <Button onClick={() => router.push('/agents')}>Get started</Button>
         </main>
         <RRGFooter />
       </div>

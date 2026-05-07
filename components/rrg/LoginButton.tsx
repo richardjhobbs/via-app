@@ -61,6 +61,15 @@ export default function LoginButton() {
           ) : (
             <>
               <Link
+                href="/agents"
+                onClick={() => setOpen(false)}
+                className="block px-4 py-3 text-base text-white/80 hover:text-white hover:bg-white/5
+                           transition-colors border-b border-white/10"
+              >
+                Concierge
+                <span className="block text-sm text-white/50 mt-0.5">Your VIA agent across the network</span>
+              </Link>
+              <Link
                 href="/brand/login"
                 onClick={() => setOpen(false)}
                 className="block px-4 py-3 text-base text-white/80 hover:text-white hover:bg-white/5
