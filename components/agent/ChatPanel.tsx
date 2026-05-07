@@ -1,6 +1,8 @@
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { TIER_DISPLAY } from '@/lib/agent/types';
@@ -262,6 +264,7 @@ export function ChatPanel({ agent }: Props) {
                 style={{ display: 'flex', justifyContent: msg.role === 'user' ? 'flex-end' : 'flex-start' }}
               >
                 <div
+                  className={msg.role === 'assistant' ? 'agent-md' : undefined}
                   style={{
                     maxWidth: '82%',
                     padding: '10px 14px',
@@ -281,7 +284,29 @@ export function ChatPanel({ agent }: Props) {
                         }),
                   }}
                 >
-                  <div style={{ whiteSpace: 'pre-wrap' }}>{msg.content || (msg.streaming ? '…' : '')}</div>
+                  {msg.role === 'assistant' ? (
+                    msg.content ? (
+                      <ReactMarkdown
+                        remarkPlugins={[remarkGfm]}
+                        components={{
+                          a: ({ href, children }) => (
+                            <a href={href} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--accent)', textDecoration: 'underline' }}>
+                              {children}
+                            </a>
+                          ),
+                          p: ({ children }) => <p style={{ margin: '0 0 8px' }}>{children}</p>,
+                          ul: ({ children }) => <ul style={{ margin: '0 0 8px', paddingLeft: 20 }}>{children}</ul>,
+                          ol: ({ children }) => <ol style={{ margin: '0 0 8px', paddingLeft: 20 }}>{children}</ol>,
+                          li: ({ children }) => <li style={{ margin: '0 0 2px' }}>{children}</li>,
+                          strong: ({ children }) => <strong style={{ fontWeight: 600 }}>{children}</strong>,
+                        }}
+                      >
+                        {msg.content}
+                      </ReactMarkdown>
+                    ) : msg.streaming ? '…' : ''
+                  ) : (
+                    <div style={{ whiteSpace: 'pre-wrap' }}>{msg.content}</div>
+                  )}
                   {msg.streaming && msg.content && (
                     <span style={{ display: 'inline-block', width: 6, height: 14, background: 'currentColor', opacity: 0.5, marginLeft: 2, animation: 'cc-pulse 1s infinite' }} />
                   )}
