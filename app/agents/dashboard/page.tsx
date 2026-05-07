@@ -18,7 +18,15 @@ import { ChatPanel } from '@/components/agent/ChatPanel';
 import { STYLE_TAGS, TIER_DISPLAY, LLM_PROVIDER_OPTIONS } from '@/lib/agent/types';
 import { PRESET_AVATARS } from '@/lib/agent/avatars';
 import { useActiveAccount } from 'thirdweb/react';
-import type { Agent, ActivityLogEntry, AgentEvaluation } from '@/lib/agent/types';
+import type { Agent, ActivityLogEntry, AgentEvaluation, LlmProvider } from '@/lib/agent/types';
+
+interface MemoryRow {
+  id: string;
+  created_at: string;
+  type: 'preference' | 'brand' | 'style' | 'size' | 'general' | 'consolidated';
+  content: string;
+  source_session_id: string | null;
+}
 
 // Human-readable labels for activity log actions. Anything not in the
 // map falls back to the action name with underscores replaced.
@@ -32,6 +40,67 @@ const ACTIVITY_LABELS: Record<string, string> = {
   avatar_removed: 'Avatar removed',
   credit_topup: 'Credits topped up',
 };
+
+const MEMORY_TYPE_LABELS: Record<string, string> = {
+  brand: 'Brands',
+  size: 'Sizes',
+  style: 'Style',
+  preference: 'Preferences',
+  general: 'Other',
+  consolidated: 'Profile',
+};
+
+function MemoryPanel({ memories }: { memories: MemoryRow[] }) {
+  if (memories.length === 0) {
+    return (
+      <p className="text-sm text-white/40">
+        Nothing yet. Tell your concierge what brands and looks you like, or update your sizes in the wizard next time.
+      </p>
+    );
+  }
+
+  const seedAtSignup = memories.filter(m => !m.source_session_id);
+  const learnedFromChat = memories.filter(m => !!m.source_session_id);
+
+  return (
+    <div className="space-y-5">
+      {seedAtSignup.length > 0 && (
+        <MemorySection title="Set at signup" rows={seedAtSignup} />
+      )}
+      {learnedFromChat.length > 0 && (
+        <MemorySection title="Learned from chat" rows={learnedFromChat} />
+      )}
+    </div>
+  );
+}
+
+function MemorySection({ title, rows }: { title: string; rows: MemoryRow[] }) {
+  // Group by type so brands/sizes/style each get a clean sub-block.
+  const byType = new Map<string, MemoryRow[]>();
+  for (const r of rows) {
+    const arr = byType.get(r.type) ?? [];
+    arr.push(r);
+    byType.set(r.type, arr);
+  }
+  const orderedTypes = ['brand', 'size', 'style', 'preference', 'consolidated', 'general'];
+  return (
+    <div>
+      <div className="text-xs uppercase tracking-widest text-white/40 mb-2">{title}</div>
+      <div className="space-y-3">
+        {orderedTypes.filter(t => byType.has(t)).map(t => (
+          <div key={t}>
+            <div className="text-xs text-white/40 mb-1">{MEMORY_TYPE_LABELS[t] ?? t}</div>
+            <ul className="text-sm text-white/80 space-y-1">
+              {byType.get(t)!.map(m => (
+                <li key={m.id}>{m.content.replace(/\s*\(set at signup\)\s*$/, '')}</li>
+              ))}
+            </ul>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
 
 function renderActivityDetail(entry: ActivityLogEntry): string | null {
   const d = entry.details ?? {};
@@ -58,6 +127,7 @@ export default function DashboardPage() {
   const [showAvatarPicker, setShowAvatarPicker] = useState(false);
   const [showTopUp, setShowTopUp] = useState(false);
   const [activity, setActivity] = useState<ActivityLogEntry[]>([]);
+  const [memories, setMemories] = useState<MemoryRow[]>([]);
   const [recommendations, setRecommendations] = useState<AgentEvaluation[]>([]);
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState(false);
@@ -159,6 +229,9 @@ export default function DashboardPage() {
 
       const actRes = await fetch(`/api/agent/${a.id}/activity`);
       if (actRes.ok) { const { activity: acts } = await actRes.json(); setActivity(acts); }
+
+      const memRes = await fetch(`/api/agent/${a.id}/memory`);
+      if (memRes.ok) { const { memories: mems } = await memRes.json(); setMemories(mems ?? []); }
 
       // Resolve avatar URL
       if (a.avatar_source === 'preset' && a.avatar_path) {
@@ -473,7 +546,21 @@ export default function DashboardPage() {
 
           {/* LLM Provider Status (Concierge only) */}
           {agent.tier === 'pro' && (
-            <LlmStatusCard agent={agent} />
+            <LlmStatusCard
+              agent={agent}
+              onProviderChange={(provider) => setAgent(prev => prev ? { ...prev, llm_provider: provider } : prev)}
+            />
+          )}
+
+          {/* What I know about you (Concierge only) — surfaces seeded + chat-extracted memory */}
+          {agent.tier === 'pro' && (
+            <Card className="md:col-span-2">
+              <h2 className="text-base font-semibold mb-1">What I know about you</h2>
+              <p className="text-xs text-white/40 mb-4">
+                Seeded at signup and learned over time. Used by your concierge in every chat.
+              </p>
+              <MemoryPanel memories={memories} />
+            </Card>
           )}
 
           {/* Recommendations (Concierge only) */}

@@ -3,7 +3,9 @@
 import { useEffect, useState } from 'react';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
-import type { Agent } from '@/lib/agent/types';
+import { Select } from '@/components/ui/Select';
+import { LLM_PROVIDER_OPTIONS } from '@/lib/agent/types';
+import type { Agent, LlmProvider } from '@/lib/agent/types';
 
 interface LlmStatus {
   provider: string;
@@ -19,6 +21,7 @@ interface LlmStatus {
 
 interface Props {
   agent: Agent;
+  onProviderChange?: (provider: LlmProvider) => void;
 }
 
 const lbl: React.CSSProperties = {
@@ -31,10 +34,14 @@ const lbl: React.CSSProperties = {
 const val: React.CSSProperties = { fontSize: 12, color: 'var(--ink)' };
 const row: React.CSSProperties = { display: 'flex', justifyContent: 'space-between', alignItems: 'center' };
 
-export function LlmStatusCard({ agent }: Props) {
+export function LlmStatusCard({ agent, onProviderChange }: Props) {
   const [status, setStatus] = useState<LlmStatus | null>(null);
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<{ success: boolean; latency_ms?: number; error?: string } | null>(null);
+  const [editingProvider, setEditingProvider] = useState(false);
+  const [providerDraft, setProviderDraft] = useState<LlmProvider>(agent.llm_provider);
+  const [savingProvider, setSavingProvider] = useState(false);
+  const [providerError, setProviderError] = useState<string | null>(null);
 
   useEffect(() => {
     fetch(`/api/agent/${agent.id}/llm-status`)
@@ -57,13 +64,70 @@ export function LlmStatusCard({ agent }: Props) {
     }
   }
 
+  async function saveProvider() {
+    if (providerDraft === agent.llm_provider) {
+      setEditingProvider(false);
+      return;
+    }
+    setSavingProvider(true);
+    setProviderError(null);
+    try {
+      const res = await fetch(`/api/agent/${agent.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ llm_provider: providerDraft }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || 'Failed to switch provider');
+      }
+      onProviderChange?.(providerDraft);
+      setEditingProvider(false);
+    } catch (err) {
+      setProviderError(err instanceof Error ? err.message : 'Failed to switch provider');
+    } finally {
+      setSavingProvider(false);
+    }
+  }
+
   if (agent.tier !== 'pro') return null;
 
   return (
     <Card>
-      <h2 style={{ fontFamily: 'var(--font-fraunces), serif', fontSize: 22, fontWeight: 400, letterSpacing: '-0.01em', margin: '0 0 16px' }}>
-        LLM Provider
-      </h2>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+        <h2 style={{ fontFamily: 'var(--font-fraunces), serif', fontSize: 22, fontWeight: 400, letterSpacing: '-0.01em', margin: 0 }}>
+          LLM Provider
+        </h2>
+        {!editingProvider && (
+          <button
+            onClick={() => { setProviderDraft(agent.llm_provider); setEditingProvider(true); }}
+            className="text-xs text-green-700 hover:text-green-800 transition-colors cursor-pointer"
+            style={{ background: 'transparent', border: 'none', padding: 0 }}
+          >
+            Switch
+          </button>
+        )}
+      </div>
+
+      {editingProvider && (
+        <div style={{ marginBottom: 16, padding: 12, border: '1px solid var(--line)', display: 'flex', flexDirection: 'column', gap: 10 }}>
+          <Select
+            label="Provider"
+            value={providerDraft}
+            onChange={(v) => setProviderDraft(v as LlmProvider)}
+            options={[...LLM_PROVIDER_OPTIONS]}
+          />
+          {providerError && (
+            <div style={{ fontSize: 11, color: '#b5453a', fontFamily: 'var(--font-jetbrains), monospace', letterSpacing: '0.06em' }}>
+              {providerError}
+            </div>
+          )}
+          <div style={{ display: 'flex', gap: 8 }}>
+            <Button size="sm" onClick={saveProvider} loading={savingProvider}>Save</Button>
+            <Button size="sm" variant="ghost" onClick={() => { setEditingProvider(false); setProviderError(null); }}>Cancel</Button>
+          </div>
+        </div>
+      )}
 
       {!status ? (
         <div style={{ ...lbl }}>Loading…</div>
