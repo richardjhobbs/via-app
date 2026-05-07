@@ -163,9 +163,10 @@ export function LlmStatusCard({ agent, onProviderChange }: Props) {
           </div>
 
           <div style={{ borderTop: '1px solid var(--line)', paddingTop: 12, display: 'flex', flexDirection: 'column', gap: 6 }}>
-            <div style={row}><span style={lbl}>Per evaluation</span><span style={val}>${status.cost_per_eval.toFixed(4)}</span></div>
+            {/* Per-evaluation and evals-remaining hidden until autonomous
+                drop evaluation actually runs in production. Showing a cost
+                for a feature that doesn't fire just confuses users. */}
             <div style={row}><span style={lbl}>Per chat message</span><span style={val}>{status.chat_cost_estimate}</span></div>
-            <div style={row}><span style={lbl}>Evals remaining</span><span style={val}>{status.estimated_evals_remaining.toLocaleString()}</span></div>
           </div>
 
           <div style={{ borderTop: '1px solid var(--line)', paddingTop: 12 }}>
