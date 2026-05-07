@@ -21,7 +21,10 @@ const initialState: WizardState = {
   free_instructions: '',
   budget_ceiling_usdc: '',
   bid_aggression: 'balanced',
-  llm_provider: 'claude',
+  // CAC programme is DeepSeek-only at signup. Server enforces this in
+  // app/api/agent/create/route.ts; the wizard default just keeps state
+  // consistent with what the server will save.
+  llm_provider: 'deepseek',
   persona_bio: '',
   persona_voice: '',
   persona_comm_style: '',
