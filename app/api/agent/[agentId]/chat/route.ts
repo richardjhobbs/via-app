@@ -81,6 +81,33 @@ export async function POST(
       systemPrompt,
       messages,
       agentId,
+      {
+        // Per-tool-call audit log. Each row carries the tool name, args,
+        // result preview, the tokens consumed by the LLM iteration that
+        // produced this call (which become USDC cost when reconciled at
+        // batch-pull time), and execution duration. Failures here do not
+        // abort the chat stream.
+        onToolCall: async (rec) => {
+          try {
+            await db.from('agent_activity_log').insert({
+              agent_id: agentId,
+              action: 'tool_call',
+              details: {
+                session_id,
+                iteration: rec.iteration,
+                tool_name: rec.tool_name,
+                args: rec.args,
+                result_preview: rec.result_preview,
+                tokens_in_iteration: rec.tokens_in_iteration,
+                duration_ms: rec.duration_ms,
+                provider: agent.llm_provider,
+              },
+            });
+          } catch (err) {
+            console.error('[tool_call audit log]', err);
+          }
+        },
+      },
     );
 
     // Collect full response while streaming to client
