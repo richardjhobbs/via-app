@@ -23,6 +23,19 @@ export interface InterestSelection {
   tags: string[];
 }
 
+/** Optional structured size profile captured at signup. Any field may be empty. */
+export interface SizeProfile {
+  sex?: 'menswear' | 'womenswear' | 'unisex' | '';
+  tops?: string;          // e.g. "M", "10", "EU 38"
+  bottoms?: string;       // e.g. "32W 32L", "UK 10"
+  shoes?: string;         // e.g. "UK 9", "EU 43", "US 10"
+  notes?: string;         // free text, e.g. "vanity-sized brands run small on me"
+}
+
+export const EMPTY_SIZE_PROFILE: SizeProfile = {
+  sex: '', tops: '', bottoms: '', shoes: '', notes: '',
+};
+
 export interface Agent {
   id: string;
   created_at: string;
@@ -70,6 +83,11 @@ export interface WizardState {
   persona_voice: string;
   persona_comm_style: string;
   interest_categories: InterestSelection[];
+  // Structured taste signals captured at signup. These get written to
+  // agent_memory at create time so the concierge has context from chat 1.
+  loved_brands: string[];     // brand slugs
+  avoided_brands: string[];   // brand slugs
+  sizes: SizeProfile;
 }
 
 // ── Rules (Basic agent) ──────────────────────────────────────────────

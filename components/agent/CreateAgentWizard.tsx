@@ -7,6 +7,7 @@ import { StepRegistration } from './StepRegistration';
 import { StepProfile } from './StepProfile';
 import { StepReview } from './StepReview';
 import type { WizardState } from '@/lib/agent/types';
+import { EMPTY_SIZE_PROFILE } from '@/lib/agent/types';
 
 // Re-export for backward compat
 export type { WizardState };
@@ -28,6 +29,9 @@ const initialState: WizardState = {
   persona_voice: '',
   persona_comm_style: '',
   interest_categories: [],
+  loved_brands: [],
+  avoided_brands: [],
+  sizes: { ...EMPTY_SIZE_PROFILE },
 };
 
 export function CreateAgentWizard() {

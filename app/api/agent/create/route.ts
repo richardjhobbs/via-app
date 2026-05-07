@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/rrg/db';
 import { parseInstructions } from '@/lib/agent/rules';
 import { setAgentSession } from '@/lib/agent/auth';
-import type { AgentTier, BidAggression, LlmProvider, WalletType } from '@/lib/agent/types';
+import { saveMemory } from '@/lib/agent/memory';
+import type { AgentTier, BidAggression, LlmProvider, WalletType, SizeProfile } from '@/lib/agent/types';
 
 export const dynamic = 'force-dynamic';
 
@@ -31,6 +32,9 @@ export async function POST(req: NextRequest) {
       persona_voice = null,
       persona_comm_style = null,
       interest_categories = [],
+      loved_brands = [],
+      avoided_brands = [],
+      sizes = {} as SizeProfile,
     } = body as {
       email: string;
       name: string;
@@ -46,6 +50,9 @@ export async function POST(req: NextRequest) {
       persona_voice?: string | null;
       persona_comm_style?: string | null;
       interest_categories?: { category: string; tags: string[] }[];
+      loved_brands?: string[];
+      avoided_brands?: string[];
+      sizes?: SizeProfile;
     };
 
     // Validate required fields
@@ -111,6 +118,49 @@ export async function POST(req: NextRequest) {
       action: 'agent_created',
       details: { tier, wallet_type: 'embedded' },
     });
+
+    // Seed agent_memory from the structured wizard inputs. These rows have
+    // source_session_id = NULL, which lets the prompt formatter group them
+    // as "Set at signup" vs the chat-extracted ones. The concierge sees
+    // them in the system prompt from the very first chat — no training
+    // phase required.
+    try {
+      const seedTasks: Promise<void>[] = [];
+
+      for (const slug of loved_brands) {
+        if (!slug) continue;
+        seedTasks.push(saveMemory(agent.id, 'brand', `Likes ${slug} (set at signup)`));
+      }
+      for (const slug of avoided_brands) {
+        if (!slug) continue;
+        seedTasks.push(saveMemory(agent.id, 'brand', `Avoids ${slug} (set at signup)`));
+      }
+
+      const sizeParts: string[] = [];
+      if (sizes.sex) sizeParts.push(sizes.sex);
+      if (sizes.tops) sizeParts.push(`tops ${sizes.tops}`);
+      if (sizes.bottoms) sizeParts.push(`bottoms ${sizes.bottoms}`);
+      if (sizes.shoes) sizeParts.push(`shoes ${sizes.shoes}`);
+      if (sizeParts.length > 0) {
+        const note = sizes.notes ? ` — ${sizes.notes}` : '';
+        seedTasks.push(saveMemory(agent.id, 'size', `${sizeParts.join(', ')}${note} (set at signup)`));
+      } else if (sizes.notes) {
+        seedTasks.push(saveMemory(agent.id, 'size', `${sizes.notes} (set at signup)`));
+      }
+
+      if (style_tags.length > 0) {
+        seedTasks.push(saveMemory(agent.id, 'style', `Style preferences: ${style_tags.join(', ')} (set at signup)`));
+      }
+
+      if (free_instructions && free_instructions.trim()) {
+        seedTasks.push(saveMemory(agent.id, 'preference', `${free_instructions.trim()} (set at signup)`));
+      }
+
+      // Run all seeds in parallel; failures are non-blocking.
+      await Promise.allSettled(seedTasks);
+    } catch (err) {
+      console.error('[agent_memory seed] failed (non-blocking):', err);
+    }
 
     // Auto-mint ERC-8004 identity (fire-and-forget, don't block the response)
     (async () => {
