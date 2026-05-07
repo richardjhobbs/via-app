@@ -218,6 +218,11 @@ export async function registerAgentIdentity(
   walletAddress: string,
   tier: string
 ): Promise<{ tokenId: bigint; txHash: string }> {
+  const platformSecret = process.env.VIA_PLATFORM_SECRET;
+  if (!platformSecret) {
+    console.warn('[erc8004] VIA_PLATFORM_SECRET not set — call will be rejected once via-labs enforces gating');
+  }
+
   const result = await callViaTool('via_register_agent', {
     wallet_address: walletAddress,
     name: agentName,
@@ -230,6 +235,7 @@ export async function registerAgentIdentity(
       },
     ],
     source_platform: 'rrg',
+    platform_secret: platformSecret,
     chain: 'base',
   });
 
