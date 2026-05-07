@@ -247,14 +247,20 @@ export function ChatPanel({ agent }: Props) {
           >
             {messages.length === 0 && (
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%' }}>
-                <div style={{ textAlign: 'center', maxWidth: 320 }}>
-                  <p style={{ fontFamily: 'var(--font-fraunces), serif', fontSize: 16, color: 'var(--ink-2)', margin: '0 0 10px', lineHeight: 1.5 }}>
+                <div style={{ textAlign: 'center', maxWidth: 420 }}>
+                  <p style={{ fontFamily: 'var(--font-fraunces), serif', fontSize: 16, color: 'var(--ink-2)', margin: '0 0 14px', lineHeight: 1.5 }}>
                     Say hello to {agent.name}.
                   </p>
-                  <p style={{ fontSize: 12, color: 'var(--ink-3)', lineHeight: 1.6, margin: 0 }}>
-                    Your {tierLabel} will learn your style and taste as you converse.
-                    Share brands and pieces that interest you, and {agent.name} will be more selective on your behalf.
-                  </p>
+                  <ul style={{ listStyle: 'none', padding: 0, margin: 0, textAlign: 'left', display: 'flex', flexDirection: 'column', gap: 10 }}>
+                    <li style={{ fontSize: 12, color: 'var(--ink-3)', lineHeight: 1.6 }}>
+                      <span style={{ color: 'var(--ink-2)', fontWeight: 600 }}>Tell your concierge what brands and looks you like.</span>
+                      {' '}They focus their network checks. <span style={{ fontFamily: 'var(--font-jetbrains), monospace', color: 'var(--ink-3)' }}>~$0.001 per chat</span>
+                    </li>
+                    <li style={{ fontSize: 12, color: 'var(--ink-3)', lineHeight: 1.6 }}>
+                      <span style={{ color: 'var(--ink-2)', fontWeight: 600 }}>Ask your concierge to find something specific.</span>
+                      {' '}They search the network. <span style={{ fontFamily: 'var(--font-jetbrains), monospace', color: 'var(--ink-3)' }}>~$0.01 per chat</span>
+                    </li>
+                  </ul>
                 </div>
               </div>
             )}

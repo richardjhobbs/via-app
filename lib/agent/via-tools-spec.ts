@@ -24,11 +24,13 @@ export const VIA_TOOL_SCHEMAS = [
       description:
         'Search the VIA network catalogue for drops matching criteria. ' +
         'Today the VIA network = Real Real Genuine (RRG). Returns up to 20 ' +
-        'matching drops with title, brand, price (USDC), editions remaining, ' +
-        'the canonical drop URL (`url`), and the brand storefront URL ' +
-        '(`brand_url`). Always call this when the owner asks about products, ' +
-        'drops, brands, or what is available — never invent inventory. For ' +
-        'generic queries link `brand_url`; for specific product queries link `url`.',
+        'matching drops as compact summaries (title, brand, price USDC, ' +
+        'editions remaining, `url`, `brand_url`). Descriptions are NOT ' +
+        'included — call via_get_drop for one drop if you need full detail. ' +
+        'Use this as your PRIMARY discovery tool: one well-scoped search ' +
+        'almost always beats multiple via_get_brand calls. Never invent ' +
+        'inventory. For generic queries link `brand_url`; for specific ' +
+        'product queries link `url`.',
       parameters: {
         type: 'object',
         properties: {
@@ -92,9 +94,11 @@ export const VIA_TOOL_SCHEMAS = [
     function: {
       name: 'via_get_brand',
       description:
-        'Get a brand\'s name and all their currently active drops by slug. ' +
-        'Use when the owner mentions a brand by name — never speculate about a ' +
-        'brand\'s catalogue.',
+        'Get a brand\'s name and all their currently active drops by slug ' +
+        '(compact summaries, no descriptions — call via_get_drop for one ' +
+        'drop if needed). Use ONLY when the owner explicitly names a brand. ' +
+        'For "show me X" queries prefer via_search_drops with a query ' +
+        'string instead — it\'s one round-trip vs many.',
       parameters: {
         type: 'object',
         properties: {
@@ -155,6 +159,9 @@ function brandUrl(slug: string | null): string | null {
   return slug ? `${SITE_URL}/brand/${slug}` : null;
 }
 
+// Compact summary for list contexts (search results, brand listings).
+// Strips description/enhanced_description to keep token cost low —
+// the agent calls via_get_drop for one-drop deep-dive when needed.
 function summariseDrop(d: Drop) {
   return {
     token_id: d.token_id,
@@ -165,7 +172,6 @@ function summariseDrop(d: Drop) {
     edition_size: d.edition_size,
     drop_type: d.drop_type,
     is_physical: d.is_brand_product,
-    description: d.description,
     url: dropUrl(d.token_id),
     brand_url: brandUrl(d.brand_slug),
   };
