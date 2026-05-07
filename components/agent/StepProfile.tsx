@@ -6,6 +6,8 @@ import { Input } from '@/components/ui/Input';
 import { Textarea } from '@/components/ui/Textarea';
 import { Select, TagSelect } from '@/components/ui/Select';
 import { InterestSelector } from './InterestSelector';
+import { BrandPicker } from './BrandPicker';
+import { SizeInput } from './SizeInput';
 import { STYLE_TAGS, VOICE_PRESETS, COMM_STYLE_PRESETS, TIER_DISPLAY, LLM_PROVIDER_OPTIONS } from '@/lib/agent/types';
 import type { WizardState } from '@/lib/agent/types';
 
@@ -50,6 +52,27 @@ export function StepProfile({ state, update, onNext, onBack }: Props) {
       </p>
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: 20, marginBottom: 24 }}>
+        <BrandPicker
+          label="Brands you love"
+          hint="Pick brands already on the VIA network. Your concierge will prioritise their drops and learn from your taste."
+          selected={state.loved_brands}
+          onChange={(slugs) => update({ loved_brands: slugs })}
+          disabledSlugs={state.avoided_brands}
+        />
+
+        <BrandPicker
+          label="Brands you skip"
+          hint="Your concierge will not recommend these."
+          selected={state.avoided_brands}
+          onChange={(slugs) => update({ avoided_brands: slugs })}
+          disabledSlugs={state.loved_brands}
+        />
+
+        <SizeInput
+          value={state.sizes}
+          onChange={(sizes) => update({ sizes })}
+        />
+
         <TagSelect
           label="Style tags"
           selected={state.style_tags}

@@ -9,6 +9,7 @@ import { StepRegistration } from '@/components/agent/StepRegistration';
 import { StepProfile } from '@/components/agent/StepProfile';
 import { StepReview } from '@/components/agent/StepReview';
 import type { AgentTier, WizardState } from '@/lib/agent/types';
+import { EMPTY_SIZE_PROFILE } from '@/lib/agent/types';
 
 const initialState: WizardState = {
   tier: 'basic',
@@ -25,6 +26,9 @@ const initialState: WizardState = {
   persona_voice: '',
   persona_comm_style: '',
   interest_categories: [],
+  loved_brands: [],
+  avoided_brands: [],
+  sizes: { ...EMPTY_SIZE_PROFILE },
 };
 
 const WIZARD_STEPS = ['Service', 'Registration', 'Profile', 'Review'];

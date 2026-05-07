@@ -38,13 +38,19 @@ export async function loadMemories(agentId: string, limit = 30): Promise<AgentMe
 
 /**
  * Format memories into a prompt block for the system message.
+ *
+ * Three groups, in order of authority for the concierge:
+ * 1. Consolidated profile (compact summary built periodically).
+ * 2. Set at signup (deliberate, structured choices — source_session_id IS NULL).
+ *    The owner picked these explicitly in the wizard, so weight them highly.
+ * 3. Learned from chat (extracted by the LLM from past conversations).
  */
 export function formatMemoriesForPrompt(memories: AgentMemory[]): string {
   if (memories.length === 0) return '';
 
-  // Show consolidated memories first, then individual ones
   const consolidated = memories.filter(m => m.type === 'consolidated');
-  const individual = memories.filter(m => m.type !== 'consolidated');
+  const seedAtSignup = memories.filter(m => m.type !== 'consolidated' && !m.source_session_id);
+  const learnedFromChat = memories.filter(m => m.type !== 'consolidated' && !!m.source_session_id);
 
   const parts: string[] = [];
 
@@ -55,9 +61,16 @@ export function formatMemoriesForPrompt(memories: AgentMemory[]): string {
     }
   }
 
-  if (individual.length > 0) {
-    parts.push('\n## Recent learnings\n');
-    for (const m of individual.slice(0, 15)) {
+  if (seedAtSignup.length > 0) {
+    parts.push('\n## Set at signup (deliberate preferences — weight these highly)\n');
+    for (const m of seedAtSignup.slice(0, 30)) {
+      parts.push(`- [${m.type}] ${m.content}`);
+    }
+  }
+
+  if (learnedFromChat.length > 0) {
+    parts.push('\n## Learned from chat\n');
+    for (const m of learnedFromChat.slice(0, 15)) {
       parts.push(`- [${m.type}] ${m.content}`);
     }
   }

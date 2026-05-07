@@ -60,6 +60,9 @@ export function StepReview({ state, onBack, onComplete, agentId }: Props) {
         persona_voice: state.persona_voice || null,
         persona_comm_style: state.persona_comm_style || null,
         interest_categories: state.interest_categories,
+        loved_brands: state.loved_brands,
+        avoided_brands: state.avoided_brands,
+        sizes: state.sizes,
       };
 
       const res = await fetch('/api/agent/create', {
@@ -138,6 +141,23 @@ export function StepReview({ state, onBack, onComplete, agentId }: Props) {
               ? 'New embedded wallet (Thirdweb)'
               : `Imported: ${state.wallet_address.slice(0, 8)}...${state.wallet_address.slice(-6)}`}
           </Row>
+          {state.loved_brands.length > 0 && (
+            <Row label="Brands you love">{state.loved_brands.join(', ')}</Row>
+          )}
+          {state.avoided_brands.length > 0 && (
+            <Row label="Brands you skip">{state.avoided_brands.join(', ')}</Row>
+          )}
+          {(state.sizes.tops || state.sizes.bottoms || state.sizes.shoes || state.sizes.sex || state.sizes.notes) && (
+            <Row label="Sizes">
+              {[
+                state.sizes.sex,
+                state.sizes.tops && `tops ${state.sizes.tops}`,
+                state.sizes.bottoms && `bottoms ${state.sizes.bottoms}`,
+                state.sizes.shoes && `shoes ${state.sizes.shoes}`,
+                state.sizes.notes,
+              ].filter(Boolean).join(' · ')}
+            </Row>
+          )}
           {state.style_tags.length > 0 && (
             <Row label="Style tags">{state.style_tags.join(', ')}</Row>
           )}
