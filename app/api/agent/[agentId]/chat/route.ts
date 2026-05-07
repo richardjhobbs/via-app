@@ -75,6 +75,10 @@ export async function POST(
   const memoriesBlock = formatMemoriesForPrompt(memories);
   const systemPrompt = buildChatPrompt(agent as Agent, is_eval_preview, memoriesBlock);
 
+  // Tool calls fired during this single chat turn — used for the
+  // chat_completed roll-up row written at the end of the stream.
+  const toolNamesThisTurn: string[] = [];
+
   try {
     const { stream, getTokensUsed } = await streamChatWithTools(
       agent.llm_provider,
@@ -88,6 +92,7 @@ export async function POST(
         // batch-pull time), and execution duration. Failures here do not
         // abort the chat stream.
         onToolCall: async (rec) => {
+          toolNamesThisTurn.push(rec.tool_name);
           try {
             await db.from('agent_activity_log').insert({
               agent_id: agentId,
@@ -143,6 +148,28 @@ export async function POST(
           });
 
           await deductCredits(agentId, tokensUsed, agent.llm_provider);
+
+          // Roll-up activity row for the dashboard's Activity panel —
+          // one entry per user message rather than one per tool call.
+          // Individual tool_call rows remain for audit but are hidden
+          // from the UI by the activity API.
+          try {
+            await db.from('agent_activity_log').insert({
+              agent_id: agentId,
+              action: 'chat_completed',
+              details: {
+                session_id,
+                user_message_preview: message.slice(0, 120),
+                tokens_used: tokensUsed,
+                cost_usdc: costUsdc,
+                tool_count: toolNamesThisTurn.length,
+                tool_names: toolNamesThisTurn,
+                provider: agent.llm_provider,
+              },
+            });
+          } catch (err) {
+            console.error('[chat_completed audit log]', err);
+          }
 
           // Extract memories from conversation (async, non-blocking)
           // Trigger after every 4+ messages in the session

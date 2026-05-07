@@ -20,6 +20,36 @@ import { PRESET_AVATARS } from '@/lib/agent/avatars';
 import { useActiveAccount } from 'thirdweb/react';
 import type { Agent, ActivityLogEntry, AgentEvaluation } from '@/lib/agent/types';
 
+// Human-readable labels for activity log actions. Anything not in the
+// map falls back to the action name with underscores replaced.
+const ACTIVITY_LABELS: Record<string, string> = {
+  agent_created: 'Concierge created',
+  agent_imported: 'Concierge imported',
+  erc8004_minted: 'Trust Registration',
+  chat_completed: 'Chat',
+  preferences_updated: 'Preferences updated',
+  avatar_updated: 'Avatar updated',
+  avatar_removed: 'Avatar removed',
+  credit_topup: 'Credits topped up',
+};
+
+function renderActivityDetail(entry: ActivityLogEntry): string | null {
+  const d = entry.details ?? {};
+  if (entry.action === 'chat_completed') {
+    const tokens = Number(d.tokens_used ?? 0);
+    const cost = Number(d.cost_usdc ?? 0);
+    const toolCount = Number(d.tool_count ?? 0);
+    const preview = typeof d.user_message_preview === 'string' ? d.user_message_preview : '';
+    const parts: string[] = [];
+    if (preview) parts.push(`"${preview}"`);
+    parts.push(`${tokens.toLocaleString()} tokens`);
+    parts.push(`$${cost.toFixed(4)}`);
+    if (toolCount > 0) parts.push(`${toolCount} tool ${toolCount === 1 ? 'call' : 'calls'}`);
+    return parts.join(' · ');
+  }
+  return null;
+}
+
 export default function DashboardPage() {
   const router = useRouter();
   const [agent, setAgent] = useState<Agent | null>(null);
@@ -481,20 +511,29 @@ export default function DashboardPage() {
               </p>
             ) : (
               <div className="space-y-2">
-                {activity.map((entry) => (
-                  <div key={entry.id} className="flex items-center justify-between text-sm py-2 border-b border-white/5 last:border-0">
-                    <div>
-                      <span className="text-white/80">{entry.action.replace(/_/g, ' ')}</span>
-                      {entry.tx_hash && (
-                        <a href={`https://basescan.org/tx/${entry.tx_hash}`} target="_blank" rel="noopener noreferrer"
-                           className="ml-2 text-xs text-green-700 hover:underline">tx</a>
-                      )}
+                {activity.map((entry) => {
+                  const label = ACTIVITY_LABELS[entry.action] ?? entry.action.replace(/_/g, ' ');
+                  const detail = renderActivityDetail(entry);
+                  return (
+                    <div key={entry.id} className="flex items-start justify-between text-sm py-2 border-b border-white/5 last:border-0 gap-4">
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2">
+                          <span className="text-white/80">{label}</span>
+                          {entry.tx_hash && (
+                            <a href={`https://basescan.org/tx/${entry.tx_hash}`} target="_blank" rel="noopener noreferrer"
+                               className="text-xs text-green-700 hover:underline">tx</a>
+                          )}
+                        </div>
+                        {detail && (
+                          <div className="text-xs text-white/40 mt-0.5 truncate">{detail}</div>
+                        )}
+                      </div>
+                      <span className="text-xs text-white/30 shrink-0">
+                        {new Date(entry.created_at).toLocaleString()}
+                      </span>
                     </div>
-                    <span className="text-xs text-white/30">
-                      {new Date(entry.created_at).toLocaleString()}
-                    </span>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </Card>
