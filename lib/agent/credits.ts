@@ -37,10 +37,14 @@ export const LLM_COST_PER_EVAL: Record<string, number> = {
 };
 
 // ── Approximate cost per chat message (for UI display) ──────────────
+//
+// Note: tool-use compounds cost. A simple Q&A is at the low end; a query
+// that triggers several tool calls (each re-sending the system prompt
+// and accumulated context) lands at the high end. Iteration cap is 20.
 
 export const CHAT_COST_ESTIMATE: Record<string, string> = {
-  claude: '~$0.006',
-  deepseek: '~$0.001',
+  claude: '$0.005 to $0.10',
+  deepseek: '$0.001 to $0.05',
 };
 
 /** Check if a Concierge has sufficient credits for an operation. */
