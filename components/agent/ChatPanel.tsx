@@ -5,7 +5,6 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
-import { TIER_DISPLAY } from '@/lib/agent/types';
 import { CHAT_COST_ESTIMATE } from '@/lib/agent/credits';
 import { formatCredits } from '@/lib/agent/credit-display';
 import type { Agent } from '@/lib/agent/types';
@@ -25,7 +24,6 @@ export function ChatPanel({ agent }: Props) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState('');
   const [sending, setSending] = useState(false);
-  const [evalMode, setEvalMode] = useState(false);
   const [sessionId, setSessionId] = useState(() => crypto.randomUUID());
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -37,8 +35,6 @@ export function ChatPanel({ agent }: Props) {
     el.style.height = 'auto';
     el.style.height = `${Math.min(el.scrollHeight, 200)}px`;
   }, [input]);
-
-  const tierLabel = TIER_DISPLAY[agent.tier].label;
 
   useEffect(() => {
     if (open && scrollRef.current) {
@@ -75,7 +71,7 @@ export function ChatPanel({ agent }: Props) {
         body: JSON.stringify({
           message: text,
           session_id: sessionId,
-          is_eval_preview: evalMode,
+          is_eval_preview: false,
         }),
       });
 
@@ -207,22 +203,7 @@ export function ChatPanel({ agent }: Props) {
       {open && (
         <div style={{ marginTop: 16 }}>
           {/* Controls bar */}
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12, gap: 12, flexWrap: 'wrap' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
-              <button
-                type="button"
-                onClick={() => setEvalMode(!evalMode)}
-                className={`chip ${evalMode ? 'is-active' : ''}`}
-                style={{ padding: '4px 12px', fontSize: 10 }}
-              >
-                {evalMode ? 'Eval mode on' : 'Eval mode'}
-              </button>
-              {evalMode && (
-                <span style={{ fontSize: 11, color: 'var(--ink-3)' }}>
-                  Describe a drop to get your {tierLabel}&apos;s evaluation.
-                </span>
-              )}
-            </div>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', marginBottom: 12 }}>
             <button
               onClick={newConversation}
               style={{
@@ -330,7 +311,7 @@ export function ChatPanel({ agent }: Props) {
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={handleKeyDown}
-              placeholder={evalMode ? 'Describe a drop to evaluate…' : `Message ${agent.name}…`}
+              placeholder={`Message ${agent.name}…`}
               disabled={sending}
               style={{
                 flex: 1,
