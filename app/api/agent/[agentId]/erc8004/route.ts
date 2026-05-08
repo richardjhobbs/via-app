@@ -33,8 +33,17 @@ export async function POST(
   }
 
   try {
-    // Check if wallet already has an ERC-8004 token
-    const existingId = await getAgentIdForWallet(agent.wallet_address);
+    // Best-effort check for existing ERC-8004 token on this wallet. If the
+    // RPC is rate-limited or otherwise erroring (Base public RPC throttles
+    // the VPS IP under load), skip the auto-link branch and proceed to mint
+    // a fresh token rather than blocking the retry. The mint path goes
+    // through the VIA Registrar (not direct RPC) so it survives rate limits.
+    let existingId: bigint | null = null;
+    try {
+      existingId = await getAgentIdForWallet(agent.wallet_address);
+    } catch (err) {
+      console.warn('[erc8004 retry] getAgentIdForWallet failed, falling through to mint:', err instanceof Error ? err.message : err);
+    }
 
     if (existingId !== null) {
       // Link existing token
