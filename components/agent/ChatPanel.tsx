@@ -254,11 +254,11 @@ export function ChatPanel({ agent }: Props) {
                   <ul style={{ listStyle: 'none', padding: 0, margin: 0, textAlign: 'left', display: 'flex', flexDirection: 'column', gap: 10 }}>
                     <li style={{ fontSize: 12, color: 'var(--ink-3)', lineHeight: 1.6 }}>
                       <span style={{ color: 'var(--ink-2)', fontWeight: 600 }}>Tell your concierge what brands and looks you like.</span>
-                      {' '}They focus their network checks. <span style={{ fontFamily: 'var(--font-jetbrains), monospace', color: 'var(--ink-3)' }}>~$0.001 per chat</span>
+                      {' '}They focus their network checks. <span style={{ fontFamily: 'var(--font-jetbrains), monospace', color: 'var(--ink-3)' }}>~1 credit per chat</span>
                     </li>
                     <li style={{ fontSize: 12, color: 'var(--ink-3)', lineHeight: 1.6 }}>
                       <span style={{ color: 'var(--ink-2)', fontWeight: 600 }}>Ask your concierge to find something specific.</span>
-                      {' '}They search the network. <span style={{ fontFamily: 'var(--font-jetbrains), monospace', color: 'var(--ink-3)' }}>~$0.01 per chat</span>
+                      {' '}They search the network. <span style={{ fontFamily: 'var(--font-jetbrains), monospace', color: 'var(--ink-3)' }}>~10 credits per chat</span>
                     </li>
                   </ul>
                 </div>

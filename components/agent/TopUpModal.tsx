@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { Button } from '@/components/ui/Button';
 import type { Agent } from '@/lib/agent/types';
+import { formatCredits } from '@/lib/agent/credit-display';
 
 interface Props {
   agent: Agent;
@@ -96,7 +97,7 @@ export function TopUpModal({ agent, onClose, onCredited }: Props) {
             fontSize: 32, fontWeight: 300, letterSpacing: '-0.02em',
             color: 'var(--accent)', marginTop: 4,
           }}>
-            ${Number(agent.credit_balance_usdc ?? 0).toFixed(2)}
+            {formatCredits(Number(agent.credit_balance_usdc ?? 0))}
           </div>
         </div>
 
@@ -122,7 +123,7 @@ export function TopUpModal({ agent, onClose, onCredited }: Props) {
             fontSize: 12,
             color: 'var(--ink)',
           }}>
-            Credited ${credited.toFixed(2)}.
+            Credited {formatCredits(credited)}.
           </div>
         )}
 

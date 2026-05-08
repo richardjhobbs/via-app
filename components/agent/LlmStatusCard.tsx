@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/Button';
 import { Select } from '@/components/ui/Select';
 import { LLM_PROVIDER_OPTIONS } from '@/lib/agent/types';
 import type { Agent, LlmProvider } from '@/lib/agent/types';
+import { formatCredits, LOW_BALANCE_USD_THRESHOLD } from '@/lib/agent/credit-display';
 
 interface LlmStatus {
   provider: string;
@@ -14,7 +15,9 @@ interface LlmStatus {
   color: string;
   api_key_configured: boolean;
   cost_per_eval: number;
+  /** Pre-formatted credit range, e.g. "1 to 50 credits". */
   chat_cost_estimate: string;
+  /** USD balance from the DB; UI converts to credits at 1 USD = 1000. */
   credit_balance: number;
   estimated_evals_remaining: number;
 }
@@ -24,8 +27,6 @@ interface Props {
   onProviderChange?: (provider: LlmProvider) => void;
   onTopUp?: () => void;
 }
-
-const LOW_BALANCE_THRESHOLD = 0.2;
 
 const lbl: React.CSSProperties = {
   fontFamily: 'var(--font-jetbrains), monospace',
@@ -174,15 +175,15 @@ export function LlmStatusCard({ agent, onProviderChange, onTopUp }: Props) {
               <span style={lbl}>Credit balance</span>
               <span style={{
                 ...val,
-                color: status.credit_balance < LOW_BALANCE_THRESHOLD ? '#b5453a' : 'var(--ink)',
-                fontWeight: status.credit_balance < LOW_BALANCE_THRESHOLD ? 500 : 400,
+                color: status.credit_balance < LOW_BALANCE_USD_THRESHOLD ? '#b5453a' : 'var(--ink)',
+                fontWeight: status.credit_balance < LOW_BALANCE_USD_THRESHOLD ? 500 : 400,
               }}>
-                ${status.credit_balance.toFixed(4)}
+                {formatCredits(status.credit_balance)}
               </span>
             </div>
           </div>
 
-          {status.credit_balance < LOW_BALANCE_THRESHOLD && onTopUp && (
+          {status.credit_balance < LOW_BALANCE_USD_THRESHOLD && onTopUp && (
             <div style={{
               borderTop: '1px solid var(--line)',
               paddingTop: 12,

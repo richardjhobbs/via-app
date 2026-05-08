@@ -38,13 +38,17 @@ export const LLM_COST_PER_EVAL: Record<string, number> = {
 
 // ── Approximate cost per chat message (for UI display) ──────────────
 //
-// Note: tool-use compounds cost. A simple Q&A is at the low end; a query
-// that triggers several tool calls (each re-sending the system prompt
-// and accumulated context) lands at the high end. Iteration cap is 20.
+// UI shows credits at 1 USD = 1000 credits (see lib/agent/credit-display.ts).
+// USD ranges:
+//   claude:   $0.005 to $0.10   (5 to 100 credits)
+//   deepseek: $0.001 to $0.05   (1 to 50 credits)
+// Tool-use compounds cost: a simple Q&A is at the low end; a query that
+// triggers several tool calls (each re-sending the system prompt + context)
+// lands at the high end. Iteration cap is 20.
 
 export const CHAT_COST_ESTIMATE: Record<string, string> = {
-  claude: '$0.005 to $0.10',
-  deepseek: '$0.001 to $0.05',
+  claude: '5 to 100 credits',
+  deepseek: '1 to 50 credits',
 };
 
 /** Check if a Concierge has sufficient credits for an operation. */

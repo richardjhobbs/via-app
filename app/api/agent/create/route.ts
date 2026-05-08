@@ -141,16 +141,17 @@ export async function POST(req: NextRequest) {
       details: { tier, wallet_type: 'embedded' },
     });
 
-    // Record the 1.00 USDC signup grant in the credit ledger so it's auditable
-    // alongside topups and deductions. Type uses the existing 'topup' bucket
-    // (CHECK constraint is topup/deduction/refund); description distinguishes
-    // the CAC grant from real top-ups.
+    // Record the signup grant in the credit ledger so it's auditable alongside
+    // topups and deductions. Type uses the existing 'topup' bucket (CHECK
+    // constraint is topup/deduction/refund); description distinguishes the
+    // CAC grant from real top-ups. Stored as USD for accounting honesty;
+    // UI shows it as 1000 credits at 1 USD = 1000.
     await db.from('agent_credit_transactions').insert({
       agent_id: agent.id,
       type: 'topup',
       amount_usdc: 1.0,
       balance_after: 1.0,
-      description: 'Signup grant (1.00 USDC LLM credit, CAC)',
+      description: 'Signup grant (1000 credits, CAC)',
     });
 
     // Seed agent_memory from the structured wizard inputs. These rows have

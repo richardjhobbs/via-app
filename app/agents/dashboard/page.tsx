@@ -16,6 +16,7 @@ import { TopUpModal } from '@/components/agent/TopUpModal';
 import { LlmStatusCard } from '@/components/agent/LlmStatusCard';
 import { ChatPanel } from '@/components/agent/ChatPanel';
 import { STYLE_TAGS, TIER_DISPLAY, LLM_PROVIDER_OPTIONS } from '@/lib/agent/types';
+import { formatCredits, formatChatCost } from '@/lib/agent/credit-display';
 import { PRESET_AVATARS } from '@/lib/agent/avatars';
 import { useActiveAccount } from 'thirdweb/react';
 import type { Agent, ActivityLogEntry, AgentEvaluation, LlmProvider } from '@/lib/agent/types';
@@ -114,7 +115,7 @@ function renderActivityDetail(entry: ActivityLogEntry): string | null {
     const parts: string[] = [];
     if (preview) parts.push(`"${preview}"`);
     parts.push(`${tokens.toLocaleString()} tokens`);
-    parts.push(`$${cost.toFixed(4)}`);
+    parts.push(formatChatCost(cost));
     if (toolCount > 0) parts.push(`${toolCount} tool ${toolCount === 1 ? 'call' : 'calls'}`);
     return parts.join(' · ');
   }
@@ -436,10 +437,12 @@ export default function DashboardPage() {
           <div className="text-right">
             <div className="text-2xl font-light text-green-700">
               {agent.tier === 'pro'
-                ? `$${agent.credit_balance_usdc.toFixed(2)}`
+                ? formatCredits(agent.credit_balance_usdc)
                 : (balance !== null ? `$${balance.toFixed(2)}` : '...')}
             </div>
-            <div className="text-xs text-white/40">Balance</div>
+            <div className="text-xs text-white/40">
+              {agent.tier === 'pro' ? 'Credit balance' : 'Wallet balance (USDC)'}
+            </div>
             {agent.tier === 'pro' && (
               <button
                 onClick={() => setShowTopUp(true)}
