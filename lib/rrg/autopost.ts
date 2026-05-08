@@ -332,17 +332,72 @@ interface BskyFacet {
 function bskyFacets(text: string, links: { match: string; url: string }[]): BskyFacet[] {
   const enc     = new TextEncoder();
   const facets: BskyFacet[] = [];
+
+  // Track byte ranges already consumed so multiple facets do not overlap.
+  const taken: Array<{ start: number; end: number }> = [];
+  const overlaps = (s: number, e: number) =>
+    taken.some(t => !(e <= t.start || s >= t.end));
+
+  // 1. Caller-supplied keyword links (e.g. literal "RRG" -> RRG_URL).
   for (const { match, url } of links) {
     const idx = text.indexOf(match);
     if (idx === -1) continue;
     const byteStart = enc.encode(text.slice(0, idx)).length;
     const byteEnd   = byteStart + enc.encode(match).length;
+    if (overlaps(byteStart, byteEnd)) continue;
     facets.push({
       index:    { byteStart, byteEnd },
       features: [{ $type: 'app.bsky.richtext.facet#link', uri: url }],
     });
+    taken.push({ start: byteStart, end: byteEnd });
   }
+
+  // 2. Auto-detect raw URLs in the body and facet them so they become
+  //    clickable. The AT Protocol does NOT auto-link plain text URLs —
+  //    every clickable region must be an explicit facet.
+  //
+  //    Trailing punctuation that is rarely part of a URL (`.,;:!?`) is
+  //    stripped so the facet does not over-extend at sentence ends.
+  const urlRe = /\bhttps?:\/\/[^\s<>"']+/g;
+  for (const m of text.matchAll(urlRe)) {
+    let raw = m[0];
+    while (raw.length > 0 && /[.,;:!?)]$/.test(raw)) raw = raw.slice(0, -1);
+    if (!raw) continue;
+    const idx = m.index ?? -1;
+    if (idx < 0) continue;
+    const byteStart = enc.encode(text.slice(0, idx)).length;
+    const byteEnd   = byteStart + enc.encode(raw).length;
+    if (overlaps(byteStart, byteEnd)) continue;
+    facets.push({
+      index:    { byteStart, byteEnd },
+      features: [{ $type: 'app.bsky.richtext.facet#link', uri: raw }],
+    });
+    taken.push({ start: byteStart, end: byteEnd });
+  }
+
   return facets;
+}
+
+// Truncate text to fit a graphem-cluster character budget WITHOUT cutting
+// any URL in half. If the natural cut would land inside a URL, back up to
+// the previous whitespace; if there is no whitespace, drop the URL entirely
+// rather than leave a half-URL the user cannot click.
+function bskyTruncate(text: string, budget: number): string {
+  if (text.length <= budget) return text;
+  const cut = text.slice(0, budget);
+
+  // Did we slice through an https?:// URL? Find any URL whose start is
+  // inside the kept window but whose end exceeds it.
+  const urlRe = /\bhttps?:\/\/[^\s<>"']*$/;
+  const tail = urlRe.exec(cut);
+  if (!tail || tail.index === undefined) return cut;
+
+  // Walk back to the whitespace before the URL; if there is one in the
+  // budget, keep everything up to that whitespace. Otherwise return the
+  // budget-window minus the partial URL.
+  const wsBefore = cut.slice(0, tail.index).match(/\s$/);
+  if (wsBefore) return cut.slice(0, tail.index).trimEnd();
+  return cut.slice(0, tail.index).trimEnd();
 }
 
 function buildApprovalBsky(p: ApprovalParams): { text: string; facets: BskyFacet[] } {
@@ -709,7 +764,7 @@ export async function autopostGeneric(p: GenericPostParams): Promise<{ channels:
     promises.push({ channel: 'TELEGRAM', promise: sendTelegram(html, imageData) });
   }
   if (channels.some(c => c === 'BLUESKY')) {
-    const text   = p.content.slice(0, 300);
+    const text   = bskyTruncate(p.content, 300);
     const facets = bskyFacets(text, [{ match: 'RRG', url: RRG_URL }]);
     promises.push({ channel: 'BLUESKY', promise: sendBluesky({ text, facets }, imageData, 'RRG post') });
   }
