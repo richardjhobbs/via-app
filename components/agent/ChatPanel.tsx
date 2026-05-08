@@ -20,7 +20,6 @@ interface Props {
 }
 
 export function ChatPanel({ agent }: Props) {
-  const [open, setOpen] = useState(false);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState('');
   const [sending, setSending] = useState(false);
@@ -37,14 +36,10 @@ export function ChatPanel({ agent }: Props) {
   }, [input]);
 
   useEffect(() => {
-    if (open && scrollRef.current) {
+    if (scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
-  }, [messages, open]);
-
-  useEffect(() => {
-    if (open) inputRef.current?.focus();
-  }, [open]);
+  }, [messages]);
 
   function newConversation() {
     setMessages([]);
@@ -163,18 +158,9 @@ export function ChatPanel({ agent }: Props) {
   return (
     <Card className="md:col-span-2">
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16 }}>
-        <button
-          onClick={() => setOpen(!open)}
-          style={{
-            display: 'flex', alignItems: 'center', gap: 10,
-            background: 'transparent', border: 'none', cursor: 'pointer', padding: 0,
-          }}
-        >
-          <h2 style={{ fontFamily: 'var(--font-fraunces), serif', fontSize: 22, fontWeight: 400, letterSpacing: '-0.01em', margin: 0 }}>
-            Chat with {agent.name}
-          </h2>
-          <span style={{ fontSize: 11, color: 'var(--accent)' }}>{open ? '▲' : '▼'}</span>
-        </button>
+        <h2 style={{ fontFamily: 'var(--font-fraunces), serif', fontSize: 22, fontWeight: 400, letterSpacing: '-0.01em', margin: 0 }}>
+          Chat with {agent.name}
+        </h2>
         <span style={{
           fontFamily: 'var(--font-jetbrains), monospace',
           fontSize: 10, letterSpacing: '0.1em', textTransform: 'uppercase',
@@ -200,9 +186,8 @@ export function ChatPanel({ agent }: Props) {
         </span>
       </div>
 
-      {open && (
-        <div style={{ marginTop: 16 }}>
-          {/* Controls bar */}
+      <div style={{ marginTop: 16 }}>
+        {/* Controls bar */}
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', marginBottom: 12 }}>
             <button
               onClick={newConversation}
@@ -349,8 +334,7 @@ export function ChatPanel({ agent }: Props) {
             <span>Credits: {formatCredits(Number(agent.credit_balance_usdc ?? 0))}</span>
             <span>{agent.llm_provider}</span>
           </div>
-        </div>
-      )}
+      </div>
     </Card>
   );
 }
