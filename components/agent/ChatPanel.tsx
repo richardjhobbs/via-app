@@ -7,6 +7,7 @@ import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { TIER_DISPLAY } from '@/lib/agent/types';
 import { CHAT_COST_ESTIMATE } from '@/lib/agent/credits';
+import { formatCredits } from '@/lib/agent/credit-display';
 import type { Agent } from '@/lib/agent/types';
 
 interface ChatMessage {
@@ -364,7 +365,7 @@ export function ChatPanel({ agent }: Props) {
             color: 'var(--ink-3)',
             display: 'flex', justifyContent: 'space-between',
           }}>
-            <span>Credits: ${Number(agent.credit_balance_usdc ?? 0).toFixed(2)}</span>
+            <span>Credits: {formatCredits(Number(agent.credit_balance_usdc ?? 0))}</span>
             <span>{agent.llm_provider}</span>
           </div>
         </div>
