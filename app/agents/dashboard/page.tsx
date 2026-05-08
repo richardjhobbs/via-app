@@ -219,7 +219,14 @@ export default function DashboardPage() {
       };
       setAgent(a);
 
-      // Pro: sync inbound USDC → credits. Falls back to on-chain read for basic.
+      // Always fetch on-chain USDC for the top-right Wallet balance display,
+      // regardless of tier. Used for shopping spend.
+      try {
+        const balRes = await fetch(`/api/agent/wallet/balance?address=${a.wallet_address}`);
+        if (balRes.ok) { const { balance_usdc } = await balRes.json(); setBalance(balance_usdc); }
+      } catch {}
+
+      // Pro: also sync inbound USDC → credits so the chat credit balance is fresh.
       if (a.tier === 'pro') {
         try {
           const syncRes = await fetch(`/api/agent/${a.id}/credits/sync`, { method: 'POST' });
@@ -228,9 +235,6 @@ export default function DashboardPage() {
             setAgent(prev => prev ? { ...prev, credit_balance_usdc: Number(credit_balance) } : prev);
           }
         } catch {}
-      } else {
-        const balRes = await fetch(`/api/agent/wallet/balance?address=${a.wallet_address}`);
-        if (balRes.ok) { const { balance_usdc } = await balRes.json(); setBalance(balance_usdc); }
       }
 
       const actRes = await fetch(`/api/agent/${a.id}/activity`);
