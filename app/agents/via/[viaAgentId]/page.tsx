@@ -1,5 +1,6 @@
 import { notFound } from 'next/navigation';
 import { db } from '@/lib/rrg/db';
+import { getSignedUrl } from '@/lib/rrg/storage';
 import { PRESET_AVATARS } from '@/lib/agent/avatars';
 import { TIER_DISPLAY } from '@/lib/agent/types';
 import { Badge } from '@/components/ui/Badge';
@@ -15,10 +16,18 @@ interface Props {
 }
 
 /** Resolve avatar_path to a displayable URL. */
-function resolveAvatar(source: string | null, path: string | null): string | null {
-  if (source === 'preset' && path) {
+async function resolveAvatar(source: string | null, path: string | null): Promise<string | null> {
+  if (!path) return null;
+  if (source === 'preset') {
     const preset = PRESET_AVATARS.find(p => p.id === path);
     return preset?.src ?? null;
+  }
+  if (source === 'uploaded' || source === 'generated') {
+    try {
+      return await getSignedUrl(path, 604800);
+    } catch {
+      return null;
+    }
   }
   return null;
 }
@@ -94,7 +103,7 @@ export default async function ViaAgentProfilePage({ params }: Props) {
   }
 
   const tierDisplay = TIER_DISPLAY[agent.tier as keyof typeof TIER_DISPLAY];
-  const avatarUrl = resolveAvatar(agent.avatar_source, agent.avatar_path);
+  const avatarUrl = await resolveAvatar(agent.avatar_source, agent.avatar_path);
   const interests = (agent.interest_categories ?? []) as { category: string; tags: string[] }[];
 
   return (

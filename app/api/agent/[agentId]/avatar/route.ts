@@ -11,6 +11,65 @@ const MAX_FILE_SIZE = 2 * 1024 * 1024; // 2MB
 const ALLOWED_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
 
 /**
+ * GET /api/agent/[agentId]/avatar
+ *
+ * Resolve the agent's current avatar to a displayable URL. Preset avatars
+ * return their bundled asset path; uploaded/generated return a fresh signed
+ * URL from Supabase storage so the dashboard can render the actual image
+ * across page reloads (signed URLs expire, so we mint a new one on demand).
+ */
+export async function GET(
+  _req: NextRequest,
+  { params }: { params: Promise<{ agentId: string }> }
+) {
+  const { agentId } = await params;
+
+  const { data: agent } = await db
+    .from('agent_agents')
+    .select('avatar_path, avatar_source')
+    .eq('id', agentId)
+    .single();
+
+  if (!agent) {
+    return NextResponse.json({ error: 'Agent not found' }, { status: 404 });
+  }
+
+  if (!agent.avatar_path || agent.avatar_source === 'none') {
+    return NextResponse.json({
+      avatar_url: null,
+      avatar_path: null,
+      avatar_source: 'none',
+    });
+  }
+
+  if (agent.avatar_source === 'preset') {
+    const preset = PRESET_AVATARS.find(p => p.id === agent.avatar_path);
+    return NextResponse.json({
+      avatar_url: preset?.src ?? null,
+      avatar_path: agent.avatar_path,
+      avatar_source: 'preset',
+    });
+  }
+
+  // uploaded or generated: mint a fresh signed URL (7 days)
+  try {
+    const signedUrl = await getSignedUrl(agent.avatar_path, 604800);
+    return NextResponse.json({
+      avatar_url: signedUrl,
+      avatar_path: agent.avatar_path,
+      avatar_source: agent.avatar_source,
+    });
+  } catch (err) {
+    console.error('[avatar resolve]', err);
+    return NextResponse.json({
+      avatar_url: null,
+      avatar_path: agent.avatar_path,
+      avatar_source: agent.avatar_source,
+    });
+  }
+}
+
+/**
  * POST /api/agent/[agentId]/avatar
  *
  * Three modes:

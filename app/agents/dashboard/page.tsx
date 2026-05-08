@@ -239,13 +239,18 @@ export default function DashboardPage() {
       const memRes = await fetch(`/api/agent/${a.id}/memory`);
       if (memRes.ok) { const { memories: mems } = await memRes.json(); setMemories(mems ?? []); }
 
-      // Resolve avatar URL
-      if (a.avatar_source === 'preset' && a.avatar_path) {
-        const preset = PRESET_AVATARS.find(p => p.id === a.avatar_path);
-        if (preset) setAvatarUrl(preset.src);
-      } else if ((a.avatar_source === 'uploaded' || a.avatar_source === 'generated') && a.avatar_path) {
-        // Signed URL was returned when avatar was set; for now show initials until we add a resolve endpoint
-        setAvatarUrl(null);
+      // Resolve avatar URL via the resolve endpoint, which mints a fresh
+      // signed URL for uploaded/generated avatars and looks up the bundled
+      // asset for presets. Without this, uploaded avatars show as initials
+      // on every page reload because the signed URL from upload is in-memory only.
+      if (a.avatar_path && a.avatar_source !== 'none') {
+        try {
+          const avRes = await fetch(`/api/agent/${a.id}/avatar`);
+          if (avRes.ok) {
+            const { avatar_url } = await avRes.json();
+            setAvatarUrl(avatar_url ?? null);
+          }
+        } catch {}
       }
 
       if (a.tier === 'pro') {
