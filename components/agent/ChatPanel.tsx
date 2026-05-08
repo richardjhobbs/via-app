@@ -5,7 +5,6 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
-import { CHAT_COST_ESTIMATE } from '@/lib/agent/credits';
 import { formatCredits } from '@/lib/agent/credit-display';
 import type { Agent } from '@/lib/agent/types';
 
@@ -157,33 +156,10 @@ export function ChatPanel({ agent }: Props) {
 
   return (
     <Card className="md:col-span-2">
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
         <h2 style={{ fontFamily: 'var(--font-fraunces), serif', fontSize: 22, fontWeight: 400, letterSpacing: '-0.01em', margin: 0 }}>
           Chat with {agent.name}
         </h2>
-        <span style={{
-          fontFamily: 'var(--font-jetbrains), monospace',
-          fontSize: 10, letterSpacing: '0.1em', textTransform: 'uppercase',
-          color: 'var(--ink-3)', display: 'flex', alignItems: 'center', gap: 6,
-        }}>
-          {CHAT_COST_ESTIMATE[agent.llm_provider] ?? '~$0.003'} per message
-          <span style={{ position: 'relative' }} className="group">
-            <span style={{
-              display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-              width: 14, height: 14, borderRadius: 99,
-              border: '1px solid var(--line-strong)', fontSize: 9, color: 'var(--ink-3)',
-              cursor: 'help',
-            }}>?</span>
-            <span style={{
-              position: 'absolute', bottom: '100%', right: 0, marginBottom: 4,
-              width: 192, padding: 8, fontSize: 10, color: 'var(--ink-2)',
-              background: 'var(--paper)', border: '1px solid var(--line-strong)',
-              opacity: 0, pointerEvents: 'none',
-            }} className="group-hover:opacity-100">
-              Estimate only, charged by LLM provider.
-            </span>
-          </span>
-        </span>
       </div>
 
       <div style={{ marginTop: 16 }}>
@@ -218,16 +194,9 @@ export function ChatPanel({ agent }: Props) {
                   <p style={{ fontFamily: 'var(--font-fraunces), serif', fontSize: 16, color: 'var(--ink-2)', margin: '0 0 14px', lineHeight: 1.5 }}>
                     Say hello to {agent.name}.
                   </p>
-                  <ul style={{ listStyle: 'none', padding: 0, margin: 0, textAlign: 'left', display: 'flex', flexDirection: 'column', gap: 10 }}>
-                    <li style={{ fontSize: 12, color: 'var(--ink-3)', lineHeight: 1.6 }}>
-                      <span style={{ color: 'var(--ink-2)', fontWeight: 600 }}>Tell your concierge what brands and looks you like.</span>
-                      {' '}They focus their network checks. <span style={{ fontFamily: 'var(--font-jetbrains), monospace', color: 'var(--ink-3)' }}>~1 credit per chat</span>
-                    </li>
-                    <li style={{ fontSize: 12, color: 'var(--ink-3)', lineHeight: 1.6 }}>
-                      <span style={{ color: 'var(--ink-2)', fontWeight: 600 }}>Ask your concierge to find something specific.</span>
-                      {' '}They search the network. <span style={{ fontFamily: 'var(--font-jetbrains), monospace', color: 'var(--ink-3)' }}>~10 credits per chat</span>
-                    </li>
-                  </ul>
+                  <p style={{ fontSize: 12, color: 'var(--ink-3)', lineHeight: 1.6, margin: 0 }}>
+                    The deeper and longer the conversation, the more credits are used.
+                  </p>
                 </div>
               </div>
             )}
