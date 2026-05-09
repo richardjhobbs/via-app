@@ -162,3 +162,81 @@ A daily diff against the prior snapshot will catch:
 - New tokens minted (extends token ranges).
 
 `.env.example` line 14 currently shows `NEXT_PUBLIC_PLATFORM_WALLET=0xe653804032A2d51Cc031795afC601B9b1fd2c375` (the DrHobbs address). Production env on the VPS uses the RRG wallet, and the runtime fallback in `lib/rrg/splits.ts` and elsewhere is also the RRG wallet, so live behaviour is correct. The example file is misleading and should be corrected in a follow-up.
+
+## 9. Where to find transfer data for reconciliation
+
+Three sources, in order of preference:
+
+### 9.1 Internal: `rrg_purchases` table (Supabase)
+
+The platform's own ledger of sales. Authoritative for any RRG-mediated purchase. Project ID `sanvqnvvzdkjvfmxnxur`. Columns useful to Colin:
+
+| Column | Meaning |
+|--------|---------|
+| `id`, `created_at` | Sale primary key and timestamp |
+| `tx_hash` | The on-chain mint/payment tx (links to Basescan) |
+| `payout_tx_hashes` | Comma-separated tx hashes for the off-chain auto-payout to brand and platform shares |
+| `amount_usdc` | Gross USDC received from buyer |
+| `split_creator_usdc`, `split_brand_usdc`, `split_platform_usdc` | The three legs of the split |
+| `split_model` | `brand_product_flat`, `brand_product_tiered`, etc. Drives which split rule fires |
+| `brand_pct_applied` | The actual percentage paid to the brand (default 97.5% for brand-owned) |
+| `buyer_wallet`, `buyer_email`, `buyer_type` | Counterparty for AR / customer subledger |
+| `network` | `base` for almost all current sales |
+| `payment_method` | `crypto`, `card`, etc. Card sales bypass the on-chain tx |
+
+Reconciliation query pattern (per period):
+
+```sql
+SELECT created_at::date AS d,
+       COUNT(*) AS sales,
+       SUM(amount_usdc) AS gross_usdc,
+       SUM(split_brand_usdc) AS to_brand,
+       SUM(split_platform_usdc) AS to_platform,
+       SUM(split_creator_usdc) AS to_creator
+FROM rrg_purchases
+WHERE network = 'base'
+  AND created_at >= '2026-02-01'
+GROUP BY 1 ORDER BY 1;
+```
+
+Every row's `tx_hash` and each hash in `payout_tx_hashes` should match an inbound or outbound transfer on the relevant wallet at the explorer. Mismatches = investigation flag.
+
+### 9.2 External: Blockscout V2 (free, recommended for ad-hoc lookups)
+
+Base mainnet Blockscout instance: `https://base.blockscout.com`. No API key needed. Cursor-paginated via `next_page_params`.
+
+Useful endpoints (replace `{addr}` with a checksummed wallet address):
+
+| Endpoint | Returns |
+|----------|---------|
+| `/api/v2/addresses/{addr}` | Current balance, ETH and major tokens |
+| `/api/v2/addresses/{addr}/transactions` | All native-ETH txs (in and out, includes failed) |
+| `/api/v2/addresses/{addr}/token-transfers?type=ERC-20` | All ERC-20 transfers in/out (paginated, filter client-side by `token.address_hash`) |
+| `/api/v2/addresses/{addr}/token-balances` | Current token balances by contract |
+
+**Important:** the `?token=ADDRESS` query param does NOT filter on the server. Always filter the response client-side by `token.address_hash` to drop phishing tokens that spoof USDC's name and symbol. The real USDC is `0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913` (case-insensitive compare).
+
+Example reconciliation script in this repo: [`scripts/reconcile-personal-wallets.mjs`](../scripts/reconcile-personal-wallets.mjs). Run with `node scripts/reconcile-personal-wallets.mjs` from the repo root. Outputs a markdown report to `docs/wallet-reconciliation-YYYY-MM-DD.md`. First snapshot: [`wallet-reconciliation-2026-05-10.md`](wallet-reconciliation-2026-05-10.md).
+
+### 9.3 External: Etherscan unified V2 (paid, only if free tier insufficient)
+
+`https://api.etherscan.io/v2/api?chainid=8453&module=account&action=tokentx|txlist&...` with `BASESCAN_API_KEY` from `.env.local`. As of 2026-05, the V2 unified API requires a paid plan to query Base. The free tier returns "Free API access is not supported for this chain. Please upgrade your api plan." Keep the key as a fallback for the day Etherscan upgrades free tier or we move to a paid plan.
+
+### 9.4 Reconciliation cadence (suggested)
+
+- **Daily.** Pull the last 24h from Blockscout for the four core operating wallets (PLATFORM, DEPLOYER, holding, DrHobbs) and the four personal pre-handoff wallets. Diff against `rrg_purchases` `tx_hash` and `payout_tx_hashes` for the same period. Flag any tx not in `rrg_purchases` for manual classification.
+- **Weekly.** Re-pull the 90-day window for the personal wallets (the four in section 2) and update the markdown report. Compare against the prior week's snapshot to catch any stale balances.
+- **Monthly.** Reconcile end-of-month balances on every wallet against the Zoho asset accounts. Discrepancy threshold: 0.01 USDC.
+- **At handoff.** When a brand is handed off, run the reconciliation script for both the old (holding or personal) wallet and the new brand-owned wallet over the full pre-handoff window. The token-range mismatches in section 3 of this doc are pre-existing as of 2026-05-09.
+
+### 9.5 Counterparty key (most-frequent counterparties seen in tx history)
+
+These addresses come up repeatedly in the tx tables and are worth labelling in Zoho contact lists:
+
+| Address | Label |
+|---------|-------|
+| `0xbfd71eA27FFc99747dA2873372f84346d9A8b7ed` | RRG / PLATFORM_WALLET (this register) |
+| `0x369d04F08F245454926AC96a0164a634fd94660B` | DEPLOYER (this register) |
+| `0xe3478b0BB1A5084567C319096437924948Be1964` | Recurring small-amount counterparty in DFW history. Identity to confirm before classifying. |
+| `0x2C9a1DAdD6Cb5425Bf0e677FAdA64a257a558438` | Artemist brand wallet (this register, section 3) |
+| `0x25B22971892B7314c36EC6DCfB5537500d50Ea35` | Recurring counterparty. Identity to confirm. |
