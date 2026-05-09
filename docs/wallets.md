@@ -229,7 +229,28 @@ Reconciliation script in this repo: [`scripts/reconcile-wallets.mjs`](../scripts
 - **Monthly.** Reconcile end-of-month balances on every wallet against the Zoho asset accounts. Discrepancy threshold: 0.01 USDC.
 - **At handoff.** When a brand is handed off, run the reconciliation script for both the old (holding or personal) wallet and the new brand-owned wallet over the full pre-handoff window. The token-range mismatches in section 3 of this doc are pre-existing as of 2026-05-09.
 
-### 9.5 Counterparty key (most-frequent counterparties seen in tx history)
+### 9.5 Pre-matched purchase ledger
+
+The reconciliation script in 9.2 covers the wallet-level on-chain history. To pre-match each `rrg_purchases` row against the on-chain tx (so daily booking is data-entry, not detective work), use the companion pipeline:
+
+1. **Refresh the purchases snapshot.** Run the SQL from the comment block at the top of [`docs/data/purchases-2026-05-10.json`](data/purchases-2026-05-10.json) in Supabase, save as `docs/data/purchases-{TODAY}.json`.
+2. **Run the matcher.** `node scripts/match-purchases.mjs docs/data/purchases-{TODAY}.json` writes `docs/wallet-matching-{TODAY}.md`.
+3. **Read the matching report.** Each purchase is verified on BOTH Base mainnet and Base Sepolia (the `rrg_purchases.network` column is unreliable, see section 9.6). The report categorises every row as: real mainnet (book), mislabelled (DO NOT BOOK), correctly-labelled Sepolia (DO NOT BOOK), or orphan (investigate).
+4. **Book section 2 of the matching report.** That's the verified mainnet ledger. Section 6 of the matching report is the unaccounted on-chain tx that need Richard's classification.
+
+First snapshot: [`wallet-matching-2026-05-10.md`](wallet-matching-2026-05-10.md).
+
+### 9.6 Data-quality flag: `rrg_purchases.network` is unreliable
+
+As of 2026-05-10, the `network` column does not reliably indicate which chain a tx was actually broadcast on. Verified counts from the matching pipeline:
+
+- 22 rows labelled `network='base'` whose tx exists on Sepolia (would over-state revenue if booked).
+- Multiple rows labelled `network='base-sepolia'` whose tx exists on Base mainnet (under-reports revenue if Sepolia rows are skipped naively).
+- 11 rows reference tx hashes that do not exist on either chain (orphan).
+
+Colin's only safe approach: verify each `tx_hash` directly via Blockscout before booking. The matching script does this automatically. Do not filter by `network` column alone.
+
+### 9.7 Counterparty key (most-frequent counterparties seen in tx history)
 
 These addresses come up repeatedly in the tx tables and are worth labelling in Zoho contact lists:
 
