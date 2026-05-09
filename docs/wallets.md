@@ -1,0 +1,164 @@
+# Wallet Register
+
+Source of truth for accounting. All addresses are on Base mainnet (chain ID 8453) unless otherwise stated. Values pulled from Supabase (`rrg_brands`, `rrg_submissions`) on 2026-05-09 and from canonical memory files (`wallet_separation.md`, `via_labs_structure.md`).
+
+This file is the input for Agent Colin (admin) to build a chart of accounts and bookkeeping ledger. When a wallet is added, removed, or handed off to a brand owner, update this file and Colin's snapshot job.
+
+## 1. Core operating wallets
+
+These are the wallets that get topped up for operations. Treat as company-controlled.
+
+| Role | ERC-8004 ID | Address | Notes |
+|------|------|---------|-------|
+| RRG / PLATFORM_WALLET | 33313 | `0xbfd71eA27FFc99747dA2873372f84346d9A8b7ed` | Platform agent. Receives on-chain 70% (or 97.5% for brand-owned drops) at sale. All RRG outreach, x402 receipts, marketing-oracle disbursements. Also the wallet referenced by `process.env.NEXT_PUBLIC_PLATFORM_WALLET` runtime fallback in `lib/rrg/splits.ts`, `lib/rrg/sendUsdc.ts`, `lib/rrg/mpp.ts`. |
+| DEPLOYER | 26244 | `0x369d04f08f245454926ac96a0164a634fd94660b` | Gas-only signer. Pays gas for `operatorMint` and ERC-8004 `submitFeedback`. Should hold ETH on Base only, no USDC. Cost centre. |
+| VIA Team Wallet | (owns #38538) | `0x58554E8423EF5C10be6fFC82EfABA9149f64de3d` | VIA Labs corporate. Owns staff and company NFTs. Owner of VIA Labs agent #38538 (getvia.xyz). x402 corporate wallet. Also the on-chain creator of two Digital Fashion Week tokens (42, 43). |
+| DrHobbs (personal) | 17666 | `0xe653804032A2d51Cc031795afC601B9b1fd2c375` | Richard's personal agent. Knowledge marketplace, x402, fashion-tech experiments. NOT used for RRG platform flows. Also flagged as a personal-pre-handoff wallet (see section 2) and historic on-chain creator of several test tokens. |
+
+## 2. Personal wallets used as brand placeholders before handoff
+
+Owned by Richard. Used as the brand `wallet_address` while a brand is in pre-handoff state. Once the brand owner accepts terms and provides their wallet, these get swapped out.
+
+| Address | Currently bound to | DB status | Notes |
+|---------|--------------------|-----------|-------|
+| `0x61e01997e6a0C692656e94955c67CB3ebcAb8f19` | East Coast Cassettes (`eastcoast`) | suspended / live onboarding | Also on-chain creator for tokens 28-33 (3 tokens). |
+| `0xc12Ecf02448e0E56DAd9C0D5473553b80d030D75` | Digital Fashion Week (`dfw`) | suspended | Heavy historical use as on-chain creator: RRG tokens 4-26 (11 tokens), East Coast Cassettes token 34, Artemist token 39. |
+| `0xdB59CD2c8F9c6e576510bf7ED294654f41241B65` | Not currently bound to any brand in DB | n/a | Personal wallet, not yet attached to a brand record. Top-ups recorded as personal, not platform. |
+| `0xe653804032A2d51Cc031795afC601B9b1fd2c375` | RRG (`rrg`, suspended), Test Brand (`test-brand`, abandoned) | suspended / abandoned | Same address as the DrHobbs agent in section 1. Historic on-chain creator for RRG tokens 5-38, Artemist 36, LIVVIUM 40-41, TYO 30, plus token 27 with no brand binding. |
+
+## 3. Brand-owned wallets (handed off, brand controls funds)
+
+Inbound USDC to these is the brand's cash. Platform sees only the 2.5% commission, paid via `lib/rrg/auto-payout.ts` before the brand transfer.
+
+| Brand | Slug | Wallet | DB status | Token range | Token count |
+|-------|------|--------|-----------|-------------|-------------|
+| Artemist | `artemist` | `0x2c9a1dadd6cb5425bf0e677fada64a257a558438` | active / live | n/a (no creator-wallet match in submissions; tokens 36, 39, 44 created from other wallets) | n/a |
+| Clooudie | `clooudie` | `0xca5c9c4da1787fea491ed6c94e86b04ec46be61d` | active / live | 516-530 | 15 |
+| Frey Tailored | `frey-tailored` | `0x30b1e8cc377a75d9664c26415a820c4925afa595` | active / live | 531-573 | 38 |
+| LIVVIUM | `livvium` | `0x019d94b9c90abd38f84ebbb488e6c833cdeffc57` | active / live | 218 | 1 |
+| MYKLÉ | `mykle` | `0x9eb5405fef682e1d4d555f64a683a499076556a3` | suspended / in_progress | 189-212 | 24 |
+| Nolo | `nolo` | `0x27daa49fb93445cdb6e3f3a6be7cd6bae1f04e2d` | active / in_progress | 571 (1) via brand wallet; 568-570 (3) via creator `0x891c13aa323378637404efd971553a3a6df5aaf1` | 4 across two creators |
+| PassportADV | `passport-adv` | `0xb4febbe6c0a0cd350c76054ccfd037d8bf47e502` | active / in_progress | 93-103 (creator was the holding wallet) | 11 (note: brand-table wallet differs from on-chain creator) |
+| The Year Of... | `tyo` | `0x699e234a877ba075e1f16abb63f895a8a2250388` | active / live | 29, 35 (2) via brand wallet; 30 via DrHobbs | 3 across two creators |
+| Unknown Union | `unknown-union` | `0xe7ed24a6a66170070c725451c003917da83871da` | active / live | 63-572 | 87 |
+
+### Brand-table-wallet vs on-chain-creator mismatches
+
+These are not errors, they are historic. Tokens minted before a brand was handed off carry the holding-wallet (or an admin wallet) as `creator_wallet`, while the brand row's `wallet_address` was updated at handoff. For accounting Colin needs both:
+
+- The **brand row wallet** is where the off-chain auto-payout sends the brand's share today.
+- The **token `creator_wallet`** is what the on-chain `mintWithPermit` 70% transfer pays. For brand-owned drops this should be `PLATFORM_WALLET`. For non-brand drops it is the original creator (Richard, a brand owner, etc).
+
+Confirmed mismatches (token range : on-chain creator vs current brand wallet):
+
+- Nolo: tokens 568-570 created by `0x891c13aa...` (handoff intermediary), token 571 by current brand wallet `0x27daa49f...`.
+- PassportADV: tokens 93-103 created by holding wallet `0x734a25fb...`, brand row now points to `0xb4febbe6...`.
+- The Year Of...: token 30 created by DrHobbs, tokens 29 and 35 by brand wallet.
+- Artemist: tokens 36, 39, 44 created by three different wallets (`0xe653...c375`, `0xc12e...0d75`, `0xf2e7...4b3e`); brand row now points to `0x2c9a1dad...`.
+
+## 4. Shared holding wallet (RRG Test Brands)
+
+| Address | Role |
+|---------|------|
+| `0x734a25fB869ab6415b78bbe9a39f1f99dab349E7` | Default `wallet_address` and on-chain `creator_wallet` for any brand mirror not yet handed off. USDC received here is a **liability** owed to the eventual brand owner at handoff, less platform commission. |
+
+Brands currently bound to this wallet (status = active, onboarding_status = in_progress unless noted, contact_email = `richard@entrepot.asia` in all cases):
+
+| Brand | Slug | Token range | Token count |
+|-------|------|-------------|-------------|
+| '47 | `47brand` | 596-599 | 4 |
+| 13DE MARZO | `13-de-marzo` | 283-287 | 5 |
+| Adapt | `adapt` | 229-233 | 5 |
+| BOBBYJOSEPH | `bobby-joseph` | 183-187 | 5 |
+| De La Soul | `de-la-soul` | 248-252 | 5 |
+| Eye Club | `eye-club` | 263-267 | 5 |
+| FULLYPAID CLOTHING | `fully-paid` | 600-604 | 5 |
+| Goodhood | `goodhood` | 268-272 | 5 |
+| Gumball 3000 | `gumball-3000` | 224-228 | 5 |
+| HoMie | `homie-au` | 492-501 | 10 |
+| howies | `howies` | 344-487 | 144 |
+| Jolie | `jolie` | 574 | 1 |
+| LES BASICS | `les-basics` | 219-223 | 5 |
+| Maison Archive | `maison-archive` | 78-82 | 5 |
+| New Era | `new-era` | 508-515 | 8 |
+| Nigel Cabourn | `cabourn` | 278-282 | 5 |
+| Nous Research | `nous-research` | 575-590 | 16 |
+| Philleywood | `philleywood` | 330-343 | 14 |
+| Pitchers Only | `pitchers-only` | 643-647 | 5 |
+| Private White V.C. | `private-white-vc` | 502-507 | 6 |
+| Pudgy Penguins | `pudgy-penguins` | 605-610 | 6 |
+| Shoyoroll | `shoyoroll` | 253-257 | 5 |
+| Soulland | `soulland` | 591-595 | 5 |
+| Stadium Goods | `stadium-goods` | 302 | 1 |
+| Standard & Strange | `standard-and-strange` | 238-301 | 19 |
+| Stuart Trevor | `stuart-trevor` | 258-262 | 5 |
+| The Merchant Fox | `the-merchant-fox` | 213-217 | 5 |
+| Toshi the Cat | `toshi` | 611-615 | 5 |
+| Unit 9 | `unit9` | 616-642 | 27 |
+| University of Diversity | `university-of-diversity` | 188 | 1 |
+| Vollebak | `vollebak` | 273-277 | 5 |
+| WASHI | `washi-jeans` | 243-247 | 5 |
+| WEINSANTO | `weinsanto` | 234-237 | 4 |
+
+## 5. Other on-chain creator wallets seen on RRG submissions
+
+These appear in `rrg_submissions.creator_wallet` but are not the current brand-table wallet for any brand. Useful only for historic-tx attribution.
+
+| Address | Tokens | Brand context |
+|---------|--------|---------------|
+| `0x0e0ef55048fb7b68b06dec7a6413b086a7ec029a` | token 13 | RRG submission, original creator |
+| `0x891c13aa323378637404efd971553a3a6df5aaf1` | tokens 568-570 (3) | Nolo handoff intermediary |
+| `0xf2e7289889ea5ecc557439a134906f77a1d64b3e` | token 44 | Artemist, original creator |
+| `0xf7bba988b1e9f28dcb293ed564b57f965ae1ec2b` | tokens 12, 19 (3 total) | RRG submission, original creator |
+
+## 6. Contract constants (not wallets, for tx classification)
+
+| Item | Address |
+|------|---------|
+| RRG ERC-1155 (live) | `0x9F07621f73E7CAaF2040C35833D5350F666b7177` |
+| USDC (Base) | `0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913` |
+| Identity Registry (ERC-8004) | `0x8004A169FB4a3325136EB29fA0ceB6D2e539a432` |
+| Reputation Registry (ERC-8004) | `0x8004BAa17C55a88189AE136b182e5fdA19dE9b63` |
+
+Deprecated RRG contract addresses (no current live drops, but historic txs may reference):
+
+- `0x447692F5136798ACB111a3fB61FD4202668a6994` (mainnet v4)
+- `0x1E1952Ae682252282f390CBa4b86c8A9de36778b` (mainnet v2)
+- `0xA16fdbA6D13b2ea5ae31099bb2a5D22621B50DE7` (mainnet v1)
+- `0x573fad302Be48df7D3A39B381e5E5e794619e174`, `0x3296e1AC4dd0ff665f82c7857D017841fAed311d` (Sepolia v1/v2)
+
+## 7. Accounting rules Colin should encode
+
+1. **DrHobbs and RRG are separate ledgers.** `0xe65380...c375` movements never reconcile against RRG platform P&L. Personal-vs-platform classification is the first split in any tx.
+2. **DEPLOYER is opex.** Gas top-ups to `0x369d04...660b` are operating expense, attributable to whichever signing operation triggered the burn (operatorMint, ERC-8004 signal, deploy script).
+3. **PLATFORM_WALLET inbound = gross revenue.** Treat USDC inbound to `0xbfd71e...b7ed` as gross sales. The off-chain auto-payout outbound is cost-of-sales (97.5% to brand for brand-owned drops). Do not net into a single line.
+4. **Holding-wallet receipts are a liability.** USDC in `0x734a25...49E7` for a not-yet-handed-off brand is owed to that brand at handoff. Track per-brand subledgers using the token ranges in section 4.
+5. **Brand-owned wallet inbound is the brand's cash, not ours.** Platform commission already settled by auto-payout split.
+6. **Section 2 personal wallets are personal.** Even when bound to a brand row, classify movements as Richard's personal until the brand is handed off and the wallet is replaced.
+7. **Token creator mismatch flag.** When a sale completes, the on-chain 70% lands at `getDrop(tokenId).creator`, not at the brand row's `wallet_address`. For brand-owned drops these should both resolve to `PLATFORM_WALLET`. If they ever diverge, see [feedback_register_drop_creator_must_be_platform.md](../../.claude/projects/C--Users-Richard-Documents-rrg/memory/feedback_register_drop_creator_must_be_platform.md) for the post-mortem and remediation pattern.
+
+## 8. Operational note: keeping this file fresh
+
+Authoritative live source for brand wallets is the `wallet_address` column in `rrg_brands`. For token-level attribution it is `creator_wallet` in `rrg_submissions`. Recommended Colin job (daily):
+
+```sql
+-- Brand wallets
+SELECT id, name, slug, wallet_address, status, onboarding_status, tier, contact_email
+FROM rrg_brands
+ORDER BY created_at;
+
+-- Token creators
+SELECT s.creator_wallet, b.name, b.slug, COUNT(*) AS tokens, MIN(s.token_id) AS min_t, MAX(s.token_id) AS max_t
+FROM rrg_submissions s
+LEFT JOIN rrg_brands b ON s.brand_id = b.id
+WHERE s.creator_wallet IS NOT NULL AND s.token_id IS NOT NULL
+GROUP BY s.creator_wallet, b.name, b.slug
+ORDER BY s.creator_wallet, b.name;
+```
+
+A daily diff against the prior snapshot will catch:
+- New brands being onboarded (new rows, holding-wallet bound).
+- Handoffs (brand wallet changes from holding wallet to brand-owned).
+- New tokens minted (extends token ranges).
+
+`.env.example` line 14 currently shows `NEXT_PUBLIC_PLATFORM_WALLET=0xe653804032A2d51Cc031795afC601B9b1fd2c375` (the DrHobbs address). Production env on the VPS uses the RRG wallet, and the runtime fallback in `lib/rrg/splits.ts` and elsewhere is also the RRG wallet, so live behaviour is correct. The example file is misleading and should be corrected in a follow-up.
