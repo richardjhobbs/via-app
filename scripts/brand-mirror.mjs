@@ -570,6 +570,11 @@ const CACHE_FILE = flag('--cache-file');
 const DRY_RUN    = args.includes('--dry-run');
 const SEED_ONLY  = args.includes('--seed-only');
 const NO_ENHANCE = args.includes('--no-enhance');
+// --ui-hidden: insert new rows with ui_visible=false so they enter the MCP
+// catalogue but stay off the human storefront grid. Existing rows are not
+// touched. Use when expanding a brand's MCP catalogue beyond the curated
+// few that humans see at /brand/[slug].
+const UI_HIDDEN  = args.includes('--ui-hidden');
 // Chain registration is now OPT-IN (safer default for pilots, onboarding
 // agents, and re-runs). Pass --commit-chain to actually call registerDrop on
 // Base mainnet. `--skip-chain` is still accepted as a no-op alias.
@@ -1224,6 +1229,10 @@ async function importProduct(product, brand) {
     // keeps unenhanced products out of MCP and the storefront. The enhance
     // step flips hidden=false on success. Opt out with --no-enhance.
     hidden:              NO_ENHANCE ? false : true,
+    // --ui-hidden: keep this row off the human storefront grid (UI surfaces
+    // filter ui_visible=true). MCP / agent surfaces don't filter it, so the
+    // product is still discoverable to agents once hidden=false.
+    ui_visible:          UI_HIDDEN ? false : true,
     product_attributes:  seededAttributes,
   };
   const { error: insErr } = await db.from('rrg_submissions').insert(insertRow);
@@ -1460,9 +1469,9 @@ _(none yet — fill in after the build)_
   if (results.length > 0 && !DRY_RUN && !NO_ENHANCE) {
     const tokens = results.map(r => r.token_id).filter(t => t != null).sort((a,b)=>a-b);
     console.log();
-    console.log(`[enhance] ${tokens.length} row(s) inserted with hidden=true. Enhance in-session, then flip hidden=false.`);
+    console.log(`[enhance] ${tokens.length} row(s) inserted with hidden=true${UI_HIDDEN ? ', ui_visible=false (MCP-only)' : ''}. Enhance in-session, then flip hidden=false.`);
     if (tokens.length > 0) console.log(`[enhance] tokens: ${tokens.join(', ')}`);
   } else if (NO_ENHANCE) {
-    console.log('[enhance] skipped (--no-enhance). Rows inserted with hidden=false directly.');
+    console.log(`[enhance] skipped (--no-enhance). Rows inserted with hidden=false${UI_HIDDEN ? ', ui_visible=false (MCP-only)' : ''} directly.`);
   }
 })().catch((e) => { console.error('FATAL:', e); process.exit(1); });
