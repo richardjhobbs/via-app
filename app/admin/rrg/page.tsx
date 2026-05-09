@@ -69,6 +69,7 @@ interface Drop {
   creator_type?: string | null;
   approved_at: string;
   hidden?: boolean;
+  ui_visible?: boolean;
   previewUrl?: string | null;
   jpeg_storage_path?: string | null;
   submission_channel?: string | null;
@@ -902,6 +903,7 @@ function DropsTab() {
   const [lightbox, setLightbox] = useState<string | null>(null);
   const [brandFilter, setBrandFilter] = useState<string>('all');
   const [typeFilter, setTypeFilter]   = useState<'all' | 'digital' | 'physical' | 'voucher'>('all');
+  const [visibilityFilter, setVisibilityFilter] = useState<'all' | 'storefront' | 'agent_only'>('all');
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -989,6 +991,18 @@ function DropsTab() {
     else setMsg('Error toggling visibility');
   };
 
+  const toggleUiVisible = async (d: Drop) => {
+    setActing(true);
+    const res = await fetch('/api/rrg/admin/drops', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ submissionId: d.id, ui_visible: !(d.ui_visible ?? true) }),
+    });
+    setActing(false);
+    if (res.ok) load();
+    else setMsg('Error toggling storefront visibility');
+  };
+
   const scanBase = 'https://basescan.org';
   const inputClass = 'w-full bg-transparent border border-white/20 px-3 py-1.5 text-base focus:border-white outline-none';
   const labelClass = 'text-sm font-mono text-white/60 block mb-1';
@@ -999,8 +1013,14 @@ function DropsTab() {
     if (typeFilter === 'physical' && !d.is_physical_product) return false;
     if (typeFilter === 'voucher' && !d.has_voucher) return false;
     if (typeFilter === 'digital' && (d.is_physical_product || d.has_voucher)) return false;
+    const uiVis = d.ui_visible ?? true;
+    if (visibilityFilter === 'storefront' && !uiVis) return false;
+    if (visibilityFilter === 'agent_only' && uiVis) return false;
     return true;
   });
+
+  const storefrontCount = drops.filter(d => (d.ui_visible ?? true) && !d.hidden).length;
+  const mcpCount        = drops.filter(d => !d.hidden).length;
 
   const filterSelectClass = 'bg-black border border-white/20 px-2 py-1.5 text-xs font-mono uppercase tracking-wider focus:border-white outline-none';
 
@@ -1038,8 +1058,18 @@ function DropsTab() {
           <option value="physical">Physical Product</option>
           <option value="voucher">Vouchers</option>
         </select>
+        <select
+          value={visibilityFilter}
+          onChange={(e) => setVisibilityFilter(e.target.value as 'all' | 'storefront' | 'agent_only')}
+          className={filterSelectClass}
+          title="Storefront = visible in human UI grid. Agent-only = hidden from UI but listed via MCP."
+        >
+          <option value="all">All Visibility</option>
+          <option value="storefront">Storefront (UI)</option>
+          <option value="agent_only">Agent-only (MCP)</option>
+        </select>
         <span className="text-xs font-mono text-white/40 ml-auto">
-          {filteredDrops.length} of {drops.length}
+          {filteredDrops.length} of {drops.length} • {storefrontCount} on storefront / {mcpCount} on MCP
         </span>
       </div>
 
@@ -1080,9 +1110,26 @@ function DropsTab() {
                       )}
                     </div>
                     <div className="flex gap-3 text-sm flex-shrink-0 ml-4">
-                      <label className="flex items-center gap-1.5 cursor-pointer" title={d.hidden ? 'Hidden' : 'Visible'}>
+                      <label className="flex items-center gap-1.5 cursor-pointer" title={d.hidden ? 'Hidden from every surface (UI + MCP + deep links)' : 'Listed across UI + MCP'}>
                         <input type="checkbox" checked={!d.hidden} onChange={() => toggleHidden(d)} disabled={acting} className="w-4 h-4 accent-white cursor-pointer" />
                         <span className="text-white/50 font-mono text-xs">{d.hidden ? 'Hidden' : 'Vis'}</span>
+                      </label>
+                      <label
+                        className={`flex items-center gap-1.5 cursor-pointer ${d.hidden ? 'opacity-30' : ''}`}
+                        title={d.hidden
+                          ? 'Hidden globally — storefront flag has no effect'
+                          : (d.ui_visible ?? true)
+                            ? 'Shown in storefront grid'
+                            : 'MCP-only: agents can find it, humans cannot browse to it from /brand'}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={d.ui_visible ?? true}
+                          disabled={acting || d.hidden}
+                          onChange={() => toggleUiVisible(d)}
+                          className="w-4 h-4 accent-white cursor-pointer"
+                        />
+                        <span className="text-white/50 font-mono text-xs">{(d.ui_visible ?? true) ? 'UI' : 'MCP'}</span>
                       </label>
                       <button onClick={() => editing === d.id ? setEditing(null) : startEdit(d)} className="text-white/50 hover:text-white transition-colors">
                         {editing === d.id ? 'Cancel' : 'Edit'}

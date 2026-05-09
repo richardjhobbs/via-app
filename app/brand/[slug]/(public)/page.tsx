@@ -34,7 +34,7 @@ export default async function BrandStorefront({
   const brand = await getBrandBySlug(slug);
   if (!brand || brand.status !== 'active') return notFound();
 
-  const [logoUrl, bannerUrl, brief, { drops, totalCount }, salesStats] = await Promise.all([
+  const [logoUrl, bannerUrl, brief, { drops, totalCount, mcpTotalCount }, salesStats] = await Promise.all([
     brand.logo_path ? getSignedUrl(brand.logo_path, 3600).catch(() => null) : Promise.resolve(null),
     brand.banner_path ? getSignedUrl(brand.banner_path, 3600).catch(() => null) : Promise.resolve(null),
     getCurrentBrief(brand.id),
@@ -140,6 +140,11 @@ export default async function BrandStorefront({
               style={!bannerUrl ? { color: 'var(--ink-3)' } : undefined}
             >
               <span>{totalCount} pieces</span>
+              {mcpTotalCount > totalCount && (
+                <span title="Storefront grid is curated. Agents can query the full catalogue via MCP.">
+                  {mcpTotalCount} in agent catalogue
+                </span>
+              )}
               {salesStats.totalSales > 0 && <span>{salesStats.totalSales} sold</span>}
               <span>Agent-ready</span>
             </div>

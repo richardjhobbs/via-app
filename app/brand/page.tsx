@@ -46,7 +46,8 @@ export default async function BrandsDirectoryPage() {
     return b.created_at.localeCompare(a.created_at);
   });
 
-  const totalProducts = directoryBrands.reduce((sum, b) => sum + b.product_count, 0);
+  const totalProducts    = directoryBrands.reduce((sum, b) => sum + b.product_count,     0);
+  const totalMcpProducts = directoryBrands.reduce((sum, b) => sum + b.mcp_product_count, 0);
 
   return (
     <div style={{ minHeight: '100vh', background: 'var(--bg)', color: 'var(--ink)' }}>
@@ -79,6 +80,11 @@ export default async function BrandsDirectoryPage() {
           }}>
             <span>{allBrands.length} brands</span>
             <span>{totalProducts.toLocaleString()} pieces listed</span>
+            {totalMcpProducts > totalProducts && (
+              <span title="Storefront grid is curated. The full catalogue is queryable by agents via MCP.">
+                {totalMcpProducts.toLocaleString()} in agent catalogue
+              </span>
+            )}
             <Link href="/create" style={{ color: 'var(--accent)', textDecoration: 'none', borderBottom: '1px solid color-mix(in srgb, var(--accent) 35%, transparent)' }}>
               Apply as a brand →
             </Link>

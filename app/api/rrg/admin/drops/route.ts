@@ -59,6 +59,7 @@ export async function PATCH(req: NextRequest) {
       const title = formData.get('title');
       const description = formData.get('description');
       const hidden = formData.get('hidden');
+      const ui_visible = formData.get('ui_visible');
       const price_usdc = formData.get('price_usdc');
       const edition_size = formData.get('edition_size');
       const creator_email = formData.get('creator_email');
@@ -69,6 +70,7 @@ export async function PATCH(req: NextRequest) {
       if (title !== null) updates.title = title;
       if (description !== null) updates.description = description;
       if (hidden !== null) updates.hidden = hidden === 'true';
+      if (ui_visible !== null) updates.ui_visible = ui_visible === 'true';
       if (creator_email !== null) updates.creator_email = creator_email || null;
       if (creator_handle !== null) updates.creator_handle = creator_handle || null;
       if (creator_bio !== null) updates.creator_bio = creator_bio || null;
@@ -95,6 +97,7 @@ export async function PATCH(req: NextRequest) {
       if (body.title !== undefined) updates.title = body.title;
       if (body.description !== undefined) updates.description = body.description;
       if (body.hidden !== undefined) updates.hidden = !!body.hidden;
+      if (body.ui_visible !== undefined) updates.ui_visible = !!body.ui_visible;
       if (body.creator_email !== undefined) updates.creator_email = body.creator_email || null;
       if (body.creator_handle !== undefined) updates.creator_handle = body.creator_handle || null;
       if (body.creator_bio !== undefined) updates.creator_bio = body.creator_bio || null;

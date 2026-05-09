@@ -162,6 +162,10 @@ export interface RrgSubmission {
   product_attributes: Record<string, unknown> | null;
   /** True = product subject is dark (show on light card bg). False = light subject (dark card). */
   image_is_dark: boolean | null;
+  /** True = render in the human storefront grid. False = MCP / agent only.
+   *  Distinct from `hidden` (hard kill-switch across every surface).
+   *  Default true; admins curate per-brand from /admin/rrg. */
+  ui_visible: boolean;
 }
 
 export interface RrgPurchase {
@@ -272,7 +276,10 @@ export interface BrandDirectoryItem {
   logo_path: string | null;
   banner_path: string | null;
   created_at: string;
+  /** Count of approved + non-hidden + ui_visible products. The storefront number. */
   product_count: number;
+  /** Count of approved + non-hidden products regardless of ui_visible. The full catalogue agents see via MCP. */
+  mcp_product_count: number;
   latest_product_at: string | null;
 }
 
@@ -289,11 +296,12 @@ export const getBrandsForDirectory = unstable_cache(
     }
     if (!brands || brands.length === 0) return [];
 
-    // Fetch product stats per brand (approved, visible drops)
+    // Fetch product stats per brand. Pull ui_visible too so we can split
+    // the count into UI (storefront grid) vs MCP (full agent catalogue).
     const brandIds = brands.map((b) => b.id);
     const { data: stats, error: statsError } = await db
       .from('rrg_submissions')
-      .select('brand_id, approved_at')
+      .select('brand_id, approved_at, ui_visible')
       .eq('status', 'approved')
       .eq('hidden', false)
       .in('brand_id', brandIds);
@@ -302,11 +310,12 @@ export const getBrandsForDirectory = unstable_cache(
       console.error('[getBrandsForDirectory] submissions stats query failed:', statsError);
     }
 
-    // Aggregate: count + latest approved_at per brand
-    const brandStats = new Map<string, { count: number; latest: string | null }>();
+    // Aggregate: ui_count + mcp_count + latest approved_at per brand
+    const brandStats = new Map<string, { ui_count: number; mcp_count: number; latest: string | null }>();
     for (const s of stats ?? []) {
-      const existing = brandStats.get(s.brand_id) ?? { count: 0, latest: null };
-      existing.count++;
+      const existing = brandStats.get(s.brand_id) ?? { ui_count: 0, mcp_count: 0, latest: null };
+      existing.mcp_count++;
+      if (s.ui_visible) existing.ui_count++;
       if (!existing.latest || s.approved_at > existing.latest) {
         existing.latest = s.approved_at;
       }
@@ -323,7 +332,8 @@ export const getBrandsForDirectory = unstable_cache(
         logo_path: b.logo_path,
         banner_path: b.banner_path,
         created_at: b.created_at,
-        product_count: st?.count ?? 0,
+        product_count: st?.ui_count ?? 0,
+        mcp_product_count: st?.mcp_count ?? 0,
         latest_product_at: st?.latest ?? null,
       };
     });
@@ -557,37 +567,72 @@ export async function getApprovedDrops(brandId?: string): Promise<RrgSubmission[
   return data ?? [];
 }
 
+/**
+ * UI-side product list. Filters to ui_visible=true so the storefront grid
+ * only shows curated products. For the full agent catalogue, MCP routes
+ * use getApprovedDrops / search_products_fts which intentionally do NOT
+ * apply the ui_visible filter.
+ *
+ * Returns:
+ *   - drops: paginated rows for this page
+ *   - totalCount: storefront-visible count (after ui_visible filter)
+ *   - mcpTotalCount: full MCP catalogue count for the same scope (briefId/brandId)
+ *
+ * mcpTotalCount lets the storefront render "X visible / Y in MCP catalogue"
+ * without a second round-trip from the page component.
+ */
 export async function getApprovedDropsPaginated(
   page: number,
   perPage: number,
   briefId?: string | null,
   brandId?: string,
-): Promise<{ drops: RrgSubmission[]; totalCount: number }> {
+): Promise<{ drops: RrgSubmission[]; totalCount: number; mcpTotalCount: number }> {
   const suspendedIds = brandId ? [] : await getNonActiveBrandIds();
 
   return unstable_cache(
     async () => {
       const offset = (page - 1) * perPage;
+      const network = getCurrentNetwork();
 
-      let query = db
+      // UI page rows: status + network + hidden=false + ui_visible=true
+      let pageQuery = db
         .from('rrg_submissions')
         .select('*', { count: 'exact' })
         .eq('status', 'approved')
-        .eq('network', getCurrentNetwork())
+        .eq('network', network)
+        .eq('hidden', false)
+        .eq('ui_visible', true);
+
+      // MCP total count for the same scope, no ui_visible filter
+      let mcpQuery = db
+        .from('rrg_submissions')
+        .select('id', { count: 'exact', head: true })
+        .eq('status', 'approved')
+        .eq('network', network)
         .eq('hidden', false);
 
-      if (briefId) query = query.eq('brief_id', briefId);
+      if (briefId) {
+        pageQuery = pageQuery.eq('brief_id', briefId);
+        mcpQuery  = mcpQuery.eq('brief_id', briefId);
+      }
       if (brandId) {
-        query = query.eq('brand_id', brandId);
+        pageQuery = pageQuery.eq('brand_id', brandId);
+        mcpQuery  = mcpQuery.eq('brand_id', brandId);
       } else if (suspendedIds.length > 0) {
-        query = query.not('brand_id', 'in', `(${suspendedIds.join(',')})`);
+        pageQuery = pageQuery.not('brand_id', 'in', `(${suspendedIds.join(',')})`);
+        mcpQuery  = mcpQuery.not('brand_id', 'in', `(${suspendedIds.join(',')})`);
       }
 
-      const { data, count } = await query
-        .order('approved_at', { ascending: false })
-        .range(offset, offset + perPage - 1);
+      const [{ data, count }, { count: mcpCount }] = await Promise.all([
+        pageQuery.order('approved_at', { ascending: false }).range(offset, offset + perPage - 1),
+        mcpQuery,
+      ]);
 
-      return { drops: data ?? [], totalCount: count ?? 0 };
+      return {
+        drops: data ?? [],
+        totalCount: count ?? 0,
+        mcpTotalCount: mcpCount ?? 0,
+      };
     },
     [`drops-paginated-${page}-${perPage}-${briefId ?? 'all'}-${brandId ?? 'all'}-sus${suspendedIds.length}`],
     { revalidate: 30, tags: ['drops'] },
