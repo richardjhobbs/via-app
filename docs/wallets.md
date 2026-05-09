@@ -216,7 +216,7 @@ Useful endpoints (replace `{addr}` with a checksummed wallet address):
 
 **Important:** the `?token=ADDRESS` query param does NOT filter on the server. Always filter the response client-side by `token.address_hash` to drop phishing tokens that spoof USDC's name and symbol. The real USDC is `0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913` (case-insensitive compare).
 
-Example reconciliation script in this repo: [`scripts/reconcile-personal-wallets.mjs`](../scripts/reconcile-personal-wallets.mjs). Run with `node scripts/reconcile-personal-wallets.mjs` from the repo root. Outputs a markdown report to `docs/wallet-reconciliation-YYYY-MM-DD.md`. First snapshot: [`wallet-reconciliation-2026-05-10.md`](wallet-reconciliation-2026-05-10.md).
+Reconciliation script in this repo: [`scripts/reconcile-wallets.mjs`](../scripts/reconcile-wallets.mjs). Run with `node scripts/reconcile-wallets.mjs` from the repo root. Pulls all 21 wallets in this register (every group: core operating, personal pre-handoff, brand-owned, holding, historic creators), writes a markdown report to `docs/wallet-reconciliation-YYYY-MM-DD.md`, and prints a JSON dump to stdout. Uses chunked concurrency (4 wallets at a time) to respect Blockscout rate limits. First snapshot: [`wallet-reconciliation-2026-05-10.md`](wallet-reconciliation-2026-05-10.md).
 
 ### 9.3 External: Etherscan unified V2 (paid, only if free tier insufficient)
 
