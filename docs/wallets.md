@@ -240,15 +240,18 @@ The reconciliation script in 9.2 covers the wallet-level on-chain history. To pr
 
 First snapshot: [`wallet-matching-2026-05-10.md`](wallet-matching-2026-05-10.md).
 
-### 9.6 Data-quality flag: `rrg_purchases.network` is unreliable
+### 9.6 Data-quality cleanup (2026-05-10): network column backfilled, Sepolia rows removed
 
-As of 2026-05-10, the `network` column does not reliably indicate which chain a tx was actually broadcast on. Verified counts from the matching pipeline:
+On 2026-05-10, [`scripts/fix-purchases-network.mjs`](../scripts/fix-purchases-network.mjs) was run with `--apply` to:
 
-- 22 rows labelled `network='base'` whose tx exists on Sepolia (would over-state revenue if booked).
-- Multiple rows labelled `network='base-sepolia'` whose tx exists on Base mainnet (under-reports revenue if Sepolia rows are skipped naively).
-- 11 rows reference tx hashes that do not exist on either chain (orphan).
+- Verify every `rrg_purchases.tx_hash` against both Base mainnet and Base Sepolia via Blockscout.
+- Update the `network` column for 13 rows mislabelled as `base-sepolia` but verified on mainnet (real April-May Clooudie / Frey / Nolo / Unknown Union sales).
+- Update the `network` column for 22 rows mislabelled as `base` but verified on Sepolia (intermediate step before delete).
+- DELETE 22 verified-Sepolia rows (testnet, no accounting value).
 
-Colin's only safe approach: verify each `tx_hash` directly via Blockscout before booking. The matching script does this automatically. Do not filter by `network` column alone.
+After cleanup: 28 rows remain in `rrg_purchases`, all `network='base'`. Of those, 17 are verified on Base mainnet (book as revenue) and 11 are orphan rows whose tx is not found on either chain (March 10-13 cluster, gross 8.00 USDC, untouched pending Richard's review).
+
+Going forward, the `network` column should be reliable. Re-run the fix script after any re-deployment of the platform from a Sepolia-configured environment, and any time orphans need to be re-checked (Blockscout indexing can change).
 
 ### 9.7 Counterparty key (most-frequent counterparties seen in tx history)
 

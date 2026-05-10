@@ -1,18 +1,18 @@
 # Wallet Matching Report: Pre-classified Ledger for Colin
 
-Generated 2026-05-09. Source: `docs/data/purchases-2026-05-10.json` (snapshot 2026-05-10, 50 purchase rows). Every `tx_hash` and payout-leg hash was verified against BOTH Base mainnet (https://base.blockscout.com) and Base Sepolia (https://base-sepolia.blockscout.com) to determine its actual chain.
+Generated 2026-05-10. Source: live Supabase query, 28 purchase rows. Every `tx_hash` and payout-leg hash was verified against BOTH Base mainnet (https://base.blockscout.com) and Base Sepolia (https://base-sepolia.blockscout.com) to determine its actual chain.
 
-**Critical data-quality finding.** The `rrg_purchases.network` column is unreliable: a significant number of rows are labelled `network='base'` but the tx actually exists on Sepolia. Some rows reference tx hashes that do not exist on either chain. Booking decisions must use the **verified actual chain**, not the DB column.
+**Note on data quality.** The Sepolia testnet rows were removed from `rrg_purchases` on 2026-05-10 (testnet has no accounting value). The `network` column for remaining rows was backfilled to match the verified chain. Going forward, the column should be reliable. Orphan rows (tx not found on either chain) are listed in section 5 for manual review.
 
 ## 1. Summary by verified chain
 
 | Category | Rows | Gross USDC | Action |
 |----------|-----:|-----------:|--------|
 | Real Base mainnet (book) | 17 | 8.80 | Post to Zoho as revenue |
-| Mislabelled (DB=base, actual=Sepolia) | 22 | 21.00 | DO NOT BOOK. Flag for DB correction |
+| Mislabelled (DB=base, actual=Sepolia) | 0 | 0.00 | DO NOT BOOK. Flag for DB correction |
 | Correctly labelled Sepolia | 0 | 0.00 | DO NOT BOOK. Test data |
 | Orphan (tx not found on either chain) | 11 | 8.00 | DO NOT BOOK. Investigate with Richard |
-| **Total** | **50** | **37.80** | |
+| **Total** | **28** | **16.80** | |
 
 Real revenue (gross): **8.80 USDC** across 17 sales.
 
@@ -22,54 +22,31 @@ Each row is a verified Base mainnet sale. Splits sum to amount_usdc. Where split
 
 | Date | Brand | Token | Gross | Brand | Platform | Creator | DB label | Buyer | Sale tx | Payout legs |
 |------|-------|------:|------:|------:|---------:|--------:|----------|-------|---------|-------------|
-| 2026-05-06 | Clooudie | 530 | 0.50 | 0.49 | 0.01 | 0.00 | `base-sepolia` ⚠ | `0xe6538040…` | [`0x928a4b7d…`](https://basescan.org/tx/0x928a4b7d0152eea1e7515e34bf978faf3426af7168697d99e062f85c1aa64b67) | brand:[`0x2601226d…`](https://basescan.org/tx/0x2601226dd5b263ae2d2cd68b9d0eee8b3d7c06437dabcee3cc2e918b035bc4a1)[✓] |
-| 2026-04-28 | Unknown Union | 491 | 0.50 | 0.49 | 0.01 | 0.00 | `base-sepolia` ⚠ | `0xe6538040…` | [`0x0796f5e5…`](https://basescan.org/tx/0x0796f5e5911d0b8012436326cbd464b1902e9388c9d02fdf86f80e611e9c92d7) | brand:[`0x6183c095…`](https://basescan.org/tx/0x6183c095e1c5144e0b63d60d48606256c6ab7d9ec2426bf59873682a4aca37c4)[✓] |
-| 2026-04-28 | Clooudie | 489 | 0.50 | 0.49 | 0.01 | 0.00 | `base-sepolia` ⚠ | `0xe6538040…` | [`0xe6b3fcbb…`](https://basescan.org/tx/0xe6b3fcbb0000a6c8241e674642c6610bdc12c322be4b1ba6d25b162feb7af05b) | brand:[`0xa8c0d133…`](https://basescan.org/tx/0xa8c0d13311b1f66cf3bd3c62334c1db258f94202b978c72cf5f9d73219b91df1)[✓] |
-| 2026-04-27 | Frey Tailored | 490 | 0.50 | 0.49 | 0.01 | 0.00 | `base-sepolia` ⚠ | `0xe6538040…` | [`0x365dbc9d…`](https://basescan.org/tx/0x365dbc9dba9feb2ff6093cb035c924653bf25782c203c05e89b8d3e410912ef6) | brand:[`0xaeb39820…`](https://basescan.org/tx/0xaeb39820adb6e7433739c095327f5fda69df16f8606cea3656f4c3ade51f1226)[✓] |
-| 2026-04-27 | Nolo | 488 | 0.50 | 0.49 | 0.01 | 0.00 | `base-sepolia` ⚠ | `0xe6538040…` | [`0xba1d2ab2…`](https://basescan.org/tx/0xba1d2ab27c8fbf8d911ed1685deab827c54b598495ce81c1ed7cd977ea4d206a) | brand:[`0x62bf0ed5…`](https://basescan.org/tx/0x62bf0ed58ed4e33cfcf6d990961ef7b6448d1ab541f69fb47aab4155b88652d0)[✓] |
-| 2026-04-27 | Nolo | 488 | 0.50 | 0.49 | 0.01 | 0.00 | `base-sepolia` ⚠ | `0xe6538040…` | [`0x4340636f…`](https://basescan.org/tx/0x4340636f67918b785b71bcec4867e84bcf11d07d986c3d245694fd7acf91d014) | brand:[`0x1371e430…`](https://basescan.org/tx/0x1371e43057cbb8f294fd6b6e97148348370d1e288370d51b8abe2a111a5b9801)[✓] |
-| 2026-03-20 | RRG | 38 | 0.10 | 0.07 | 0.03 | 0.00 | `base-sepolia` ⚠ | `0xe6538040…` | [`0x98303a99…`](https://basescan.org/tx/0x98303a991a189df87ebe1f2be02f0c38cce398f37a048fd57692feebdd3755c6) | brand:[`0x9cd2258d…`](https://basescan.org/tx/0x9cd2258d562cc19fda71c856bbe8c868c0d43110b429c86adf1d6713c9449287)[✓] |
+| 2026-05-06 | Clooudie | 530 | 0.50 | 0.49 | 0.01 | 0.00 | `base` ✓ | `0xe6538040…` | [`0x928a4b7d…`](https://basescan.org/tx/0x928a4b7d0152eea1e7515e34bf978faf3426af7168697d99e062f85c1aa64b67) | brand:[`0x2601226d…`](https://basescan.org/tx/0x2601226dd5b263ae2d2cd68b9d0eee8b3d7c06437dabcee3cc2e918b035bc4a1)[✓] |
+| 2026-04-28 | Unknown Union | 491 | 0.50 | 0.49 | 0.01 | 0.00 | `base` ✓ | `0xe6538040…` | [`0x0796f5e5…`](https://basescan.org/tx/0x0796f5e5911d0b8012436326cbd464b1902e9388c9d02fdf86f80e611e9c92d7) | brand:[`0x6183c095…`](https://basescan.org/tx/0x6183c095e1c5144e0b63d60d48606256c6ab7d9ec2426bf59873682a4aca37c4)[✓] |
+| 2026-04-28 | Clooudie | 489 | 0.50 | 0.49 | 0.01 | 0.00 | `base` ✓ | `0xe6538040…` | [`0xe6b3fcbb…`](https://basescan.org/tx/0xe6b3fcbb0000a6c8241e674642c6610bdc12c322be4b1ba6d25b162feb7af05b) | brand:[`0xa8c0d133…`](https://basescan.org/tx/0xa8c0d13311b1f66cf3bd3c62334c1db258f94202b978c72cf5f9d73219b91df1)[✓] |
+| 2026-04-27 | Frey Tailored | 490 | 0.50 | 0.49 | 0.01 | 0.00 | `base` ✓ | `0xe6538040…` | [`0x365dbc9d…`](https://basescan.org/tx/0x365dbc9dba9feb2ff6093cb035c924653bf25782c203c05e89b8d3e410912ef6) | brand:[`0xaeb39820…`](https://basescan.org/tx/0xaeb39820adb6e7433739c095327f5fda69df16f8606cea3656f4c3ade51f1226)[✓] |
+| 2026-04-27 | Nolo | 488 | 0.50 | 0.49 | 0.01 | 0.00 | `base` ✓ | `0xe6538040…` | [`0xba1d2ab2…`](https://basescan.org/tx/0xba1d2ab27c8fbf8d911ed1685deab827c54b598495ce81c1ed7cd977ea4d206a) | brand:[`0x62bf0ed5…`](https://basescan.org/tx/0x62bf0ed58ed4e33cfcf6d990961ef7b6448d1ab541f69fb47aab4155b88652d0)[✓] |
+| 2026-04-27 | Nolo | 488 | 0.50 | 0.49 | 0.01 | 0.00 | `base` ✓ | `0xe6538040…` | [`0x4340636f…`](https://basescan.org/tx/0x4340636f67918b785b71bcec4867e84bcf11d07d986c3d245694fd7acf91d014) | brand:[`0x1371e430…`](https://basescan.org/tx/0x1371e43057cbb8f294fd6b6e97148348370d1e288370d51b8abe2a111a5b9801)[✓] |
+| 2026-03-20 | RRG | 38 | 0.10 | 0.07 | 0.03 | 0.00 | `base` ✓ | `0xe6538040…` | [`0x98303a99…`](https://basescan.org/tx/0x98303a991a189df87ebe1f2be02f0c38cce398f37a048fd57692feebdd3755c6) | brand:[`0x9cd2258d…`](https://basescan.org/tx/0x9cd2258d562cc19fda71c856bbe8c868c0d43110b429c86adf1d6713c9449287)[✓] |
 | 2026-03-20 | RRG | 38 | 0.10 | 0.07 | 0.03 | 0.00 | `base` ✓ | `0x2c9a1dad…` | [`0xdbb96084…`](https://basescan.org/tx/0xdbb960840bb5758abf4e6646f86399357031dd5667ee9e97bbd282608b8f2b5d) | brand:[`0x7a126bf1…`](https://basescan.org/tx/0x7a126bf1403eca4833ee88c692238015486045fefb1137605365277b5744421f)[✓] |
 | 2026-03-20 | RRG | 38 | 0.10 | 0.07 | 0.03 | 0.00 | `base` ✓ | `0x2c9a1dad…` | [`0x47f42180…`](https://basescan.org/tx/0x47f421804d0797cc7c3259b393c6cbb45edcd3a052a46c759d9c0ebe9218ef95) | brand:[`0xc8ba66b8…`](https://basescan.org/tx/0xc8ba66b8bcdaef2d4c0b2eb574f6a62366d504598abc42e825caecef6d20778f)[✓] |
-| 2026-03-19 | RRG | 5 | 0.50 | 0.00 | 0.15 | 0.35 | `base-sepolia` ⚠ | `0xe6538040…` | [`0x4f39efcc…`](https://basescan.org/tx/0x4f39efcc967ab6b14d073823b177a8a0eca2eecdef309ba5e9213362cc548178) | _legacy_ |
-| 2026-03-19 | East Coast Cassettes | 34 | 1.00 | 0.35 | 0.30 | 0.35 | `base-sepolia` ⚠ | `0xe6538040…` | [`0x9f8e12cc…`](https://basescan.org/tx/0x9f8e12ccd0b0da5ec07e9b0c1999e0961f7ae7d370d5613f3576bbdcc76c775e) | creator:[`0xa99ff082…`](https://basescan.org/tx/0xa99ff0827ad70926a5238c7e4e9c5b01f813f580b26cc1abd25fb45e7eec38d7)[✓]<br>brand:[`0x43466af9…`](https://basescan.org/tx/0x43466af97ccc759516df3867f47663b35e987e16cf753269345d936a8aacd0c3)[✓] |
-| 2026-03-18 | East Coast Cassettes | 28 | 0.50 | 0.35 | 0.15 | 0.00 | `base-sepolia` ⚠ | `0xe6538040…` | [`0xe620d9f4…`](https://basescan.org/tx/0xe620d9f4d8c6f159ae47275860e456afae6fc7d35f00880ee6b8b7f637ee6487) | brand:[`0x5bb1c783…`](https://basescan.org/tx/0x5bb1c78367599fbc5adf4585251a0e2c5e15a681dfc16073b375391bcd7202e2)[✓] |
-| 2026-03-18 | East Coast Cassettes | 28 | 0.50 | 0.35 | 0.15 | 0.00 | `base-sepolia` ⚠ | `0xe6538040…` | [`0x54d21d08…`](https://basescan.org/tx/0x54d21d08ae2ec8047afb564a423da8157160ca7d315930912cdecc7f0df2956f) | brand:[`0xb06c134b…`](https://basescan.org/tx/0xb06c134b1d14c426fc6ba69c94faf61b0128647d30ca327b6dbc681d77acb8d0)[✓] |
+| 2026-03-19 | RRG | 5 | 0.50 | 0.00 | 0.15 | 0.35 | `base` ✓ | `0xe6538040…` | [`0x4f39efcc…`](https://basescan.org/tx/0x4f39efcc967ab6b14d073823b177a8a0eca2eecdef309ba5e9213362cc548178) | _legacy_ |
+| 2026-03-19 | East Coast Cassettes | 34 | 1.00 | 0.35 | 0.30 | 0.35 | `base` ✓ | `0xe6538040…` | [`0x9f8e12cc…`](https://basescan.org/tx/0x9f8e12ccd0b0da5ec07e9b0c1999e0961f7ae7d370d5613f3576bbdcc76c775e) | creator:[`0xa99ff082…`](https://basescan.org/tx/0xa99ff0827ad70926a5238c7e4e9c5b01f813f580b26cc1abd25fb45e7eec38d7)[✓]<br>brand:[`0x43466af9…`](https://basescan.org/tx/0x43466af97ccc759516df3867f47663b35e987e16cf753269345d936a8aacd0c3)[✓] |
+| 2026-03-18 | East Coast Cassettes | 28 | 0.50 | 0.35 | 0.15 | 0.00 | `base` ✓ | `0xe6538040…` | [`0xe620d9f4…`](https://basescan.org/tx/0xe620d9f4d8c6f159ae47275860e456afae6fc7d35f00880ee6b8b7f637ee6487) | brand:[`0x5bb1c783…`](https://basescan.org/tx/0x5bb1c78367599fbc5adf4585251a0e2c5e15a681dfc16073b375391bcd7202e2)[✓] |
+| 2026-03-18 | East Coast Cassettes | 28 | 0.50 | 0.35 | 0.15 | 0.00 | `base` ✓ | `0xe6538040…` | [`0x54d21d08…`](https://basescan.org/tx/0x54d21d08ae2ec8047afb564a423da8157160ca7d315930912cdecc7f0df2956f) | brand:[`0xb06c134b…`](https://basescan.org/tx/0xb06c134b1d14c426fc6ba69c94faf61b0128647d30ca327b6dbc681d77acb8d0)[✓] |
 | 2026-03-16 | East Coast Cassettes | 32 | 0.50 | 0.35 | 0.15 | 0.00 | `base` ✓ | `0x2c9a1dad…` | [`0xd6db1cf8…`](https://basescan.org/tx/0xd6db1cf8f096f5cfe7cc9ca09a70a800ba55db427ef13fa32b27f1dd3286a08d) | _legacy_ |
-| 2026-03-16 | RRG | 13 | 0.50 | 0.00 | 0.32 | 0.18 | `base-sepolia` ⚠ | `0x25b22971…` | [`0x437af8fd…`](https://basescan.org/tx/0x437af8fd3abd8fc87e5f25c5768afc5d594a8ab1f5b985419878d10a95f27c26) | creator:[`0x57ddd9b1…`](https://basescan.org/tx/0x57ddd9b19ac085fd9bc7677b45256e14f86e765076efa7199f7c1e7b2c69a8c7)[✓] |
-| 2026-03-09 | RRG | 22 | 1.00 | _legacy_ | _legacy_ | _legacy_ | `base-sepolia` ⚠ | `0x369d04f0…` | [`0x3c9d6ef8…`](https://basescan.org/tx/0x3c9d6ef84775032d7f966fc09eeeed3ad9c3bfc3b28e4cfaa42ed144d3236370) | _legacy_ |
+| 2026-03-16 | RRG | 13 | 0.50 | 0.00 | 0.32 | 0.18 | `base` ✓ | `0x25b22971…` | [`0x437af8fd…`](https://basescan.org/tx/0x437af8fd3abd8fc87e5f25c5768afc5d594a8ab1f5b985419878d10a95f27c26) | creator:[`0x57ddd9b1…`](https://basescan.org/tx/0x57ddd9b19ac085fd9bc7677b45256e14f86e765076efa7199f7c1e7b2c69a8c7)[✓] |
+| 2026-03-09 | RRG | 22 | 1.00 | _legacy_ | _legacy_ | _legacy_ | `base` ✓ | `0x369d04f0…` | [`0x3c9d6ef8…`](https://basescan.org/tx/0x3c9d6ef84775032d7f966fc09eeeed3ad9c3bfc3b28e4cfaa42ed144d3236370) | _legacy_ |
 | 2026-03-09 | RRG | 22 | 1.00 | _legacy_ | _legacy_ | _legacy_ | `base` ✓ | `0xc12ecf02…` | [`0xfaf35806…`](https://basescan.org/tx/0xfaf35806fb04e5b3f04c041b86bd294b42b6db9cbc1e138fde5a29a7f8c99d12) | _legacy_ |
 
 Legend: `base` ✓ = DB label and verified chain agree. `base-sepolia` ⚠ = DB labelled this as test data but the tx is real Base mainnet (under-reports revenue). `✓` payout leg verified on mainnet, `sep` payout leg actually on Sepolia, `?` not found on either chain.
 
 ## 3. Mislabelled rows: DB says `base` but tx is on Sepolia (DO NOT BOOK)
 
-These 22 rows would over-state revenue if Colin trusted the `network` column. Treat as test data.
+These 0 rows would over-state revenue if Colin trusted the `network` column. Treat as test data.
 
-| Date | Brand | Token | Gross | Buyer | Sepolia tx |
-|------|-------|------:|------:|-------|------------|
-| 2026-03-09 | RRG | 8 | 1.00 | `0x369d04f0…` | [`0x18d1498c…`](https://sepolia.basescan.org/tx/0x18d1498cfdaaa7580e067843401bb63fc9d48d68e45e91d5f7bf28737c0a3c6c) |
-| 2026-03-09 | RRG | 8 | 1.00 | `0xc12ecf02…` | [`0x9747c5a0…`](https://sepolia.basescan.org/tx/0x9747c5a08364a7cbcac5a982fe3f50c2a6b79ece74dc971e91dd97297ccc053e) |
-| 2026-03-09 | RRG | 8 | 1.00 | `0x369d04f0…` | [`0x3a685cf7…`](https://sepolia.basescan.org/tx/0x3a685cf7adc6a234338c0c2ec7ec00be48f6fb1deb0e09c030fda74afcb9daa2) |
-| 2026-03-09 | RRG | 24 | 1.50 | `0x369d04f0…` | [`0x09bbcf7e…`](https://sepolia.basescan.org/tx/0x09bbcf7eb4d0961ba93f044607a040810e79ab3b61aea09cc684761a58174167) |
-| 2026-03-09 | RRG | 23 | 1.00 | `0xc12ecf02…` | [`0x06cf1b02…`](https://sepolia.basescan.org/tx/0x06cf1b0268cd89970134e633fa33cca21dd4691a83f50cf785357900ccd78620) |
-| 2026-03-09 | RRG | 13 | 0.50 | `0xc12ecf02…` | [`0xedd4c99b…`](https://sepolia.basescan.org/tx/0xedd4c99b159bdc6e3068fe09184e144ed8e7e2ac4aa3c1a2f93c467605394bc7) |
-| 2026-03-09 | RRG | 21 | 1.50 | `0xc12ecf02…` | [`0xebc171a1…`](https://sepolia.basescan.org/tx/0xebc171a111c10a1b131e25516f22395876b4d654a0860a0a75885a1ca6da3eeb) |
-| 2026-03-08 | RRG | 18 | 1.00 | `0xc12ecf02…` | [`0x6b60b96d…`](https://sepolia.basescan.org/tx/0x6b60b96d5947fab33e66d99e83ce986d3bd91f15a6a02d6b78ed3f069ca49fba) |
-| 2026-03-08 | RRG | 19 | 1.00 | `0xc12ecf02…` | [`0xe13fbe44…`](https://sepolia.basescan.org/tx/0xe13fbe442698199ec8f3ecdbd817c392ddcdbc3daf06f2367c3cf38b597aa9fc) |
-| 2026-03-08 | RRG | 12 | 1.00 | `0xf7bba988…` | [`0xc8e13347…`](https://sepolia.basescan.org/tx/0xc8e13347efa002c5c0b50702e6a1c1cbbc19ce537089236a546fa1d906aaf3f5) |
-| 2026-03-08 | RRG | 17 | 1.00 | `0x9f783931…` | [`0xf0ad6baf…`](https://sepolia.basescan.org/tx/0xf0ad6baf10d61f2867a4c679d187ae41ca0746612ea1f4662e49d31a799e0bcb) |
-| 2026-03-08 | RRG | 8 | 1.00 | `0xc12ecf02…` | [`0xfb0bf265…`](https://sepolia.basescan.org/tx/0xfb0bf26599b80bcfdbea7771fac85218b2b6d45988b1cd94a4ba4039b4069fe0) |
-| 2026-03-08 | RRG | 13 | 0.50 | `0xc12ecf02…` | [`0xabdac0f8…`](https://sepolia.basescan.org/tx/0xabdac0f8eb852bdacc6257896bd134e6611b8e69e6867aeac6ff462072036924) |
-| 2026-03-08 | RRG | 14 | 1.00 | `0xc12ecf02…` | [`0x3f6f4c6e…`](https://sepolia.basescan.org/tx/0x3f6f4c6e06e5b6800a4a199df52bc4025b191d5e9d99dc1f7ac609d0f76d27af) |
-| 2026-03-08 | RRG | 14 | 1.00 | `0xc12ecf02…` | [`0xe68561ab…`](https://sepolia.basescan.org/tx/0xe68561ab6420699b3195879cfb62faf6b13bab1d0195f7d6e41f0a93749a3dd8) |
-| 2026-03-08 | RRG | 15 | 1.00 | `0xc12ecf02…` | [`0x4395c628…`](https://sepolia.basescan.org/tx/0x4395c628a231ece6ac8cbb056c5707d93f7a7c2379908e9eb6095ee9f955ebc4) |
-| 2026-03-07 | RRG | 13 | 0.50 | `0xc12ecf02…` | [`0x82254ff1…`](https://sepolia.basescan.org/tx/0x82254ff1ff1cdfab1200aa813f71cb98ee221c63207677514df989fa4a45dd86) |
-| 2026-03-07 | RRG | 12 | 1.00 | `0xc12ecf02…` | [`0x949c4821…`](https://sepolia.basescan.org/tx/0x949c4821a2c6194574fe28305dceadabc1eb31adf911fc179c066d1c8e4bc702) |
-| 2026-03-07 | RRG | 10 | 1.00 | `0x0e0ef550…` | [`0xef0b7f3c…`](https://sepolia.basescan.org/tx/0xef0b7f3c63b11dbc872be6518acb95404cf6eecde120b843ad9226e2239a2de8) |
-| 2026-03-07 | RRG | 8 | 1.00 | `0xc12ecf02…` | [`0x9131e42e…`](https://sepolia.basescan.org/tx/0x9131e42e85acb29653316eb105e818aa1b9bb9229847925942ea4979fc4a34ac) |
-| 2026-03-06 | RRG | 5 | 0.50 | `0xc12ecf02…` | [`0xe630e844…`](https://sepolia.basescan.org/tx/0xe630e8448cdd69ba4143b1ad2df85e2fe58a50db66677949ce83e01d6aa5fd75) |
-| 2026-03-06 | RRG | 6 | 1.00 | `0xc12ecf02…` | [`0xd703a07e…`](https://sepolia.basescan.org/tx/0xd703a07e683b26ac9a172680ead2ef437b0cd435eb680f40eda014254104f654) |
+None.
 
 ## 4. Correctly labelled Sepolia rows (DO NOT BOOK, no issue)
 

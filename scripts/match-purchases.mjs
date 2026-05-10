@@ -1,14 +1,15 @@
 #!/usr/bin/env node
-// Cross-matches rrg_purchases (snapshot in docs/data/purchases-{DATE}.json) against the on-chain
-// transfer history (Blockscout V2) for every wallet in the register. Produces a single comprehensive
-// markdown report at docs/wallet-matching-{TODAY}.md so Colin can pre-populate Zoho.
+// Cross-matches rrg_purchases against on-chain transfer history (Blockscout V2) for every wallet
+// in the register. Produces a single comprehensive markdown report at
+// docs/wallet-matching-{TODAY}.md so Colin can pre-populate Zoho.
 //
-// Usage: node scripts/match-purchases.mjs [path-to-purchases.json]
-// If no arg given, defaults to docs/data/purchases-2026-05-10.json.
+// Default: queries Supabase live via service-role key from .env.local.
+// Override: pass a JSON snapshot path as argv[1] to use a frozen-in-time snapshot.
 
 import { readFileSync, writeFileSync } from 'node:fs';
+import { createClient } from '@supabase/supabase-js';
 
-const PURCHASES_PATH = process.argv[2] || 'docs/data/purchases-2026-05-10.json';
+const PURCHASES_PATH = process.argv[2] || null;
 const USDC = '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913';
 const TODAY = new Date().toISOString().slice(0, 10);
 
@@ -64,7 +65,46 @@ async function pullWallet(w) {
     }));
 }
 
-const purchasesDoc = JSON.parse(readFileSync(PURCHASES_PATH, 'utf8'));
+let purchasesDoc;
+if (PURCHASES_PATH) {
+  purchasesDoc = JSON.parse(readFileSync(PURCHASES_PATH, 'utf8'));
+} else {
+  const ENV_PATH = process.env.RRG_ENV_PATH || '.env.local';
+  const env = Object.fromEntries(readFileSync(ENV_PATH, 'utf8').split('\n').filter(l => l.includes('=')).map(l => {
+    const i = l.indexOf('=');
+    return [l.slice(0, i).trim(), l.slice(i + 1).trim()];
+  }));
+  const sb = createClient(env.NEXT_PUBLIC_SUPABASE_URL, env.SUPABASE_SERVICE_ROLE_KEY || env.SUPABASE_SERVICE_KEY);
+  console.error('Querying rrg_purchases live from Supabase...');
+  const { data, error } = await sb
+    .from('rrg_purchases')
+    .select('id, created_at, tx_hash, payout_tx_hashes, amount_usdc, split_creator_usdc, split_brand_usdc, split_platform_usdc, split_model, brand_pct_applied, payment_method, network, buyer_wallet, token_id, brand_id, rrg_brands(name, slug)')
+    .order('created_at', { ascending: false });
+  if (error) throw error;
+  purchasesDoc = {
+    snapshotDate: TODAY,
+    rowCount: data.length,
+    rows: data.map(r => ({
+      id: r.id,
+      created_at: r.created_at,
+      tx_hash: r.tx_hash,
+      payout_tx_hashes: r.payout_tx_hashes,
+      amount_usdc: r.amount_usdc,
+      split_creator_usdc: r.split_creator_usdc,
+      split_brand_usdc: r.split_brand_usdc,
+      split_platform_usdc: r.split_platform_usdc,
+      split_model: r.split_model,
+      brand_pct_applied: r.brand_pct_applied,
+      payment_method: r.payment_method,
+      network: r.network,
+      buyer_wallet: r.buyer_wallet,
+      token_id: r.token_id,
+      brand_name: r.rrg_brands?.name || null,
+      slug: r.rrg_brands?.slug || null,
+    })),
+  };
+  console.error(`  loaded ${purchasesDoc.rows.length} rows`);
+}
 const purchases = purchasesDoc.rows;
 
 console.error(`Pulling on-chain USDC for ${WATCHED.length} wallets (recent activity)...`);
@@ -214,8 +254,8 @@ const orphanGross = orphan.reduce((a, m) => a + Number(m.purchase.amount_usdc), 
 
 // Build markdown.
 let md = `# Wallet Matching Report: Pre-classified Ledger for Colin\n\n`;
-md += `Generated ${TODAY}. Source: \`${PURCHASES_PATH}\` (snapshot ${purchasesDoc.snapshotDate}, ${purchases.length} purchase rows). Every \`tx_hash\` and payout-leg hash was verified against BOTH Base mainnet (https://base.blockscout.com) and Base Sepolia (https://base-sepolia.blockscout.com) to determine its actual chain.\n\n`;
-md += `**Critical data-quality finding.** The \`rrg_purchases.network\` column is unreliable: a significant number of rows are labelled \`network='base'\` but the tx actually exists on Sepolia. Some rows reference tx hashes that do not exist on either chain. Booking decisions must use the **verified actual chain**, not the DB column.\n\n`;
+md += `Generated ${TODAY}. Source: ${PURCHASES_PATH ? `\`${PURCHASES_PATH}\` (snapshot ${purchasesDoc.snapshotDate})` : 'live Supabase query'}, ${purchases.length} purchase rows. Every \`tx_hash\` and payout-leg hash was verified against BOTH Base mainnet (https://base.blockscout.com) and Base Sepolia (https://base-sepolia.blockscout.com) to determine its actual chain.\n\n`;
+md += `**Note on data quality.** The Sepolia testnet rows were removed from \`rrg_purchases\` on 2026-05-10 (testnet has no accounting value). The \`network\` column for remaining rows was backfilled to match the verified chain. Going forward, the column should be reliable. Orphan rows (tx not found on either chain) are listed in section 5 for manual review.\n\n`;
 
 md += `## 1. Summary by verified chain\n\n`;
 md += `| Category | Rows | Gross USDC | Action |\n`;
