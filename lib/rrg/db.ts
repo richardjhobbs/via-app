@@ -296,30 +296,25 @@ export const getBrandsForDirectory = unstable_cache(
     }
     if (!brands || brands.length === 0) return [];
 
-    // Fetch product stats per brand. Pull ui_visible too so we can split
-    // the count into UI (storefront grid) vs MCP (full agent catalogue).
+    // Aggregate counts via the brand_product_counts() RPC (scripts/008-...sql).
+    // Aggregating server-side returns one row per brand, so we never hit
+    // PostgREST's 1000-row response cap — that cap previously truncated
+    // totalMcpProducts to 1000 once the catalogue grew past 1k rows.
     const brandIds = brands.map((b) => b.id);
-    const { data: stats, error: statsError } = await db
-      .from('rrg_submissions')
-      .select('brand_id, approved_at, ui_visible')
-      .eq('status', 'approved')
-      .eq('hidden', false)
-      .in('brand_id', brandIds);
+    const { data: stats, error: statsError } = await db.rpc('brand_product_counts', { brand_ids: brandIds });
 
     if (statsError) {
-      console.error('[getBrandsForDirectory] submissions stats query failed:', statsError);
+      console.error('[getBrandsForDirectory] brand_product_counts RPC failed:', statsError);
     }
 
-    // Aggregate: ui_count + mcp_count + latest approved_at per brand
+    type StatRow = { brand_id: string; ui_count: number; mcp_count: number; latest_approved_at: string | null };
     const brandStats = new Map<string, { ui_count: number; mcp_count: number; latest: string | null }>();
-    for (const s of stats ?? []) {
-      const existing = brandStats.get(s.brand_id) ?? { ui_count: 0, mcp_count: 0, latest: null };
-      existing.mcp_count++;
-      if (s.ui_visible) existing.ui_count++;
-      if (!existing.latest || s.approved_at > existing.latest) {
-        existing.latest = s.approved_at;
-      }
-      brandStats.set(s.brand_id, existing);
+    for (const s of (stats ?? []) as StatRow[]) {
+      brandStats.set(s.brand_id, {
+        ui_count:  Number(s.ui_count)  || 0,
+        mcp_count: Number(s.mcp_count) || 0,
+        latest:    s.latest_approved_at,
+      });
     }
 
     return brands.map((b) => {
