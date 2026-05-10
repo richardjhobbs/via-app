@@ -231,12 +231,9 @@ Reconciliation script in this repo: [`scripts/reconcile-wallets.mjs`](../scripts
 
 ### 9.5 Pre-matched purchase ledger
 
-The reconciliation script in 9.2 covers the wallet-level on-chain history. To pre-match each `rrg_purchases` row against the on-chain tx (so daily booking is data-entry, not detective work), use the companion pipeline:
+The reconciliation script in 9.2 covers the wallet-level on-chain history. To pre-match each `rrg_purchases` row against the on-chain tx (so daily booking is data-entry, not detective work), run the companion script:
 
-1. **Refresh the purchases snapshot.** Run the SQL from the comment block at the top of [`docs/data/purchases-2026-05-10.json`](data/purchases-2026-05-10.json) in Supabase, save as `docs/data/purchases-{TODAY}.json`.
-2. **Run the matcher.** `node scripts/match-purchases.mjs docs/data/purchases-{TODAY}.json` writes `docs/wallet-matching-{TODAY}.md`.
-3. **Read the matching report.** Each purchase is verified on BOTH Base mainnet and Base Sepolia (the `rrg_purchases.network` column is unreliable, see section 9.6). The report categorises every row as: real mainnet (book), mislabelled (DO NOT BOOK), correctly-labelled Sepolia (DO NOT BOOK), or orphan (investigate).
-4. **Book section 2 of the matching report.** That's the verified mainnet ledger. Section 6 of the matching report is the unaccounted on-chain tx that need Richard's classification.
+`node scripts/match-purchases.mjs` queries Supabase live (no JSON snapshot needed), verifies every tx_hash on both Base mainnet and Base Sepolia, and writes `docs/wallet-matching-{TODAY}.md`. Each purchase is categorised as: real mainnet (book), mislabelled (DO NOT BOOK), correctly-labelled Sepolia (DO NOT BOOK), or orphan (investigate). Section 2 of the report is the verified mainnet ledger. Section 6 is the unaccounted on-chain tx that need Richard's classification. Section 7 is the counterparty key.
 
 First snapshot: [`wallet-matching-2026-05-10.md`](wallet-matching-2026-05-10.md).
 
@@ -254,6 +251,12 @@ After cleanup: 28 rows remain in `rrg_purchases`, all `network='base'`. Of those
 Going forward, the `network` column should be reliable. Re-run the fix script after any re-deployment of the platform from a Sepolia-configured environment, and any time orphans need to be re-checked (Blockscout indexing can change).
 
 ### 9.7 Counterparty key (most-frequent counterparties seen in tx history)
+
+For the canonical key with verified-counterparty identities and Zoho classification recommendations, see section 7 of [`wallet-matching-2026-05-10.md`](wallet-matching-2026-05-10.md). Key entries identified via on-chain investigation 2026-05-10:
+
+- `0xe3478b0BB1A5084567C319096437924948Be1964` = **MetaMask: Gas Station Swap** (Etherscan public tag). Skims MetaMask's swap fee from in-app swaps performed by the DFW brand wallet. Classify as "Infrastructure / wallet-provider swap fees", reconcile to parent swap tx.
+- `0x9f783931cedc82c538028fb9be5289a38bc395df` = anonymous EOA, RRG-only NFT holdings, pattern matches sponsored / gasless mint flow. Original buyer row (token 17, 2026-03-08) was Sepolia and deleted in the cleanup.
+- `0x25B22971892B7314c36EC6DCfB5537500d50Ea35` = Sepolia test buyer on a row deleted in the cleanup.
 
 These addresses come up repeatedly in the tx tables and are worth labelling in Zoho contact lists:
 
