@@ -51,7 +51,12 @@ export default async function Landing() {
   const filteredDropsPool = dropsPool.filter(d => !d.brand_id || !rrgBrandIds.has(d.brand_id));
 
   const totalBrands = allBrands.length;
+  // Storefront total (curated, ui_visible=true) — used in the brand-directory link strip
+  // where the count corresponds to what's actually on the grid the link leads to.
   const totalProducts = directoryBrands.reduce((sum, b) => sum + b.product_count, 0);
+  // Full MCP catalogue total (every approved + non-hidden product) — used in the
+  // "in numbers" trust strip which represents the full agent-discoverable surface.
+  const totalMcpProducts = directoryBrands.reduce((sum, b) => sum + b.mcp_product_count, 0);
   const totalOpenBriefs = openBriefs.length;
 
   // ─── Signed URLs ─────────────────────────────────────────────────────
@@ -495,7 +500,7 @@ export default async function Landing() {
             <div className="desc">Heritage labels, independent studios and curators. Vetted, not open to list.</div>
           </div>
           <div className="trust-cell">
-            <div className="big">{totalProducts.toLocaleString()}</div>
+            <div className="big">{totalMcpProducts.toLocaleString()}</div>
             <div className="lbl">Products listed</div>
             <div className="desc">New collections, archive pieces, fine jewellery. Refreshed daily across every admitted brand.</div>
           </div>
