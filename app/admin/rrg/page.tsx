@@ -979,28 +979,42 @@ function DropsTab() {
     }
   };
 
+  // Optimistic toggle: mutate local state immediately, send the PATCH in the
+  // background, revert on error. The whole-list re-fetch ran on every tick
+  // before — slow and visually jarring with ~2k rows. Local state stays in
+  // sync with the DB because boolean flips are idempotent (latest patch wins).
   const toggleHidden = async (d: Drop) => {
-    setActing(true);
-    const res = await fetch('/api/rrg/admin/drops', {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ submissionId: d.id, hidden: !d.hidden }),
-    });
-    setActing(false);
-    if (res.ok) load();
-    else setMsg('Error toggling visibility');
+    const prev = d.hidden ?? false;
+    const next = !prev;
+    setDrops(ds => ds.map(x => x.id === d.id ? { ...x, hidden: next } : x));
+    try {
+      const res = await fetch('/api/rrg/admin/drops', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ submissionId: d.id, hidden: next }),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    } catch (e) {
+      setDrops(ds => ds.map(x => x.id === d.id ? { ...x, hidden: prev } : x));
+      setMsg(`Error toggling visibility for "${d.title}": ${e instanceof Error ? e.message : String(e)}`);
+    }
   };
 
   const toggleUiVisible = async (d: Drop) => {
-    setActing(true);
-    const res = await fetch('/api/rrg/admin/drops', {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ submissionId: d.id, ui_visible: !(d.ui_visible ?? true) }),
-    });
-    setActing(false);
-    if (res.ok) load();
-    else setMsg('Error toggling storefront visibility');
+    const prev = d.ui_visible ?? true;
+    const next = !prev;
+    setDrops(ds => ds.map(x => x.id === d.id ? { ...x, ui_visible: next } : x));
+    try {
+      const res = await fetch('/api/rrg/admin/drops', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ submissionId: d.id, ui_visible: next }),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    } catch (e) {
+      setDrops(ds => ds.map(x => x.id === d.id ? { ...x, ui_visible: prev } : x));
+      setMsg(`Error toggling storefront for "${d.title}": ${e instanceof Error ? e.message : String(e)}`);
+    }
   };
 
   const scanBase = 'https://basescan.org';
