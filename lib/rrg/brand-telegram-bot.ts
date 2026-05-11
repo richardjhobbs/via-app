@@ -516,8 +516,8 @@ async function callBrandLLM(
   config: BrandBotConfig,
   isPrivate: boolean,
 ): Promise<string> {
-  const TOGETHER_API_KEY = process.env.TOGETHER_API_KEY ?? '';
-  if (!TOGETHER_API_KEY) {
+  const DEEPSEEK_API_KEY = process.env.DEEPSEEK_API_KEY ?? '';
+  if (!DEEPSEEK_API_KEY) {
     return `Try /products or /sizes for quick info about ${brand.name}!`;
   }
 
@@ -534,21 +534,20 @@ async function callBrandLLM(
 
   const context = `PRODUCTS (agent-ready details — fabric, fit, colors, sizes):\n${productCtx}\n\nSIZING CHART:\n${sizing}${memoriesBlock}`;
 
-  const resp = await fetch('https://api.together.xyz/v1/chat/completions', {
+  const resp = await fetch('https://api.deepseek.com/chat/completions', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'Authorization': `Bearer ${TOGETHER_API_KEY}`,
+      'Authorization': `Bearer ${DEEPSEEK_API_KEY}`,
     },
     body: JSON.stringify({
-      model: 'meta-llama/Llama-3.3-70B-Instruct-Turbo',
+      model: 'deepseek-chat',
       messages: [
         { role: 'system', content: `${config.llmSystemPrompt}\n\n--- LIVE CONTEXT ---\n${context}` },
         { role: 'user', content: query },
       ],
       max_tokens: isPrivate ? 500 : 300,
       temperature: 0.7,
-      stop: ['<|eot_id|>'],
     }),
     signal: AbortSignal.timeout(20_000),
   });
