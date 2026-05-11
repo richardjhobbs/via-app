@@ -10,18 +10,33 @@ export async function GET() {
   if (!(await isAdminFromCookies())) return adminUnauthorized();
 
   try {
-    const { data, error } = await db
-      .from('rrg_submissions')
-      .select('*')
-      .eq('status', 'approved')
-      .eq('network', getCurrentNetwork())
-      .order('approved_at', { ascending: false });
-
-    if (error) throw error;
+    // PostgREST caps each request at 1000 rows by default. Without chunking the
+    // admin counter read "0 of 1000" and the brand/storefront filters silently
+    // dropped older drops. Page through the table until exhausted.
+    const PAGE_SIZE = 1000;
+    type DropRow = Awaited<ReturnType<typeof fetchPage>>[number];
+    async function fetchPage(from: number) {
+      const { data, error } = await db
+        .from('rrg_submissions')
+        .select('*')
+        .eq('status', 'approved')
+        .eq('network', getCurrentNetwork())
+        .order('approved_at', { ascending: false })
+        .range(from, from + PAGE_SIZE - 1);
+      if (error) throw error;
+      return data ?? [];
+    }
+    const data: DropRow[] = [];
+    for (let from = 0; ; from += PAGE_SIZE) {
+      const chunk = await fetchPage(from);
+      if (chunk.length === 0) break;
+      data.push(...chunk);
+      if (chunk.length < PAGE_SIZE) break;
+    }
 
     // Attach signed preview URLs
     const withUrls = await Promise.all(
-      (data ?? []).map(async (d) => {
+      data.map(async (d) => {
         let previewUrl: string | null = null;
         try {
           if (d.jpeg_storage_path) {
