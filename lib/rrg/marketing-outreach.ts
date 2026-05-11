@@ -854,7 +854,7 @@ function getIntroMessage(candidate: MktCandidate): MessageTemplate {
 
   if (hasImageGen) {
     return {
-      subject: 'RRG: submit designs, earn USDC — image-gen agents wanted',
+      subject: 'RRG: submit designs, earn USDC. Image-gen agents wanted',
       body: [
         `FROM: RRG Platform Agent (ERC-8004 #${RRG_AGENT_ERC8004_ID})`,
         `TO: ${name}`,
@@ -894,7 +894,7 @@ function getIntroMessage(candidate: MktCandidate): MessageTemplate {
   }
 
   return {
-    subject: 'RRG: agent-native marketplace on Base — purchase, earn, build reputation',
+    subject: 'RRG: agent-native marketplace on Base. Purchase, earn, build reputation',
     body: [
       `FROM: RRG Platform Agent (ERC-8004 #${RRG_AGENT_ERC8004_ID})`,
       `TO: ${name}`,
@@ -965,7 +965,7 @@ function getOfferMessage(candidate: MktCandidate): MessageTemplate {
   const name = candidate.name ?? `Agent #${candidate.erc8004_id ?? 'unknown'}`;
 
   return {
-    subject: 'RRG: Phase 1 Agent Pass — limited supply, closing soon',
+    subject: 'RRG: Phase 1 Agent Pass. Limited supply, closing soon',
     body: [
       `FROM: RRG Platform Agent (ERC-8004 #${RRG_AGENT_ERC8004_ID})`,
       `TO: ${name}`,
@@ -1049,7 +1049,7 @@ function buildShippingLines(brand: RrgBrand): { from: string; to: string } {
 function formatProductLine(p: MktProductRef): string {
   const variant = p.variant_label ? ` [${p.variant_label}]` : '';
   const x402 = p.x402_uri ? `\n     pay: ${p.x402_uri}` : '';
-  return `  - ${p.title}${variant} — ${p.price_usdc} USDC${x402}`;
+  return `  - ${p.title}${variant} (${p.price_usdc} USDC)${x402}`;
 }
 
 /**
@@ -1131,7 +1131,7 @@ function getBrandFullCatalogueMessage(
     : '  (catalogue empty)';
 
   return {
-    subject: `${brand.name} on RRG — ${products.length} items, ${ship.to}`,
+    subject: `${brand.name} on RRG (${products.length} items, ${ship.to})`,
     body: [
       `FROM: RRG Platform Agent (ERC-8004 #${RRG_AGENT_ERC8004_ID})`,
       `TO: ${name}`,
@@ -1152,11 +1152,11 @@ function getBrandFullCatalogueMessage(
       '',
       `HOW TO BROWSE / BUY:`,
       `1. Connect MCP: ${brandMcp}`,
-      `2. Call tool: list_products  — full agent-facing catalogue with live stock`,
-      `3. Call tool: get_quote      — live shipping quote for your buyer's country`,
-      `4. Call tool: buy_product    — initiate USDC purchase on Base (gasless)`,
+      `2. Call tool: list_products  (full agent-facing catalogue with live stock)`,
+      `3. Call tool: get_quote      (live shipping quote for your buyer's country)`,
+      `4. Call tool: buy_product    (initiate USDC purchase on Base, gasless)`,
       '',
-      `${brand.name} on RRG is a brand mirror — checkout in USDC on Base.`,
+      `${brand.name} on RRG is a brand mirror. Checkout in USDC on Base.`,
       `RRG is a product of VIA Labs. Platform agent ${SITE_URL}/.well-known/agent.json`,
       '',
       `ENDPOINTS:`,
@@ -1184,7 +1184,7 @@ function getBrandDropMessage(
     : '  (no products specified)';
 
   return {
-    subject: `${brand.name} on RRG — featured drop (${ship.to})`,
+    subject: `${brand.name} on RRG: featured drop (${ship.to})`,
     body: [
       `FROM: RRG Platform Agent (ERC-8004 #${RRG_AGENT_ERC8004_ID})`,
       `TO: ${name}`,
@@ -1201,13 +1201,13 @@ function getBrandDropMessage(
       '',
       `FEATURED ITEMS:`,
       productLines,
-      products.length > 5 ? `  (+ ${products.length - 5} more — call list_products to see the full catalogue)` : '',
+      products.length > 5 ? `  (+ ${products.length - 5} more, call list_products to see the full catalogue)` : '',
       '',
       `HOW TO BUY:`,
       `1. Connect MCP: ${brandMcp}`,
-      `2. Call tool: get_product   — full agent-facing payload, live stock per variant`,
-      `3. Call tool: get_quote     — live shipping quote for your buyer's country`,
-      `4. Call tool: buy_product   — initiate USDC purchase on Base (gasless)`,
+      `2. Call tool: get_product   (full agent-facing payload, live stock per variant)`,
+      `3. Call tool: get_quote     (live shipping quote for your buyer's country)`,
+      `4. Call tool: buy_product   (initiate USDC purchase on Base, gasless)`,
       '',
       `RRG is a product of VIA Labs. Platform agent ${SITE_URL}/.well-known/agent.json`,
       `Brand MCP: ${brandMcp}`,
@@ -1236,7 +1236,7 @@ function getBrandRestockMessage(
       `BRAND: ${brand.name}`,
       `PROTOCOL: A2A / MCP`,
       '',
-      `RESTOCK: ${product.title}${variant} — ${product.price_usdc} USDC`,
+      `RESTOCK: ${product.title}${variant} at ${product.price_usdc} USDC`,
       product.x402_uri ? `BUY:     ${product.x402_uri}` : '',
       '',
       `SHIPS FROM: ${ship.from}`,
@@ -1279,10 +1279,10 @@ function getBrandIntroMessage(
       '',
       `START HERE:`,
       `1. Connect MCP: ${brandMcp}`,
-      `2. Call tool: list_products  — full catalogue with live stock`,
+      `2. Call tool: list_products  (full catalogue with live stock)`,
       `3. Call tool: get_sizing_guide${brand.supports_sizing ? '' : ' (n/a for this brand)'}`,
-      `4. Call tool: get_quote      — live shipping quote per destination`,
-      `5. Call tool: buy_product    — initiate USDC purchase`,
+      `4. Call tool: get_quote      (live shipping quote per destination)`,
+      `5. Call tool: buy_product    (initiate USDC purchase)`,
       '',
       `RRG is a product of VIA Labs. Platform agent ${SITE_URL}/.well-known/agent.json`,
     ].filter(Boolean).join('\n'),
