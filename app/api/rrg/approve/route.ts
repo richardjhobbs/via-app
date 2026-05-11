@@ -46,7 +46,19 @@ export async function POST(req: NextRequest) {
     const tokenId = await claimNextTokenId();
 
     // ── Calculate revenue split ─────────────────────────────────────
-    const brandId = submission.brand_id ?? RRG_BRAND_ID;
+    // Resolve brand_id from the linked brief if the row is missing one
+    // (legacy submissions from before submit-side resolution was added).
+    // This keeps revenue split and SuperAdmin LISTINGS filtering in sync.
+    let resolvedBrandId: string | null = submission.brand_id;
+    if (!resolvedBrandId && submission.brief_id) {
+      const { data: brief } = await db
+        .from('rrg_briefs')
+        .select('brand_id')
+        .eq('id', submission.brief_id)
+        .single();
+      resolvedBrandId = brief?.brand_id ?? null;
+    }
+    const brandId = resolvedBrandId ?? RRG_BRAND_ID;
     const brand   = brandId !== RRG_BRAND_ID ? await getBrandById(brandId) : null;
     const isLegacy = false; // New approvals are never legacy
 
@@ -82,6 +94,7 @@ export async function POST(req: NextRequest) {
         price_usdc:   priceUsdc.toFixed(2),
         approved_at:  new Date().toISOString(),
         network:      getCurrentNetwork(),
+        ...(resolvedBrandId !== submission.brand_id ? { brand_id: resolvedBrandId } : {}),
       })
       .eq('id', submissionId);
 
