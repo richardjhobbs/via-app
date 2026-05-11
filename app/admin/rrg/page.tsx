@@ -77,7 +77,21 @@ interface Drop {
   brand_id?: string | null;
   is_physical_product?: boolean;
   has_voucher?: boolean;
+  // Physical product fields (only meaningful when is_physical_product = true)
+  physical_description?: string | null;
+  physical_images_paths?: string[] | null;
+  physicalImageUrls?: (string | null)[];
+  price_includes_tax?: boolean;
+  price_includes_packing?: boolean;
+  ecommerce_url?: string | null;
+  shipping_type?: 'included' | 'live_rates' | null;
+  shipping_included_regions?: string[] | null;
+  refund_commitment?: boolean;
+  collection_in_person?: string | null;
+  trust_behavior_accepted?: boolean;
 }
+
+const SHIPPING_REGIONS = ['US', 'UK', 'EU', 'Asia-Pacific', 'Middle East', 'Africa', 'South America', 'Oceania', 'Other'] as const;
 
 interface Brand {
   id: string;
@@ -895,9 +909,21 @@ function DropsTab() {
   const [editForm, setEditForm] = useState({
     title: '', description: '', price_usdc: '', edition_size: '',
     creator_email: '', creator_handle: '', creator_bio: '',
+    // Physical product fields
+    physical_description: '',
+    ecommerce_url: '',
+    collection_in_person: '',
+    price_includes_tax: false,
+    price_includes_packing: false,
+    refund_commitment: false,
+    trust_behavior_accepted: false,
+    shipping_type: '' as '' | 'included' | 'live_rates',
+    shipping_included_regions: [] as string[],
   });
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
+  const [physicalImagesToRemove, setPhysicalImagesToRemove] = useState<string[]>([]);
+  const [physicalImagesToAdd, setPhysicalImagesToAdd] = useState<File[]>([]);
   const [acting,  setActing]  = useState(false);
   const [msg,     setMsg]     = useState('');
   const [lightbox, setLightbox] = useState<string | null>(null);
@@ -930,9 +956,20 @@ function DropsTab() {
       creator_email: d.creator_email || '',
       creator_handle: d.creator_handle || '',
       creator_bio: d.creator_bio || '',
+      physical_description: d.physical_description || '',
+      ecommerce_url: d.ecommerce_url || '',
+      collection_in_person: d.collection_in_person || '',
+      price_includes_tax: !!d.price_includes_tax,
+      price_includes_packing: !!d.price_includes_packing,
+      refund_commitment: !!d.refund_commitment,
+      trust_behavior_accepted: !!d.trust_behavior_accepted,
+      shipping_type: (d.shipping_type ?? '') as '' | 'included' | 'live_rates',
+      shipping_included_regions: d.shipping_included_regions ?? [],
     });
     setImageFile(null);
     setImagePreview(null);
+    setPhysicalImagesToRemove([]);
+    setPhysicalImagesToAdd([]);
     setMsg('');
   };
 
@@ -951,6 +988,7 @@ function DropsTab() {
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editing) return;
+    const editingDrop = drops.find(x => x.id === editing);
     setActing(true);
     setMsg('');
 
@@ -965,6 +1003,25 @@ function DropsTab() {
     formData.append('creator_bio', editForm.creator_bio);
     if (imageFile) formData.append('image', imageFile);
 
+    if (editingDrop?.is_physical_product) {
+      formData.append('physical_description', editForm.physical_description);
+      formData.append('ecommerce_url', editForm.ecommerce_url);
+      formData.append('collection_in_person', editForm.collection_in_person);
+      formData.append('price_includes_tax', editForm.price_includes_tax ? 'true' : 'false');
+      formData.append('price_includes_packing', editForm.price_includes_packing ? 'true' : 'false');
+      formData.append('refund_commitment', editForm.refund_commitment ? 'true' : 'false');
+      formData.append('trust_behavior_accepted', editForm.trust_behavior_accepted ? 'true' : 'false');
+      formData.append('shipping_type', editForm.shipping_type);
+      formData.append(
+        'shipping_included_regions',
+        editForm.shipping_type === 'included' ? editForm.shipping_included_regions.join(',') : '',
+      );
+      if (physicalImagesToRemove.length > 0) {
+        formData.append('physical_images_remove', physicalImagesToRemove.join(','));
+      }
+      for (const f of physicalImagesToAdd) formData.append('physical_images', f);
+    }
+
     const res = await fetch('/api/rrg/admin/drops', { method: 'PATCH', body: formData });
     const data = await res.json();
     setActing(false);
@@ -973,6 +1030,8 @@ function DropsTab() {
       setEditing(null);
       setImageFile(null);
       setImagePreview(null);
+      setPhysicalImagesToRemove([]);
+      setPhysicalImagesToAdd([]);
       load();
     } else {
       setMsg(`Error: ${data.error}`);
@@ -1211,12 +1270,183 @@ function DropsTab() {
                     </div>
                   </div>
 
+                  {/* Row 3: Physical product details */}
+                  {d.is_physical_product && (
+                    <div className="border-t border-white/10 pt-4 space-y-4">
+                      <h3 className="text-xs font-mono uppercase tracking-widest text-white/60">Physical Product</h3>
+
+                      {/* Image gallery */}
+                      <div>
+                        <label className={labelClass}>Product images (max 4)</label>
+                        <div className="flex flex-wrap gap-3">
+                          {(d.physical_images_paths ?? []).map((p, i) => {
+                            const queued = physicalImagesToRemove.includes(p);
+                            const url = d.physicalImageUrls?.[i] ?? null;
+                            return (
+                              <div key={p} className={`relative w-24 h-24 bg-white/5 border ${queued ? 'border-red-400/50 opacity-40' : 'border-white/20'}`}>
+                                {url ? (
+                                  <img src={url} alt="" className="w-full h-full object-cover" />
+                                ) : (
+                                  <div className="w-full h-full flex items-center justify-center text-[10px] font-mono text-white/40">no url</div>
+                                )}
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    setPhysicalImagesToRemove(prev =>
+                                      queued ? prev.filter(x => x !== p) : [...prev, p]
+                                    )
+                                  }
+                                  className="absolute top-1 right-1 bg-black/70 text-white text-xs px-1.5 py-0.5 font-mono hover:bg-red-500/80"
+                                  title={queued ? 'Undo remove' : 'Mark for removal'}
+                                >
+                                  {queued ? '↺' : '×'}
+                                </button>
+                              </div>
+                            );
+                          })}
+                          {physicalImagesToAdd.map((f, i) => (
+                            <div key={`new-${i}`} className="relative w-24 h-24 bg-white/5 border border-green-400/50">
+                              <div className="w-full h-full flex items-center justify-center text-[10px] font-mono text-green-400 text-center px-1 break-words">
+                                + {f.name}
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => setPhysicalImagesToAdd(prev => prev.filter((_, j) => j !== i))}
+                                className="absolute top-1 right-1 bg-black/70 text-white text-xs px-1.5 py-0.5 font-mono hover:bg-red-500/80"
+                              >
+                                ×
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                        {(() => {
+                          const keptCount = (d.physical_images_paths ?? []).filter(p => !physicalImagesToRemove.includes(p)).length;
+                          const slotsLeft = 4 - keptCount - physicalImagesToAdd.length;
+                          return slotsLeft > 0 ? (
+                            <label className="inline-block mt-2 text-xs font-mono text-white/60 hover:text-white cursor-pointer border border-white/20 px-3 py-1.5">
+                              + Add image ({slotsLeft} left)
+                              <input
+                                type="file"
+                                accept="image/jpeg,image/png"
+                                multiple
+                                className="hidden"
+                                onChange={(e) => {
+                                  const files = Array.from(e.target.files ?? []);
+                                  setPhysicalImagesToAdd(prev => [...prev, ...files].slice(0, prev.length + slotsLeft));
+                                  e.target.value = '';
+                                }}
+                              />
+                            </label>
+                          ) : (
+                            <p className="mt-2 text-xs font-mono text-white/40">4-image limit reached.</p>
+                          );
+                        })()}
+                      </div>
+
+                      {/* Physical description */}
+                      <div>
+                        <label className={labelClass}>Physical description (max 1000)</label>
+                        <textarea
+                          rows={3}
+                          maxLength={1000}
+                          value={editForm.physical_description}
+                          onChange={(e) => setEditForm({ ...editForm, physical_description: e.target.value })}
+                          className={inputClass + ' resize-y'}
+                        />
+                        <p className="text-xs text-white/40 text-right font-mono">{editForm.physical_description.length}/1000</p>
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        <div>
+                          <label className={labelClass}>Ecommerce URL</label>
+                          <input
+                            type="url"
+                            value={editForm.ecommerce_url}
+                            onChange={(e) => setEditForm({ ...editForm, ecommerce_url: e.target.value })}
+                            className={inputClass}
+                            placeholder="https://..."
+                          />
+                        </div>
+                        <div>
+                          <label className={labelClass}>Collection in person (location)</label>
+                          <input
+                            type="text"
+                            value={editForm.collection_in_person}
+                            onChange={(e) => setEditForm({ ...editForm, collection_in_person: e.target.value })}
+                            className={inputClass}
+                            placeholder="Optional pickup location"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm font-mono text-white/70">
+                        <label className="flex items-center gap-2 cursor-pointer">
+                          <input type="checkbox" checked={editForm.price_includes_tax} onChange={(e) => setEditForm({ ...editForm, price_includes_tax: e.target.checked })} className="w-4 h-4 accent-white" />
+                          Price includes tax
+                        </label>
+                        <label className="flex items-center gap-2 cursor-pointer">
+                          <input type="checkbox" checked={editForm.price_includes_packing} onChange={(e) => setEditForm({ ...editForm, price_includes_packing: e.target.checked })} className="w-4 h-4 accent-white" />
+                          Price includes packing
+                        </label>
+                        <label className="flex items-center gap-2 cursor-pointer">
+                          <input type="checkbox" checked={editForm.refund_commitment} onChange={(e) => setEditForm({ ...editForm, refund_commitment: e.target.checked })} className="w-4 h-4 accent-white" />
+                          Refund commitment
+                        </label>
+                        <label className="flex items-center gap-2 cursor-pointer">
+                          <input type="checkbox" checked={editForm.trust_behavior_accepted} onChange={(e) => setEditForm({ ...editForm, trust_behavior_accepted: e.target.checked })} className="w-4 h-4 accent-white" />
+                          Trust & behaviour accepted
+                        </label>
+                      </div>
+
+                      {/* Shipping */}
+                      <div>
+                        <label className={labelClass}>Shipping</label>
+                        <div className="flex gap-4 text-sm font-mono text-white/70 mb-2">
+                          <label className="flex items-center gap-2 cursor-pointer">
+                            <input type="radio" name={`ship-${d.id}`} checked={editForm.shipping_type === 'included'} onChange={() => setEditForm({ ...editForm, shipping_type: 'included' })} />
+                            Included
+                          </label>
+                          <label className="flex items-center gap-2 cursor-pointer">
+                            <input type="radio" name={`ship-${d.id}`} checked={editForm.shipping_type === 'live_rates'} onChange={() => setEditForm({ ...editForm, shipping_type: 'live_rates', shipping_included_regions: [] })} />
+                            Live carrier rates
+                          </label>
+                          <label className="flex items-center gap-2 cursor-pointer">
+                            <input type="radio" name={`ship-${d.id}`} checked={editForm.shipping_type === ''} onChange={() => setEditForm({ ...editForm, shipping_type: '', shipping_included_regions: [] })} />
+                            Not set
+                          </label>
+                        </div>
+                        {editForm.shipping_type === 'included' && (
+                          <div className="flex flex-wrap gap-3 text-sm font-mono text-white/70">
+                            {SHIPPING_REGIONS.map(r => (
+                              <label key={r} className="flex items-center gap-1.5 cursor-pointer">
+                                <input
+                                  type="checkbox"
+                                  checked={editForm.shipping_included_regions.includes(r)}
+                                  onChange={(e) => {
+                                    setEditForm(prev => ({
+                                      ...prev,
+                                      shipping_included_regions: e.target.checked
+                                        ? [...prev.shipping_included_regions, r]
+                                        : prev.shipping_included_regions.filter(x => x !== r),
+                                    }));
+                                  }}
+                                  className="w-4 h-4 accent-white"
+                                />
+                                {r}
+                              </label>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
                   {/* Save */}
                   <div className="flex gap-3 items-center">
                     <button type="submit" disabled={acting} className="px-5 py-1.5 bg-white text-black text-base font-medium hover:bg-white/90 disabled:opacity-40 transition-all">
                       {acting ? 'Saving…' : 'Save All Changes'}
                     </button>
-                    <button type="button" onClick={() => { setEditing(null); setImageFile(null); setImagePreview(null); }} className="text-sm text-white/50 hover:text-white transition-colors">
+                    <button type="button" onClick={() => { setEditing(null); setImageFile(null); setImagePreview(null); setPhysicalImagesToRemove([]); setPhysicalImagesToAdd([]); }} className="text-sm text-white/50 hover:text-white transition-colors">
                       Cancel
                     </button>
                     {imageFile && (

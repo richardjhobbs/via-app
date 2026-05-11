@@ -1,7 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { db, getCurrentNetwork } from '@/lib/rrg/db';
+import { db, getCurrentNetwork, type ShippingType } from '@/lib/rrg/db';
 import { isAdminFromCookies, adminUnauthorized } from '@/lib/rrg/auth';
-import { getSignedUrl, jpegStoragePath } from '@/lib/rrg/storage';
+import {
+  getSignedUrl,
+  getSignedUrlsBatch,
+  jpegStoragePath,
+  physicalImageStoragePath,
+  deleteFile,
+  uploadSubmissionFile,
+} from '@/lib/rrg/storage';
+import { detectImageFormat } from '@/lib/rrg/agentmail';
+import { isValidShippingRegion } from '@/lib/rrg/physical-product';
 
 export const dynamic = 'force-dynamic';
 
@@ -34,7 +43,18 @@ export async function GET() {
       if (chunk.length < PAGE_SIZE) break;
     }
 
-    // Attach signed preview URLs
+    // Batch-sign all physical_images_paths in one Supabase call.
+    const allPhysicalPaths: string[] = [];
+    for (const d of data) {
+      if (Array.isArray(d.physical_images_paths)) {
+        for (const p of d.physical_images_paths) if (typeof p === 'string') allPhysicalPaths.push(p);
+      }
+    }
+    const physicalUrlMap = allPhysicalPaths.length > 0
+      ? await getSignedUrlsBatch(allPhysicalPaths)
+      : new Map<string, string>();
+
+    // Attach signed preview URLs (and physical image URLs)
     const withUrls = await Promise.all(
       data.map(async (d) => {
         let previewUrl: string | null = null;
@@ -45,7 +65,10 @@ export async function GET() {
         } catch {
           // non-fatal
         }
-        return { ...d, previewUrl };
+        const physicalImageUrls = Array.isArray(d.physical_images_paths)
+          ? d.physical_images_paths.map((p: string) => physicalUrlMap.get(p) ?? null)
+          : [];
+        return { ...d, previewUrl, physicalImageUrls };
       })
     );
 
@@ -65,6 +88,9 @@ export async function PATCH(req: NextRequest) {
     let submissionId: string | undefined;
     const updates: Record<string, unknown> = {};
     let imageFile: File | null = null;
+    let physicalImageFiles: File[] = [];
+    let physicalImagesRemove: string[] = [];
+    let physicalImagesTouched = false; // true if either add or remove was requested
 
     if (contentType.includes('multipart/form-data')) {
       // Multipart: supports image replacement
@@ -104,6 +130,72 @@ export async function PATCH(req: NextRequest) {
       if (image instanceof File && image.size > 0) {
         imageFile = image;
       }
+
+      // ── Physical product text/boolean fields ──────────────────────
+      const physical_description = formData.get('physical_description');
+      const ecommerce_url        = formData.get('ecommerce_url');
+      const collection_in_person = formData.get('collection_in_person');
+      const price_includes_tax   = formData.get('price_includes_tax');
+      const price_includes_packing = formData.get('price_includes_packing');
+      const refund_commitment    = formData.get('refund_commitment');
+      const trust_behavior_accepted = formData.get('trust_behavior_accepted');
+      const shipping_type        = formData.get('shipping_type');
+      const shipping_included_regions = formData.get('shipping_included_regions');
+
+      if (physical_description !== null) {
+        const v = (physical_description as string).trim();
+        updates.physical_description = v.length > 0 ? v.slice(0, 1000) : null;
+      }
+      if (ecommerce_url !== null) {
+        const v = (ecommerce_url as string).trim();
+        updates.ecommerce_url = v.length > 0 ? v : null;
+      }
+      if (collection_in_person !== null) {
+        const v = (collection_in_person as string).trim();
+        updates.collection_in_person = v.length > 0 ? v : null;
+      }
+      if (price_includes_tax !== null) updates.price_includes_tax = price_includes_tax === 'true' || price_includes_tax === '1';
+      if (price_includes_packing !== null) updates.price_includes_packing = price_includes_packing === 'true' || price_includes_packing === '1';
+      if (refund_commitment !== null) updates.refund_commitment = refund_commitment === 'true' || refund_commitment === '1';
+      if (trust_behavior_accepted !== null) updates.trust_behavior_accepted = trust_behavior_accepted === 'true' || trust_behavior_accepted === '1';
+
+      if (shipping_type !== null) {
+        const raw = (shipping_type as string).trim();
+        if (raw === '' || raw === 'null') {
+          updates.shipping_type = null;
+        } else if (raw === 'included' || raw === 'live_rates') {
+          updates.shipping_type = raw as ShippingType;
+        } else {
+          return NextResponse.json({ error: 'shipping_type must be included, live_rates, or null' }, { status: 400 });
+        }
+      }
+      if (shipping_included_regions !== null) {
+        const raw = (shipping_included_regions as string).trim();
+        if (raw === '') {
+          updates.shipping_included_regions = null;
+        } else {
+          const regions = raw.split(',').map(r => r.trim()).filter(Boolean);
+          for (const r of regions) {
+            if (!isValidShippingRegion(r)) {
+              return NextResponse.json({ error: `Invalid shipping region: ${r}` }, { status: 400 });
+            }
+          }
+          updates.shipping_included_regions = regions.length > 0 ? regions : null;
+        }
+      }
+
+      // ── Physical image gallery edits ──────────────────────────────
+      const removeRaw = formData.get('physical_images_remove');
+      if (removeRaw !== null) {
+        physicalImagesRemove = (removeRaw as string).split(',').map(s => s.trim()).filter(Boolean);
+        physicalImagesTouched = physicalImagesTouched || physicalImagesRemove.length > 0;
+      }
+      for (const [key, val] of formData.entries()) {
+        if (key === 'physical_images' && val instanceof File && val.size > 0) {
+          physicalImageFiles.push(val);
+        }
+      }
+      if (physicalImageFiles.length > 0) physicalImagesTouched = true;
     } else {
       // JSON body (backwards compatible)
       const body = await req.json();
@@ -157,6 +249,58 @@ export async function PATCH(req: NextRequest) {
       updates.jpeg_storage_path = storagePath;
       updates.jpeg_filename = filename;
       updates.jpeg_size_bytes = buffer.length;
+    }
+
+    // ── Physical image gallery: delete removed, upload new, write merged array ──
+    if (physicalImagesTouched) {
+      const { data: row, error: rowErr } = await db
+        .from('rrg_submissions')
+        .select('physical_images_paths')
+        .eq('id', submissionId)
+        .single();
+      if (rowErr) throw rowErr;
+      const existing: string[] = Array.isArray(row?.physical_images_paths) ? row.physical_images_paths : [];
+
+      const removeSet = new Set(physicalImagesRemove);
+      const kept = existing.filter((p) => !removeSet.has(p));
+
+      const totalAfter = kept.length + physicalImageFiles.length;
+      if (totalAfter > 4) {
+        return NextResponse.json({ error: `Maximum 4 physical images (would result in ${totalAfter})` }, { status: 400 });
+      }
+
+      // Delete removed files from storage (don't fail the request on storage errors)
+      for (const p of physicalImagesRemove) {
+        try { await deleteFile(p); } catch (e) { console.error('[admin/drops] deleteFile failed', p, e); }
+      }
+
+      // Upload new files, picking fresh indices that don't collide with kept paths
+      const usedIndices = new Set<number>();
+      for (const p of kept) {
+        const m = p.match(/\/physical\/(\d+)-/);
+        if (m) usedIndices.add(parseInt(m[1], 10));
+      }
+      let nextIndex = 0;
+      const newPaths: string[] = [];
+      for (const f of physicalImageFiles) {
+        const buf = Buffer.from(await f.arrayBuffer());
+        const fmt = detectImageFormat(buf);
+        if (!fmt) {
+          return NextResponse.json({ error: `physical_images must be JPEG or PNG (${f.name})` }, { status: 400 });
+        }
+        if (buf.length > 5 * 1024 * 1024) {
+          return NextResponse.json({ error: `physical_images must be under 5 MB (${f.name})` }, { status: 400 });
+        }
+        while (usedIndices.has(nextIndex)) nextIndex++;
+        const safeName = f.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+        const pPath = physicalImageStoragePath(submissionId, nextIndex, safeName);
+        await uploadSubmissionFile(pPath, buf, fmt.mimeType);
+        newPaths.push(pPath);
+        usedIndices.add(nextIndex);
+      }
+
+      const merged = [...kept, ...newPaths];
+      updates.physical_images_paths = merged.length > 0 ? merged : null;
     }
 
     if (Object.keys(updates).length === 0) {
