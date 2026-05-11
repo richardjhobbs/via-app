@@ -17,7 +17,9 @@ export type DiscoverySource =
   | 'rnwy' | 'agentscan' | 'virtuals' | 'ag0_sdk' | 'clawplaza' | '8004scan';
 export type OutreachChannel = 'x402_ping' | 'a2a' | 'mcp' | 'email' | 'manual';
 export type OutreachStatus = 'pending' | 'contacted' | 'engaged' | 'converted' | 'declined' | 'unresponsive';
-export type MessageType = 'intro' | 'follow_up' | 'offer' | 'reminder';
+export type MessageType =
+  | 'intro' | 'follow_up' | 'offer' | 'reminder'
+  | 'brand_intro' | 'full_catalogue' | 'product_drop' | 'restock';
 export type MessageStatus = 'sent' | 'delivered' | 'opened' | 'replied' | 'bounced' | 'failed';
 export type ConversionAction = 'mcp_connect' | 'browse' | 'submit_design' | 'purchase' | 'register_brand';
 export type Attribution = 'direct' | 'assisted' | 'organic';
@@ -105,6 +107,26 @@ export interface MktDiscoveryRun {
   notes: string | null;
 }
 
+/**
+ * A reference to a product (or specific variant) featured in an outreach
+ * message. Stored as JSON inside mkt_outreach.product_refs so a single
+ * outreach record can pitch multiple SKUs (full-catalogue runs) or a single
+ * variant (restock alerts).
+ */
+export interface MktProductRef {
+  /** rrg_submissions.id (the drop row) */
+  drop_id: string;
+  /** rrg_submissions.token_id if minted on-chain */
+  token_id?: number | null;
+  title: string;
+  price_usdc: string;
+  /** rrg_product_variants.id if the message pitches a specific size/colour */
+  variant_id?: string | null;
+  variant_label?: string | null;
+  /** Optional pre-built x402 / AP2 payment URI for one-shot agent purchase */
+  x402_uri?: string | null;
+}
+
 export interface MktOutreach {
   id: string;
   created_at: string;
@@ -118,6 +140,12 @@ export interface MktOutreach {
   response_body: string | null;
   responded_at: string | null;
   cost_usdc: number;
+  /** Brand this outreach is about. NULL for platform-recruitment messages. */
+  brand_id: string | null;
+  /** Products / variants featured in the message body. Empty for non-brand outreach. */
+  product_refs: MktProductRef[];
+  /** Campaign that scheduled this outreach. NULL for ad-hoc single sends. */
+  campaign_id: string | null;
 }
 
 export interface MktConversion {
@@ -130,6 +158,8 @@ export interface MktConversion {
   outreach_id: string | null;
   attribution: Attribution;
   revenue_usdc: number;
+  /** Brand the conversion is attributed to. NULL for platform-only actions. */
+  brand_id: string | null;
 }
 
 export interface MktCommission {
@@ -405,11 +435,18 @@ export async function pruneDiscoveryRuns(keepPerSource = 50): Promise<number> {
 // ── Outreach helpers ───────────────────────────────────────────────────────
 
 export async function createOutreach(
-  outreach: Omit<MktOutreach, 'id' | 'created_at' | 'status' | 'response_body' | 'responded_at'>,
+  outreach:
+    & Omit<MktOutreach, 'id' | 'created_at' | 'status' | 'response_body' | 'responded_at' | 'brand_id' | 'product_refs' | 'campaign_id'>
+    & Partial<Pick<MktOutreach, 'brand_id' | 'product_refs' | 'campaign_id'>>,
 ): Promise<MktOutreach | null> {
   const { data } = await db
     .from('mkt_outreach')
-    .insert(outreach)
+    .insert({
+      brand_id: null,
+      product_refs: [],
+      campaign_id: null,
+      ...outreach,
+    })
     .select()
     .single();
   return data ?? null;
@@ -454,11 +491,13 @@ export async function getTodayOutreachCount(marketingAgentId: string): Promise<n
 // ── Conversion helpers ─────────────────────────────────────────────────────
 
 export async function recordConversion(
-  conversion: Omit<MktConversion, 'id' | 'created_at'>,
+  conversion:
+    & Omit<MktConversion, 'id' | 'created_at' | 'brand_id'>
+    & Partial<Pick<MktConversion, 'brand_id'>>,
 ): Promise<MktConversion | null> {
   const { data } = await db
     .from('mkt_conversions')
-    .insert(conversion)
+    .insert({ brand_id: null, ...conversion })
     .select()
     .single();
   return data ?? null;

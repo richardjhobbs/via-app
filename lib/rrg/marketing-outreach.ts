@@ -15,6 +15,7 @@
 import {
   type MktCandidate,
   type MktOutreach,
+  type MktProductRef,
   type OutreachChannel,
   type MessageType,
   type MessageStatus,
@@ -25,9 +26,10 @@ import {
   getCandidatesForOutreach,
   getCandidatesForResend,
 } from './marketing-db';
-import { db } from './db';
+import { db, getBrandById, getBrandBySlug, getApprovedDrops, type RrgBrand, type RrgSubmission } from './db';
 import { fetchWithX402 } from './x402-client';
 import { sendOutreachOwnerEmail } from './email';
+import { getShippingConfig } from './shipping';
 import { RNWYClient } from 'rnwy-sdk';
 
 // ── Constants ──────────────────────────────────────────────────────────────
@@ -1003,6 +1005,297 @@ function getMessage(
   }
 }
 
+// ── Brand-aware Message Templates ──────────────────────────────────────────
+//
+// These pitch a specific brand and its products instead of the RRG platform.
+// They reference the per-brand MCP endpoint (/brand/{slug}/mcp) and the
+// get_quote tool so the receiving agent can verify ship-to-country before
+// committing. Shipping zone is disclosed in the message body so agents whose
+// users sit outside the zone can pre-filter and skip the roundtrip.
+
+/**
+ * Build the SHIPS FROM / SHIPS TO lines from brand_data.shipping. Falls back
+ * to hard-coded values for NOLO (UK only) and Clooudie (US mostly) if the
+ * brand_data has not yet been populated for the first run.
+ */
+function buildShippingLines(brand: RrgBrand): { from: string; to: string } {
+  const cfg = getShippingConfig(brand.brand_data);
+  let from = cfg?.shipsFromCountry ?? '';
+  let to = '';
+
+  if (cfg) {
+    if (cfg.internationalFlatUsd === null || cfg.internationalFlatUsd === undefined) {
+      to = from ? `${from} only` : 'domestic only';
+    } else if (cfg.excludedCountries && cfg.excludedCountries.length > 0) {
+      to = `worldwide except: ${cfg.excludedCountries.join(', ')}`;
+    } else {
+      to = 'worldwide';
+    }
+  }
+
+  // First-run fallback for NOLO and Clooudie if brand_data.shipping isn't set
+  if (!from && brand.slug === 'nolo') {
+    from = 'United Kingdom';
+    to = 'United Kingdom only';
+  }
+  if (!from && brand.slug === 'clooudie') {
+    from = 'United States';
+    to = 'United States (primary), limited international';
+  }
+
+  return { from: from || 'unknown', to: to || 'unknown' };
+}
+
+function formatProductLine(p: MktProductRef): string {
+  const variant = p.variant_label ? ` [${p.variant_label}]` : '';
+  const x402 = p.x402_uri ? `\n     pay: ${p.x402_uri}` : '';
+  return `  - ${p.title}${variant} — ${p.price_usdc} USDC${x402}`;
+}
+
+/**
+ * Convert an RrgSubmission (drop) into a product_refs entry for the message
+ * body and storage in mkt_outreach.product_refs.
+ */
+export function dropToProductRef(drop: RrgSubmission, brand: RrgBrand): MktProductRef {
+  const siteUrl = (process.env.NEXT_PUBLIC_SITE_URL ?? 'https://realrealgenuine.com').replace(/\/$/, '');
+  const x402Uri = drop.token_id != null
+    ? `${siteUrl}/brand/${brand.slug}/mcp?tool=buy_product&token_id=${drop.token_id}`
+    : null;
+  return {
+    drop_id: drop.id,
+    token_id: drop.token_id ?? null,
+    title: drop.title,
+    price_usdc: String(drop.price_usdc ?? '0'),
+    variant_id: null,
+    variant_label: null,
+    x402_uri: x402Uri,
+  };
+}
+
+/**
+ * Full-catalogue pitch. Used for NOLO and Clooudie first runs — list every
+ * SKU so a candidate agent's shopper user can pick. Brands with bigger
+ * catalogues should use getBrandDropMessage with a curated subset instead.
+ */
+function getBrandFullCatalogueMessage(
+  brand: RrgBrand,
+  products: MktProductRef[],
+  candidate: MktCandidate,
+): MessageTemplate {
+  const name = candidate.name ?? `Agent #${candidate.erc8004_id ?? 'unknown'}`;
+  const ship = buildShippingLines(brand);
+  const brandMcp = `${SITE_URL}/brand/${brand.slug}/mcp`;
+  const productLines = products.length > 0
+    ? products.map(formatProductLine).join('\n')
+    : '  (catalogue empty)';
+
+  return {
+    subject: `${brand.name} on RRG — ${products.length} items, ${ship.to}`,
+    body: [
+      `FROM: RRG Platform Agent (ERC-8004 #${RRG_AGENT_ERC8004_ID})`,
+      `TO: ${name}`,
+      `BRAND: ${brand.name}`,
+      `PROTOCOL: A2A / MCP`,
+      '',
+      `SHIPS FROM: ${ship.from}`,
+      `SHIPS TO: ${ship.to}`,
+      `(Verify ship-to-country with the get_quote tool before committing.)`,
+      '',
+      brand.headline ? `${brand.headline}` : '',
+      brand.description ? `${brand.description}` : '',
+      '',
+      `FULL CATALOGUE (${products.length} item${products.length === 1 ? '' : 's'}):`,
+      productLines,
+      '',
+      `HOW TO BROWSE / BUY:`,
+      `1. Connect MCP: ${brandMcp}`,
+      `2. Call tool: list_products  — full agent-facing catalogue with live stock`,
+      `3. Call tool: get_quote      — live shipping quote for your buyer's country`,
+      `4. Call tool: buy_product    — initiate USDC purchase on Base (gasless)`,
+      '',
+      `${brand.name} on RRG is a brand mirror — checkout in USDC on Base.`,
+      `RRG is a product of VIA Labs. Platform agent ${SITE_URL}/.well-known/agent.json`,
+      '',
+      `ENDPOINTS:`,
+      `Brand MCP:  ${brandMcp}`,
+      `Storefront: ${SITE_URL}/brand/${brand.slug}`,
+    ].filter(Boolean).join('\n'),
+  };
+}
+
+/**
+ * Curated product-drop pitch — up to 5 featured items. For brands with larger
+ * catalogues than NOLO/Clooudie.
+ */
+function getBrandDropMessage(
+  brand: RrgBrand,
+  products: MktProductRef[],
+  candidate: MktCandidate,
+): MessageTemplate {
+  const name = candidate.name ?? `Agent #${candidate.erc8004_id ?? 'unknown'}`;
+  const ship = buildShippingLines(brand);
+  const brandMcp = `${SITE_URL}/brand/${brand.slug}/mcp`;
+  const featured = products.slice(0, 5);
+  const productLines = featured.length > 0
+    ? featured.map(formatProductLine).join('\n')
+    : '  (no products specified)';
+
+  return {
+    subject: `${brand.name} on RRG — featured drop (${ship.to})`,
+    body: [
+      `FROM: RRG Platform Agent (ERC-8004 #${RRG_AGENT_ERC8004_ID})`,
+      `TO: ${name}`,
+      `BRAND: ${brand.name}`,
+      `PROTOCOL: A2A / MCP`,
+      '',
+      `SHIPS FROM: ${ship.from}`,
+      `SHIPS TO: ${ship.to}`,
+      `(Verify ship-to-country with the get_quote tool before committing.)`,
+      '',
+      brand.headline ? `${brand.headline}` : '',
+      '',
+      `FEATURED ITEMS:`,
+      productLines,
+      products.length > 5 ? `  (+ ${products.length - 5} more — call list_products to see the full catalogue)` : '',
+      '',
+      `HOW TO BUY:`,
+      `1. Connect MCP: ${brandMcp}`,
+      `2. Call tool: get_product   — full agent-facing payload, live stock per variant`,
+      `3. Call tool: get_quote     — live shipping quote for your buyer's country`,
+      `4. Call tool: buy_product   — initiate USDC purchase on Base (gasless)`,
+      '',
+      `RRG is a product of VIA Labs. Platform agent ${SITE_URL}/.well-known/agent.json`,
+      `Brand MCP: ${brandMcp}`,
+    ].filter(Boolean).join('\n'),
+  };
+}
+
+/**
+ * Single-variant restock alert. Triggered by inventory events in Layer 3.
+ */
+function getBrandRestockMessage(
+  brand: RrgBrand,
+  product: MktProductRef,
+  candidate: MktCandidate,
+): MessageTemplate {
+  const name = candidate.name ?? `Agent #${candidate.erc8004_id ?? 'unknown'}`;
+  const ship = buildShippingLines(brand);
+  const brandMcp = `${SITE_URL}/brand/${brand.slug}/mcp`;
+  const variant = product.variant_label ? ` (${product.variant_label})` : '';
+
+  return {
+    subject: `${brand.name} restock: ${product.title}${variant}`,
+    body: [
+      `FROM: RRG Platform Agent (ERC-8004 #${RRG_AGENT_ERC8004_ID})`,
+      `TO: ${name}`,
+      `BRAND: ${brand.name}`,
+      `PROTOCOL: A2A / MCP`,
+      '',
+      `RESTOCK: ${product.title}${variant} — ${product.price_usdc} USDC`,
+      product.x402_uri ? `BUY:     ${product.x402_uri}` : '',
+      '',
+      `SHIPS FROM: ${ship.from}`,
+      `SHIPS TO: ${ship.to}`,
+      '',
+      `Call get_product on ${brandMcp} for live stock per variant.`,
+      `RRG is a product of VIA Labs.`,
+    ].filter(Boolean).join('\n'),
+  };
+}
+
+function getBrandIntroMessage(
+  brand: RrgBrand,
+  candidate: MktCandidate,
+): MessageTemplate {
+  const name = candidate.name ?? `Agent #${candidate.erc8004_id ?? 'unknown'}`;
+  const ship = buildShippingLines(brand);
+  const brandMcp = `${SITE_URL}/brand/${brand.slug}/mcp`;
+
+  return {
+    subject: `${brand.name} now on RRG (${ship.to})`,
+    body: [
+      `FROM: RRG Platform Agent (ERC-8004 #${RRG_AGENT_ERC8004_ID})`,
+      `TO: ${name}`,
+      `BRAND: ${brand.name}`,
+      `PROTOCOL: A2A / MCP`,
+      '',
+      `SHIPS FROM: ${ship.from}`,
+      `SHIPS TO: ${ship.to}`,
+      '',
+      brand.headline ? `${brand.headline}` : '',
+      brand.description ? `${brand.description}` : '',
+      '',
+      `${brand.name} is live on RRG with a brand-scoped MCP endpoint your`,
+      `shopping agents can query directly. Checkout is USDC on Base, gasless.`,
+      '',
+      `START HERE:`,
+      `1. Connect MCP: ${brandMcp}`,
+      `2. Call tool: list_products  — full catalogue with live stock`,
+      `3. Call tool: get_sizing_guide${brand.supports_sizing ? '' : ' (n/a for this brand)'}`,
+      `4. Call tool: get_quote      — live shipping quote per destination`,
+      `5. Call tool: buy_product    — initiate USDC purchase`,
+      '',
+      `RRG is a product of VIA Labs. Platform agent ${SITE_URL}/.well-known/agent.json`,
+    ].filter(Boolean).join('\n'),
+  };
+}
+
+interface BrandTemplateContext {
+  brand: RrgBrand;
+  products: MktProductRef[];
+}
+
+/**
+ * Pick a brand template based on message type.
+ */
+function getBrandMessage(
+  type: MessageType,
+  ctx: BrandTemplateContext,
+  candidate: MktCandidate,
+): MessageTemplate {
+  switch (type) {
+    case 'full_catalogue': return getBrandFullCatalogueMessage(ctx.brand, ctx.products, candidate);
+    case 'product_drop':   return getBrandDropMessage(ctx.brand, ctx.products, candidate);
+    case 'restock':        return getBrandRestockMessage(ctx.brand, ctx.products[0] ?? { drop_id: '', title: '(unspecified)', price_usdc: '0' }, candidate);
+    case 'brand_intro':    return getBrandIntroMessage(ctx.brand, candidate);
+    default:               return getBrandIntroMessage(ctx.brand, candidate);
+  }
+}
+
+/**
+ * Resolve the brand template context from outreach options. Returns null if
+ * the brand cannot be loaded — caller should fall back to platform template.
+ */
+async function resolveBrandContext(
+  opts: BrandOutreachOpts,
+): Promise<BrandTemplateContext | null> {
+  let brand: RrgBrand | null = null;
+  if (opts.brandId) {
+    brand = await getBrandById(opts.brandId);
+  } else if (opts.brandSlug) {
+    brand = await getBrandBySlug(opts.brandSlug);
+  }
+  if (!brand) return null;
+
+  // Resolve product refs
+  let products: MktProductRef[] = [];
+  if (opts.productRefs && opts.productRefs.length > 0) {
+    products = opts.productRefs;
+  } else if (opts.fullCatalogue) {
+    const drops = await getApprovedDrops(brand.id);
+    products = drops.map((d) => dropToProductRef(d, brand!));
+  } else if (opts.productIds && opts.productIds.length > 0) {
+    const drops = await getApprovedDrops(brand.id);
+    const byId = new Map(drops.map((d) => [d.id, d]));
+    products = opts.productIds
+      .map((id) => byId.get(id))
+      .filter((d): d is RrgSubmission => !!d)
+      .map((d) => dropToProductRef(d, brand!));
+  }
+
+  return { brand, products };
+}
+
 // ── Outreach Sender ────────────────────────────────────────────────────────
 
 export interface OutreachResult {
@@ -1013,16 +1306,43 @@ export interface OutreachResult {
   httpStatus: number | null;
   endpoint: string | null;
   error?: string;
+  /** Echoed back so admin UI can render which brand/products were pitched. */
+  brandId?: string | null;
+  brandSlug?: string | null;
+  productRefs?: MktProductRef[];
+}
+
+/**
+ * Options for brand-aware outreach. Pass exactly one of brandId / brandSlug
+ * to scope the message to a brand. Product selection precedence:
+ *   1. explicit productRefs (already built — used by Layer 3 campaign runner)
+ *   2. fullCatalogue=true (fetches every active drop for the brand)
+ *   3. productIds (filters drops by ID)
+ *   4. empty (brand_intro message with no product list)
+ */
+export interface BrandOutreachOpts {
+  brandId?: string;
+  brandSlug?: string;
+  productIds?: string[];
+  productRefs?: MktProductRef[];
+  fullCatalogue?: boolean;
+  campaignId?: string;
 }
 
 /**
  * Send an outreach message to a candidate agent.
  * Resolves their endpoints from metadata and ACTUALLY delivers the message.
+ *
+ * Pass `opts` to scope the message to a brand. When `opts.brandId` or
+ * `opts.brandSlug` is set, the message is built from a brand template
+ * (full_catalogue / product_drop / restock / brand_intro) and the brand /
+ * product refs / campaign id are persisted on the mkt_outreach row.
  */
 export async function sendOutreach(
   candidateId: string,
   channel: OutreachChannel,
   messageType: MessageType = 'intro',
+  opts: BrandOutreachOpts = {},
 ): Promise<OutreachResult> {
   const rrgAgent = await getMarketingAgentByWallet(RRG_AGENT_WALLET);
   if (!rrgAgent) throw new Error('RRG marketing agent not found');
@@ -1066,8 +1386,24 @@ export async function sendOutreach(
     // Intel gathering is best-effort — don't block outreach on failure
   }
 
-  const template = getMessage(messageType, candidate as MktCandidate);
-  const messageHash = hashMessage(candidate.id, messageType, channel);
+  // ── Resolve brand context (if any) and pick template ─────────────────
+  // Brand-aware messages take precedence: when opts.brandId or opts.brandSlug
+  // is set, we route to the brand template (full_catalogue / product_drop /
+  // restock / brand_intro). Falling back to the legacy platform-recruitment
+  // template if the brand cannot be loaded preserves the existing path.
+  const brandCtx = (opts.brandId || opts.brandSlug)
+    ? await resolveBrandContext(opts)
+    : null;
+
+  const isBrandOutreach = !!brandCtx;
+  const template = isBrandOutreach
+    ? getBrandMessage(messageType, brandCtx!, candidate as MktCandidate)
+    : getMessage(messageType, candidate as MktCandidate);
+  const messageHash = hashMessage(
+    candidate.id,
+    isBrandOutreach ? `${brandCtx!.brand.slug}:${messageType}` : messageType,
+    channel,
+  );
 
   // Create outreach record (status starts as 'sent')
   const outreach = await createOutreach({
@@ -1078,6 +1414,9 @@ export async function sendOutreach(
     message_body: template.body,
     message_hash: messageHash,
     cost_usdc: 0,
+    brand_id: brandCtx?.brand.id ?? null,
+    product_refs: brandCtx?.products ?? [],
+    campaign_id: opts.campaignId ?? null,
   });
 
   if (!outreach) {
@@ -1232,6 +1571,9 @@ export async function sendOutreach(
       httpStatus: delivery.httpStatus,
       endpoint: delivery.endpoint,
       error: delivery.error ?? undefined,
+      brandId: brandCtx?.brand.id ?? null,
+      brandSlug: brandCtx?.brand.slug ?? null,
+      productRefs: brandCtx?.products ?? [],
     };
   } catch (err) {
     await updateOutreachStatus(outreach.id, 'failed');
@@ -1243,6 +1585,9 @@ export async function sendOutreach(
       httpStatus: null,
       endpoint: null,
       error: err instanceof Error ? err.message : String(err),
+      brandId: brandCtx?.brand.id ?? null,
+      brandSlug: brandCtx?.brand.slug ?? null,
+      productRefs: brandCtx?.products ?? [],
     };
   }
 }
@@ -1252,6 +1597,11 @@ export async function sendOutreach(
  * Enforces one-contact-per-wallet-per-24h: if any agent from a wallet
  * was contacted in the last 24 hours, all other agents from that wallet
  * are skipped until the next day.
+ *
+ * Pass `brandOpts` to send brand-aware messages (full_catalogue / product_drop
+ * / restock / brand_intro). The brand context is resolved once and reused
+ * across the whole batch so we don't re-fetch the brand for every candidate.
+ *
  * Returns detailed per-candidate delivery results.
  */
 export async function batchOutreach(
@@ -1259,10 +1609,27 @@ export async function batchOutreach(
   channel: OutreachChannel = 'a2a',
   limit = 10,
   resend = false,
+  brandOpts: BrandOutreachOpts = {},
+  messageTypeOverride?: MessageType,
 ): Promise<OutreachResult[]> {
   const candidates = resend
     ? await getCandidatesForResend(limit)
     : await getCandidatesForOutreach(tier, limit);
+
+  // Resolve brand context once per batch — drops + brand row are the same
+  // for every candidate, so refetching them per-candidate is wasted DB work.
+  // The resolved product_refs are passed to each sendOutreach call to avoid
+  // re-querying the catalogue.
+  const resolvedBrand = (brandOpts.brandId || brandOpts.brandSlug)
+    ? await resolveBrandContext(brandOpts)
+    : null;
+  const perCandidateOpts: BrandOutreachOpts = resolvedBrand
+    ? {
+        brandId: resolvedBrand.brand.id,
+        productRefs: resolvedBrand.products,
+        campaignId: brandOpts.campaignId,
+      }
+    : brandOpts;
   const results: OutreachResult[] = [];
 
   // ── Wallet deduplication ──────────────────────────────────────────────
@@ -1301,8 +1668,19 @@ export async function batchOutreach(
       continue;
     }
 
-    const msgType = resend ? 'follow_up' as MessageType : 'intro' as MessageType;
-    const result = await sendOutreach(c.id, channel, msgType);
+    // Message-type precedence:
+    //   1. explicit override (campaign runner passes e.g. 'full_catalogue')
+    //   2. brand context present + no override → 'brand_intro' default
+    //   3. resend → 'follow_up'
+    //   4. otherwise → 'intro' (legacy platform-recruitment)
+    const msgType: MessageType = messageTypeOverride
+      ? messageTypeOverride
+      : resolvedBrand
+        ? 'brand_intro'
+        : resend
+          ? 'follow_up'
+          : 'intro';
+    const result = await sendOutreach(c.id, channel, msgType, perCandidateOpts);
     results.push(result);
 
     // Mark this wallet as contacted for the rest of this batch
