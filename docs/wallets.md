@@ -39,7 +39,7 @@ Inbound USDC to these is the brand's cash. Platform sees only the 2.5% commissio
 | MYKLÉ | `mykle` | `0x9eb5405fef682e1d4d555f64a683a499076556a3` | suspended / in_progress | 189-212 | 24 |
 | Nolo | `nolo` | `0x27daa49fb93445cdb6e3f3a6be7cd6bae1f04e2d` | active / in_progress | 571 (1) via brand wallet; 568-570 (3) via creator `0x891c13aa323378637404efd971553a3a6df5aaf1` | 4 across two creators |
 | PassportADV | `passport-adv` | `0xb4febbe6c0a0cd350c76054ccfd037d8bf47e502` | active / in_progress | 93-103 (creator was the holding wallet) | 11 (note: brand-table wallet differs from on-chain creator) |
-| The Year Of... | `tyo` | `0x699e234a877ba075e1f16abb63f895a8a2250388` | active / live | 29, 35 (2) via brand wallet; 30 via DrHobbs | 3 across two creators |
+| The Year Of... | `tyo` | `0xf78cb04c28e1898638ee4322f4b7b91ee8c0db00` (agent #47353, registered 2026-05-11; client payout sweeps to Tony's `0x699e234a877ba075e1f16abb63f895a8a2250388`) | active / live | 29, 35 (2) via Tony's original wallet; 30 via DrHobbs | 3 across two creators |
 | Unknown Union | `unknown-union` | `0xe7ed24a6a66170070c725451c003917da83871da` | active / live | 63-572 | 87 |
 
 ### Brand-table-wallet vs on-chain-creator mismatches
@@ -53,7 +53,7 @@ Confirmed mismatches (token range : on-chain creator vs current brand wallet):
 
 - Nolo: tokens 568-570 created by `0x891c13aa...` (handoff intermediary), token 571 by current brand wallet `0x27daa49f...`.
 - PassportADV: tokens 93-103 created by holding wallet `0x734a25fb...`, brand row now points to `0xb4febbe6...`.
-- The Year Of...: token 30 created by DrHobbs, tokens 29 and 35 by brand wallet.
+- The Year Of...: token 30 created by DrHobbs, tokens 29 and 35 by Tony's original wallet `0x699e23...0388`. Brand row now points to RRG-managed agent wallet `0xf78cb04c...0db00` (agent #47353). Tony's wallet is retained as the client-payout destination; periodic USDC sweeps go from the agent wallet to Tony's wallet.
 - Artemist: tokens 36, 39, 44 created by three different wallets (`0xe653...c375`, `0xc12e...0d75`, `0xf2e7...4b3e`); brand row now points to `0x2c9a1dad...`.
 
 ## 4. Shared holding wallet (RRG Test Brands)
