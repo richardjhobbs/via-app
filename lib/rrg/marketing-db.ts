@@ -267,7 +267,14 @@ export async function getCandidatesByTier(tier: CandidateTier): Promise<MktCandi
  *      the recently-contacted set OR already chosen in this pull.
  *   4. Return the first `limit` survivors.
  */
-const OVERSAMPLE_FACTOR = 6;
+// The discovery scanner emits ~14 rows per unique wallet on average (same
+// agent registered across base/ethereum/bnb/polygon/etc), and score is set
+// per-row not per-wallet. Score-DESC ordering clusters top rows around a
+// handful of high-scoring wallets. limit*6 yielded only 9 unique wallets
+// in a 50-batch on 2026-05-11. Bumped to 20 to cover >50 unique even when
+// top-of-pool clustering is severe. Capped at Supabase's default 1000-row
+// PostgREST page so the .limit() is honoured.
+const OVERSAMPLE_FACTOR = 20;
 
 export async function getCandidatesForOutreach(
   tier?: CandidateTier,
