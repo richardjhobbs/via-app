@@ -903,7 +903,7 @@ function DropsTab() {
   const [lightbox, setLightbox] = useState<string | null>(null);
   const [brandFilter, setBrandFilter] = useState<string>('all');
   const [typeFilter, setTypeFilter]   = useState<'all' | 'digital' | 'physical' | 'voucher'>('all');
-  const [visibilityFilter, setVisibilityFilter] = useState<'all' | 'storefront' | 'agent_only'>('all');
+  const [visibilityFilter, setVisibilityFilter] = useState<'all' | 'storefront' | 'mcp_only' | 'hidden'>('all');
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -979,41 +979,37 @@ function DropsTab() {
     }
   };
 
-  // Optimistic toggle: mutate local state immediately, send the PATCH in the
-  // background, revert on error. The whole-list re-fetch ran on every tick
-  // before — slow and visually jarring with ~2k rows. Local state stays in
-  // sync with the DB because boolean flips are idempotent (latest patch wins).
-  const toggleHidden = async (d: Drop) => {
-    const prev = d.hidden ?? false;
-    const next = !prev;
-    setDrops(ds => ds.map(x => x.id === d.id ? { ...x, hidden: next } : x));
-    try {
-      const res = await fetch('/api/rrg/admin/drops', {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ submissionId: d.id, hidden: next }),
-      });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    } catch (e) {
-      setDrops(ds => ds.map(x => x.id === d.id ? { ...x, hidden: prev } : x));
-      setMsg(`Error toggling visibility for "${d.title}": ${e instanceof Error ? e.message : String(e)}`);
-    }
-  };
+  // The product has three semantic visibility states, derived from two
+  // independent DB booleans (hidden, ui_visible). Two separate checkboxes
+  // with dynamic labels turned out to be confusing — admins couldn't tell
+  // from a glance what was on or off. Collapse to one selector that maps
+  // the underlying flags to the visible state.
+  type VisState = 'storefront' | 'mcp_only' | 'hidden';
+  const visStateOf = (d: Drop): VisState =>
+    d.hidden                    ? 'hidden'
+    : (d.ui_visible ?? true)    ? 'storefront'
+    :                             'mcp_only';
+  const flagsForState = (s: VisState): { hidden: boolean; ui_visible: boolean } =>
+    s === 'hidden'      ? { hidden: true,  ui_visible: false }
+    : s === 'mcp_only'  ? { hidden: false, ui_visible: false }
+    :                     { hidden: false, ui_visible: true };
 
-  const toggleUiVisible = async (d: Drop) => {
-    const prev = d.ui_visible ?? true;
-    const next = !prev;
-    setDrops(ds => ds.map(x => x.id === d.id ? { ...x, ui_visible: next } : x));
+  // Optimistic update with revert-on-error. One PATCH per change carries
+  // both flags so the DB transition is atomic.
+  const setVisState = async (d: Drop, next: VisState) => {
+    const prevFlags = { hidden: d.hidden ?? false, ui_visible: d.ui_visible ?? true };
+    const nextFlags = flagsForState(next);
+    setDrops(ds => ds.map(x => x.id === d.id ? { ...x, ...nextFlags } : x));
     try {
       const res = await fetch('/api/rrg/admin/drops', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ submissionId: d.id, ui_visible: next }),
+        body: JSON.stringify({ submissionId: d.id, ...nextFlags }),
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
     } catch (e) {
-      setDrops(ds => ds.map(x => x.id === d.id ? { ...x, ui_visible: prev } : x));
-      setMsg(`Error toggling storefront for "${d.title}": ${e instanceof Error ? e.message : String(e)}`);
+      setDrops(ds => ds.map(x => x.id === d.id ? { ...x, ...prevFlags } : x));
+      setMsg(`Error updating visibility for "${d.title}": ${e instanceof Error ? e.message : String(e)}`);
     }
   };
 
@@ -1027,14 +1023,13 @@ function DropsTab() {
     if (typeFilter === 'physical' && !d.is_physical_product) return false;
     if (typeFilter === 'voucher' && !d.has_voucher) return false;
     if (typeFilter === 'digital' && (d.is_physical_product || d.has_voucher)) return false;
-    const uiVis = d.ui_visible ?? true;
-    if (visibilityFilter === 'storefront' && !uiVis) return false;
-    if (visibilityFilter === 'agent_only' && uiVis) return false;
+    if (visibilityFilter !== 'all' && visStateOf(d) !== visibilityFilter) return false;
     return true;
   });
 
-  const storefrontCount = drops.filter(d => (d.ui_visible ?? true) && !d.hidden).length;
-  const mcpCount        = drops.filter(d => !d.hidden).length;
+  const storefrontCount = drops.filter(d => visStateOf(d) === 'storefront').length;
+  const mcpOnlyCount    = drops.filter(d => visStateOf(d) === 'mcp_only').length;
+  const hiddenCount     = drops.filter(d => visStateOf(d) === 'hidden').length;
 
   const filterSelectClass = 'bg-black border border-white/20 px-2 py-1.5 text-xs font-mono uppercase tracking-wider focus:border-white outline-none';
 
@@ -1074,16 +1069,17 @@ function DropsTab() {
         </select>
         <select
           value={visibilityFilter}
-          onChange={(e) => setVisibilityFilter(e.target.value as 'all' | 'storefront' | 'agent_only')}
+          onChange={(e) => setVisibilityFilter(e.target.value as 'all' | 'storefront' | 'mcp_only' | 'hidden')}
           className={filterSelectClass}
-          title="Storefront = visible in human UI grid. Agent-only = hidden from UI but listed via MCP."
+          title="Storefront = on the human grid + MCP. MCP only = agents only. Hidden = off every surface."
         >
           <option value="all">All Visibility</option>
-          <option value="storefront">Storefront (UI)</option>
-          <option value="agent_only">Agent-only (MCP)</option>
+          <option value="storefront">Storefront + MCP</option>
+          <option value="mcp_only">MCP only</option>
+          <option value="hidden">Hidden</option>
         </select>
         <span className="text-xs font-mono text-white/40 ml-auto">
-          {filteredDrops.length} of {drops.length} • {storefrontCount} on storefront / {mcpCount} on MCP
+          {filteredDrops.length} of {drops.length} • {storefrontCount} storefront / {mcpOnlyCount} MCP only / {hiddenCount} hidden
         </span>
       </div>
 
@@ -1123,28 +1119,17 @@ function DropsTab() {
                         <p className="text-sm text-white/50 mt-0.5 line-clamp-1">{d.description}</p>
                       )}
                     </div>
-                    <div className="flex gap-3 text-sm flex-shrink-0 ml-4">
-                      <label className="flex items-center gap-1.5 cursor-pointer" title={d.hidden ? 'Hidden from every surface (UI + MCP + deep links)' : 'Listed across UI + MCP'}>
-                        <input type="checkbox" checked={!d.hidden} onChange={() => toggleHidden(d)} disabled={acting} className="w-4 h-4 accent-white cursor-pointer" />
-                        <span className="text-white/50 font-mono text-xs">{d.hidden ? 'Hidden' : 'Vis'}</span>
-                      </label>
-                      <label
-                        className={`flex items-center gap-1.5 cursor-pointer ${d.hidden ? 'opacity-30' : ''}`}
-                        title={d.hidden
-                          ? 'Hidden globally — storefront flag has no effect'
-                          : (d.ui_visible ?? true)
-                            ? 'Shown in storefront grid'
-                            : 'MCP-only: agents can find it, humans cannot browse to it from /brand'}
+                    <div className="flex gap-3 text-sm flex-shrink-0 ml-4 items-center">
+                      <select
+                        value={visStateOf(d)}
+                        onChange={(e) => setVisState(d, e.target.value as 'storefront' | 'mcp_only' | 'hidden')}
+                        className="bg-black border border-white/20 px-2 py-1 text-xs font-mono uppercase tracking-wider focus:border-white outline-none cursor-pointer"
+                        title="Storefront = visible to humans + MCP. MCP only = agents only, off the storefront grid. Hidden = off every surface."
                       >
-                        <input
-                          type="checkbox"
-                          checked={d.ui_visible ?? true}
-                          disabled={acting || d.hidden}
-                          onChange={() => toggleUiVisible(d)}
-                          className="w-4 h-4 accent-white cursor-pointer"
-                        />
-                        <span className="text-white/50 font-mono text-xs">{(d.ui_visible ?? true) ? 'UI' : 'MCP'}</span>
-                      </label>
+                        <option value="storefront">Storefront + MCP</option>
+                        <option value="mcp_only">MCP only</option>
+                        <option value="hidden">Hidden</option>
+                      </select>
                       <button onClick={() => editing === d.id ? setEditing(null) : startEdit(d)} className="text-white/50 hover:text-white transition-colors">
                         {editing === d.id ? 'Cancel' : 'Edit'}
                       </button>
