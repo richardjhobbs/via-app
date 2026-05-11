@@ -247,6 +247,28 @@ export async function getCandidatesByTier(tier: CandidateTier): Promise<MktCandi
   return data ?? [];
 }
 
+/**
+ * Pull candidates for outreach, deduplicated by wallet at pull time AND
+ * filtered against the 24h-wallet cooldown across all rows of each wallet.
+ *
+ * Without this, batches starve fast: the discovery scanner records the same
+ * agent across multiple chains (e.g. wallet 0xABC has rows on Base, Ethereum,
+ * Polygon). When we contact the Base row, only THAT row gets last_contacted
+ * set, but the other-chain rows stay pending. A naive top-N-by-score pull
+ * returns the other-chain rows on the next batch, and the existing wallet
+ * dedup in batchOutreach correctly skips them. Net effect: a 50-batch fires
+ * to 1-10 unique wallets instead of 50.
+ *
+ * Strategy:
+ *   1. Pull oversample (limit * OVERSAMPLE_FACTOR) ordered by score.
+ *   2. Look up which of those wallets have ANY mkt_candidates row with
+ *      last_contacted within the last 24h.
+ *   3. Walk the oversample; for each candidate, skip if its wallet is in
+ *      the recently-contacted set OR already chosen in this pull.
+ *   4. Return the first `limit` survivors.
+ */
+const OVERSAMPLE_FACTOR = 6;
+
 export async function getCandidatesForOutreach(
   tier?: CandidateTier,
   limit = 20,
@@ -265,8 +287,52 @@ export async function getCandidatesForOutreach(
 
   const { data } = await query
     .order('score', { ascending: false })
-    .limit(limit);
-  return data ?? [];
+    .limit(limit * OVERSAMPLE_FACTOR);
+
+  const pool = data ?? [];
+  if (pool.length === 0) return [];
+
+  // Collect non-null wallets from the pool; check cross-row 24h cooldown.
+  const walletsInPool = Array.from(
+    new Set(
+      pool
+        .map((c) => c.wallet_address)
+        .filter((w): w is string => !!w),
+    ),
+  );
+
+  const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+  const recentlyContacted = walletsInPool.length > 0
+    ? await db
+        .from('mkt_candidates')
+        .select('wallet_address')
+        .in('wallet_address', walletsInPool)
+        .gte('last_contacted', oneDayAgo)
+        .not('wallet_address', 'is', null)
+    : { data: [] };
+
+  const skippedWallets = new Set(
+    (recentlyContacted.data ?? [])
+      .map((r: { wallet_address: string | null }) => r.wallet_address?.toLowerCase())
+      .filter((w): w is string => !!w),
+  );
+
+  // Walk the oversample, dedup by wallet (lowercase), skip recently-contacted.
+  const chosenWallets = new Set<string>();
+  const result: MktCandidate[] = [];
+  for (const c of pool) {
+    const w = c.wallet_address?.toLowerCase() ?? null;
+    if (w) {
+      if (skippedWallets.has(w)) continue;
+      if (chosenWallets.has(w)) continue;
+      chosenWallets.add(w);
+    }
+    // null-wallet candidates always pass through (rare, but possible for
+    // off-chain agents discovered via metadata-only sources)
+    result.push(c);
+    if (result.length >= limit) break;
+  }
+  return result;
 }
 
 /**
