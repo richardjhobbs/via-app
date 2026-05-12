@@ -1053,9 +1053,14 @@ function buildShippingLines(brand: RrgBrand): { from: string; to: string } {
  */
 function summariseProductDescription(desc: string | null | undefined, maxLen = 90): string | null {
   if (!desc) return null;
-  let s = desc.replace(/\s+/g, ' ').trim();
+  // Strip em/en dashes from upstream brand copy. They are banned in
+  // RRG-emitted user-facing text. Em-dash to comma is the safe substitution.
+  let s = desc
+    .replace(/\s*[—–]\s*/g, ', ')
+    .replace(/\s+/g, ' ')
+    .trim();
   if (s.length === 0) return null;
-  const breakIdx = s.search(/[.!?]\s+|\s[-]\s|\n/);
+  const breakIdx = s.search(/[.!?]\s+|\n/);
   if (breakIdx > 0 && breakIdx < maxLen) s = s.slice(0, breakIdx);
   if (s.length > maxLen) {
     s = s.slice(0, maxLen - 1).replace(/\s+\S*$/, '') + '...';
