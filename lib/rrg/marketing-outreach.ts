@@ -1745,12 +1745,25 @@ export async function previewOutreach(
     notes.push('Recipient pool is empty for this tier/limit (cooldown / no reachable / all already contacted in last 24h). No candidates would be contacted. Sample message rendered against a placeholder so the body is still reviewable.');
   }
 
+  // Count live approved drops for the brand even when the message template
+  // doesn't embed a product list (brand_intro). Reviewer wants to see the
+  // real catalogue size, not whatever the template path happened to load.
+  let liveProductCount = resolvedBrand?.products.length ?? 0;
+  if (resolvedBrand && liveProductCount === 0) {
+    try {
+      const drops = await getApprovedDrops(resolvedBrand.brand.id);
+      liveProductCount = drops.length;
+    } catch (err) {
+      notes.push(`live product count unavailable: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+
   return {
     recipient_count: candidates.length,
     brand: resolvedBrand
       ? { id: resolvedBrand.brand.id, slug: resolvedBrand.brand.slug, name: resolvedBrand.brand.name }
       : null,
-    product_count: resolvedBrand?.products.length ?? 0,
+    product_count: liveProductCount,
     message_type: msgType,
     sample_candidate: sample
       ? { name: sample.name ?? null, erc8004_id: sample.erc8004_id ?? null }
