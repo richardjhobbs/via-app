@@ -125,6 +125,8 @@ export interface MktProductRef {
   variant_label?: string | null;
   /** Optional pre-built x402 / AP2 payment URI for one-shot agent purchase */
   x402_uri?: string | null;
+  /** Short truncated product description for the catalogue line. ~80 chars. */
+  description?: string | null;
 }
 
 export interface MktOutreach {

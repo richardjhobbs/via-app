@@ -1046,10 +1046,29 @@ function buildShippingLines(brand: RrgBrand): { from: string; to: string } {
   return { from: from || 'unknown', to: to || 'unknown' };
 }
 
+/**
+ * Trim a long product description down to a single catalogue-line summary.
+ * Picks the first sentence/clause and caps at maxLen with an ellipsis when
+ * truncated. Returns null for blank input so the caller can omit the line.
+ */
+function summariseProductDescription(desc: string | null | undefined, maxLen = 90): string | null {
+  if (!desc) return null;
+  let s = desc.replace(/\s+/g, ' ').trim();
+  if (s.length === 0) return null;
+  const breakIdx = s.search(/[.!?]\s+|\s[-]\s|\n/);
+  if (breakIdx > 0 && breakIdx < maxLen) s = s.slice(0, breakIdx);
+  if (s.length > maxLen) {
+    s = s.slice(0, maxLen - 1).replace(/\s+\S*$/, '') + '...';
+  }
+  return s;
+}
+
 function formatProductLine(p: MktProductRef): string {
   const variant = p.variant_label ? ` [${p.variant_label}]` : '';
   const x402 = p.x402_uri ? `\n     pay: ${p.x402_uri}` : '';
-  return `  - ${p.title}${variant} (${p.price_usdc} USDC)${x402}`;
+  const summary = summariseProductDescription(p.description);
+  const desc = summary ? `\n     ${summary}` : '';
+  return `  - ${p.title}${variant} (${p.price_usdc} USDC)${desc}${x402}`;
 }
 
 /**
@@ -1110,6 +1129,7 @@ export function dropToProductRef(drop: RrgSubmission, brand: RrgBrand): MktProdu
     variant_id: null,
     variant_label: null,
     x402_uri: x402Uri,
+    description: drop.description ?? null,
   };
 }
 
