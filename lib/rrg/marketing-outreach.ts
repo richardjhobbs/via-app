@@ -1710,14 +1710,28 @@ export async function previewOutreach(
       ? 'brand_intro'
       : 'intro';
 
+  // Build a placeholder candidate when the pool is empty so the human reviewer
+  // can still see the EXACT template body they would dispatch. The template
+  // only varies on the candidate's name and erc8004_id, so the placeholder is
+  // marked clearly and the rest of the body is the real outgoing content.
+  // Cast via unknown because MktCandidate has many fields that don't affect
+  // template rendering; we only need name + erc8004_id for the body.
+  const sampleForRender: MktCandidate = sample ?? ({
+    id: '00000000-0000-0000-0000-000000000000',
+    name: '<placeholder — no live recipients in this tier right now>',
+    erc8004_id: null,
+  } as unknown as MktCandidate);
+
   let sampleMessage: { subject: string; body: string } | null = null;
-  if (sample && resolvedBrand) {
-    const tpl = getBrandMessage(msgType, resolvedBrand, sample);
+  if (resolvedBrand) {
+    const tpl = getBrandMessage(msgType, resolvedBrand, sampleForRender);
     sampleMessage = { subject: tpl.subject, body: tpl.body };
-  } else if (sample) {
-    notes.push('No brand context resolved; would send platform-recruitment template (intro). Sample body not built in dry-run.');
   } else {
-    notes.push('Recipient pool is empty for this tier/limit. No candidates would be contacted.');
+    notes.push('No brand context resolved; would send platform-recruitment template (intro). Sample body not built in dry-run.');
+  }
+
+  if (!sample) {
+    notes.push('Recipient pool is empty for this tier/limit (cooldown / no reachable / all already contacted in last 24h). No candidates would be contacted. Sample message rendered against a placeholder so the body is still reviewable.');
   }
 
   return {
@@ -1729,7 +1743,7 @@ export async function previewOutreach(
     message_type: msgType,
     sample_candidate: sample
       ? { name: sample.name ?? null, erc8004_id: sample.erc8004_id ?? null }
-      : null,
+      : { name: sampleForRender.name, erc8004_id: null },
     sample_message: sampleMessage,
     notes,
   };
