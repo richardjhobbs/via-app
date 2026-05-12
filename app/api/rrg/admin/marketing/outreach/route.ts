@@ -21,7 +21,7 @@
 
 import { NextResponse } from 'next/server';
 import { isAdminFromCookies } from '@/lib/rrg/auth';
-import { sendOutreach, batchOutreach, type BrandOutreachOpts } from '@/lib/rrg/marketing-outreach';
+import { sendOutreach, batchOutreach, previewOutreach, type BrandOutreachOpts } from '@/lib/rrg/marketing-outreach';
 import { getOutreachForCandidate, type MessageType } from '@/lib/rrg/marketing-db';
 
 export const dynamic = 'force-dynamic';
@@ -53,6 +53,23 @@ export async function POST(req: Request) {
       campaignId:    typeof body.campaign_id === 'string' ? body.campaign_id : undefined,
     };
     const hasBrand = !!(brandOpts.brandId || brandOpts.brandSlug);
+
+    // Dry-run mode: build the brand context, pick the recipient pool, and
+    // render the EXACT message body that would go out to a sample candidate.
+    // No mkt_outreach rows written, no candidate endpoints contacted. Used
+    // by Rosie / admin UI for human review before greenlighting a real send.
+    if (body.dry_run === true) {
+      const messageType: MessageType | undefined = typeof body.message_type === 'string'
+        ? body.message_type as MessageType
+        : undefined;
+      const preview = await previewOutreach(
+        body.tier ?? undefined,
+        Math.min(body.limit ?? 10, 2000),
+        brandOpts,
+        messageType,
+      );
+      return NextResponse.json({ ok: true, mode: 'dry_run', preview });
+    }
 
     // Batch mode (tier is optional — without it, sends to all reachable pending agents)
     // resend: true → re-contact previously contacted agents with updated message

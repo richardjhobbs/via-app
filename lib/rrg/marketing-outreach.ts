@@ -1667,6 +1667,75 @@ export async function sendOutreach(
 }
 
 /**
+ * previewOutreach — dry-run for a brand outreach batch.
+ *
+ * Resolves the brand context (same path as a real send), gets the recipient
+ * pool that would be selected for this tier+limit (same wallet-cooldown +
+ * tier filter as batchOutreach), and builds the EXACT message body that
+ * would go out, using the first eligible candidate as a sample. Writes NO
+ * mkt_outreach rows. Hits NO candidate endpoints. Safe to call freely.
+ *
+ * Used by Rosie (and the admin UI) to show a human reviewer the actual
+ * subject + body + recipient count before greenlighting a real send.
+ */
+export async function previewOutreach(
+  tier: 'hot' | 'warm' | 'cold' | undefined,
+  limit: number,
+  brandOpts: BrandOutreachOpts,
+  messageTypeOverride?: MessageType,
+): Promise<{
+  recipient_count: number;
+  brand: { id: string; slug: string; name: string } | null;
+  product_count: number;
+  message_type: MessageType;
+  sample_candidate: { name: string | null; erc8004_id: number | null } | null;
+  sample_message: { subject: string; body: string } | null;
+  notes: string[];
+}> {
+  const notes: string[] = [];
+
+  const resolvedBrand = (brandOpts.brandId || brandOpts.brandSlug)
+    ? await resolveBrandContext(brandOpts)
+    : null;
+  if ((brandOpts.brandId || brandOpts.brandSlug) && !resolvedBrand) {
+    notes.push(`brand not found for slug=${brandOpts.brandSlug ?? '(none)'} id=${brandOpts.brandId ?? '(none)'}`);
+  }
+
+  const candidates = await getCandidatesForOutreach(tier, limit);
+  const sample = candidates[0] ?? null;
+
+  const msgType: MessageType = messageTypeOverride
+    ? messageTypeOverride
+    : resolvedBrand
+      ? 'brand_intro'
+      : 'intro';
+
+  let sampleMessage: { subject: string; body: string } | null = null;
+  if (sample && resolvedBrand) {
+    const tpl = getBrandMessage(msgType, resolvedBrand, sample);
+    sampleMessage = { subject: tpl.subject, body: tpl.body };
+  } else if (sample) {
+    notes.push('No brand context resolved; would send platform-recruitment template (intro). Sample body not built in dry-run.');
+  } else {
+    notes.push('Recipient pool is empty for this tier/limit. No candidates would be contacted.');
+  }
+
+  return {
+    recipient_count: candidates.length,
+    brand: resolvedBrand
+      ? { id: resolvedBrand.brand.id, slug: resolvedBrand.brand.slug, name: resolvedBrand.brand.name }
+      : null,
+    product_count: resolvedBrand?.products.length ?? 0,
+    message_type: msgType,
+    sample_candidate: sample
+      ? { name: sample.name ?? null, erc8004_id: sample.erc8004_id ?? null }
+      : null,
+    sample_message: sampleMessage,
+    notes,
+  };
+}
+
+/**
  * Batch outreach — send intro messages to top N candidates in a tier.
  * Enforces one-contact-per-wallet-per-24h: if any agent from a wallet
  * was contacted in the last 24 hours, all other agents from that wallet
