@@ -19,6 +19,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/rrg/db';
+import { onBrandLive } from '@/lib/rrg/brand-live-event';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -44,6 +45,8 @@ interface BrandRow {
   description: string | null;
   social_links: Record<string, unknown> | null;
   brand_data: Record<string, unknown> | null;
+  wallet_address: string | null;
+  erc8004_agent_id: number | null;
 }
 
 function str(value: unknown): string | undefined {
@@ -72,7 +75,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   const { data: brand, error: lookupErr } = await db
     .from('rrg_brands')
     .select(
-      'id, slug, name, status, onboarding_status, shopify_domain, headline, website_url, description, social_links, brand_data',
+      'id, slug, name, status, onboarding_status, shopify_domain, headline, website_url, description, social_links, brand_data, wallet_address, erc8004_agent_id',
     )
     .eq(brandId ? 'id' : 'slug', brandId ?? slug!)
     .maybeSingle();
@@ -139,6 +142,19 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       `Next manual step: node scripts/register-brand-concierge.mjs --slug ${row.slug}`,
   );
 
+  // Side effects: Notion log, wallets-doc regen, Discord briefs to Priscilla
+  // and Rosie. Each runs in Promise.allSettled inside onBrandLive — failures
+  // are surfaced in the response but never fail the route.
+  const sideEffects = await onBrandLive({
+    id: row.id,
+    slug: row.slug,
+    name: row.name,
+    description: row.description,
+    headline: row.headline,
+    wallet_address: row.wallet_address,
+    erc8004_agent_id: row.erc8004_agent_id,
+  });
+
   return NextResponse.json({
     ok: true,
     brandId: row.id,
@@ -152,5 +168,6 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
         ? `scripts/brand-mirror.mjs --slug ${row.slug} --commit-chain`
         : null,
     },
+    sideEffects,
   });
 }
