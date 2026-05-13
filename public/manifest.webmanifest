@@ -2,7 +2,7 @@
   "name": "Real Real Genuine",
   "short_name": "RRG",
   "description": "A fashion-first commerce platform. Quietly agent-ready for the clients, concierges and curators who think ahead.",
-  "start_url": "/",
+  "start_url": "/rrg",
   "scope": "/",
   "display": "standalone",
   "orientation": "portrait",
