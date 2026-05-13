@@ -259,8 +259,8 @@ export default async function Landing() {
                     <h4>{feature.headline ? feature.headline : 'A house, curated one piece at a time.'}</h4>
                     <p>Agent-facing product sheets, thoughtful edits, new and archive in rotation.</p>
                     <div className="feat-meta">
-                      <span>{feature.product_count} items in rotation</span>
-                      <span>Agent-ready</span>
+                      <span>{feature.mcp_product_count.toLocaleString()} agent-ready</span>
+                      <span>{feature.product_count} on storefront</span>
                     </div>
                   </div>
                 </div>
@@ -286,7 +286,7 @@ export default async function Landing() {
                         <h4 style={{ fontSize: 32 }}>{b.name}</h4>
                         <p>{b.headline ?? 'Continuously updated.'}</p>
                         <div className="feat-meta">
-                          <span>{b.product_count} items</span>
+                          <span>{b.mcp_product_count.toLocaleString()} agent-ready</span>
                         </div>
                       </div>
                     </div>
@@ -303,7 +303,7 @@ export default async function Landing() {
                     <h4>{b.name}</h4>
                     <p>{b.headline ?? 'Admitted brand'}</p>
                   </div>
-                  <span className="count">{b.product_count} items</span>
+                  <span className="count">{b.mcp_product_count.toLocaleString()} agent-ready</span>
                 </div>
               </Link>
             );

@@ -130,6 +130,20 @@ export default async function BrandsDirectoryPage() {
                       {description && description !== headline && (
                         <p className="brand-dir-desc">{truncate(description, 280)}</p>
                       )}
+                      <div
+                        className="brand-dir-count"
+                        style={{
+                          fontFamily: 'var(--font-jetbrains), monospace',
+                          fontSize: 11,
+                          letterSpacing: '0.14em',
+                          textTransform: 'uppercase',
+                          color: 'var(--ink-3)',
+                          marginTop: 10,
+                        }}
+                        title="Total items agents can query via MCP. The storefront grid above shows the curated subset for humans."
+                      >
+                        {b.mcp_product_count.toLocaleString()} agent-ready
+                      </div>
                     </div>
                   </Link>
                 );
