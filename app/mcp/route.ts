@@ -1405,19 +1405,26 @@ function createRRGServer() {
 
       const enriched = await Promise.all(
         brands.map(async (brand) => {
-          // Count open briefs for this brand
-          const { data: briefCount } = await db
+          // Count open briefs for this brand.
+          // With `head: true`, PostgREST returns no rows — the value lives
+          // in the `count` field, not in `data`. The earlier code read
+          // `data?.length` which was always 0, so every brand reported
+          // openBriefs = 0 and productCount = 0 even when both were non-zero.
+          const { count: briefCount } = await db
             .from('rrg_briefs')
             .select('id', { count: 'exact', head: true })
             .eq('brand_id', brand.id)
             .eq('is_current', true);
 
-          // Count approved drops for this brand
-          const { data: dropCount } = await db
+          // Count approved, non-hidden products. ui_visible is NOT filtered:
+          // the MCP catalogue includes both storefront items and MCP-only
+          // items so agents see the full agent-discoverable surface.
+          const { count: productCount } = await db
             .from('rrg_submissions')
             .select('id', { count: 'exact', head: true })
             .eq('brand_id', brand.id)
-            .eq('status', 'approved');
+            .eq('status', 'approved')
+            .eq('hidden', false);
 
           return {
             name:           brand.name,
@@ -1425,8 +1432,8 @@ function createRRGServer() {
             headline:       brand.headline,
             description:    brand.description,
             websiteUrl:     brand.website_url,
-            openBriefs:     briefCount?.length ?? 0,
-            productCount:   dropCount?.length ?? 0,
+            openBriefs:     briefCount ?? 0,
+            productCount:   productCount ?? 0,
           };
         })
       );

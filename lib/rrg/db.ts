@@ -545,21 +545,35 @@ export async function getNonActiveBrandIds(): Promise<string[]> {
 export async function getApprovedDrops(brandId?: string): Promise<RrgSubmission[]> {
   const suspendedIds = brandId ? [] : await getNonActiveBrandIds();
 
-  let query = db
-    .from('rrg_submissions')
-    .select('*')
-    .eq('status', 'approved')
-    .eq('network', getCurrentNetwork())
-    .eq('hidden', false);
+  // PostgREST caps each request at 1000 rows by default. With the ui_visible
+  // expansion some brands (e.g. 13DE MARZO) cleared 1k MCP rows — without
+  // chunking, list_drops and get_brand silently truncated to the first 1000.
+  // Page through the table in 1000-row chunks until exhausted.
+  const PAGE_SIZE = 1000;
+  const all: RrgSubmission[] = [];
+  for (let from = 0; ; from += PAGE_SIZE) {
+    let query = db
+      .from('rrg_submissions')
+      .select('*')
+      .eq('status', 'approved')
+      .eq('network', getCurrentNetwork())
+      .eq('hidden', false);
 
-  if (brandId) {
-    query = query.eq('brand_id', brandId);
-  } else if (suspendedIds.length > 0) {
-    query = query.not('brand_id', 'in', `(${suspendedIds.join(',')})`);
+    if (brandId) {
+      query = query.eq('brand_id', brandId);
+    } else if (suspendedIds.length > 0) {
+      query = query.not('brand_id', 'in', `(${suspendedIds.join(',')})`);
+    }
+
+    const { data } = await query
+      .order('approved_at', { ascending: false })
+      .range(from, from + PAGE_SIZE - 1);
+
+    const chunk = data ?? [];
+    all.push(...chunk);
+    if (chunk.length < PAGE_SIZE) break;
   }
-
-  const { data } = await query.order('approved_at', { ascending: false });
-  return data ?? [];
+  return all;
 }
 
 /**
