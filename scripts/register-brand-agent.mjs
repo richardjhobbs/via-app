@@ -61,6 +61,14 @@ const BRANDS = {
     website:     'https://clooudie.com',
     categories:  ['supplements', 'gum', 'wellness', 'functional', 'cpg'],
   },
+  'philleywood': {
+    name:        'Philleywood',
+    description: 'Hand-made gloves and upcycled leather accessories, made in the USA. Driving, motorcycle and cycling gloves alongside glove straps and keychains, with Triple Aught Design and Mission Workshop collaborations. Mirror of philleywood.com on Real Real Genuine. Checkout in USDC on Base, ships from Philleywood USA.',
+    storefront:  'https://realrealgenuine.com/brand/philleywood',
+    mcpEndpoint: 'https://realrealgenuine.com/brand/philleywood/mcp',
+    website:     'https://philleywood.com',
+    categories:  ['gloves', 'leather', 'accessories', 'made-in-usa', 'cycling', 'driving', 'motorcycle', 'edc'],
+  },
 };
 
 // ── Load .env.local ──────────────────────────────────────────────────
