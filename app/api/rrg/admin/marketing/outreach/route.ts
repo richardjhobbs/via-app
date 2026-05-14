@@ -138,8 +138,11 @@ export async function GET(req: Request) {
 
   // Full outreach dashboard — aggregated stats + recent messages
   const { db: supabase } = await import('@/lib/rrg/db');
+  const { getOutreachPoolSummary } = await import('@/lib/rrg/marketing-db');
 
-  // All outreach records (with candidate join for context)
+  // Recent outreach records (capped at 500 for aggregation; this is a send
+  // log, NOT the candidate pool — see `candidates_*` fields below for the
+  // real pool sizes from mkt_candidates).
   const { data: allOutreach } = await supabase
     .from('mkt_outreach')
     .select('id, created_at, candidate_id, channel, message_type, status, response_body, cost_usdc')
@@ -147,6 +150,9 @@ export async function GET(req: Request) {
     .limit(500);
 
   const records = allOutreach ?? [];
+
+  // Real candidate pool counts (mkt_candidates), not the send-log slice
+  const poolSummary = await getOutreachPoolSummary();
 
   // Aggregate by status
   const byStatus: Record<string, number> = {};
@@ -194,7 +200,18 @@ export async function GET(req: Request) {
   const todayDelivered = todayRecords.filter(r => r.status === 'delivered').length;
 
   return NextResponse.json({
+    // DEPRECATED field name — kept for downstream consumers that read it.
+    // `total` is the count of the 500 most recent mkt_outreach rows, NOT
+    // the candidate pool. Use `recent_messages_count` (same value, clearer
+    // name) or `candidates_total` / `candidates_reachable` instead.
     total: records.length,
+    recent_messages_count: records.length,
+    candidates_total: poolSummary.total_candidates,
+    candidates_reachable: poolSummary.total_reachable,
+    candidates_pending: poolSummary.pending_total,
+    candidates_pending_reachable: poolSummary.pending_reachable,
+    candidates_pending_by_tier: poolSummary.pending_by_tier,
+    candidates_pending_reachable_by_tier: poolSummary.pending_reachable_by_tier,
     byStatus,
     byChannel,
     byMessageType,

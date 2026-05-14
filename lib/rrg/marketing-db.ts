@@ -282,13 +282,17 @@ export async function getCandidatesForOutreach(
   tier?: CandidateTier,
   limit = 20,
 ): Promise<MktCandidate[]> {
+  // No `reachable=true` filter: the bulk 8004scan import inserts rows with
+  // reachable=false/null and an HTML metadata_url. Send-time resolveEndpoints
+  // now enriches those via the 8004scan detail API just-in-time, so the
+  // outreach pool is the full pending+non-disqualified set ordered by score.
+  // Candidates whose endpoints never resolve cleanly record as `bounced`,
+  // which is the correct outcome rather than being silently filtered out.
   let query = db
     .from('mkt_candidates')
     .select('*')
     .eq('outreach_status', 'pending')
-    .neq('tier', 'disqualified')
-    // Only target verified reachable agents
-    .eq('reachable', true);
+    .neq('tier', 'disqualified');
 
   if (tier) {
     query = query.eq('tier', tier);
@@ -731,5 +735,63 @@ export async function getMarketingDashboardStats(): Promise<{
     totalConversions: totalConversions ?? 0,
     totalCommissionUsdc,
     pendingCommissionUsdc,
+  };
+}
+
+/**
+ * Pool summary for the outreach picker — counts the candidates that
+ * `getCandidatesForOutreach` would consider eligible (pending + not
+ * disqualified), broken down by tier × reachability. Used by the dry-run
+ * preview so the human reviewer sees the real pool size, not the misleading
+ * 500-row outreach-log count from the GET /outreach handler.
+ */
+export async function getOutreachPoolSummary(): Promise<{
+  total_candidates: number;
+  total_reachable: number;
+  pending_total: number;
+  pending_reachable: number;
+  pending_by_tier: Record<CandidateTier, number>;
+  pending_reachable_by_tier: Record<CandidateTier, number>;
+}> {
+  const tiers: CandidateTier[] = ['hot', 'warm', 'cold', 'disqualified'];
+  const zeroByTier: Record<CandidateTier, number> = {
+    hot: 0, warm: 0, cold: 0, disqualified: 0,
+  };
+
+  const [
+    { count: totalCandidates },
+    { count: totalReachable },
+    { count: pendingTotal },
+    { count: pendingReachable },
+  ] = await Promise.all([
+    db.from('mkt_candidates').select('id', { count: 'exact', head: true }),
+    db.from('mkt_candidates').select('id', { count: 'exact', head: true }).eq('reachable', true),
+    db.from('mkt_candidates').select('id', { count: 'exact', head: true })
+      .eq('outreach_status', 'pending').neq('tier', 'disqualified'),
+    db.from('mkt_candidates').select('id', { count: 'exact', head: true })
+      .eq('outreach_status', 'pending').neq('tier', 'disqualified').eq('reachable', true),
+  ]);
+
+  const pendingByTier: Record<CandidateTier, number> = { ...zeroByTier };
+  const pendingReachableByTier: Record<CandidateTier, number> = { ...zeroByTier };
+
+  await Promise.all(tiers.map(async (t) => {
+    const [{ count: pt }, { count: prt }] = await Promise.all([
+      db.from('mkt_candidates').select('id', { count: 'exact', head: true })
+        .eq('outreach_status', 'pending').eq('tier', t),
+      db.from('mkt_candidates').select('id', { count: 'exact', head: true })
+        .eq('outreach_status', 'pending').eq('tier', t).eq('reachable', true),
+    ]);
+    pendingByTier[t] = pt ?? 0;
+    pendingReachableByTier[t] = prt ?? 0;
+  }));
+
+  return {
+    total_candidates: totalCandidates ?? 0,
+    total_reachable: totalReachable ?? 0,
+    pending_total: pendingTotal ?? 0,
+    pending_reachable: pendingReachable ?? 0,
+    pending_by_tier: pendingByTier,
+    pending_reachable_by_tier: pendingReachableByTier,
   };
 }

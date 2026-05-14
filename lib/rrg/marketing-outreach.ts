@@ -25,6 +25,7 @@ import {
   getMarketingAgentByWallet,
   getCandidatesForOutreach,
   getCandidatesForResend,
+  getOutreachPoolSummary,
 } from './marketing-db';
 import { db, getBrandById, getBrandBySlug, getApprovedDrops, type RrgBrand, type RrgSubmission } from './db';
 import { fetchWithX402 } from './x402-client';
@@ -101,11 +102,25 @@ interface ResolvedEndpoints {
 async function resolveEndpoints(candidate: MktCandidate): Promise<ResolvedEndpoints> {
   const result: ResolvedEndpoints = { a2a: null, mcp: null, web: null };
 
-  const metadataUrl = candidate.metadata_url;
+  // 8004scan page URLs are HTML, not JSON. Resolve them via the 8004scan
+  // detail API to get the real offchain metadata URI and any endpoints
+  // 8004scan already extracted. On success we cache the resolved values
+  // back onto the candidate row so the next send skips this hop.
+  let metadataUrl = candidate.metadata_url;
+  if (metadataUrl && metadataUrl.includes('8004scan.io/agents/')) {
+    const enriched = await enrich8004Candidate(candidate);
+    if (enriched) {
+      if (enriched.a2a) result.a2a = enriched.a2a;
+      if (enriched.mcp) result.mcp = enriched.mcp;
+      // Continue parsing the real offchain JSON if we have one
+      metadataUrl = enriched.metadataUri ?? null;
+      if (result.a2a && result.mcp) return result;
+      if (!metadataUrl) return result;
+    } else {
+      return result;
+    }
+  }
   if (!metadataUrl) return result;
-
-  // Skip 8004scan page URLs — these are HTML pages, not agent metadata JSON
-  if (metadataUrl.includes('8004scan.io/agents/')) return result;
 
   let metadata: Record<string, unknown> | null = null;
 
@@ -134,33 +149,38 @@ async function resolveEndpoints(candidate: MktCandidate): Promise<ResolvedEndpoi
 
   // Search the metadata tree for A2A, MCP, and web endpoints.
   // Agents use many different structures — search broadly.
+  // Preserve any endpoints already filled by the 8004scan JIT path; only
+  // run each lookup chain if the slot is still empty.
 
   const allEndpoints = flatExtractUrls(metadata);
 
   // --- A2A endpoint ---
-  // Look for explicit a2a fields first, then fall back to well-known paths
-  result.a2a =
-    getStringField(metadata, 'a2a_endpoint') ??
-    getStringField(metadata, 'a2a') ??
-    getNestedEndpoint(metadata, 'endpoints', 'a2a') ??
-    getTypedEndpoint(metadata, 'a2a') ??
-    getServiceEndpoint(metadata, 'a2a') ??
-    getServiceEndpoint(metadata, 'A2A') ??
-    findUrlContaining(allEndpoints, 'agent-card') ??
-    findUrlContaining(allEndpoints, '.well-known/agent') ??
-    null;
+  if (!result.a2a) {
+    result.a2a =
+      getStringField(metadata, 'a2a_endpoint') ??
+      getStringField(metadata, 'a2a') ??
+      getNestedEndpoint(metadata, 'endpoints', 'a2a') ??
+      getTypedEndpoint(metadata, 'a2a') ??
+      getServiceEndpoint(metadata, 'a2a') ??
+      getServiceEndpoint(metadata, 'A2A') ??
+      findUrlContaining(allEndpoints, 'agent-card') ??
+      findUrlContaining(allEndpoints, '.well-known/agent') ??
+      null;
+  }
 
   // --- MCP endpoint ---
-  result.mcp =
-    getStringField(metadata, 'mcp_server') ??
-    getStringField(metadata, 'mcp_endpoint') ??
-    getStringField(metadata, 'mcp') ??
-    getNestedEndpoint(metadata, 'endpoints', 'mcp') ??
-    getTypedEndpoint(metadata, 'mcp') ??
-    getServiceEndpoint(metadata, 'mcp') ??
-    getServiceEndpoint(metadata, 'MCP') ??
-    findUrlContaining(allEndpoints, '/mcp') ??
-    null;
+  if (!result.mcp) {
+    result.mcp =
+      getStringField(metadata, 'mcp_server') ??
+      getStringField(metadata, 'mcp_endpoint') ??
+      getStringField(metadata, 'mcp') ??
+      getNestedEndpoint(metadata, 'endpoints', 'mcp') ??
+      getTypedEndpoint(metadata, 'mcp') ??
+      getServiceEndpoint(metadata, 'mcp') ??
+      getServiceEndpoint(metadata, 'MCP') ??
+      findUrlContaining(allEndpoints, '/mcp') ??
+      null;
+  }
 
   // --- Web/API endpoint ---
   result.web =
@@ -253,6 +273,173 @@ function flatExtractUrls(obj: unknown, depth = 0): string[] {
   }
   // Validate URLs — only allow http/https schemes
   return urls.filter(u => /^https?:\/\//i.test(u));
+}
+
+// ── 8004scan just-in-time enrichment ────────────────────────────────────
+// Bulk import (scripts/scan-8004-all.mjs) stamps `metadata_url =
+// https://8004scan.io/agents/<id>` (an HTML page) on ~110K rows without
+// any actionable endpoint. The detail API at /api/v1/agents/<chainId>/<tokenId>
+// returns the real offchain_uri plus any endpoints 8004scan already
+// extracted. Calling it at send time unlocks the full ERC-8004 pool
+// without requiring an offline verify-reachable pass first.
+const CHAIN_NAME_TO_ID: Record<string, number> = {
+  base: 8453,
+  ethereum: 1,
+  bnb: 56,
+  gnosis: 100,
+  celo: 42220,
+  arbitrum: 42161,
+  optimism: 10,
+  polygon: 137,
+  avalanche: 43114,
+  linea: 59144,
+  scroll: 534352,
+};
+
+interface Enriched8004 {
+  a2a: string | null;
+  mcp: string | null;
+  metadataUri: string | null;
+}
+
+async function enrich8004Candidate(candidate: MktCandidate): Promise<Enriched8004 | null> {
+  const chainId = CHAIN_NAME_TO_ID[candidate.chain];
+  const tokenId = candidate.erc8004_id;
+  if (!chainId || tokenId == null) return null;
+
+  let detail: {
+    a2a_endpoint?: string | null;
+    mcp_server?: string | null;
+    raw_metadata?: { offchain_uri?: string | null; offchain_content?: unknown } | null;
+  } | null = null;
+
+  try {
+    const resp = await fetch(`https://8004scan.io/api/v1/agents/${chainId}/${tokenId}`, {
+      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+      headers: { Accept: 'application/json' },
+    });
+    if (!resp.ok) return null;
+    const text = await resp.text();
+    if (text.startsWith('Redirecting') || text.startsWith('<')) return null;
+    detail = JSON.parse(text);
+  } catch {
+    return null;
+  }
+  if (!detail) return null;
+
+  let a2a = typeof detail.a2a_endpoint === 'string' ? detail.a2a_endpoint : null;
+  let mcp = typeof detail.mcp_server === 'string' ? detail.mcp_server : null;
+  const metadataUri = typeof detail.raw_metadata?.offchain_uri === 'string'
+    ? detail.raw_metadata!.offchain_uri!
+    : null;
+
+  // Fall back to parsing offchain_content if the top-level fields are empty.
+  // 8004scan misses MCP/A2A when the service name doesn't exactly equal
+  // "MCP" / "A2A", which is most agents in the wild.
+  const offchain = detail.raw_metadata?.offchain_content;
+  if ((!a2a || !mcp) && offchain && typeof offchain === 'object') {
+    const parsed = extractEndpointsFromOffchain(offchain as Record<string, unknown>);
+    if (!a2a) a2a = parsed.a2a;
+    if (!mcp) mcp = parsed.mcp;
+  }
+
+  // Cache: write the resolved offchain URI and endpoint flags back so the
+  // next send for this candidate skips the detail-API hop entirely.
+  if (a2a || mcp || metadataUri) {
+    try {
+      const update: Record<string, unknown> = { updated_at: new Date().toISOString() };
+      if (metadataUri) update.metadata_url = metadataUri;
+      const verified = a2a ?? mcp;
+      if (verified) update.verified_endpoint = verified;
+      if (a2a) update.has_a2a = true;
+      if (mcp) update.has_mcp = true;
+      await db.from('mkt_candidates').update(update).eq('id', candidate.id);
+    } catch {
+      // best-effort cache; don't fail the send if the update errors
+    }
+  }
+
+  return { a2a, mcp, metadataUri };
+}
+
+// Local mirror of verify-reachable.mjs extractEndpointsFromMetadata — covers
+// services[].name exact/substring, services[].type, top-level endpoints
+// object, top-level *_endpoint fields, and URL pattern matching. Returns
+// {a2a, mcp} extracted from a parsed offchain_content object.
+function extractEndpointsFromOffchain(meta: Record<string, unknown>): { a2a: string | null; mcp: string | null } {
+  let a2a: string | null = null;
+  let mcp: string | null = null;
+  const services = Array.isArray(meta['services']) ? meta['services'] as unknown[] : [];
+
+  // Pass 1: exact name match
+  for (const svc of services) {
+    if (!svc || typeof svc !== 'object') continue;
+    const s = svc as Record<string, unknown>;
+    const url = typeof s.endpoint === 'string' ? s.endpoint : typeof s.url === 'string' ? s.url : null;
+    if (!url || !url.startsWith('http')) continue;
+    const name = String(s.name ?? '').toUpperCase().trim();
+    if (name === 'A2A' && !a2a) a2a = url;
+    if (name === 'MCP' && !mcp) mcp = url;
+  }
+  // Pass 2: substring name match
+  if (!a2a || !mcp) {
+    for (const svc of services) {
+      if (!svc || typeof svc !== 'object') continue;
+      const s = svc as Record<string, unknown>;
+      const url = typeof s.endpoint === 'string' ? s.endpoint : typeof s.url === 'string' ? s.url : null;
+      if (!url || !url.startsWith('http')) continue;
+      const name = String(s.name ?? '').toLowerCase();
+      if (!a2a && name.includes('a2a')) a2a = url;
+      if (!mcp && name.includes('mcp')) mcp = url;
+    }
+  }
+  // Pass 3: type field
+  if (!a2a || !mcp) {
+    for (const svc of services) {
+      if (!svc || typeof svc !== 'object') continue;
+      const s = svc as Record<string, unknown>;
+      const url = typeof s.endpoint === 'string' ? s.endpoint : typeof s.url === 'string' ? s.url : null;
+      if (!url || !url.startsWith('http')) continue;
+      const type = String(s.type ?? '').toLowerCase();
+      if (!a2a && type === 'a2a') a2a = url;
+      if (!mcp && type === 'mcp') mcp = url;
+    }
+  }
+  // Pass 4: top-level endpoints object
+  const eps = meta['endpoints'];
+  if (eps && typeof eps === 'object' && !Array.isArray(eps)) {
+    const e = eps as Record<string, unknown>;
+    if (!a2a) {
+      const v = e.a2a ?? e.A2A;
+      if (typeof v === 'string' && v.startsWith('http')) a2a = v;
+      else if (Array.isArray(v) && typeof v[0] === 'string') a2a = v[0];
+    }
+    if (!mcp) {
+      const v = e.mcp ?? e.MCP;
+      if (typeof v === 'string' && v.startsWith('http')) mcp = v;
+      else if (Array.isArray(v) && typeof v[0] === 'string') mcp = v[0];
+    }
+  }
+  // Pass 5: top-level fields
+  if (!a2a) {
+    const v = meta['a2a_endpoint'] ?? meta['a2a'];
+    if (typeof v === 'string' && v.startsWith('http')) a2a = v;
+  }
+  if (!mcp) {
+    const v = meta['mcp_server'] ?? meta['mcp_endpoint'] ?? meta['mcp'];
+    if (typeof v === 'string' && v.startsWith('http')) mcp = v;
+  }
+  // Pass 6: URL pattern scan
+  if (!a2a || !mcp) {
+    const urls = flatExtractUrls(meta);
+    if (!a2a) {
+      a2a = urls.find(u => /agent-card|\.well-known\/agent/i.test(u)) ?? null;
+    }
+    if (!mcp) {
+      mcp = urls.find(u => /\/mcp/i.test(u) && !u.includes('8004scan')) ?? null;
+    }
+  }
+  return { a2a, mcp };
 }
 
 // ── Intel Gathering ──────────────────────────────────────────────────────
@@ -1696,6 +1883,7 @@ export async function previewOutreach(
   messageTypeOverride?: MessageType,
 ): Promise<{
   recipient_count: number;
+  pool_summary: Awaited<ReturnType<typeof getOutreachPoolSummary>>;
   brand: { id: string; slug: string; name: string } | null;
   product_count: number;
   message_type: MessageType;
@@ -1712,7 +1900,10 @@ export async function previewOutreach(
     notes.push(`brand not found for slug=${brandOpts.brandSlug ?? '(none)'} id=${brandOpts.brandId ?? '(none)'}`);
   }
 
-  const candidates = await getCandidatesForOutreach(tier, limit);
+  const [candidates, poolSummary] = await Promise.all([
+    getCandidatesForOutreach(tier, limit),
+    getOutreachPoolSummary(),
+  ]);
   const sample = candidates[0] ?? null;
 
   const msgType: MessageType = messageTypeOverride
@@ -1760,6 +1951,7 @@ export async function previewOutreach(
 
   return {
     recipient_count: candidates.length,
+    pool_summary: poolSummary,
     brand: resolvedBrand
       ? { id: resolvedBrand.brand.id, slug: resolvedBrand.brand.slug, name: resolvedBrand.brand.name }
       : null,
