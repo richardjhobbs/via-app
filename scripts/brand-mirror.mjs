@@ -575,6 +575,18 @@ const NO_ENHANCE = args.includes('--no-enhance');
 // touched. Use when expanding a brand's MCP catalogue beyond the curated
 // few that humans see at /brand/[slug].
 const UI_HIDDEN  = args.includes('--ui-hidden');
+// --no-markets-probe: skip the Shopify Markets pricing probe and fall back to
+// the legacy CFG.priceToUsdcRate FX path. By default the script probes
+// ?country=US vs ?country=<home> on a sample product. If the brand has
+// Shopify Markets configured with a USD price list, the catalogue is
+// re-fetched with ?country=US and prices are stored 1:1 as USDC, replacing
+// the FX-derived path. Brands without Markets fall back automatically.
+const NO_MARKETS_PROBE = args.includes('--no-markets-probe');
+// Module-level Markets state, set by probeShopifyMarkets() at the start of
+// fetchShopify(). When true, fetchShopify appends &country=US to URLs and
+// the price-conversion step skips the FX rate multiplication.
+let MARKETS_USD_ACTIVE = false;
+let MARKETS_PROBE_NOTE = null; // human-readable explanation surfaced in logs
 // Chain registration is now OPT-IN (safer default for pilots, onboarding
 // agents, and re-runs). Pass --commit-chain to actually call registerDrop on
 // Base mainnet. `--skip-chain` is still accepted as a no-op alias.
@@ -761,6 +773,97 @@ const RESALE_HINT_RE = /\b(archive|vintage|consignment|pre-?loved|deadstock|resa
 // PHASE 2 — Import products with full variant matrix
 // ────────────────────────────────────────────────────────────────────
 
+/**
+ * Shopify Markets pricing probe.
+ *
+ * Many Shopify shops with international Markets enabled publish per-country
+ * price lists (e.g. GBP base shop with a USD price list for US shoppers).
+ * The .json product/catalogue endpoints accept ?country=XX and return the
+ * variant priced in that market. When this is available we prefer the
+ * brand's own USD list over FX-converting their GBP/EUR/etc. price, since
+ * the brand's USD list reflects their actual international pricing intent
+ * (handling, duty buffer, round-numbered psychological points).
+ *
+ * Strategy:
+ *   1. Pick a sample handle from /products.json?limit=1.
+ *   2. Fetch the same handle with ?country=US and ?country=<home> (derived
+ *      from CFG.sourceCurrency where possible, else fall back to GB).
+ *   3. If the two prices differ and the US response is a valid number,
+ *      Markets is enabled and we adopt the USD path.
+ *   4. Otherwise (same price, no Markets, or USD-native shop), no-op.
+ */
+async function probeShopifyMarkets() {
+  if (NO_MARKETS_PROBE) {
+    MARKETS_PROBE_NOTE = 'probe skipped (--no-markets-probe)';
+    return;
+  }
+  if (!CFG.shopifyDomain) {
+    MARKETS_PROBE_NOTE = 'no shopifyDomain on CFG';
+    return;
+  }
+  // USD-native shops already mirror 1:1, no point probing.
+  if (!CFG.sourceCurrency || CFG.sourceCurrency === 'USD') {
+    MARKETS_PROBE_NOTE = 'USD-native shop, FX path is already 1:1';
+    return;
+  }
+
+  const homeCountry = currencyToCountry(CFG.sourceCurrency);
+  try {
+    const sampleRes = await fetch(`https://${CFG.shopifyDomain}/products.json?limit=1`, {
+      headers: { 'User-Agent':'RRG-Mirror/2.0', 'Accept':'application/json', 'Accept-Language':'' },
+      cache: 'no-store',
+    });
+    if (!sampleRes.ok) throw new Error(`HTTP ${sampleRes.status} on sample`);
+    const sampleJson = await sampleRes.json();
+    const sampleHandle = sampleJson.products?.[0]?.handle;
+    if (!sampleHandle) throw new Error('no products in sample');
+
+    const fetchOne = async (country) => {
+      const r = await fetch(`https://${CFG.shopifyDomain}/products/${sampleHandle}.json?country=${country}`, {
+        headers: { 'User-Agent':'RRG-Mirror/2.0', 'Accept':'application/json', 'Accept-Language':'' },
+        cache: 'no-store',
+      });
+      if (!r.ok) throw new Error(`HTTP ${r.status} for ${country}`);
+      const j = await r.json();
+      const p = parseFloat(j.product?.variants?.[0]?.price ?? '');
+      return Number.isFinite(p) ? p : null;
+    };
+
+    const usd  = await fetchOne('US');
+    const home = await fetchOne(homeCountry);
+
+    if (usd === null || home === null) {
+      MARKETS_PROBE_NOTE = `probe inconclusive (usd=${usd}, ${homeCountry}=${home})`;
+      return;
+    }
+    if (Math.abs(usd - home) < 0.01) {
+      MARKETS_PROBE_NOTE = `Markets not configured (US=${homeCountry}=${usd}); using FX path`;
+      return;
+    }
+
+    MARKETS_USD_ACTIVE = true;
+    MARKETS_PROBE_NOTE = `Markets US adopted: sample ${sampleHandle} ${homeCountry}=${home} → US=${usd} (1:1 USDC)`;
+  } catch (e) {
+    MARKETS_PROBE_NOTE = `probe failed (${e.message}); using FX path`;
+  }
+}
+
+function currencyToCountry(cur) {
+  switch (cur) {
+    case 'GBP': return 'GB';
+    case 'EUR': return 'DE'; // EUR has no single country; DE is a fine probe
+    case 'AUD': return 'AU';
+    case 'CAD': return 'CA';
+    case 'JPY': return 'JP';
+    case 'HKD': return 'HK';
+    case 'SGD': return 'SG';
+    case 'NOK': return 'NO';
+    case 'ZAR': return 'ZA';
+    case 'AED': return 'AE';
+    default:    return 'GB';
+  }
+}
+
 async function fetchShopify() {
   // Offline path: when --cache-file points to a local JSON with the
   // { products: [...] } shape, skip the HTTP fetch entirely. Used when the
@@ -778,12 +881,18 @@ async function fetchShopify() {
     return products;
   }
 
+  // Probe Shopify Markets ?country=US support before fetching the catalogue.
+  // Sets MARKETS_USD_ACTIVE if the brand has a USD price list configured.
+  await probeShopifyMarkets();
+  console.log(`[markets-probe] ${MARKETS_PROBE_NOTE}`);
+  const usdSuffix = MARKETS_USD_ACTIVE ? '&country=US' : '';
+
   // Fast path: when --only is set to a single handle, fetch just that
   // product via /products/{handle}.json instead of paginating the whole
   // catalogue. Avoids rate limits on large stores (e.g. Stadium Goods'
   // ~4k-product catalogue hit 429 on page 18 before this was added).
   if (ONLY && !ONLY.includes(',')) {
-    const url = `https://${CFG.shopifyDomain}/products/${ONLY}.json`;
+    const url = `https://${CFG.shopifyDomain}/products/${ONLY}.json` + (MARKETS_USD_ACTIVE ? '?country=US' : '');
     console.log(`[shopify] GET ${url} (single-product fast path)`);
     const res = await fetch(url, {
       headers: {
@@ -812,7 +921,7 @@ async function fetchShopify() {
   const MAX_PAGES = 25; // up to 6,250 products (Goodhood has ~4,000+; bumped 2026-04-21)
   const all = [];
   for (let page = 1; page <= MAX_PAGES; page++) {
-    const url = `https://${CFG.shopifyDomain}/products.json?limit=250&page=${page}`;
+    const url = `https://${CFG.shopifyDomain}/products.json?limit=250&page=${page}` + usdSuffix;
     console.log(`[shopify] GET ${url}`);
     const res = await fetch(url, {
       headers: {
@@ -1021,12 +1130,19 @@ async function importProduct(product, brand) {
   if (!variant) { console.warn(`[skip ${handle}] no variant`); return null; }
   if (!image)   { console.warn(`[skip ${handle}] no image`); return null; }
 
-  // Convert shop-currency price → USDC (1:1 for USD brands, scaled for HKD etc.)
+  // Convert shop-currency price → USDC.
+  //   • MARKETS_USD_ACTIVE: catalogue was fetched with ?country=US, so the
+  //     returned variant.price is already in USD per the brand's own US price
+  //     list. Mirror 1:1 into USDC, no FX multiplication.
+  //   • Otherwise: legacy FX path, multiply by CFG.priceToUsdcRate.
   const rawPrice = parseFloat(variant.price);
-  const rate     = Number.isFinite(CFG.priceToUsdcRate) && CFG.priceToUsdcRate > 0 ? CFG.priceToUsdcRate : 1;
+  const rate     = MARKETS_USD_ACTIVE
+    ? 1
+    : (Number.isFinite(CFG.priceToUsdcRate) && CFG.priceToUsdcRate > 0 ? CFG.priceToUsdcRate : 1);
   const price    = Math.round(rawPrice * rate * 100) / 100;
   if (!Number.isFinite(price) || price < 0.01 || price > 10000) {
-    console.warn(`[skip ${handle}] price out of range: ${variant.price} ${CFG.sourceCurrency ?? 'USD'} → ${price} USDC`);
+    const srcLabel = MARKETS_USD_ACTIVE ? 'USD (Shopify Markets)' : (CFG.sourceCurrency ?? 'USD');
+    console.warn(`[skip ${handle}] price out of range: ${variant.price} ${srcLabel} → ${price} USDC`);
     return null;
   }
 
