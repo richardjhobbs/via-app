@@ -92,6 +92,38 @@ export async function POST(req: NextRequest) {
     }
   }
 
+  // Pre-trimmed-content guard.
+  //
+  // Priscilla repeatedly trims her body for BlueSky's 300-char limit and
+  // then sends the SAME short text to Telegram and Discord, throwing away
+  // the long-form context those channels accept. The server already
+  // auto-truncates for BlueSky (see lib/rrg/autopost.ts:767, bskyTruncate
+  // at 300 chars), so this pre-trim is unnecessary AND destructive.
+  //
+  // If the content is <= 320 chars AND the targets include any long-form
+  // channel (Telegram or Discord), refuse. The agent must either send
+  // long-form (server trims BlueSky internally) or restrict targets to
+  // BLUESKY-only with an explicit `short_intentional=true` form field.
+  const longChannels   = ['TELEGRAM', 'DISCORD'];
+  const includesLong   = targets.some(t => longChannels.includes(t));
+  const shortIntentRaw = (formData.get('short_intentional') as string | null)?.trim().toLowerCase();
+  const shortIntentional = shortIntentRaw === 'true' || shortIntentRaw === '1' || shortIntentRaw === 'yes';
+
+  if (content.length <= 320 && includesLong && !shortIntentional) {
+    return NextResponse.json(
+      {
+        error: 'content_too_short_for_long_channels',
+        detail:
+          `content is ${content.length} chars but channels include ${targets.filter(t => longChannels.includes(t)).join(', ')}. ` +
+          'The server auto-truncates for BlueSky internally (lib/rrg/autopost.ts bskyTruncate) — send the FULL long-form content (~400-1500 chars typical) and the server will produce the 300-char BlueSky variant for you. ' +
+          'If you genuinely want the short text on every channel (rare), pass form field `short_intentional=true`.',
+        content_length: content.length,
+        long_channels_targeted: targets.filter(t => longChannels.includes(t)),
+      },
+      { status: 422 },
+    );
+  }
+
   // Upload image (if any) and produce a signed URL for autopostGeneric
   let imageUrl: string | null = null;
   if (image && image.size > 0) {
