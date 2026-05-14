@@ -44,6 +44,7 @@ const envVars = [
   { key: 'RESEND_API_KEY',        value: process.env.RESEND_API_KEY        || '', envs: ['production', 'preview'] },
   { key: 'FROM_EMAIL',            value: 'deliver@realrealgenuine.com',           envs: ['production', 'preview'] },
   { key: 'ADMIN_SECRET',          value: process.env.ADMIN_SECRET          || '', envs: ['production', 'preview'] },
+  { key: 'ADMIN_READONLY_SECRET', value: process.env.ADMIN_READONLY_SECRET || '', envs: ['production', 'preview'] },
 ];
 
 const BASE_URL = `https://api.vercel.com/v10/projects/${PROJECT_ID}/env?teamId=${TEAM_ID}`;

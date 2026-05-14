@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db, getCurrentNetwork, type ShippingType } from '@/lib/rrg/db';
-import { isAdminFromCookies, adminUnauthorized } from '@/lib/rrg/auth';
+import { isAdminFromCookies, isAdminReader, adminUnauthorized } from '@/lib/rrg/auth';
 import {
   getSignedUrl,
   getSignedUrlsBatch,
@@ -14,9 +14,10 @@ import { isValidShippingRegion } from '@/lib/rrg/physical-product';
 
 export const dynamic = 'force-dynamic';
 
-// GET /api/rrg/admin/drops — super-admin: list ALL approved drops (including hidden)
-export async function GET() {
-  if (!(await isAdminFromCookies())) return adminUnauthorized();
+// GET /api/rrg/admin/drops — list ALL approved drops (including hidden).
+// Full admin (cookie / x-admin-secret) or read-only (x-admin-readonly-secret).
+export async function GET(req: Request) {
+  if (!(await isAdminReader(req))) return adminUnauthorized();
 
   try {
     // PostgREST caps each request at 1000 rows by default. Without chunking the

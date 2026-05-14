@@ -1,13 +1,14 @@
 import { NextResponse } from 'next/server';
 import { getAllBrands } from '@/lib/rrg/db';
-import { isAdminFromCookies, adminUnauthorized } from '@/lib/rrg/auth';
+import { isAdminReader, adminUnauthorized } from '@/lib/rrg/auth';
 import { getSignedUrl } from '@/lib/rrg/storage';
 
 export const dynamic = 'force-dynamic';
 
-// GET /api/rrg/admin/brands — list all brands with signed image URLs (super-admin only)
-export async function GET() {
-  if (!(await isAdminFromCookies())) return adminUnauthorized();
+// GET /api/rrg/admin/brands — list all brands with signed image URLs.
+// Full admin (cookie / x-admin-secret) or read-only (x-admin-readonly-secret).
+export async function GET(req: Request) {
+  if (!(await isAdminReader(req))) return adminUnauthorized();
 
   try {
     const brands = await getAllBrands();
