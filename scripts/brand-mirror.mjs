@@ -665,6 +665,79 @@ async function nextNonce() {
 }
 
 const toUsdc6dp = (n) => BigInt(Math.round(n * 1_000_000));
+
+// ── Currency → USDC rate resolution ──────────────────────────────────
+// Pricing precedence (highest blast-radius code in the mirror — read the
+// rules before changing):
+//   1. Shopify Markets USD active (?country=US returned the brand's own USD
+//      price list): mirror 1:1, no FX. Set by probeShopifyMarkets().
+//   2. Brand is USD-native (no sourceCurrency / sourceCurrency === 'USD'):
+//      1:1.
+//   3. Otherwise: live FX oracle (frankfurter.app), that day's
+//      quoted-currency → USD rate, +3% spread so the buyer absorbs currency
+//      fluctuation. Rounded at the call site to 2dp (existing behaviour).
+//   Fail-safe: if the oracle is unreachable or lacks the currency (e.g. AED
+//   is USD-pegged and not an ECB reference rate), fall back to the static
+//   CFG.priceToUsdcRate and warn loudly. If there is no static fallback
+//   either, abort — never emit a guessed or zero price.
+//
+// Resolved once per run, memoised. Both the main product price and the
+// per-variant price_override read this single value so they cannot diverge.
+const FX_SPREAD = 1.03; // +3% — buyer pays more to cover currency moves
+let _usdcRate = null;
+let _usdcRateNote = null;
+let _usdcRateResolved = false;
+async function getUsdcRate() {
+  if (_usdcRateResolved) return _usdcRate;
+  _usdcRateResolved = true;
+  if (MARKETS_USD_ACTIVE) {
+    _usdcRate = 1;
+    _usdcRateNote = 'USD 1:1 (Shopify Markets ?country=US price list)';
+  } else {
+    const cur = String(CFG.sourceCurrency || 'USD').toUpperCase();
+    if (cur === 'USD') {
+      _usdcRate = 1;
+      _usdcRateNote = 'USD native 1:1';
+    } else {
+      try {
+        const res = await fetch(
+          `https://api.frankfurter.app/latest?from=${encodeURIComponent(cur)}&to=USD`,
+          { signal: AbortSignal.timeout(10000) },
+        );
+        if (!res.ok) throw new Error(`frankfurter HTTP ${res.status}`);
+        const j = await res.json();
+        const mkt = Number(j?.rates?.USD);
+        if (!Number.isFinite(mkt) || mkt <= 0) throw new Error(`no USD rate for ${cur} in oracle response`);
+        _usdcRate = mkt * FX_SPREAD;
+        _usdcRateNote = `${cur}->USD ${mkt} (frankfurter.app ${j.date}) +3% spread = ${_usdcRate.toFixed(6)}`;
+      } catch (e) {
+        const staticR = Number.isFinite(CFG.priceToUsdcRate) && CFG.priceToUsdcRate > 0
+          ? CFG.priceToUsdcRate : null;
+        if (staticR == null) {
+          throw new Error(
+            `USDC rate unresolved for ${cur}: FX oracle failed (${e.message}) and no ` +
+            `CFG.priceToUsdcRate fallback. Aborting to avoid mispricing.`,
+          );
+        }
+        _usdcRate = staticR;
+        _usdcRateNote = `FX ORACLE FAILED (${e.message}); fell back to static CFG.priceToUsdcRate ${staticR}. Verify prices before trusting this run.`;
+        console.warn(`  !! ${_usdcRateNote}`);
+      }
+    }
+  }
+  console.log(`[fx] ${_usdcRateNote}`);
+  return _usdcRate;
+}
+// Synchronous accessor for code paths that run AFTER the main conversion has
+// already resolved the rate (e.g. variant-override inside syncVariants, which
+// is only reached after the per-product price conversion). Throws loudly if
+// called before resolution rather than silently pricing at 0.
+function resolvedUsdcRate() {
+  if (!_usdcRateResolved) {
+    throw new Error('resolvedUsdcRate() called before getUsdcRate() — pricing order bug');
+  }
+  return _usdcRate;
+}
 const stripHtml = (h) => (h ?? '')
   .replace(/<[^>]*>/g, ' ').replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&')
   .replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'")
@@ -1130,15 +1203,11 @@ async function importProduct(product, brand) {
   if (!variant) { console.warn(`[skip ${handle}] no variant`); return null; }
   if (!image)   { console.warn(`[skip ${handle}] no image`); return null; }
 
-  // Convert shop-currency price → USDC.
-  //   • MARKETS_USD_ACTIVE: catalogue was fetched with ?country=US, so the
-  //     returned variant.price is already in USD per the brand's own US price
-  //     list. Mirror 1:1 into USDC, no FX multiplication.
-  //   • Otherwise: legacy FX path, multiply by CFG.priceToUsdcRate.
+  // Convert shop-currency price → USDC via the single resolved rate
+  // (Shopify-Markets-USD 1:1, USD-native 1:1, or live FX oracle +3%).
+  // See getUsdcRate() for the precedence and fail-safe rules.
   const rawPrice = parseFloat(variant.price);
-  const rate     = MARKETS_USD_ACTIVE
-    ? 1
-    : (Number.isFinite(CFG.priceToUsdcRate) && CFG.priceToUsdcRate > 0 ? CFG.priceToUsdcRate : 1);
+  const rate     = await getUsdcRate();
   const price    = Math.round(rawPrice * rate * 100) / 100;
   if (!Number.isFinite(price) || price < 0.01 || price > 10000) {
     const srcLabel = MARKETS_USD_ACTIVE ? 'USD (Shopify Markets)' : (CFG.sourceCurrency ?? 'USD');
@@ -1421,7 +1490,12 @@ async function syncVariants(submissionId, product) {
       sku:                v.sku || null,
       price_override:     (() => {
         if (parseFloat(v.price) === parseFloat(variants[0].price)) return null;
-        const r = Number.isFinite(CFG.priceToUsdcRate) && CFG.priceToUsdcRate > 0 ? CFG.priceToUsdcRate : 1;
+        // Same resolved rate as the main price conversion (Markets-USD /
+        // native / FX-oracle+3%). Centralised so a variant override can never
+        // diverge from its product price. Previously this path always used
+        // CFG.priceToUsdcRate even when Shopify-Markets-USD was active — a
+        // latent mispricing bug fixed by reading the single resolved rate.
+        const r = resolvedUsdcRate();
         return Math.round(parseFloat(v.price) * r * 100) / 100;
       })(),
       sort_order:         i,
