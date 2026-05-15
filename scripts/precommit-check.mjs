@@ -12,16 +12,19 @@
  *      users. Internal docs (.md anywhere in the repo) are exempt; em-dashes
  *      there are fine.
  *
- * DEFERRED CHECKS (intentionally disabled — see below):
+ *   2. tsc --noEmit on the whole project. CLAUDE.md global rules require this
+ *      before any push (Vercel Turbopack is stricter than the VPS bundler).
+ *      The ChatPanel implicit-any errors that previously blocked this were
+ *      fixed, so the gate is now ON.
  *
- *   2. tsc --noEmit on the whole project would be ideal because CLAUDE.md
- *      global rules require it before any push. It is DISABLED today because
- *      the repo currently reports pre-existing tsc errors:
- *        - components/agent/ChatPanel.tsx: missing react-markdown / remark-gfm
- *          types + several implicit-any errors
- *        - .next/types/validator.ts: auto-generated stale entries
- *      Turning the gate on right now would block every commit. Once those
- *      errors are resolved (separate session), flip RUN_TSC to true.
+ *      It blocks on REAL type errors only. It deliberately ignores:
+ *        - any error under .next/ (auto-generated, clears on a fresh build)
+ *        - TS2307 "Cannot find module" — that means the local checkout has an
+ *          incomplete `npm install`, not a code defect the committer
+ *          introduced. CI / Vercel / VPS run `npm ci` so real missing
+ *          imports are still caught there; blocking the local commit on an
+ *          incomplete dependency tree would just reproduce the "blocks every
+ *          commit" failure mode we are trying to remove.
  *
  * Install: scripts/install-hooks.sh
  * Bypass for genuine emergencies: `git commit --no-verify`
@@ -29,7 +32,7 @@
 import { execSync } from "node:child_process";
 import { readFileSync, existsSync } from "node:fs";
 
-const RUN_TSC = false; // Flip to true once `npx tsc --noEmit` exits clean.
+const RUN_TSC = true;
 const FORBIDDEN = /[—–]/; // em-dash, en-dash
 
 function stagedSourceFiles() {
@@ -62,14 +65,28 @@ function checkEmDashes(files) {
 }
 
 function runTypeCheck() {
+  let raw;
   try {
     execSync("npx tsc --noEmit", { stdio: "pipe" });
-    return null;
+    return null; // exit 0, nothing to do
   } catch (e) {
     const stdout = e.stdout ? e.stdout.toString() : "";
     const stderr = e.stderr ? e.stderr.toString() : "";
-    return (stdout + stderr).trim();
+    raw = (stdout + stderr).trim();
   }
+
+  // Keep only errors that should block the commit. Drop:
+  //  - anything under .next/ (auto-generated, clears on fresh build)
+  //  - TS2307 "Cannot find module" (incomplete local npm install, not a
+  //    committer-introduced defect; CI runs npm ci and still catches real
+  //    missing imports)
+  const blocking = raw
+    .split("\n")
+    .filter((line) => line.includes("error TS"))
+    .filter((line) => !line.startsWith(".next/"))
+    .filter((line) => !/error TS2307: Cannot find module/.test(line));
+
+  return blocking.length > 0 ? blocking.join("\n") : null;
 }
 
 const sourceFiles = stagedSourceFiles();

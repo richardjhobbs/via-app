@@ -1,8 +1,14 @@
 'use client';
 
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, type ReactNode } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+
+// Local prop types for the ReactMarkdown component overrides below. Typed
+// explicitly rather than pulled from react-markdown's exports so the file
+// type-checks without depending on that package's type surface.
+type MdProps = { children?: ReactNode };
+type MdAnchorProps = { href?: string; children?: ReactNode };
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { formatCredits } from '@/lib/agent/credit-display';
@@ -26,7 +32,7 @@ export function ChatPanel({ agent }: Props) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
-  // Auto-resize textarea to fit content (1–8 lines, then scrolls)
+  // Auto-resize textarea to fit content (1-8 lines, then scrolls)
   useEffect(() => {
     const el = inputRef.current;
     if (!el) return;
@@ -231,16 +237,16 @@ export function ChatPanel({ agent }: Props) {
                       <ReactMarkdown
                         remarkPlugins={[remarkGfm]}
                         components={{
-                          a: ({ href, children }) => (
+                          a: ({ href, children }: MdAnchorProps) => (
                             <a href={href} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--accent)', textDecoration: 'underline' }}>
                               {children}
                             </a>
                           ),
-                          p: ({ children }) => <p style={{ margin: '0 0 8px' }}>{children}</p>,
-                          ul: ({ children }) => <ul style={{ margin: '0 0 8px', paddingLeft: 20 }}>{children}</ul>,
-                          ol: ({ children }) => <ol style={{ margin: '0 0 8px', paddingLeft: 20 }}>{children}</ol>,
-                          li: ({ children }) => <li style={{ margin: '0 0 2px' }}>{children}</li>,
-                          strong: ({ children }) => <strong style={{ fontWeight: 600 }}>{children}</strong>,
+                          p: ({ children }: MdProps) => <p style={{ margin: '0 0 8px' }}>{children}</p>,
+                          ul: ({ children }: MdProps) => <ul style={{ margin: '0 0 8px', paddingLeft: 20 }}>{children}</ul>,
+                          ol: ({ children }: MdProps) => <ol style={{ margin: '0 0 8px', paddingLeft: 20 }}>{children}</ol>,
+                          li: ({ children }: MdProps) => <li style={{ margin: '0 0 2px' }}>{children}</li>,
+                          strong: ({ children }: MdProps) => <strong style={{ fontWeight: 600 }}>{children}</strong>,
                         }}
                       >
                         {msg.content}
