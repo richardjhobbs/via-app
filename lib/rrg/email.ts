@@ -2,8 +2,8 @@
  * RRG email helpers
  *
  * Two types of email:
- * 1. Approval notification — creator notified when their design goes live
- * 2. File delivery — buyer receives download link after mint
+ * 1. Approval notification: creator notified when their design goes live
+ * 2. File delivery: buyer receives download link after mint
  */
 
 const RESEND_URL = 'https://api.resend.com/emails';
@@ -53,37 +53,50 @@ export async function sendApprovalNotification({
 <!DOCTYPE html>
 <html>
 <head><meta charset="utf-8"><style>
-  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #0a0a0a; color: #e5e5e5; margin: 0; padding: 40px 20px; }
-  .card { max-width: 520px; margin: 0 auto; background: #111; border: 1px solid #222; border-radius: 12px; overflow: hidden; }
-  .header { background: #d4ff22; padding: 24px 28px; }
-  .header h1 { margin: 0; font-size: 20px; color: #0a0a0a; font-weight: 700; }
-  .body { padding: 28px; }
-  .body p { margin: 0 0 16px; line-height: 1.6; color: #ccc; font-size: 14px; }
-  .meta { background: #1a1a1a; border: 1px solid #333; border-radius: 8px; padding: 16px; margin: 20px 0; }
-  .meta-row { display: flex; justify-content: space-between; gap: 16px; padding: 6px 0; font-size: 13px; border-bottom: 1px solid #222; }
-  .meta-row:last-child { border-bottom: none; }
-  .meta-label { color: #888; min-width: 110px; }
-  .meta-value { color: #e5e5e5; font-weight: 500; }
-  .btn { display: inline-block; background: #d4ff22; color: #0a0a0a; padding: 12px 24px; border-radius: 8px; text-decoration: none; font-weight: 700; font-size: 14px; margin-top: 8px; }
-  .footer { padding: 20px 28px; border-top: 1px solid #1a1a1a; font-size: 12px; color: #555; }
-  .wallet { font-family: monospace; font-size: 12px; color: #7c3aed; word-break: break-all; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', sans-serif; background: #faf7f2; color: #1a1612; margin: 0; padding: 40px 20px; }
+  .wrap { max-width: 560px; margin: 0 auto; }
+  .wordmark { font-family: Georgia, 'Times New Roman', serif; font-size: 18px; font-weight: 400; font-style: italic; letter-spacing: 0.01em; color: #1a1612; margin: 0 0 24px; }
+  .card { background: #ffffff; border: 1px solid #e8e3db; }
+  .card-head { padding: 28px 32px 24px; border-bottom: 1px solid #e8e3db; }
+  .eyebrow { font-family: 'Courier New', Courier, monospace; font-size: 10px; letter-spacing: 0.16em; text-transform: uppercase; color: #2b9a66; margin: 0 0 8px; }
+  h1 { margin: 0; font-family: Georgia, 'Times New Roman', serif; font-size: 26px; font-weight: 400; font-style: italic; color: #1a1612; letter-spacing: -0.01em; }
+  .body { padding: 28px 32px; }
+  .body p { margin: 0 0 16px; line-height: 1.6; color: #3a342d; font-size: 14px; }
+  .lbl { font-family: 'Courier New', Courier, monospace; font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; color: #6e665c; margin: 0 0 12px; }
+  .meta { width: 100%; border: 1px solid #e8e3db; border-collapse: collapse; margin: 0 0 24px; }
+  .meta td { padding: 10px 16px; font-size: 13px; border-bottom: 1px solid #e8e3db; }
+  .meta tr:last-child td { border-bottom: none; }
+  .meta-label { color: #6e665c; white-space: nowrap; padding-right: 16px; }
+  .meta-value { color: #1a1612; font-weight: 500; text-align: right; }
+  .wallet { font-family: 'Courier New', Courier, monospace; font-size: 11px; color: #6b4f3a; text-align: right; word-break: break-all; }
+  .btn { display: inline-block; background: #1a1612; color: #faf7f2; padding: 12px 22px; text-decoration: none; font-size: 12px; letter-spacing: 0.04em; font-weight: 500; }
 </style></head>
 <body>
-<div class="card">
-  <div class="header"><h1>Your creation is live on RRG</h1></div>
-  <div class="body">
-    <p>Your submission <strong style="color:#e5e5e5">"${escHtml(title)}"</strong> has been approved and is now live.</p>
-    <div class="meta">
-      <div class="meta-row"><span class="meta-label">Price:</span><span class="meta-value">${priceUsdc.toFixed(2)} USDC</span></div>
-      <div class="meta-row"><span class="meta-label">Edition:</span><span class="meta-value">${editionSize} pieces</span></div>
-      <div class="meta-row"><span class="meta-label">Your share:</span><span class="meta-value">70% per sale</span></div>
-      <div class="meta-row"><span class="meta-label">Revenue wallet:</span><span class="wallet">${creatorWallet}</span></div>
+<div class="wrap">
+  <p class="wordmark">Real Real Genuine</p>
+  <div class="card">
+    <div class="card-head">
+      <p class="eyebrow">Your creation is live</p>
+      <h1>${escHtml(title)}</h1>
     </div>
-    <p>Sales revenue (70%) is sent automatically to your wallet with no further steps from you.</p>
-    <p>Share the link below. Every sale goes straight to your wallet.</p>
-    <a class="btn" href="${dropUrl}">View your listing →</a>
+    <div class="body">
+      <p>Your submission has been approved and is now live on RRG.</p>
+      <p class="lbl">Listing details</p>
+      <table class="meta" cellpadding="0" cellspacing="0"><tbody>
+        <tr><td class="meta-label">Price</td><td class="meta-value">${priceUsdc.toFixed(2)} USDC</td></tr>
+        <tr><td class="meta-label">Edition</td><td class="meta-value">${editionSize} pieces</td></tr>
+        <tr><td class="meta-label">Your share</td><td class="meta-value">70% per sale</td></tr>
+        <tr><td class="meta-label">Revenue wallet</td><td class="wallet">${escHtml(creatorWallet)}</td></tr>
+      </tbody></table>
+      <p>Sales revenue (70%) is sent automatically to your wallet, no further steps from you.</p>
+      <p>Share the link below. Every sale goes straight to your wallet.</p>
+      <a class="btn" href="${dropUrl}">View your listing</a>
+    </div>
   </div>
-  <div class="footer"><a href="${SITE_URL}/rrg" style="color:#e5e5e5; text-decoration:none">Browse all listings</a></div>
+  <table width="100%" cellpadding="0" cellspacing="0" style="margin-top:32px;padding-top:20px;border-top:1px solid #e8e3db;"><tbody><tr>
+    <td style="font-family:'Courier New',Courier,monospace;font-size:10px;letter-spacing:0.12em;text-transform:uppercase;color:#6e665c;">RRG / Real Real Genuine</td>
+    <td align="right" style="font-family:'Courier New',Courier,monospace;font-size:10px;letter-spacing:0.12em;text-transform:uppercase;color:#6e665c;text-align:right;"><a href="${SITE_URL}/rrg" style="color:#6e665c;text-decoration:none;">realrealgenuine.com</a></td>
+  </tr></tbody></table>
 </div>
 </body>
 </html>`;
@@ -226,33 +239,42 @@ export async function sendRejectionNotification({
 <!DOCTYPE html>
 <html>
 <head><meta charset="utf-8"><style>
-  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #0a0a0a; color: #e5e5e5; margin: 0; padding: 40px 20px; }
-  .card { max-width: 520px; margin: 0 auto; background: #111; border: 1px solid #222; border-radius: 12px; overflow: hidden; }
-  .header { background: #555; padding: 24px 28px; }
-  .header h1 { margin: 0; font-size: 20px; color: #fff; font-weight: 700; }
-  .body { padding: 28px; }
-  .body p { margin: 0 0 16px; line-height: 1.6; color: #ccc; font-size: 14px; }
-  .reason { background: #1a1a1a; border: 1px solid #333; border-radius: 8px; padding: 16px; margin: 20px 0; }
-  .reason-label { color: #888; font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px; }
-  .reason-text { color: #e5e5e5; font-size: 14px; line-height: 1.6; }
-  .btn { display: inline-block; background: #d4ff22; color: #0a0a0a; padding: 12px 24px; border-radius: 8px; text-decoration: none; font-weight: 700; font-size: 14px; margin-top: 8px; }
-  .footer { padding: 20px 28px; border-top: 1px solid #1a1a1a; font-size: 12px; color: #555; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', sans-serif; background: #faf7f2; color: #1a1612; margin: 0; padding: 40px 20px; }
+  .wrap { max-width: 560px; margin: 0 auto; }
+  .wordmark { font-family: Georgia, 'Times New Roman', serif; font-size: 18px; font-weight: 400; font-style: italic; letter-spacing: 0.01em; color: #1a1612; margin: 0 0 24px; }
+  .card { background: #ffffff; border: 1px solid #e8e3db; }
+  .card-head { padding: 28px 32px 24px; border-bottom: 1px solid #e8e3db; }
+  .eyebrow { font-family: 'Courier New', Courier, monospace; font-size: 10px; letter-spacing: 0.16em; text-transform: uppercase; color: #6e665c; margin: 0 0 8px; }
+  h1 { margin: 0; font-family: Georgia, 'Times New Roman', serif; font-size: 26px; font-weight: 400; font-style: italic; color: #1a1612; letter-spacing: -0.01em; }
+  .body { padding: 28px 32px; }
+  .body p { margin: 0 0 16px; line-height: 1.6; color: #3a342d; font-size: 14px; }
+  .lbl { font-family: 'Courier New', Courier, monospace; font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; color: #6e665c; margin: 0 0 12px; }
+  .reason { border: 1px solid #e8e3db; padding: 14px 16px; margin: 0 0 24px; background: #fdfbf7; }
+  .reason p { margin: 0; font-size: 14px; color: #1a1612; line-height: 1.6; }
+  .btn { display: inline-block; background: #1a1612; color: #faf7f2; padding: 12px 22px; text-decoration: none; font-size: 12px; letter-spacing: 0.04em; font-weight: 500; }
 </style></head>
 <body>
-<div class="card">
-  <div class="header"><h1>Update on your submission</h1></div>
-  <div class="body">
-    <p>Thanks for submitting <strong style="color:#e5e5e5">"${escHtml(title)}"</strong> to RRG.</p>
-    <p>After review, we weren't able to accept this submission for our current collection.</p>
-    ${reason ? `
-    <div class="reason">
-      <div class="reason-label">Feedback</div>
-      <div class="reason-text">${escHtml(reason)}</div>
-    </div>` : ''}
-    <p>We encourage you to refine and resubmit. We'd love to see more of your work.</p>
-    <a class="btn" href="${SITE_URL}/rrg/submit">Submit again →</a>
+<div class="wrap">
+  <p class="wordmark">Real Real Genuine</p>
+  <div class="card">
+    <div class="card-head">
+      <p class="eyebrow">Submission update</p>
+      <h1>${escHtml(title)}</h1>
+    </div>
+    <div class="body">
+      <p>Thanks for submitting this work to RRG.</p>
+      <p>After review, we weren't able to accept this submission for our current collection.</p>
+      ${reason ? `
+      <p class="lbl">Feedback</p>
+      <div class="reason"><p>${escHtml(reason)}</p></div>` : ''}
+      <p>We encourage you to refine and resubmit. We'd love to see more of your work.</p>
+      <a class="btn" href="${SITE_URL}/rrg/submit">Submit again</a>
+    </div>
   </div>
-  <div class="footer"><a href="${SITE_URL}/rrg" style="color:#e5e5e5; text-decoration:none">Browse all listings</a></div>
+  <table width="100%" cellpadding="0" cellspacing="0" style="margin-top:32px;padding-top:20px;border-top:1px solid #e8e3db;"><tbody><tr>
+    <td style="font-family:'Courier New',Courier,monospace;font-size:10px;letter-spacing:0.12em;text-transform:uppercase;color:#6e665c;">RRG / Real Real Genuine</td>
+    <td align="right" style="font-family:'Courier New',Courier,monospace;font-size:10px;letter-spacing:0.12em;text-transform:uppercase;color:#6e665c;text-align:right;"><a href="${SITE_URL}/rrg" style="color:#6e665c;text-decoration:none;">realrealgenuine.com</a></td>
+  </tr></tbody></table>
 </div>
 </body>
 </html>`;
@@ -269,9 +291,9 @@ export async function sendRejectionNotification({
 interface PhysicalPurchaseEmailData {
   title: string;
   tokenId: number;
-  /** Buyer's on-chain purchase tx hash — shown in buyer email */
+  /** Buyer's on-chain purchase tx hash, shown in buyer email */
   txHash: string;
-  /** Brand's USDC payout tx hash — shown in seller email */
+  /** Brand's USDC payout tx hash, shown in seller email */
   brandPayoutTxHash?: string | null;
   buyerEmail: string | null;
   brandContactEmail: string;
@@ -386,7 +408,7 @@ ${escHtml(data.shippingAddress)}</div></td></tr>
   });
 }
 
-/** Send to buyer: purchase confirmation — physical product prominent, download link minimal at end */
+/** Send to buyer: purchase confirmation, physical product prominent, download link minimal at end */
 export async function sendPhysicalPurchaseToBuyer(data: PhysicalPurchaseEmailData): Promise<void> {
   if (!data.buyerEmail) return;
 
@@ -496,25 +518,44 @@ export async function sendBrandApprovalEmail({
 <!DOCTYPE html>
 <html>
 <head><meta charset="utf-8"><style>
-  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #0a0a0a; color: #e5e5e5; margin: 0; padding: 40px 20px; }
-  .card { max-width: 520px; margin: 0 auto; background: #111; border: 1px solid #222; border-radius: 12px; overflow: hidden; }
-  .header { background: #d4ff22; padding: 24px 28px; }
-  .header h1 { margin: 0; font-size: 20px; color: #0a0a0a; font-weight: 700; }
-  .body { padding: 28px; }
-  .body p { margin: 0 0 16px; line-height: 1.6; color: #ccc; font-size: 14px; }
-  .btn { display: inline-block; background: #d4ff22; color: #0a0a0a; padding: 12px 24px; border-radius: 8px; text-decoration: none; font-weight: 700; font-size: 14px; margin-top: 8px; }
-  .footer { padding: 20px 28px; border-top: 1px solid #1a1a1a; font-size: 12px; color: #555; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', sans-serif; background: #faf7f2; color: #1a1612; margin: 0; padding: 40px 20px; }
+  .wrap { max-width: 560px; margin: 0 auto; }
+  .wordmark { font-family: Georgia, 'Times New Roman', serif; font-size: 18px; font-weight: 400; font-style: italic; letter-spacing: 0.01em; color: #1a1612; margin: 0 0 24px; }
+  .card { background: #ffffff; border: 1px solid #e8e3db; }
+  .card-head { padding: 28px 32px 24px; border-bottom: 1px solid #e8e3db; }
+  .eyebrow { font-family: 'Courier New', Courier, monospace; font-size: 10px; letter-spacing: 0.16em; text-transform: uppercase; color: #2b9a66; margin: 0 0 8px; }
+  h1 { margin: 0; font-family: Georgia, 'Times New Roman', serif; font-size: 26px; font-weight: 400; font-style: italic; color: #1a1612; letter-spacing: -0.01em; }
+  .body { padding: 28px 32px; }
+  .body p { margin: 0 0 16px; line-height: 1.6; color: #3a342d; font-size: 14px; }
+  .lbl { font-family: 'Courier New', Courier, monospace; font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; color: #6e665c; margin: 0 0 12px; }
+  .bullets { border: 1px solid #e8e3db; padding: 14px 18px; margin: 0 0 24px; background: #fdfbf7; }
+  .bullets p { margin: 0 0 6px; font-size: 14px; color: #1a1612; line-height: 1.6; }
+  .bullets p:last-child { margin: 0; }
+  .btn { display: inline-block; background: #1a1612; color: #faf7f2; padding: 12px 22px; text-decoration: none; font-size: 12px; letter-spacing: 0.04em; font-weight: 500; }
 </style></head>
 <body>
-<div class="card">
-  <div class="header"><h1>Welcome to RRG, ${escHtml(brandName)}</h1></div>
-  <div class="body">
-    <p>Your brand partner application has been approved. You now have full access to your brand dashboard.</p>
-    <p>From your dashboard you can:</p>
-    <p style="color:#e5e5e5">• Submit products for the RRG collection<br>• Track sales and revenue<br>• Manage your brand profile</p>
-    <a class="btn" href="${dashboardUrl}">Go to your dashboard →</a>
+<div class="wrap">
+  <p class="wordmark">Real Real Genuine</p>
+  <div class="card">
+    <div class="card-head">
+      <p class="eyebrow">Brand approved</p>
+      <h1>Welcome to RRG, ${escHtml(brandName)}</h1>
+    </div>
+    <div class="body">
+      <p>Your brand partner application has been approved. You now have full access to your brand dashboard.</p>
+      <p class="lbl">From your dashboard you can</p>
+      <div class="bullets">
+        <p>Submit products for the RRG collection</p>
+        <p>Track sales and revenue</p>
+        <p>Manage your brand profile</p>
+      </div>
+      <a class="btn" href="${dashboardUrl}">Go to your dashboard</a>
+    </div>
   </div>
-  <div class="footer">RRG / Real Real Genuine</div>
+  <table width="100%" cellpadding="0" cellspacing="0" style="margin-top:32px;padding-top:20px;border-top:1px solid #e8e3db;"><tbody><tr>
+    <td style="font-family:'Courier New',Courier,monospace;font-size:10px;letter-spacing:0.12em;text-transform:uppercase;color:#6e665c;">RRG / Real Real Genuine</td>
+    <td align="right" style="font-family:'Courier New',Courier,monospace;font-size:10px;letter-spacing:0.12em;text-transform:uppercase;color:#6e665c;text-align:right;"><a href="${SITE_URL}/rrg" style="color:#6e665c;text-decoration:none;">realrealgenuine.com</a></td>
+  </tr></tbody></table>
 </div>
 </body>
 </html>`;
@@ -545,33 +586,48 @@ export async function sendOutreachOwnerEmail({
 <!DOCTYPE html>
 <html>
 <head><meta charset="utf-8"><style>
-  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #0a0a0a; color: #e5e5e5; margin: 0; padding: 40px 20px; }
-  .card { max-width: 520px; margin: 0 auto; background: #111; border: 1px solid #222; border-radius: 12px; overflow: hidden; }
-  .header { background: #d4ff22; padding: 24px 28px; }
-  .header h1 { margin: 0; font-size: 20px; color: #0a0a0a; font-weight: 700; }
-  .body { padding: 28px; }
-  .body p { margin: 0 0 16px; line-height: 1.6; color: #ccc; font-size: 14px; }
-  .actions { background: #1a1a1a; border: 1px solid #333; border-radius: 8px; padding: 16px; margin: 20px 0; }
-  .actions p { margin: 0 0 8px; font-size: 13px; color: #e5e5e5; }
-  .btn { display: inline-block; background: #d4ff22; color: #0a0a0a; padding: 12px 24px; border-radius: 8px; text-decoration: none; font-weight: 700; font-size: 14px; margin-top: 8px; }
-  .footer { padding: 20px 28px; border-top: 1px solid #1a1a1a; font-size: 12px; color: #555; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', sans-serif; background: #faf7f2; color: #1a1612; margin: 0; padding: 40px 20px; }
+  .wrap { max-width: 560px; margin: 0 auto; }
+  .wordmark { font-family: Georgia, 'Times New Roman', serif; font-size: 18px; font-weight: 400; font-style: italic; letter-spacing: 0.01em; color: #1a1612; margin: 0 0 24px; }
+  .card { background: #ffffff; border: 1px solid #e8e3db; }
+  .card-head { padding: 28px 32px 24px; border-bottom: 1px solid #e8e3db; }
+  .eyebrow { font-family: 'Courier New', Courier, monospace; font-size: 10px; letter-spacing: 0.16em; text-transform: uppercase; color: #2b9a66; margin: 0 0 8px; }
+  h1 { margin: 0; font-family: Georgia, 'Times New Roman', serif; font-size: 26px; font-weight: 400; font-style: italic; color: #1a1612; letter-spacing: -0.01em; }
+  .body { padding: 28px 32px; }
+  .body p { margin: 0 0 16px; line-height: 1.6; color: #3a342d; font-size: 14px; }
+  .lbl { font-family: 'Courier New', Courier, monospace; font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; color: #6e665c; margin: 0 0 12px; }
+  .actions { border: 1px solid #e8e3db; padding: 14px 18px; margin: 0 0 24px; background: #fdfbf7; }
+  .actions p { margin: 0 0 8px; font-size: 14px; color: #1a1612; line-height: 1.6; }
+  .actions p:last-child { margin: 0; }
+  .btn { display: inline-block; background: #1a1612; color: #faf7f2; padding: 12px 22px; text-decoration: none; font-size: 12px; letter-spacing: 0.04em; font-weight: 500; }
+  .post { margin-top: 16px; font-size: 13px; color: #6e665c; }
+  .post a { color: #6b4f3a; text-decoration: none; }
 </style></head>
 <body>
-<div class="card">
-  <div class="header"><h1>Your agent received a collaboration request</h1></div>
-  <div class="body">
-    <p>Your ERC-8004 agent <strong style="color:#e5e5e5">"${escHtml(agentName)}"</strong>${idStr} was contacted by the RRG platform agent (#33313) via ${escHtml(channel.toUpperCase())}.</p>
-    <p>RRG is an agent-native design and commerce platform on Base where AI agents can browse and purchase fashion listings, submit designs to brand briefs, and launch their own brands. All transactions use USDC with on-chain ERC-8004 reputation.</p>
-    <div class="actions">
-      <p>What your agent can do on RRG:</p>
-      <p>- Browse and purchase limited edition listings (gasless USDC)</p>
-      <p>- Submit original designs to open brand briefs (earn 35% on every sale)</p>
-      <p>- Register and launch its own brand with automatic USDC payouts</p>
+<div class="wrap">
+  <p class="wordmark">Real Real Genuine</p>
+  <div class="card">
+    <div class="card-head">
+      <p class="eyebrow">Collaboration request</p>
+      <h1>Your agent received a request from RRG</h1>
     </div>
-    <a class="btn" href="https://realrealgenuine.com/mcp">Connect your agent</a>
-    <p style="margin-top: 16px; font-size: 13px;">RRG is a product of <a href="https://www.getvia.xyz/mcp" style="color:#d4ff22; text-decoration:none">VIA Labs</a>.</p>
+    <div class="body">
+      <p>Your ERC-8004 agent <strong style="color:#1a1612">"${escHtml(agentName)}"</strong>${idStr} was contacted by the RRG platform agent (#33313) via ${escHtml(channel.toUpperCase())}.</p>
+      <p>RRG is an agent-native design and commerce platform on Base where AI agents can browse and purchase fashion listings, submit designs to brand briefs, and launch their own brands. All transactions use USDC with on-chain ERC-8004 reputation.</p>
+      <p class="lbl">What your agent can do on RRG</p>
+      <div class="actions">
+        <p>Browse and purchase limited edition listings (gasless USDC)</p>
+        <p>Submit original designs to open brand briefs (earn 35% on every sale)</p>
+        <p>Register and launch its own brand with automatic USDC payouts</p>
+      </div>
+      <a class="btn" href="https://realrealgenuine.com/mcp">Connect your agent</a>
+      <p class="post">RRG is a product of <a href="https://www.getvia.xyz/mcp">VIA Labs</a>.</p>
+    </div>
   </div>
-  <div class="footer">RRG Platform Agent (#33313) | <a href="https://realrealgenuine.com" style="color:#e5e5e5; text-decoration:none">realrealgenuine.com</a></div>
+  <table width="100%" cellpadding="0" cellspacing="0" style="margin-top:32px;padding-top:20px;border-top:1px solid #e8e3db;"><tbody><tr>
+    <td style="font-family:'Courier New',Courier,monospace;font-size:10px;letter-spacing:0.12em;text-transform:uppercase;color:#6e665c;">RRG Platform Agent (#33313)</td>
+    <td align="right" style="font-family:'Courier New',Courier,monospace;font-size:10px;letter-spacing:0.12em;text-transform:uppercase;color:#6e665c;text-align:right;"><a href="https://realrealgenuine.com" style="color:#6e665c;text-decoration:none;">realrealgenuine.com</a></td>
+  </tr></tbody></table>
 </div>
 </body>
 </html>`;
@@ -579,6 +635,76 @@ export async function sendOutreachOwnerEmail({
   await sendEmail({
     to,
     subject: `Your agent "${agentName}" received a collaboration request from RRG`,
+    html,
+  });
+}
+
+// ── 7. Brand admin invite ─────────────────────────────────────────────
+
+export async function sendBrandAdminInviteEmail({
+  to,
+  brandName,
+  email,
+  tempPassword,
+  loginUrl,
+}: {
+  to: string;
+  brandName: string;
+  email: string;
+  tempPassword: string;
+  loginUrl: string;
+}): Promise<void> {
+  const html = `
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><style>
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', sans-serif; background: #faf7f2; color: #1a1612; margin: 0; padding: 40px 20px; }
+  .wrap { max-width: 560px; margin: 0 auto; }
+  .wordmark { font-family: Georgia, 'Times New Roman', serif; font-size: 18px; font-weight: 400; font-style: italic; letter-spacing: 0.01em; color: #1a1612; margin: 0 0 24px; }
+  .card { background: #ffffff; border: 1px solid #e8e3db; }
+  .card-head { padding: 28px 32px 24px; border-bottom: 1px solid #e8e3db; }
+  .eyebrow { font-family: 'Courier New', Courier, monospace; font-size: 10px; letter-spacing: 0.16em; text-transform: uppercase; color: #2b9a66; margin: 0 0 8px; }
+  h1 { margin: 0; font-family: Georgia, 'Times New Roman', serif; font-size: 26px; font-weight: 400; font-style: italic; color: #1a1612; letter-spacing: -0.01em; }
+  .body { padding: 28px 32px; }
+  .body p { margin: 0 0 16px; line-height: 1.6; color: #3a342d; font-size: 14px; }
+  .lbl { font-family: 'Courier New', Courier, monospace; font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; color: #6e665c; margin: 0 0 12px; }
+  .meta { width: 100%; border: 1px solid #e8e3db; border-collapse: collapse; margin: 0 0 24px; }
+  .meta td { padding: 10px 16px; font-size: 13px; border-bottom: 1px solid #e8e3db; }
+  .meta tr:last-child td { border-bottom: none; }
+  .meta-label { color: #6e665c; white-space: nowrap; padding-right: 16px; }
+  .meta-value { color: #1a1612; font-weight: 500; text-align: right; font-family: 'Courier New', Courier, monospace; font-size: 13px; word-break: break-all; }
+  .btn { display: inline-block; background: #1a1612; color: #faf7f2; padding: 12px 22px; text-decoration: none; font-size: 12px; letter-spacing: 0.04em; font-weight: 500; }
+</style></head>
+<body>
+<div class="wrap">
+  <p class="wordmark">Real Real Genuine</p>
+  <div class="card">
+    <div class="card-head">
+      <p class="eyebrow">Brand admin invite</p>
+      <h1>Welcome to RRG, ${escHtml(brandName)}</h1>
+    </div>
+    <div class="body">
+      <p>You've been invited as an admin for <strong style="color:#1a1612">${escHtml(brandName)}</strong> on the RRG platform.</p>
+      <p class="lbl">Your sign-in</p>
+      <table class="meta" cellpadding="0" cellspacing="0"><tbody>
+        <tr><td class="meta-label">Email</td><td class="meta-value">${escHtml(email)}</td></tr>
+        <tr><td class="meta-label">Temporary password</td><td class="meta-value">${escHtml(tempPassword)}</td></tr>
+      </tbody></table>
+      <p>Please log in and change your password immediately.</p>
+      <a class="btn" href="${loginUrl}">Log in to your dashboard</a>
+    </div>
+  </div>
+  <table width="100%" cellpadding="0" cellspacing="0" style="margin-top:32px;padding-top:20px;border-top:1px solid #e8e3db;"><tbody><tr>
+    <td style="font-family:'Courier New',Courier,monospace;font-size:10px;letter-spacing:0.12em;text-transform:uppercase;color:#6e665c;">RRG / Real Real Genuine</td>
+    <td align="right" style="font-family:'Courier New',Courier,monospace;font-size:10px;letter-spacing:0.12em;text-transform:uppercase;color:#6e665c;text-align:right;"><a href="${SITE_URL}/rrg" style="color:#6e665c;text-decoration:none;">realrealgenuine.com</a></td>
+  </tr></tbody></table>
+</div>
+</body>
+</html>`;
+
+  await sendEmail({
+    to,
+    subject: `You've been invited to RRG, ${brandName}`,
     html,
   });
 }
