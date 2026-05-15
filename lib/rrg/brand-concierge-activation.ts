@@ -58,33 +58,46 @@ function welcomeEmailHtml(brandName: string, email: string, tempPassword: string
   return `<!DOCTYPE html>
 <html>
 <head><meta charset="utf-8"><style>
-  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #0a0a0a; color: #e5e5e5; margin: 0; padding: 40px 20px; }
-  .card { max-width: 520px; margin: 0 auto; background: #111; border: 1px solid #222; border-radius: 12px; overflow: hidden; }
-  .header { background: #d4ff22; padding: 24px 28px; }
-  .header h1 { margin: 0; font-size: 20px; color: #0a0a0a; font-weight: 700; }
-  .body { padding: 28px; }
-  .body p { margin: 0 0 16px; line-height: 1.6; color: #ccc; font-size: 14px; }
-  .meta { background: #1a1a1a; border: 1px solid #333; border-radius: 8px; padding: 16px; margin: 20px 0; }
-  .meta-row { padding: 6px 0; font-size: 13px; border-bottom: 1px solid #222; }
-  .meta-row:last-child { border-bottom: none; }
-  .meta-label { color: #888; }
-  .meta-value { color: #e5e5e5; font-weight: 500; }
-  .btn { display: inline-block; background: #d4ff22; color: #0a0a0a; padding: 12px 24px; border-radius: 8px; text-decoration: none; font-weight: 700; font-size: 14px; margin-top: 8px; }
-  .footer { padding: 20px 28px; border-top: 1px solid #1a1a1a; font-size: 12px; color: #555; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', sans-serif; background: #faf7f2; color: #1a1612; margin: 0; padding: 40px 20px; }
+  .wrap { max-width: 560px; margin: 0 auto; }
+  .wordmark { font-family: Georgia, 'Times New Roman', serif; font-size: 18px; font-weight: 400; font-style: italic; letter-spacing: 0.01em; color: #1a1612; margin: 0 0 24px; }
+  .card { background: #ffffff; border: 1px solid #e8e3db; }
+  .card-head { padding: 28px 32px 24px; border-bottom: 1px solid #e8e3db; }
+  .eyebrow { font-family: 'Courier New', Courier, monospace; font-size: 10px; letter-spacing: 0.16em; text-transform: uppercase; color: #2b9a66; margin: 0 0 8px; }
+  h1 { margin: 0; font-family: Georgia, 'Times New Roman', serif; font-size: 26px; font-weight: 400; font-style: italic; color: #1a1612; letter-spacing: -0.01em; }
+  .body { padding: 28px 32px; }
+  .body p { margin: 0 0 16px; line-height: 1.6; color: #3a342d; font-size: 14px; }
+  .lbl { font-family: 'Courier New', Courier, monospace; font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; color: #6e665c; margin: 0 0 12px; }
+  .meta { width: 100%; border: 1px solid #e8e3db; border-collapse: collapse; margin: 0 0 24px; }
+  .meta td { padding: 10px 16px; font-size: 13px; border-bottom: 1px solid #e8e3db; }
+  .meta tr:last-child td { border-bottom: none; }
+  .meta-label { color: #6e665c; white-space: nowrap; padding-right: 16px; }
+  .meta-value { color: #1a1612; font-weight: 500; text-align: right; font-family: 'Courier New', Courier, monospace; font-size: 13px; word-break: break-all; }
+  .btn { display: inline-block; background: #1a1612; color: #faf7f2; padding: 12px 22px; text-decoration: none; font-size: 12px; letter-spacing: 0.04em; font-weight: 500; }
 </style></head>
 <body>
-<div class="card">
-  <div class="header"><h1>Welcome to RRG, ${brandName}</h1></div>
-  <div class="body">
-    <p>Your ${brandName} storefront is live on RRG, and your Brand Concierge is now ready. Log in to chat with it and lock in events, promotions, stock notes, and policies your customers will see.</p>
-    <div class="meta">
-      <div class="meta-row"><span class="meta-label">Email: </span><span class="meta-value">${email}</span></div>
-      <div class="meta-row"><span class="meta-label">Temporary password: </span><span class="meta-value">${tempPassword}</span></div>
+<div class="wrap">
+  <p class="wordmark">Real Real Genuine</p>
+  <div class="card">
+    <div class="card-head">
+      <p class="eyebrow">Brand concierge live</p>
+      <h1>Welcome to RRG, ${brandName}</h1>
     </div>
-    <p>Please log in and change your password immediately.</p>
-    <a class="btn" href="${loginUrl}">Open your dashboard</a>
+    <div class="body">
+      <p>Your ${brandName} storefront is live on RRG, and your Brand Concierge is now ready. Log in to chat with it and lock in events, promotions, stock notes, and policies your customers will see.</p>
+      <p class="lbl">Your sign-in</p>
+      <table class="meta" cellpadding="0" cellspacing="0"><tbody>
+        <tr><td class="meta-label">Email</td><td class="meta-value">${email}</td></tr>
+        <tr><td class="meta-label">Temporary password</td><td class="meta-value">${tempPassword}</td></tr>
+      </tbody></table>
+      <p>Please log in and change your password immediately.</p>
+      <a class="btn" href="${loginUrl}">Open your dashboard</a>
+    </div>
   </div>
-  <div class="footer"><a href="${SITE_URL}/rrg" style="color:#e5e5e5; text-decoration:none">RRG, Real Real Genuine</a></div>
+  <table width="100%" cellpadding="0" cellspacing="0" style="margin-top:32px;padding-top:20px;border-top:1px solid #e8e3db;"><tbody><tr>
+    <td style="font-family:'Courier New',Courier,monospace;font-size:10px;letter-spacing:0.12em;text-transform:uppercase;color:#6e665c;">RRG / Real Real Genuine</td>
+    <td align="right" style="font-family:'Courier New',Courier,monospace;font-size:10px;letter-spacing:0.12em;text-transform:uppercase;color:#6e665c;text-align:right;"><a href="${SITE_URL}/rrg" style="color:#6e665c;text-decoration:none;">realrealgenuine.com</a></td>
+  </tr></tbody></table>
 </div>
 </body>
 </html>`;
