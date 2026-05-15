@@ -3,6 +3,7 @@ import { createHash, randomUUID } from 'crypto';
 import { ethers } from 'ethers';
 import { autopostGeneric } from '@/lib/rrg/autopost';
 import { uploadSubmissionFile, getSignedUrl } from '@/lib/rrg/storage';
+import { recordSignedAction } from '@/lib/rrg/via-audit';
 
 export const dynamic = 'force-dynamic';
 
@@ -13,12 +14,12 @@ export const dynamic = 'force-dynamic';
 // machinery as listing approvals and sales.
 //
 // Body: multipart/form-data
-//   content     (required) — post body
-//   timestamp   (required) — ISO-8601, must be within 5 min of server clock
-//   signature   (required) — EIP-191 signature over canonical
+//   content     (required): post body
+//   timestamp   (required): ISO-8601, must be within 5 min of server clock
+//   signature   (required): EIP-191 signature over canonical
 //                            `RRG-PRISCILLA-POST:<sha256-hex(content)>:<timestamp>`
-//   image       (optional) — JPEG or PNG file, max 5 MB
-//   channels    (optional) — comma-separated subset of TELEGRAM,BLUESKY,DISCORD
+//   image       (optional): JPEG or PNG file, max 5 MB
+//   channels    (optional): comma-separated subset of TELEGRAM,BLUESKY,DISCORD
 //
 // Why multipart and not JSON: a 1.3 MB image base64-encoded in a JSON body
 // hits Next.js body-size limits and inflates by 33%. Multipart binary keeps
@@ -29,6 +30,7 @@ export const dynamic = 'force-dynamic';
 // post. One call from her broadcaster MCP, one round trip server-side.
 
 const PRISCILLA_WALLET   = (process.env.RRG_PRISCILLA_BROADCAST_WALLET ?? '').toLowerCase();
+const PRISCILLA_VIA_AGENT_ID = 37750; // Priscilla #37750, see wallet_separation.md
 const REPLAY_WINDOW_MS   = 5 * 60 * 1000;
 const ALLOWED_CHANNELS   = ['TELEGRAM', 'BLUESKY', 'DISCORD'] as const;
 const ACCEPTED_MIME      = ['image/jpeg', 'image/jpg', 'image/png'];
@@ -115,7 +117,7 @@ export async function POST(req: NextRequest) {
         error: 'content_too_short_for_long_channels',
         detail:
           `content is ${content.length} chars but channels include ${targets.filter(t => longChannels.includes(t)).join(', ')}. ` +
-          'The server auto-truncates for BlueSky internally (lib/rrg/autopost.ts bskyTruncate) — send the FULL long-form content (~400-1500 chars typical) and the server will produce the 300-char BlueSky variant for you. ' +
+          'The server auto-truncates for BlueSky internally (lib/rrg/autopost.ts bskyTruncate), so send the FULL long-form content (~400-1500 chars typical) and the server will produce the 300-char BlueSky variant for you. ' +
           'If you genuinely want the short text on every channel (rare), pass form field `short_intentional=true`.',
         content_length: content.length,
         long_channels_targeted: targets.filter(t => longChannels.includes(t)),
@@ -151,9 +153,35 @@ export async function POST(req: NextRequest) {
     },
   });
 
+  // Signed-action audit. The post already went out and cannot be un-sent, so
+  // this runs after autopost; a failed audit write is surfaced loudly via
+  // audit_logged:false, never swallowed (a loud gap beats a silent one).
+  let audit_logged = false;
+  let audit_error: string | null = null;
+  try {
+    await recordSignedAction({
+      via_agent_id:    PRISCILLA_VIA_AGENT_ID,
+      source_platform: 'rrg',
+      action_type:     'public_post',
+      target:          result.channels.join(','),
+      payload_hash:    contentHash,
+      payload:         { content, channels: result.channels, errors: result.errors, image_url: imageUrl },
+      nonce:           Math.floor(ts / 1000),
+      signed_message:  canonical,
+      signature,
+      sig_scheme:      'rrg-priscilla-post-v1',
+    });
+    audit_logged = true;
+  } catch (e: any) {
+    audit_error = e?.message ?? String(e);
+    console.error('[priscilla-broadcast] signed-action audit FAILED (post sent, audit gap):', audit_error);
+  }
+
   return NextResponse.json({
-    posted_to: result.channels,
-    errors:    result.errors,
-    image_url: imageUrl,
+    posted_to:    result.channels,
+    errors:       result.errors,
+    image_url:    imageUrl,
+    audit_logged,
+    audit_error,
   });
 }
