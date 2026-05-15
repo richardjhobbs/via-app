@@ -698,7 +698,7 @@ function SubmissionsTab() {
     });
     const data = await res.json();
     if (res.ok) {
-      setMsg(`Approved ✓ Token #${data.tokenId} — tx: ${data.txHash?.slice(0, 10)}…`);
+      setMsg(`Approved ✓ Token #${data.tokenId} - tx: ${data.txHash?.slice(0, 10)}…`);
       setApproveForm(null);
       load();
     } else {
@@ -729,7 +729,7 @@ function SubmissionsTab() {
     <div>
       <div className="flex justify-between items-center mb-6">
         <h2 className="text-sm font-mono uppercase tracking-widest text-white/60">
-          Pending Submissions — Superadmin
+          Pending Submissions - Superadmin
         </h2>
         <button onClick={load} className="text-sm text-white/50 hover:text-white transition-colors font-mono">↻ Refresh</button>
       </div>
@@ -810,7 +810,7 @@ function SubmissionsTab() {
                         }`}>
                           AI: {s.ai_screen_reason}
                           {s.image_review_flags && s.image_review_flags.length > 0 && (
-                            <span className="ml-2 opacity-60">— flags: {s.image_review_flags.join(', ')}</span>
+                            <span className="ml-2 opacity-60">- flags: {s.image_review_flags.join(', ')}</span>
                           )}
                         </div>
                       )}
@@ -880,7 +880,7 @@ function SubmissionsTab() {
                         : 'bg-white text-black hover:bg-white/90'
                     }`}
                   >
-                    {s.status === 'ai_rejected' ? 'Override — Approve' : s.status === 'needs_review' ? 'Approve Listing' : 'Approve'}
+                    {s.status === 'ai_rejected' ? 'Override - Approve' : s.status === 'needs_review' ? 'Approve Listing' : 'Approve'}
                   </button>
                   <button onClick={() => { setRejectForm({ id: s.id, reason: '' }); setApproveForm(null); }} className="px-5 py-1.5 border border-red-400/30 text-red-400 text-sm hover:border-red-400 transition-all">Reject</button>
                 </div>
@@ -1040,7 +1040,7 @@ function DropsTab() {
 
   // The product has three semantic visibility states, derived from two
   // independent DB booleans (hidden, ui_visible). Two separate checkboxes
-  // with dynamic labels turned out to be confusing — admins couldn't tell
+  // with dynamic labels turned out to be confusing - admins couldn't tell
   // from a glance what was on or off. Collapse to one selector that maps
   // the underlying flags to the visible state.
   type VisState = 'storefront' | 'mcp_only' | 'hidden';
@@ -1096,7 +1096,7 @@ function DropsTab() {
     <div>
       <div className="flex justify-between items-center mb-6">
         <h2 className="text-xs font-mono uppercase tracking-widest text-white/60">
-          Approved Listings — Superadmin
+          Approved Listings - Superadmin
         </h2>
         <button onClick={load} className="text-xs text-white/50 hover:text-white transition-colors font-mono">
           ↻ Refresh
@@ -1477,6 +1477,43 @@ function DropsTab() {
 }
 
 // ── Brands Tab ────────────────────────────────────────────────────────
+
+interface BrandMember {
+  id: string;
+  userId: string;
+  email: string | null;
+  role: string;
+  createdAt: string;
+}
+
+/**
+ * Lightweight fuzzy score: exact-substring scores highest, then ordered
+ * subsequence match. Returns -1 for no match. No dependency, good enough
+ * for a few hundred brands typed into a search box.
+ */
+function fuzzyScore(text: string, q: string): number {
+  const t = text.toLowerCase();
+  const query = q.toLowerCase().trim();
+  if (!query) return 0;
+  const idx = t.indexOf(query);
+  if (idx >= 0) return 1000 - idx - (t.length - query.length);
+  let ti = 0;
+  let qi = 0;
+  let run = 0;
+  let score = 0;
+  while (ti < t.length && qi < query.length) {
+    if (t[ti] === query[qi]) {
+      run += 1;
+      score += run; // reward consecutive matches
+      qi += 1;
+    } else {
+      run = 0;
+    }
+    ti += 1;
+  }
+  return qi === query.length ? score : -1;
+}
+
 function BrandsTab() {
   const [brands,    setBrands]    = useState<Brand[]>([]);
   const [loading,   setLoading]   = useState(true);
@@ -1498,6 +1535,11 @@ function BrandsTab() {
   const [bannerFile,   setBannerFile]   = useState<File | null>(null);
   const [bannerPreview, setBannerPreview] = useState<string | null>(null);
   const [editSaving, setEditSaving] = useState(false);
+  const [query,      setQuery]      = useState('');
+  const [members,    setMembers]    = useState<BrandMember[]>([]);
+  const [membersLoading, setMembersLoading] = useState(false);
+  const [newAdminEmail,  setNewAdminEmail]  = useState('');
+  const [memberMsg,  setMemberMsg]  = useState('');
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -1564,6 +1606,67 @@ function BrandsTab() {
     }
   };
 
+  const loadMembers = useCallback(async (brandId: string) => {
+    setMembersLoading(true);
+    try {
+      const res = await fetch(`/api/rrg/admin/brands/${brandId}/members`);
+      const data = await res.json();
+      setMembers(res.ok ? (data.members || []) : []);
+    } catch {
+      setMembers([]);
+    }
+    setMembersLoading(false);
+  }, []);
+
+  const handleRemoveMember = async (brandId: string, userId: string, email: string | null) => {
+    if (!confirm(`Remove ${email || 'this admin'} from this brand? They lose concierge access.`)) return;
+    setMemberMsg('');
+    const res = await fetch(`/api/rrg/admin/brands/${brandId}/members`, {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ user_id: userId }),
+    });
+    const data = await res.json();
+    if (res.ok) { setMemberMsg(`Removed ${email || userId} ✓`); loadMembers(brandId); }
+    else setMemberMsg(`Error: ${data.error}`);
+  };
+
+  const handleRoleToggle = async (brandId: string, userId: string, role: string) => {
+    const next = role === 'admin' ? 'viewer' : 'admin';
+    setMemberMsg('');
+    const res = await fetch(`/api/rrg/admin/brands/${brandId}/members`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ user_id: userId, role: next }),
+    });
+    const data = await res.json();
+    if (res.ok) { setMemberMsg(`Role set to ${next} ✓`); loadMembers(brandId); }
+    else setMemberMsg(`Error: ${data.error}`);
+  };
+
+  const handleAddAdmin = async (brandId: string) => {
+    const email = newAdminEmail.trim();
+    if (!email) return;
+    setMemberMsg('');
+    const res = await fetch('/api/rrg/admin/brands/invite', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ brand_id: brandId, email }),
+    });
+    const data = await res.json();
+    if (res.ok) {
+      setMemberMsg(
+        data.status === 'already_active'
+          ? `${email} is already an admin (no email sent)`
+          : `Invited ${email} ✓ (welcome email ${data.emailed ? 'sent' : 'not sent'})`,
+      );
+      setNewAdminEmail('');
+      loadMembers(brandId);
+    } else {
+      setMemberMsg(`Error: ${data.error}`);
+    }
+  };
+
   const startEdit = (b: Brand) => {
     setEditing(b.id);
     setInviting(null);
@@ -1571,6 +1674,10 @@ function BrandsTab() {
     setLogoPreview(null);
     setBannerFile(null);
     setBannerPreview(null);
+    setMembers([]);
+    setMemberMsg('');
+    setNewAdminEmail('');
+    loadMembers(b.id);
     const sl = b.social_links || {};
     setEditForm({
       name: b.name || '',
@@ -1641,6 +1748,14 @@ function BrandsTab() {
     }
   };
 
+  const visible = query.trim()
+    ? brands
+        .map((b) => ({ b, s: Math.max(fuzzyScore(b.name, query), fuzzyScore(b.slug, query)) }))
+        .filter((x) => x.s >= 0)
+        .sort((a, c) => c.s - a.s)
+        .map((x) => x.b)
+    : brands;
+
   return (
     <div>
       <div className="flex justify-between items-center mb-6">
@@ -1651,6 +1766,27 @@ function BrandsTab() {
         >
           {creating ? 'Cancel' : '+ Register Brand'}
         </button>
+      </div>
+
+      <div className="mb-6 flex items-center gap-3">
+        <input
+          type="text"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="Search brands by name or slug…"
+          className="flex-1 bg-transparent border border-white/20 px-3 py-2 text-base focus:border-white outline-none font-mono"
+        />
+        {query.trim() && (
+          <button
+            onClick={() => setQuery('')}
+            className="text-sm text-white/50 hover:text-white transition-colors font-mono"
+          >
+            Clear
+          </button>
+        )}
+        <span className="text-sm font-mono text-white/40 whitespace-nowrap">
+          {query.trim() ? `${visible.length}/${brands.length}` : `${brands.length}`}
+        </span>
       </div>
 
       {msg && (
@@ -1742,9 +1878,11 @@ function BrandsTab() {
         <p className="text-white/40 text-sm font-mono">Loading…</p>
       ) : brands.length === 0 ? (
         <p className="text-white/40 text-sm font-mono">No brands registered.</p>
+      ) : visible.length === 0 ? (
+        <p className="text-white/40 text-sm font-mono">No brands match &quot;{query}&quot;.</p>
       ) : (
         <div className="space-y-4">
-          {brands.map((b) => (
+          {visible.map((b) => (
             <div key={b.id} className="border border-white/10 overflow-hidden">
               {editing === b.id ? (
                 /* ── Full Edit form (Superadmin) ────────── */
@@ -1859,6 +1997,53 @@ function BrandsTab() {
                     <label className="text-sm font-mono text-white/60 block mb-1">Description</label>
                     <textarea rows={3} maxLength={1000} value={editForm.description} onChange={(e) => setEditForm({ ...editForm, description: e.target.value })} className="w-full bg-transparent border border-white/20 px-3 py-2 text-base focus:border-white outline-none resize-y" />
                   </div>
+
+                  {/* ── Brand admins (concierge access) ───────────── */}
+                  <div className="border-t border-white/10 pt-3">
+                    <div className="flex items-center justify-between mb-2">
+                      <label className="text-sm font-mono text-white/60">Brand Admins (concierge access)</label>
+                      {membersLoading && <span className="text-xs font-mono text-white/30">loading…</span>}
+                    </div>
+                    {memberMsg && (
+                      <div className="mb-2 text-xs font-mono text-white/70 border border-white/15 bg-white/5 px-2 py-1">{memberMsg}</div>
+                    )}
+                    {!membersLoading && members.length === 0 && (
+                      <p className="text-xs font-mono text-amber-400/80 mb-2">No admin yet. This brand&apos;s owner cannot reach the concierge until one is added.</p>
+                    )}
+                    <div className="space-y-1.5 mb-3">
+                      {members.map((m) => (
+                        <div key={m.id} className="flex items-center gap-3 text-sm font-mono border border-white/10 px-3 py-1.5">
+                          <span className="flex-1 truncate">{m.email || m.userId}</span>
+                          <span className={`text-xs px-2 py-0.5 ${m.role === 'admin' ? 'bg-green-400/20 text-green-400' : 'bg-white/10 text-white/60'}`}>{m.role}</span>
+                          <button type="button" onClick={() => handleRoleToggle(b.id, m.userId, m.role)} className="text-xs text-white/50 hover:text-white transition-colors">
+                            {m.role === 'admin' ? 'Make viewer' : 'Make admin'}
+                          </button>
+                          <button type="button" onClick={() => handleRemoveMember(b.id, m.userId, m.email)} className="text-xs text-red-400/70 hover:text-red-400 transition-colors">
+                            Remove
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                    <div className="flex gap-2 items-center">
+                      <input
+                        type="email"
+                        value={newAdminEmail}
+                        onChange={(e) => setNewAdminEmail(e.target.value)}
+                        placeholder="new-admin@brand.com"
+                        className="flex-1 bg-transparent border border-white/20 px-3 py-1.5 text-sm focus:border-white outline-none"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => handleAddAdmin(b.id)}
+                        disabled={!newAdminEmail.trim()}
+                        className="px-4 py-1.5 text-sm border border-white/20 hover:border-white/50 disabled:opacity-40 transition-all"
+                      >
+                        Add admin
+                      </button>
+                    </div>
+                    <p className="text-xs font-mono text-white/30 mt-1">Adding sends a welcome email with a temp password. Idempotent: re-adding an existing admin sends nothing.</p>
+                  </div>
+
                   <div className="flex gap-3">
                     <button onClick={() => handleEditSave(b.id)} disabled={editSaving} className="px-5 py-1.5 bg-white text-black text-base font-medium hover:bg-white/90 disabled:opacity-40 transition-all">
                       {editSaving ? 'Saving…' : 'Save All Changes'}
@@ -2189,7 +2374,7 @@ function DistributionsTab() {
           ) : (
             <div className="flex items-center justify-between">
               <p className="text-sm font-mono text-white/60">
-                {pendingCount} pending payout{pendingCount !== 1 ? 's' : ''} — ${pendingOwed.toFixed(2)} USDC owed
+                {pendingCount} pending payout{pendingCount !== 1 ? 's' : ''} - ${pendingOwed.toFixed(2)} USDC owed
               </p>
               <button
                 onClick={() => setPayoutConfirm(true)}
@@ -2242,7 +2427,7 @@ function DistributionsTab() {
                   {(d.brand_name || d.submission_title || d.token_id) && (
                     <p className="text-xs font-mono text-white/50 mt-1">
                       {d.brand_name && <span className="text-white/70">{d.brand_name}</span>}
-                      {d.submission_title && <span className="text-white/40"> — {d.submission_title}</span>}
+                      {d.submission_title && <span className="text-white/40"> - {d.submission_title}</span>}
                       {d.token_id != null && <span className="text-white/30 ml-2">#{d.token_id}</span>}
                     </p>
                   )}
@@ -2426,7 +2611,7 @@ function ContributorsTab() {
               {filtered.map((c) => {
                 const rate = c.total_submissions > 0
                   ? ((c.total_approved / c.total_submissions) * 100).toFixed(0)
-                  : '—';
+                  : '-';
                 return (
                   <tr key={c.wallet_address} className="border-b border-white/5 hover:bg-white/5 transition-colors">
                     <td className="p-3">
@@ -2451,8 +2636,8 @@ function ContributorsTab() {
                         {c.creator_type}
                       </span>
                     </td>
-                    <td className="p-3 text-white/80 truncate">{c.display_name || '—'}</td>
-                    <td className="p-3 text-white/60 truncate">{c.email || '—'}</td>
+                    <td className="p-3 text-white/80 truncate">{c.display_name || '-'}</td>
+                    <td className="p-3 text-white/60 truncate">{c.email || '-'}</td>
                     <td className="p-3 text-right">{c.total_submissions}</td>
                     <td className="p-3 text-right text-green-400">{c.total_approved}</td>
                     <td className="p-3 text-right text-red-400">{c.total_rejected}</td>
@@ -2461,7 +2646,7 @@ function ContributorsTab() {
                     <td className="p-3 text-white/60">
                       {c.last_active_at
                         ? new Date(c.last_active_at).toLocaleDateString()
-                        : '—'}
+                        : '-'}
                     </td>
                   </tr>
                 );
@@ -2633,7 +2818,7 @@ function ReferralsTab() {
                   <tr className="border-b border-white/5 hover:bg-white/5">
                     <td className="py-2 pr-4">{p.name}</td>
                     <td className="py-2 pr-4"><CopyWallet address={p.wallet_address} /></td>
-                    <td className="py-2 pr-4 font-mono text-xs text-white/50">{p.erc8004_id ? `#${p.erc8004_id}` : '—'}</td>
+                    <td className="py-2 pr-4 font-mono text-xs text-white/50">{p.erc8004_id ? `#${p.erc8004_id}` : '-'}</td>
                     <td className="py-2 pr-4 text-right tabular-nums">{p.total_candidates}</td>
                     <td className="py-2 pr-4 text-right tabular-nums">{p.converted_candidates}</td>
                     <td className="py-2 pr-4 text-right tabular-nums text-yellow-400">{fmtUsd(p.pending_usdc)}</td>
@@ -2659,7 +2844,7 @@ function ReferralsTab() {
                             <div className="flex flex-wrap gap-2">
                               {p.recent_referrals.map(r => (
                                 <div key={r.id} className="text-xs font-mono border border-white/10 rounded px-2 py-1">
-                                  <span className="text-white/80">{r.name ?? '—'}</span>
+                                  <span className="text-white/80">{r.name ?? '-'}</span>
                                   {r.wallet && <span className="text-white/40 ml-2">{r.wallet.slice(0, 6)}…{r.wallet.slice(-4)}</span>}
                                   <span className={`ml-2 ${r.status === 'converted' ? 'text-green-400' : 'text-white/50'}`}>{r.status}</span>
                                 </div>
@@ -2686,7 +2871,7 @@ function ReferralsTab() {
                               {p.commissions.map(c => (
                                 <tr key={c.id} className="border-t border-white/10">
                                   <td className="py-1 pr-3 font-mono text-white/70">{fmtDate(c.date)}</td>
-                                  <td className="py-1 pr-3 font-mono text-white/50">{c.candidate_id ? c.candidate_id.slice(0, 8) + '…' : '—'}</td>
+                                  <td className="py-1 pr-3 font-mono text-white/50">{c.candidate_id ? c.candidate_id.slice(0, 8) + '…' : '-'}</td>
                                   <td className="py-1 pr-3 text-right tabular-nums">{fmtUsd(c.revenue_usdc)}</td>
                                   <td className="py-1 pr-3 text-right tabular-nums">{fmtUsd(c.commission_usdc)}</td>
                                   <td className="py-1 pr-3 font-mono">
@@ -2702,7 +2887,7 @@ function ReferralsTab() {
                                       <a href={`https://basescan.org/tx/${c.tx_hash}`} target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:underline font-mono">
                                         {c.tx_hash.slice(0, 8)}…
                                       </a>
-                                    ) : '—'}
+                                    ) : '-'}
                                   </td>
                                   <td className="py-1 text-right">
                                     <div className="flex gap-1 justify-end">
@@ -2836,7 +3021,7 @@ function PurchasesTab() {
             <tbody>
               {purchases.map((p) => {
                 const sub = p.rrg_submissions as Record<string, unknown> | null;
-                const title = (sub?.title as string) ?? '—';
+                const title = (sub?.title as string) ?? '-';
                 const isPhysical = Boolean(sub?.is_physical_product);
                 const id = p.id as string;
                 const buyerEmail = p.buyer_email as string | null;
@@ -2853,7 +3038,7 @@ function PurchasesTab() {
                     </td>
                     <td className="py-2 pr-3 text-xs max-w-[160px] truncate">{title}</td>
                     <td className="py-2 pr-3 text-xs font-mono text-white/70">
-                      {shipName ? `${shipName}, ${p.shipping_country as string ?? ''}` : <span className="text-white/30">—</span>}
+                      {shipName ? `${shipName}, ${p.shipping_country as string ?? ''}` : <span className="text-white/30">-</span>}
                     </td>
                     <td className="py-2 pr-3 text-xs font-mono text-white/70">
                       {buyerEmail ?? <span className="text-white/30">none</span>}

@@ -175,6 +175,19 @@ function findLatestCredentialsFile(slug) {
     console.log();
   }
 
+  // 4.5 Activate the Brand Concierge (auth user + rrg_brand_members admin
+  //     + welcome email). Idempotent, skips if an admin already exists.
+  console.log(`──── Spawning activate-brand-concierge ────`);
+  {
+    const childArgs = ['scripts/activate-brand-concierge.mjs', '--slug', SLUG];
+    if (DRY_RUN) childArgs.push('--dry-run');
+    const result = spawnSync('node', childArgs, { stdio: 'inherit', cwd: process.cwd() });
+    if (result.status !== 0) {
+      console.error(`WARNING: activate-brand-concierge exited with code ${result.status} (continuing; re-run manually if needed)`);
+    }
+    console.log();
+  }
+
   // 5. Summary
   let creds = null;
   if (credPath) {
@@ -186,6 +199,7 @@ function findLatestCredentialsFile(slug) {
   console.log(`Brand:          ${brand.name} (${SLUG})`);
   console.log(`Storefront:     https://realrealgenuine.com/brand/${SLUG}`);
   console.log(`Brand admin:    https://realrealgenuine.com/brand/${SLUG}/admin`);
+  console.log(`Concierge:      auto-activated (owner login + welcome email sent to contact_email; see activate-brand-concierge output above)`);
   if (creds) {
     console.log(`New wallet:     ${creds.wallet_address}`);
     console.log(`Agent ID:       ${creds.erc8004_agent_id ?? '(unknown)'}`);
@@ -193,7 +207,8 @@ function findLatestCredentialsFile(slug) {
   }
   console.log();
   console.log(`Operator reminder (show to user):`);
-  console.log(`  Create per-brand Telegram bot via @BotFather and send Claude the bot token + username.`);
+  console.log(`  Telegram bot is OPTIONAL and experimental, not a prerequisite for the concierge.`);
+  console.log(`  Only create one via @BotFather if this brand will actively use it.`);
   console.log();
   console.log(`Claude must now do these without asking permission (single-instruction rule):`);
   if (creds?.wallet_private_key) {
@@ -202,12 +217,12 @@ function findLatestCredentialsFile(slug) {
   } else {
     console.log(`  1. Add new wallet PK env var to .env.local + Vercel + VPS (see credentials JSON).`);
   }
-  console.log(`  2. Once user provides TG bot token: store env var, edit BRAND_BOTS in lib/rrg/brand-telegram-bot.ts,`);
+  console.log(`  2. (Optional, only if a TG bot is wanted) store env var, add to BRAND_BOTS in lib/rrg/brand-telegram-bot.ts,`);
   console.log(`     call https://api.telegram.org/bot<TOKEN>/setWebhook?url=https://realrealgenuine.com/api/brand/telegram-webhook?brand=${SLUG}`);
   console.log(`  3. Create the Notion Onboarding page for ${SLUG} by duplicating "Brand Welcome Guide: Template"`);
   console.log(`     (34ddbc7b67f2811cb869e07b84e0e03a) under parent 34ddbc7b67f2809786a8d6ecf8e24f9c ("Brand Onboarding Guidelines").`);
   console.log(`     Replace <your-slug> throughout with ${SLUG}, fill in the wallet address, and set the Concierge bot handle.`);
   console.log(`  4. Reply with BOTH Notion page URLs (Stage 1 Integration + Stage 2 Onboarding) so the user can forward them to the brand.`);
   console.log(`  5. Verify the test badge in /admin/rrg Drops tab. Unhide for trial purchase, then re-hide.`);
-  console.log(`  Do NOT pause to ask "shall I create this?" — the script printing this block is the instruction.`);
+  console.log(`  Do NOT pause to ask "shall I create this?" The script printing this block is the instruction.`);
 })().catch(e => { console.error('FATAL:', e); process.exit(1); });

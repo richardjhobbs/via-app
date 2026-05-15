@@ -12,7 +12,7 @@
  *   4. POST a brief to Rosie's Discord channel telling her to run the
  *      brand-aware outreach blast to known endpoint agents
  *
- * All four run via Promise.allSettled — any single failure is captured in
+ * All four run via Promise.allSettled - any single failure is captured in
  * the returned `results` map; the route continues to surface a 200.
  *
  * Required env:
@@ -28,10 +28,11 @@ import { getApprovedDrops } from './db';
 import { regenWalletsDoc } from './wallets-doc';
 import { appendBrandLiveEntry } from './notion-build-log';
 import { sendDiscordBrief, type DiscordEmbed } from './discord-brief';
+import { activateBrandConcierge } from './brand-concierge-activation';
 
 const SITE_URL = (process.env.NEXT_PUBLIC_SITE_URL ?? 'https://realrealgenuine.com').replace(/\/$/, '');
 
-// Discord embed colours — distinct so each agent's brief is visually
+// Discord embed colours - distinct so each agent's brief is visually
 // recognisable in their channel.
 const COLOR_PRISCILLA = 0xC026D3; // magenta
 const COLOR_ROSIE = 0x059669; // green
@@ -43,6 +44,8 @@ export interface BrandLiveResults {
   wallets_doc: SideEffectStatus;
   priscilla_discord: SideEffectStatus;
   rosie_discord: SideEffectStatus;
+  /** Brand owner login + admin membership so the concierge is reachable. */
+  concierge: SideEffectStatus;
   errors: string[];
 }
 
@@ -53,7 +56,7 @@ export interface BrandLikeRow {
   description?: string | null;
   headline?: string | null;
   wallet_address?: string | null;
-  // Optional — not every caller will hand these; we'll backfill via DB if missing.
+  // Optional - not every caller will hand these; we'll backfill via DB if missing.
   erc8004_agent_id?: number | null;
 }
 
@@ -89,7 +92,7 @@ function priscillaEmbed(brand: BrandLikeRow, summary: BrandSummary): DiscordEmbe
   const productLines = summary.topProducts.length === 0
     ? 'No live products yet. Hold autopost until first listing approves.'
     : summary.topProducts
-        .map((p) => `#${p.tokenId} ${p.title} — $${p.priceUsdc} USDC`)
+        .map((p) => `#${p.tokenId} ${p.title} - $${p.priceUsdc} USDC`)
         .join('\n');
 
   return {
@@ -134,7 +137,7 @@ function rosieEmbed(brand: BrandLikeRow, summary: BrandSummary): DiscordEmbed {
   const productLines = summary.topProducts.length === 0
     ? 'No live products yet. Skip outreach until first listing approves.'
     : summary.topProducts
-        .map((p) => `#${p.tokenId} ${p.title} — $${p.priceUsdc} USDC`)
+        .map((p) => `#${p.tokenId} ${p.title} - $${p.priceUsdc} USDC`)
         .join('\n');
 
   const outreachCall = [
@@ -159,7 +162,7 @@ function rosieEmbed(brand: BrandLikeRow, summary: BrandSummary): DiscordEmbed {
   ].join('\n');
 
   return {
-    title: `New brand live: ${brand.name} — run outreach`,
+    title: `New brand live: ${brand.name} - run outreach`,
     url: storefront,
     color: COLOR_ROSIE,
     description: blurb || `Stage 2 onboarding complete for ${brand.name}.`,
@@ -184,7 +187,7 @@ function rosieEmbed(brand: BrandLikeRow, summary: BrandSummary): DiscordEmbed {
 }
 
 /**
- * Run all four side effects in parallel. Never throws — collects per-step
+ * Run all four side effects in parallel. Never throws - collects per-step
  * status into the returned object so the caller can surface it in the
  * response without failing the route.
  */
@@ -194,6 +197,7 @@ export async function onBrandLive(brand: BrandLikeRow): Promise<BrandLiveResults
     wallets_doc: 'skipped',
     priscilla_discord: 'skipped',
     rosie_discord: 'skipped',
+    concierge: 'skipped',
     errors: [],
   };
 
@@ -227,6 +231,25 @@ export async function onBrandLive(brand: BrandLikeRow): Promise<BrandLiveResults
       .then(() => ({ key: 'wallets_doc' as const, status: 'ok' as const }))
       .catch((err: unknown) => ({
         key: 'wallets_doc' as const,
+        status: 'failed' as const,
+        err: err instanceof Error ? err.message : String(err),
+      })),
+    // Stage-2 automatic concierge activation: give the brand owner a login
+    // (auth user + rrg_brand_members admin row) so the concierge admin chat
+    // is reachable. Idempotent, no-ops if an admin member already exists.
+    activateBrandConcierge({ brandId: brand.id })
+      .then((r) => {
+        if (r.status === 'activated' || r.status === 'already_active') {
+          return { key: 'concierge' as const, status: 'ok' as const };
+        }
+        return {
+          key: 'concierge' as const,
+          status: (r.status === 'skipped' ? 'skipped' : 'failed') as SideEffectStatus,
+          err: r.error,
+        };
+      })
+      .catch((err: unknown) => ({
+        key: 'concierge' as const,
         status: 'failed' as const,
         err: err instanceof Error ? err.message : String(err),
       })),

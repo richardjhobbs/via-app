@@ -1,7 +1,7 @@
 /**
  * lib/rrg/brand-telegram-bot.ts
  *
- * Per-brand Telegram Bot — product browsing, size queries, stock checks.
+ * Per-brand Telegram Bot - product browsing, size queries, stock checks.
  * Designed to be used by @via_unknownunion_bot (and future brand bots).
  *
  * Each brand bot has its own token (env var) and connects to the brand's
@@ -182,33 +182,6 @@ Actions:
 - For purchases, direct users to the storefront (${''}https://realrealgenuine.com/brand/the-merchant-fox) or the specific product page from the live block
 - For sizing on apparel, use the live SIZING block. For one-size pieces, use the dimensions in the live PRODUCTS block`,
   },
-  'passport-adv': {
-    brandSlug: 'passport-adv',
-    botUsername: 'via_passportadv_bot',
-    envTokenKey: 'PASSPORT_TG_BOT_TOKEN',
-    llmSystemPrompt: `You are the PassportADV Concierge, the AI shopping assistant for PassportADV on Real Real Genuine.
-
-STRICT: Catalogue is live in Supabase. The live PRODUCTS / SIZING / LIVE BRAND MEMORIES blocks below are the ONLY source of truth for product names, prices, sizes, stock, and availability. NEVER mention a product, price, size, or stock figure that is not in those live blocks. Do not enumerate from memory. If something is not in the live blocks, say "not currently listed" and point to /products or the storefront.
-
-About PassportADV (positioning, not catalogue):
-- Ethiopian-inflected, Los Angeles-based streetwear and technical apparel label
-- The name is a compression of 'Articles De Voyage', essentials for the avid explorer
-- Cut and sewn domestically in LA, often with imported fabric (Japanese seersucker, Portuguese nylon taffeta, French military deadstock)
-- Product line names reference Ethiopian geography and culture: A.D.V., Addis (capital), Zeraf (tactical), Langano (Rift Valley lake), Entoto (mountains above Addis), Piazza (Addis's historical 'uptown' district). Use these as cultural context when narrating a piece's name, not as a guarantee any particular line is in stock
-- Core categories: graphic and logo tees, pop-over field shirts, tactical wovens, shackets, cargos, high-top leather sneakers
-
-Your role:
-- Help shoppers browse PassportADV products from the live PRODUCTS block. Use the agent-ready details for fabric, fit, construction, colorway
-- Tell the cultural story behind a piece's name when asked, but only after confirming the piece is in the live block
-
-Personality:
-- Warm, travel-minded, knowledgeable about fabric and construction, like an in-store advisor who has been to Addis and LA
-- Concise for Telegram. 2-4 short paragraphs max for free-text chat. Use bullet lists for stock/size checks
-- Do not use em dashes. Do not use unicode bullet characters
-
-Actions:
-- For purchases, direct users to the storefront (${''}https://realrealgenuine.com/brand/passport-adv) or the specific product page from the live block`,
-  },
   'university-of-diversity': {
     brandSlug: 'university-of-diversity',
     botUsername: 'uniofdiv_bot',
@@ -322,7 +295,7 @@ async function getProductsSummary(brand: RrgBrand): Promise<string> {
     const inStockSizes = variants.filter(v => v.cached_stock > 0).map(v => v.size).filter(Boolean);
     const price = parseFloat(d.price_usdc ?? '0').toFixed(2);
     const sizeInfo = inStockSizes.length > 0 ? ` [${inStockSizes.join(', ')}]` : '';
-    return `• #${d.token_id} ${d.title} — $${price} USDC${sizeInfo}`;
+    return `• #${d.token_id} ${d.title} - $${price} USDC${sizeInfo}`;
   }));
 
   return lines.join('\n');
@@ -390,7 +363,7 @@ async function getStockCheck(brand: RrgBrand, query: string): Promise<string> {
     return `  ${v.size ?? 'OS'}: ${status}`;
   });
 
-  return [`${match.title} — Stock:`, ...lines].join('\n');
+  return [`${match.title} - Stock:`, ...lines].join('\n');
 }
 
 // ── Command handlers ─────────────────────────────────────────────────
@@ -410,11 +383,11 @@ async function handleBrandCommand(
         brand.headline || '',
         '',
         'Commands:',
-        '/products — Browse all products',
-        '/product <id> — Product details + stock',
-        '/sizes [category] — Sizing guide',
-        '/stock <product name> — Check stock',
-        '/help — This message',
+        '/products - Browse all products',
+        '/product <id> - Product details + stock',
+        '/sizes [category] - Sizing guide',
+        '/stock <product name> - Check stock',
+        '/help - This message',
         '',
         `Or just ask me anything about ${brand.name}!`,
         '',
@@ -424,12 +397,12 @@ async function handleBrandCommand(
     case 'help':
       return [
         `${brand.name} Bot Commands:`,
-        '/products — Browse products with prices + available sizes',
-        '/product <id> — Full details for a product',
-        '/sizes [tops|bottoms|outerwear|skirts] — Sizing guide',
-        '/stock <product name> — Check stock by product',
+        '/products - Browse products with prices + available sizes',
+        '/product <id> - Full details for a product',
+        '/sizes [tops|bottoms|outerwear|skirts] - Sizing guide',
+        '/stock <product name> - Check stock by product',
         '',
-        `Or just chat — I can help you find the right size and style!`,
+        `Or just chat - I can help you find the right size and style!`,
       ].join('\n');
 
     case 'products':
@@ -437,7 +410,7 @@ async function handleBrandCommand(
 
     case 'product': {
       const id = parseInt(args, 10);
-      if (isNaN(id)) return 'Usage: /product <tokenId> — e.g. /product 42';
+      if (isNaN(id)) return 'Usage: /product <tokenId> - e.g. /product 42';
       return await getProductDetail(brand, id);
     }
 
@@ -446,7 +419,7 @@ async function handleBrandCommand(
       return await getSizingSummary(brand, args || undefined);
 
     case 'stock': {
-      if (!args) return 'Usage: /stock <product name> — e.g. /stock rugby shirt';
+      if (!args) return 'Usage: /stock <product name> - e.g. /stock rugby shirt';
       return await getStockCheck(brand, args);
     }
 
@@ -509,7 +482,7 @@ async function getAgentReadyProductContext(brand: RrgBrand): Promise<string> {
     const attrs = (d.product_attributes ?? {}) as Record<string, unknown>;
 
     const block: string[] = [
-      `#${d.token_id} ${d.title} — $${price} USDC`,
+      `#${d.token_id} ${d.title} - $${price} USDC`,
       d.enhanced_description ? `  Details: ${d.enhanced_description}` : null,
       attrs.fabric_guess ? `  Fabric: ${attrs.fabric_guess}` : null,
       attrs.fit ? `  Fit: ${attrs.fit}` : null,
@@ -544,7 +517,7 @@ async function callBrandLLM(
     ? `\n\nLIVE BRAND MEMORIES (locked in by ${brand.name} admin. Treat as authoritative. Surface when relevant to the customer's question):\n${memories}`
     : '';
 
-  const context = `PRODUCTS (agent-ready details — fabric, fit, colors, sizes):\n${productCtx}\n\nSIZING CHART:\n${sizing}${memoriesBlock}`;
+  const context = `PRODUCTS (agent-ready details - fabric, fit, colors, sizes):\n${productCtx}\n\nSIZING CHART:\n${sizing}${memoriesBlock}`;
 
   const resp = await fetch('https://api.deepseek.com/chat/completions', {
     method: 'POST',
