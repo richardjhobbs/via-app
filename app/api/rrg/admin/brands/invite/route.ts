@@ -36,6 +36,7 @@ export async function POST(req: NextRequest) {
       brandId: brand_id,
       email,
       password: temp_password || undefined,
+      reinvite: true,
     });
 
     if (result.status === 'failed') {

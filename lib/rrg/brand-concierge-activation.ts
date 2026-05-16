@@ -23,10 +23,14 @@ const SITE_URL = (process.env.NEXT_PUBLIC_SITE_URL ?? 'https://realrealgenuine.c
 const RESEND_URL = 'https://api.resend.com/emails';
 const FROM_EMAIL = process.env.FROM_EMAIL ?? 'deliver@realrealgenuine.com';
 
+// A brand may have up to this many admins. The contact_email admin that
+// Stage-2 auto-activation creates counts as one of these.
+const MAX_BRAND_ADMINS = 3;
+
 export type ActivationStatus =
-  | 'activated'        // new/updated login + membership created, welcome email sent
-  | 'already_active'   // brand already had an admin member, no-op
-  | 'skipped'          // no admin email resolvable
+  | 'activated'        // login + membership ensured, welcome email sent
+  | 'already_active'   // this invitee is already an admin, no-op (no email)
+  | 'skipped'          // no admin email resolvable, or admin cap reached
   | 'failed';
 
 export interface ActivationResult {
@@ -44,6 +48,13 @@ interface ActivateInput {
   email?: string | null;
   /** Explicit password (manual invite path). Otherwise one is generated. */
   password?: string;
+  /**
+   * Manual super-admin invite. When true, an existing admin is re-invited
+   * (password reset + welcome email re-sent) instead of no-opping, and a
+   * new invitee is added as long as the brand is under MAX_BRAND_ADMINS.
+   * The automatic Stage-2 path leaves this unset to stay idempotent.
+   */
+  reinvite?: boolean;
 }
 
 function generateTempPassword(): string {
@@ -124,44 +135,77 @@ export async function activateBrandConcierge(input: ActivateInput): Promise<Acti
     return { status: 'skipped', brandId, email: null, error: 'no admin email on brand' };
   }
 
-  // Idempotency: already has an admin member -> no-op, no email.
-  const { data: existingMember } = await db
-    .from('rrg_brand_members')
-    .select('id')
-    .eq('brand_id', brandId)
-    .eq('role', 'admin')
-    .limit(1)
-    .maybeSingle();
+  // Resolve the invitee's auth user (may not exist yet).
+  let userId: string | null = null;
+  {
+    const { data: list } = await supabaseAdmin.auth.admin.listUsers();
+    userId = list?.users?.find((u) => u.email?.toLowerCase() === email)?.id ?? null;
+  }
 
-  if (existingMember) {
-    return { status: 'already_active', brandId, email, emailed: false };
+  // Current admin roster for this brand.
+  const { data: adminRows, error: adminErr } = await db
+    .from('rrg_brand_members')
+    .select('user_id')
+    .eq('brand_id', brandId)
+    .eq('role', 'admin');
+
+  if (adminErr) {
+    return { status: 'failed', brandId, email, error: adminErr.message };
+  }
+
+  const adminUserIds = (adminRows ?? []).map((r) => r.user_id as string);
+  const inviteeIsAdmin = userId != null && adminUserIds.includes(userId);
+
+  // Automatic Stage-2 path stays idempotent: if this invitee is already an
+  // admin and we are not explicitly re-inviting, no-op (no email). The
+  // manual super-admin route passes reinvite:true to force a fresh password
+  // and re-send the welcome email even for an existing admin.
+  if (inviteeIsAdmin && !input.reinvite) {
+    return { status: 'already_active', brandId, email, userId: userId ?? undefined, emailed: false };
+  }
+
+  // Per-brand admin cap. The Stage-2 contact_email admin counts as one.
+  // Re-inviting someone who is already an admin does not consume a slot.
+  if (!inviteeIsAdmin && adminUserIds.length >= MAX_BRAND_ADMINS) {
+    return {
+      status: 'skipped',
+      brandId,
+      email,
+      error: `brand already has the maximum of ${MAX_BRAND_ADMINS} admins`,
+    };
   }
 
   const tempPassword = input.password ?? generateTempPassword();
 
-  // Create or find the auth user, then make sure the emailed password works.
-  let userId: string;
-  const { data: created, error: createErr } = await supabaseAdmin.auth.admin.createUser({
-    email,
-    password: tempPassword,
-    email_confirm: true,
-  });
-
-  if (createErr) {
-    if (createErr.message.includes('already been registered') || createErr.message.includes('already exists')) {
-      const { data: list } = await supabaseAdmin.auth.admin.listUsers();
-      const existing = list?.users?.find((u) => u.email?.toLowerCase() === email);
-      if (!existing) {
-        return { status: 'failed', brandId, email, error: 'user exists but could not be located' };
+  // Ensure an auth user exists with the credential we are about to email.
+  if (userId == null) {
+    const { data: created, error: createErr } = await supabaseAdmin.auth.admin.createUser({
+      email,
+      password: tempPassword,
+      email_confirm: true,
+    });
+    if (createErr) {
+      if (createErr.message.includes('already been registered') || createErr.message.includes('already exists')) {
+        const { data: list } = await supabaseAdmin.auth.admin.listUsers();
+        const existing = list?.users?.find((u) => u.email?.toLowerCase() === email);
+        if (!existing) {
+          return { status: 'failed', brandId, email, error: 'user exists but could not be located' };
+        }
+        userId = existing.id;
+        await supabaseAdmin.auth.admin.updateUserById(userId, { password: tempPassword });
+      } else {
+        return { status: 'failed', brandId, email, error: createErr.message };
       }
-      userId = existing.id;
-      // Set the temp password so the credential we email actually works.
-      await supabaseAdmin.auth.admin.updateUserById(userId, { password: tempPassword });
     } else {
-      return { status: 'failed', brandId, email, error: createErr.message };
+      userId = created.user.id;
     }
   } else {
-    userId = created.user.id;
+    // Existing auth user: reset to the credential we are about to email.
+    await supabaseAdmin.auth.admin.updateUserById(userId, { password: tempPassword });
+  }
+
+  if (userId == null) {
+    return { status: 'failed', brandId, email, error: 'could not resolve auth user' };
   }
 
   const { error: memberErr } = await db
