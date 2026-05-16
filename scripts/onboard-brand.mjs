@@ -262,4 +262,7 @@ async function fetchFxToUsd(currency) {
   console.log();
   console.log(`Then Stage 2 (after brand confirms):`);
   console.log(`  node scripts/confirm-brand.mjs --slug ${slug} --admin-email <email> [--shopify-token <tok>]`);
+  console.log(`  (--shopify-token is the brand's PUBLIC Storefront access token: Shopify Admin >`);
+  console.log(`   Sales channels > Headless > Storefront API > "Public access token". A 32-hex`);
+  console.log(`   string. NOT a private/shpat_ token and NOT an Admin API token.)`);
 })().catch((e) => { console.error('FATAL:', e); process.exit(1); });

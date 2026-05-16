@@ -3,13 +3,18 @@
  *
  * STAGE 2 brand-onboarding orchestrator. Run after a Stage 1 brand
  * (created by onboard-brand.mjs) has been confirmed by the brand owner
- * and they have provided their Shopify Storefront API token + admin email.
+ * and they have provided their public Shopify Storefront API access token
+ * + admin email.
  *
  *   node scripts/confirm-brand.mjs --slug <slug> \
  *        --admin-email <email> \
  *        [--shopify-token <tok>] \
  *        [--shopify-domain <host>] \
  *        [--skip-wallet] [--skip-badge] [--dry-run]
+ *
+ *   --shopify-token is the brand's PUBLIC Storefront access token (Shopify
+ *   Admin > Sales channels > Headless > Storefront API > "Public access
+ *   token"; a 32-hex string). Not a private/shpat_ token, not an Admin token.
  *
  * What it does:
  *   1. Verifies the brand row exists in rrg_brands.
@@ -38,8 +43,14 @@
  *     shared with the user to forward to the brand.
  *   - Encrypt the Shopify token before writing. The column is named
  *     shopify_storefront_token_encrypted but no encryption layer exists in
- *     the repo yet; this script writes the raw token. Treat as the same
- *     trust boundary as SUPABASE_SERVICE_KEY.
+ *     the repo yet, so this script stores the token wrapped as
+ *     "plaintext:<token>". lib/rrg/shopify-shipping.ts only reads tokens
+ *     with that prefix; a raw token yields source: fallback_zero (no rates).
+ *     The credential is the brand's PUBLIC Storefront access token (a 32-hex
+ *     string from Shopify Admin > Sales channels > Headless > Storefront API
+ *     > "Public access token"), NOT a private token (the ones beginning
+ *     shpat_) and NOT any Admin API credential. Treat the stored value as
+ *     the same trust boundary as SUPABASE_SERVICE_KEY.
  */
 
 import { spawnSync } from 'child_process';
@@ -84,6 +95,7 @@ const DRY_RUN       = args.includes('--dry-run');
 
 if (!SLUG || typeof SLUG !== 'string') {
   console.error('Usage: node scripts/confirm-brand.mjs --slug <slug> --admin-email <email> [--shopify-token <tok>] [--shopify-domain <host>] [--skip-wallet] [--skip-badge] [--dry-run]');
+  console.error('  --shopify-token is the PUBLIC Storefront access token (Headless > Storefront API > "Public access token"), not a private/shpat_ or Admin token.');
   process.exit(1);
 }
 
@@ -124,7 +136,13 @@ function findLatestCredentialsFile(slug) {
   // 2. Apply DB updates (admin email + optional shopify token/domain)
   const updates = {};
   if (ADMIN_EMAIL && typeof ADMIN_EMAIL === 'string') updates.contact_email = ADMIN_EMAIL.toLowerCase();
-  if (SHOPIFY_TOKEN && typeof SHOPIFY_TOKEN === 'string') updates.shopify_storefront_token_encrypted = SHOPIFY_TOKEN;
+  if (SHOPIFY_TOKEN && typeof SHOPIFY_TOKEN === 'string') {
+    // shopify-shipping.ts only reads tokens stored with a "plaintext:" prefix
+    // (the encrypted path is an unimplemented TODO). Wrap idempotently and
+    // trim, since copy-pasted tokens often carry trailing whitespace.
+    const t = SHOPIFY_TOKEN.trim();
+    updates.shopify_storefront_token_encrypted = t.startsWith('plaintext:') ? t : `plaintext:${t}`;
+  }
   if (SHOPIFY_DOMAIN && typeof SHOPIFY_DOMAIN === 'string') updates.shopify_domain = SHOPIFY_DOMAIN.toLowerCase();
 
   if (Object.keys(updates).length > 0) {
