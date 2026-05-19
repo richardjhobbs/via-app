@@ -19,9 +19,9 @@ export const dynamic = 'force-dynamic';
 
 export async function GET(
   req: NextRequest,
-  { params }: { params: Promise<{ slug: string }> },
+  { params }: { params: Promise<{ brandId: string }> },
 ) {
-  const { slug } = await params;
+  const { brandId: slug } = await params;
   if (!(await isConciergeAuthorized(req, slug))) return adminUnauthorized();
   const url = new URL(req.url);
 

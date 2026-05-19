@@ -20,9 +20,9 @@ export const dynamic = 'force-dynamic';
 
 export async function POST(
   req: NextRequest,
-  { params }: { params: Promise<{ slug: string }> },
+  { params }: { params: Promise<{ brandId: string }> },
 ) {
-  const { slug } = await params;
+  const { brandId: slug } = await params;
   if (!(await isConciergeAuthorized(req, slug))) return adminUnauthorized();
 
   let body: Record<string, unknown>;
