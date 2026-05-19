@@ -12,7 +12,7 @@
  *        limit (default 5 search / 20 list)
  */
 import { NextRequest, NextResponse } from 'next/server';
-import { isAdminReader, adminUnauthorized } from '@/lib/rrg/auth';
+import { isConciergeAuthorized, adminUnauthorized } from '@/lib/rrg/auth';
 import { db } from '@/lib/rrg/db';
 
 export const dynamic = 'force-dynamic';
@@ -21,8 +21,8 @@ export async function GET(
   req: NextRequest,
   { params }: { params: Promise<{ slug: string }> },
 ) {
-  if (!(await isAdminReader(req))) return adminUnauthorized();
   const { slug } = await params;
+  if (!(await isConciergeAuthorized(req, slug))) return adminUnauthorized();
   const url = new URL(req.url);
 
   if (url.searchParams.get('list') === '1') {

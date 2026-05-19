@@ -7,12 +7,12 @@
  * joins agent_agents / rrg_brand_agent_trust / rrg_purchases /
  * mcp_interactions / rrg_customer_memory at read time).
  *
- * Auth: isAdminReader (x-admin-secret == ADMIN_SECRET; the concierge runtime
- * already holds this on the Box at ~/.hermes/.rrg_admin.env). Read-only.
+ * Auth: isConciergeAuthorized (superadmin x-admin-secret, or this brand's
+ * x-concierge-secret bound to {slug}). Read-only.
  * Query: wallet | erc8004 | tg (at least one), limit (default 50).
  */
 import { NextRequest, NextResponse } from 'next/server';
-import { isAdminReader, adminUnauthorized } from '@/lib/rrg/auth';
+import { isConciergeAuthorized, adminUnauthorized } from '@/lib/rrg/auth';
 import { db } from '@/lib/rrg/db';
 
 export const dynamic = 'force-dynamic';
@@ -21,8 +21,8 @@ export async function GET(
   req: NextRequest,
   { params }: { params: Promise<{ slug: string }> },
 ) {
-  if (!(await isAdminReader(req))) return adminUnauthorized();
   const { slug } = await params;
+  if (!(await isConciergeAuthorized(req, slug))) return adminUnauthorized();
 
   const url = new URL(req.url);
   const wallet = url.searchParams.get('wallet');

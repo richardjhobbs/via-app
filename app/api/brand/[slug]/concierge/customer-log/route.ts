@@ -5,14 +5,15 @@
  * Hermes concierge MCP `log_interaction` tool. The concierge calls this on
  * every inbound enquiry and every reply it sends.
  *
- * Write gate: explicit x-admin-secret == ADMIN_SECRET (per lib/rrg/auth.ts,
- * writes do not use the read-only header path).
+ * Write gate: isConciergeAuthorized (superadmin x-admin-secret, or this
+ * brand's x-concierge-secret bound to {slug}). ADMIN_READONLY_SECRET is not
+ * accepted.
  *
  * Body: { channel, direction, kind, summary, body?, structured?,
  *         wallet?, erc8004?, telegram_user_id?, display_name?, occurred_at? }
  */
 import { NextRequest, NextResponse } from 'next/server';
-import { adminUnauthorized } from '@/lib/rrg/auth';
+import { isConciergeAuthorized, adminUnauthorized } from '@/lib/rrg/auth';
 import { db } from '@/lib/rrg/db';
 
 export const dynamic = 'force-dynamic';
@@ -21,11 +22,8 @@ export async function POST(
   req: NextRequest,
   { params }: { params: Promise<{ slug: string }> },
 ) {
-  const adminSecret = process.env.ADMIN_SECRET;
-  const header = req.headers.get('x-admin-secret');
-  if (!adminSecret || !header || header !== adminSecret) return adminUnauthorized();
-
   const { slug } = await params;
+  if (!(await isConciergeAuthorized(req, slug))) return adminUnauthorized();
 
   let body: Record<string, unknown>;
   try {

@@ -5,7 +5,7 @@
  * in-app concierge's getProductDetail. Read-only.
  */
 import { NextRequest, NextResponse } from 'next/server';
-import { isAdminReader, adminUnauthorized } from '@/lib/rrg/auth';
+import { isConciergeAuthorized, adminUnauthorized } from '@/lib/rrg/auth';
 import {
   getBrandBySlug,
   getDropByTokenId,
@@ -18,8 +18,8 @@ export async function GET(
   req: NextRequest,
   { params }: { params: Promise<{ slug: string }> },
 ) {
-  if (!(await isAdminReader(req))) return adminUnauthorized();
   const { slug } = await params;
+  if (!(await isConciergeAuthorized(req, slug))) return adminUnauthorized();
 
   const brand = await getBrandBySlug(slug);
   if (!brand || brand.status !== 'active') {
