@@ -930,21 +930,52 @@ function DropsTab() {
   const [brandFilter, setBrandFilter] = useState<string>('all');
   const [typeFilter, setTypeFilter]   = useState<'all' | 'digital' | 'physical' | 'voucher'>('all');
   const [visibilityFilter, setVisibilityFilter] = useState<'all' | 'storefront' | 'mcp_only' | 'hidden'>('all');
+  const [page, setPage] = useState(1);
+  const PAGE_SIZE = 50;
+  const [total, setTotal] = useState(0);
+  const [totals, setTotals] = useState<{ storefront: number; mcp_only: number; hidden: number }>(
+    { storefront: 0, mcp_only: 0, hidden: 0 }
+  );
+
+  // Brands list is small and rarely changes; fetch once.
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      const res = await fetch('/api/rrg/admin/brands');
+      if (!res.ok) return;
+      const b = await res.json();
+      if (alive) setBrands(b.brands || []);
+    })();
+    return () => { alive = false; };
+  }, []);
 
   const load = useCallback(async () => {
     setLoading(true);
-    const [dropsRes, brandsRes] = await Promise.all([
-      fetch('/api/rrg/admin/drops'),
-      fetch('/api/rrg/admin/brands'),
-    ]);
-    const d = await dropsRes.json();
-    const b = await brandsRes.json();
-    setDrops(d.drops || []);
-    setBrands(b.brands || []);
-    setLoading(false);
-  }, []);
+    try {
+      const params = new URLSearchParams({
+        page:       String(page),
+        limit:      String(PAGE_SIZE),
+        brand_id:   brandFilter,
+        type:       typeFilter,
+        visibility: visibilityFilter,
+      });
+      const res = await fetch(`/api/rrg/admin/drops?${params.toString()}`);
+      const d = await res.json();
+      setDrops(d.drops || []);
+      setTotal(typeof d.total === 'number' ? d.total : 0);
+      setTotals(d.totals || { storefront: 0, mcp_only: 0, hidden: 0 });
+    } finally {
+      setLoading(false);
+    }
+  }, [page, brandFilter, typeFilter, visibilityFilter]);
 
   useEffect(() => { load(); }, [load]);
+
+  // Reset to page 1 when filters change.
+  const changeBrandFilter = (v: string) => { setBrandFilter(v); setPage(1); };
+  const changeTypeFilter = (v: 'all' | 'digital' | 'physical' | 'voucher') => { setTypeFilter(v); setPage(1); };
+  const changeVisibilityFilter = (v: 'all' | 'storefront' | 'mcp_only' | 'hidden') => { setVisibilityFilter(v); setPage(1); };
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
   const startEdit = (d: Drop) => {
     setEditing(d.id);
@@ -1076,21 +1107,9 @@ function DropsTab() {
   const inputClass = 'w-full bg-transparent border border-white/20 px-3 py-1.5 text-base focus:border-white outline-none';
   const labelClass = 'text-sm font-mono text-white/60 block mb-1';
 
-  // Apply filters
-  const filteredDrops = drops.filter((d) => {
-    if (brandFilter !== 'all' && (d.brand_id || '') !== brandFilter) return false;
-    if (typeFilter === 'physical' && !d.is_physical_product) return false;
-    if (typeFilter === 'voucher' && !d.has_voucher) return false;
-    if (typeFilter === 'digital' && (d.is_physical_product || d.has_voucher)) return false;
-    if (visibilityFilter !== 'all' && visStateOf(d) !== visibilityFilter) return false;
-    return true;
-  });
-
-  const storefrontCount = drops.filter(d => visStateOf(d) === 'storefront').length;
-  const mcpOnlyCount    = drops.filter(d => visStateOf(d) === 'mcp_only').length;
-  const hiddenCount     = drops.filter(d => visStateOf(d) === 'hidden').length;
-
+  // Filtering and pagination are server-side; the page renders `drops` as-is.
   const filterSelectClass = 'bg-black border border-white/20 px-2 py-1.5 text-xs font-mono uppercase tracking-wider focus:border-white outline-none';
+  const pageBtnClass = 'px-3 py-1.5 border border-white/20 text-xs font-mono uppercase tracking-wider hover:border-white disabled:opacity-30 disabled:cursor-not-allowed transition-colors';
 
   return (
     <div>
@@ -1108,7 +1127,7 @@ function DropsTab() {
         <span className="text-xs font-mono uppercase tracking-wider text-white/40">Filter:</span>
         <select
           value={brandFilter}
-          onChange={(e) => setBrandFilter(e.target.value)}
+          onChange={(e) => changeBrandFilter(e.target.value)}
           className={filterSelectClass}
         >
           <option value="all">All Brands</option>
@@ -1118,7 +1137,7 @@ function DropsTab() {
         </select>
         <select
           value={typeFilter}
-          onChange={(e) => setTypeFilter(e.target.value as 'all' | 'digital' | 'physical' | 'voucher')}
+          onChange={(e) => changeTypeFilter(e.target.value as 'all' | 'digital' | 'physical' | 'voucher')}
           className={filterSelectClass}
         >
           <option value="all">All Types</option>
@@ -1128,7 +1147,7 @@ function DropsTab() {
         </select>
         <select
           value={visibilityFilter}
-          onChange={(e) => setVisibilityFilter(e.target.value as 'all' | 'storefront' | 'mcp_only' | 'hidden')}
+          onChange={(e) => changeVisibilityFilter(e.target.value as 'all' | 'storefront' | 'mcp_only' | 'hidden')}
           className={filterSelectClass}
           title="Storefront = on the human grid + MCP. MCP only = agents only. Hidden = off every surface."
         >
@@ -1138,7 +1157,7 @@ function DropsTab() {
           <option value="hidden">Hidden</option>
         </select>
         <span className="text-xs font-mono text-white/40 ml-auto">
-          {filteredDrops.length} of {drops.length} • {storefrontCount} storefront / {mcpOnlyCount} MCP only / {hiddenCount} hidden
+          {total} match{total === 1 ? '' : 'es'} • {totals.storefront} storefront / {totals.mcp_only} MCP only / {totals.hidden} hidden
         </span>
       </div>
 
@@ -1150,13 +1169,13 @@ function DropsTab() {
 
       {loading ? (
         <p className="text-white/40 text-sm font-mono">Loading…</p>
-      ) : filteredDrops.length === 0 ? (
+      ) : drops.length === 0 ? (
         <p className="text-white/40 text-sm font-mono">
-          {drops.length === 0 ? 'No approved listings yet.' : 'No listings match the current filters.'}
+          {total === 0 ? 'No approved listings match the current filters.' : 'No listings on this page.'}
         </p>
       ) : (
         <div className="space-y-4">
-          {filteredDrops.map((d) => (
+          {drops.map((d) => (
             <div key={d.id} className={`border border-white/10 ${d.hidden ? 'opacity-40' : ''}`}>
               <div className="p-4 flex gap-4">
                 {/* Image thumbnail */}
@@ -1457,6 +1476,21 @@ function DropsTab() {
               )}
             </div>
           ))}
+        </div>
+      )}
+
+      {/* Pagination */}
+      {!loading && total > 0 && (
+        <div className="flex items-center justify-between gap-3 mt-6 pt-4 border-t border-white/10">
+          <span className="text-xs font-mono text-white/40">
+            Page {page} of {totalPages} • showing {drops.length} of {total}
+          </span>
+          <div className="flex gap-2">
+            <button onClick={() => setPage(1)}             disabled={page <= 1}          className={pageBtnClass}>« First</button>
+            <button onClick={() => setPage((p) => p - 1)}  disabled={page <= 1}          className={pageBtnClass}>‹ Prev</button>
+            <button onClick={() => setPage((p) => p + 1)}  disabled={page >= totalPages} className={pageBtnClass}>Next ›</button>
+            <button onClick={() => setPage(totalPages)}    disabled={page >= totalPages} className={pageBtnClass}>Last »</button>
+          </div>
         </div>
       )}
 

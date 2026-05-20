@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db, getCurrentNetwork, type ShippingType } from '@/lib/rrg/db';
 import { isAdminFromCookies, isAdminReader, adminUnauthorized } from '@/lib/rrg/auth';
 import {
-  getSignedUrl,
   getSignedUrlsBatch,
   jpegStoragePath,
   physicalImageStoragePath,
@@ -14,73 +13,112 @@ import { isValidShippingRegion } from '@/lib/rrg/physical-product';
 
 export const dynamic = 'force-dynamic';
 
-// GET /api/rrg/admin/drops — list ALL approved drops (including hidden).
+// GET /api/rrg/admin/drops: paginated list of approved drops (including hidden).
 // Full admin (cookie / x-admin-secret) or read-only (x-admin-readonly-secret).
+// Query params:
+//   page       (default 1)
+//   limit      (default 50, max 200)
+//   brand_id   ("all" | brand uuid)
+//   type       ("all" | "digital" | "physical" | "voucher")
+//   visibility ("all" | "storefront" | "mcp_only" | "hidden")
+// Returns { drops, page, limit, total, totals: { storefront, mcp_only, hidden } }.
+// `totals` reflects the visibility breakdown of the current brand+type filter,
+// independent of the visibility filter so the header counts stay stable.
 export async function GET(req: Request) {
   if (!(await isAdminReader(req))) return adminUnauthorized();
 
   try {
-    // PostgREST caps each request at 1000 rows by default. Without chunking the
-    // admin counter read "0 of 1000" and the brand/storefront filters silently
-    // dropped older drops. Page through the table until exhausted.
-    const PAGE_SIZE = 1000;
-    type DropRow = Awaited<ReturnType<typeof fetchPage>>[number];
-    async function fetchPage(from: number) {
-      const { data, error } = await db
-        .from('rrg_submissions')
-        .select('*')
-        .eq('status', 'approved')
-        .eq('network', getCurrentNetwork())
-        .order('approved_at', { ascending: false })
-        .range(from, from + PAGE_SIZE - 1);
-      if (error) throw error;
-      return data ?? [];
-    }
-    const data: DropRow[] = [];
-    for (let from = 0; ; from += PAGE_SIZE) {
-      const chunk = await fetchPage(from);
-      if (chunk.length === 0) break;
-      data.push(...chunk);
-      if (chunk.length < PAGE_SIZE) break;
-    }
+    const url = new URL(req.url);
+    const pageRaw   = parseInt(url.searchParams.get('page')  || '1', 10);
+    const limitRaw  = parseInt(url.searchParams.get('limit') || '50', 10);
+    const page  = Number.isFinite(pageRaw)  && pageRaw  > 0 ? pageRaw  : 1;
+    const limit = Number.isFinite(limitRaw) && limitRaw > 0 ? Math.min(limitRaw, 200) : 50;
+    const brandId    = url.searchParams.get('brand_id')   || 'all';
+    const typeFilter = (url.searchParams.get('type')       || 'all') as 'all' | 'digital' | 'physical' | 'voucher';
+    const visFilter  = (url.searchParams.get('visibility') || 'all') as 'all' | 'storefront' | 'mcp_only' | 'hidden';
 
-    // Batch-sign all physical_images_paths in one Supabase call.
-    const allPhysicalPaths: string[] = [];
-    for (const d of data) {
+    const network = getCurrentNetwork();
+    // Filter chain inlined twice (page query + totals) so we don't fight
+    // supabase-js's per-method generic types with a shared helper.
+    let pageQuery = db.from('rrg_submissions').select('*', { count: 'exact' })
+      .eq('status', 'approved')
+      .eq('network', network);
+    if (brandId !== 'all')             pageQuery = pageQuery.eq('brand_id', brandId);
+    if (typeFilter === 'physical')     pageQuery = pageQuery.eq('is_physical_product', true);
+    else if (typeFilter === 'voucher') pageQuery = pageQuery.eq('has_voucher', true);
+    else if (typeFilter === 'digital') pageQuery = pageQuery.eq('is_physical_product', false).eq('has_voucher', false);
+    if (visFilter === 'hidden')          pageQuery = pageQuery.eq('hidden', true);
+    else if (visFilter === 'mcp_only')   pageQuery = pageQuery.eq('hidden', false).eq('ui_visible', false);
+    else if (visFilter === 'storefront') pageQuery = pageQuery.eq('hidden', false).eq('ui_visible', true);
+
+    const from = (page - 1) * limit;
+    const to   = from + limit - 1;
+    const { data, count, error } = await pageQuery
+      .order('approved_at', { ascending: false })
+      .range(from, to);
+    if (error) throw error;
+
+    const rows = data ?? [];
+
+    // Visibility totals across the current brand+type filter (visibility filter
+    // is intentionally not applied here so header counts stay stable as the
+    // user flips between visibility states).
+    const totalBase = () => {
+      let q = db.from('rrg_submissions').select('*', { count: 'exact', head: true })
+        .eq('status', 'approved')
+        .eq('network', network);
+      if (brandId !== 'all')             q = q.eq('brand_id', brandId);
+      if (typeFilter === 'physical')     q = q.eq('is_physical_product', true);
+      else if (typeFilter === 'voucher') q = q.eq('has_voucher', true);
+      else if (typeFilter === 'digital') q = q.eq('is_physical_product', false).eq('has_voucher', false);
+      return q;
+    };
+    const [storefrontTot, mcpOnlyTot, hiddenTot] = await Promise.all([
+      totalBase().eq('hidden', false).eq('ui_visible', true),
+      totalBase().eq('hidden', false).eq('ui_visible', false),
+      totalBase().eq('hidden', true),
+    ]);
+
+    // Batch-sign preview + physical image paths for the current page in one call.
+    const allPaths: string[] = [];
+    for (const d of rows) {
+      if (typeof d.jpeg_storage_path === 'string') allPaths.push(d.jpeg_storage_path);
       if (Array.isArray(d.physical_images_paths)) {
-        for (const p of d.physical_images_paths) if (typeof p === 'string') allPhysicalPaths.push(p);
+        for (const p of d.physical_images_paths) if (typeof p === 'string') allPaths.push(p);
       }
     }
-    const physicalUrlMap = allPhysicalPaths.length > 0
-      ? await getSignedUrlsBatch(allPhysicalPaths)
+    const urlMap = allPaths.length > 0
+      ? await getSignedUrlsBatch(allPaths)
       : new Map<string, string>();
 
-    // Attach signed preview URLs (and physical image URLs)
-    const withUrls = await Promise.all(
-      data.map(async (d) => {
-        let previewUrl: string | null = null;
-        try {
-          if (d.jpeg_storage_path) {
-            previewUrl = await getSignedUrl(d.jpeg_storage_path, 3600);
-          }
-        } catch {
-          // non-fatal
-        }
-        const physicalImageUrls = Array.isArray(d.physical_images_paths)
-          ? d.physical_images_paths.map((p: string) => physicalUrlMap.get(p) ?? null)
-          : [];
-        return { ...d, previewUrl, physicalImageUrls };
-      })
-    );
+    const withUrls = rows.map((d) => ({
+      ...d,
+      previewUrl: typeof d.jpeg_storage_path === 'string'
+        ? (urlMap.get(d.jpeg_storage_path) ?? null)
+        : null,
+      physicalImageUrls: Array.isArray(d.physical_images_paths)
+        ? d.physical_images_paths.map((p: string) => urlMap.get(p) ?? null)
+        : [],
+    }));
 
-    return NextResponse.json({ drops: withUrls });
+    return NextResponse.json({
+      drops: withUrls,
+      page,
+      limit,
+      total: count ?? 0,
+      totals: {
+        storefront: storefrontTot.count ?? 0,
+        mcp_only:   mcpOnlyTot.count   ?? 0,
+        hidden:     hiddenTot.count    ?? 0,
+      },
+    });
   } catch (err) {
     console.error('[/api/rrg/admin/drops GET]', err);
     return NextResponse.json({ error: 'Failed to load drops' }, { status: 500 });
   }
 }
 
-// PATCH /api/rrg/admin/drops — super-admin: edit drop fields + optional image replacement
+// PATCH /api/rrg/admin/drops: super-admin edit of drop fields + optional image replacement
 export async function PATCH(req: NextRequest) {
   if (!(await isAdminFromCookies())) return adminUnauthorized();
 
