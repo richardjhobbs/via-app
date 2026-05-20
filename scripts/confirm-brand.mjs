@@ -217,7 +217,9 @@ function findLatestCredentialsFile(slug) {
   console.log(`Brand:          ${brand.name} (${SLUG})`);
   console.log(`Storefront:     https://realrealgenuine.com/brand/${SLUG}`);
   console.log(`Brand admin:    https://realrealgenuine.com/brand/${SLUG}/admin`);
-  console.log(`Concierge:      auto-activated (owner login + welcome email sent to contact_email; see activate-brand-concierge output above)`);
+  console.log(`Concierge:      owner login + welcome email auto-activated. Hermes runtime is queued (rrg_brands.hermes_concierge_status='pending').`);
+  console.log(`                Drain the queue from your desktop:  pwsh -File via-agent-wiki/scripts/process-pending-concierges.ps1`);
+  console.log(`                (Requires $env:RRG_ADMIN_SECRET and $env:CONCIERGE_KEY_SECRET in that shell; SSH access to the Box.)`);
   if (creds) {
     console.log(`New wallet:     ${creds.wallet_address}`);
     console.log(`Agent ID:       ${creds.erc8004_agent_id ?? '(unknown)'}`);
