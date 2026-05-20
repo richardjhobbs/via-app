@@ -216,6 +216,20 @@ export async function activateBrandConcierge(input: ActivateInput): Promise<Acti
     return { status: 'failed', brandId, email, userId, error: memberErr.message };
   }
 
+  // Signal that this brand needs a Hermes Brand Concierge provisioned on the
+  // Box. NULL -> 'pending' only, so backfilled / already-provisioned brands
+  // are not downgraded and failed states stay sticky for manual review. The
+  // operator-side processor (scripts/process-pending-concierges.ps1) picks
+  // 'pending' rows up, runs provision-concierge.ps1 + cutover-concierges.sh
+  // for that slug, then marks 'provisioned'. Best-effort: the admin login
+  // path is the load-bearing Stage-2 step; a flag-set failure does not abort
+  // the activation.
+  await db
+    .from('rrg_brands')
+    .update({ hermes_concierge_status: 'pending' })
+    .eq('id', brandId)
+    .is('hermes_concierge_status', null);
+
   // Welcome email (best-effort; membership already committed).
   let emailed = false;
   if (process.env.RESEND_API_KEY) {
