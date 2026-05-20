@@ -7,7 +7,7 @@ import { uploadToIpfsInBackground } from '@/lib/rrg/ipfs';
 import { getRRGContract } from '@/lib/rrg/contract';
 import { autopostSale } from '@/lib/rrg/autopost';
 import { sendInstagramNotification } from '@/lib/rrg/instagram';
-import { postReputationSignal, postBuyerReputationSignal, fireVoucherSignal, lookupAgentIdByWallet } from '@/lib/rrg/erc8004';
+import { postReputationSignal, postBuyerReputationSignal, postBrandSaleSignal, fireVoucherSignal, lookupAgentIdByWallet } from '@/lib/rrg/erc8004';
 import { randomBytes } from 'crypto';
 import { calculateSplit } from '@/lib/rrg/splits';
 import { resolveEffectivePrice } from '@/lib/rrg/pricing';
@@ -18,7 +18,7 @@ import { firePurchaseAttribution } from '@/lib/rrg/marketing-attribution';
 
 export const dynamic = 'force-dynamic';
 
-// POST /api/rrg/claim — wallet-to-wallet purchase claim (agent-to-agent)
+// POST /api/rrg/claim, wallet-to-wallet purchase claim (agent-to-agent)
 // Called by agents (e.g. DrHobbs MCP confirm_rrg_purchase tool) after sending
 // USDC directly to the platform wallet on Base mainnet.
 //
@@ -83,7 +83,7 @@ export async function POST(req: NextRequest) {
 
     // ── Operator self-purchase detection ─────────────────────────────────
     // When buyer IS the platform wallet (e.g. DrHobbs buying its own drops),
-    // USDC payment verification is skipped — requires admin auth instead.
+    // USDC payment verification is skipped, requires admin auth instead.
     const isSelfPurchase = buyerWallet.toLowerCase() === PLATFORM_WALLET;
 
     if (isSelfPurchase) {
@@ -168,7 +168,7 @@ export async function POST(req: NextRequest) {
         receipt = await provider.getTransactionReceipt(txHash);
       } catch {
         return NextResponse.json(
-          { error: 'Could not fetch transaction. It may still be pending — wait for confirmation and try again.' },
+          { error: 'Could not fetch transaction. It may still be pending, wait for confirmation and try again.' },
           { status: 400 }
         );
       }
@@ -206,7 +206,7 @@ export async function POST(req: NextRequest) {
             break;
           }
         } catch {
-          // Not a Transfer event from this log — skip
+          // Not a Transfer event from this log, skip
         }
       }
 
@@ -225,7 +225,7 @@ export async function POST(req: NextRequest) {
         );
       }
     } else {
-      console.log(`[/api/rrg/claim] Operator self-purchase — skipping USDC verification for token #${tokenId}`);
+      console.log(`[/api/rrg/claim] Operator self-purchase, skipping USDC verification for token #${tokenId}`);
     }
 
     // ── Validate shipping for physical products ───────────────────────────
@@ -310,31 +310,28 @@ export async function POST(req: NextRequest) {
         .update({ mint_status: 'minted' })
         .eq('tx_hash', txHash);
 
-      console.log(`[/api/rrg/claim] operatorMint OK — token #${tokenId} → ${buyerWallet}, mintTx: ${mintTxHash?.slice(0, 10)}…`);
+      console.log(`[/api/rrg/claim] operatorMint OK, token #${tokenId} → ${buyerWallet}, mintTx: ${mintTxHash?.slice(0, 10)}…`);
     } catch (mintErr) {
-      // Non-fatal — payment verified, download still works; mint can be retried via admin
+      // Non-fatal, payment verified, download still works; mint can be retried via admin
       console.error('[/api/rrg/claim] operatorMint failed:', mintErr);
     }
 
-    console.log(`[/api/rrg/claim] Claim OK — token #${tokenId}, buyer: ${buyerWallet}, tx: ${txHash.slice(0, 10)}…`);
+    console.log(`[/api/rrg/claim] Claim OK, token #${tokenId}, buyer: ${buyerWallet}, tx: ${txHash.slice(0, 10)}…`);
 
-    // Marketing attribution moved below — after split calculation (uses platformUsdc)
+    // Marketing attribution moved below, after split calculation (uses platformUsdc)
 
-    // ── ERC-8004 reputation signals (sequential — after mint to avoid nonce collision) ─
+    // ── ERC-8004 reputation signals (sequential, after mint to avoid nonce collision) ─
     // Both operatorMint and giveFeedback use the same deployer wallet signer (DEPLOYER_PRIVATE_KEY).
     // Nonces are chained explicitly from mintTxNonce+1 to avoid RPC lag returning stale counts.
     let reputationTxHash: string | null = null;
+    let nextSignalNonce = mintTxNonce !== null ? mintTxNonce + 1 : undefined;
     try {
-      // Resolve buyer's ERC-8004 agentId — from request body, or by registry lookup
+      // Resolve buyer's ERC-8004 agentId, from request body, or by registry lookup
       const resolvedBuyerAgentId: bigint | null =
         buyerAgentId ? BigInt(buyerAgentId)
         : await lookupAgentIdByWallet(buyerWallet.toLowerCase());
 
       if (resolvedBuyerAgentId) {
-        // Derive nonces from mint tx — avoids stale RPC nonce reads
-        const sig1Nonce = mintTxNonce !== null ? mintTxNonce + 1 : undefined;
-        const sig2Nonce = mintTxNonce !== null ? mintTxNonce + 2 : undefined;
-
         // Signal 1: platform attests buyer completed a verified purchase (tag: purchase/rrg)
         reputationTxHash = await postReputationSignal({
           buyerAgentId: resolvedBuyerAgentId,
@@ -342,8 +339,9 @@ export async function POST(req: NextRequest) {
           priceUsdc:    effectivePrice.toString(),
           tokenId,
           txHash,
-          nonce: sig1Nonce,
+          nonce: nextSignalNonce,
         });
+        if (nextSignalNonce !== undefined) nextSignalNonce++;
         console.log(`[/api/rrg/claim] ERC-8004 platform→buyer signal posted (agent #${resolvedBuyerAgentId}): ${reputationTxHash?.slice(0, 10)}…`);
 
         // Signal 2: buyer agent reputation signal (tag: purchase/buyer)
@@ -353,18 +351,47 @@ export async function POST(req: NextRequest) {
           priceUsdc:    effectivePrice.toString(),
           tokenId,
           txHash,
-          nonce: sig2Nonce,
+          nonce: nextSignalNonce,
         });
+        if (nextSignalNonce !== undefined) nextSignalNonce++;
         console.log(`[/api/rrg/claim] ERC-8004 buyer signal posted (agent #${resolvedBuyerAgentId}): ${buyerSignalHash.slice(0, 10)}…`);
       } else {
-        console.log('[/api/rrg/claim] Buyer has no ERC-8004 registration — skipping reputation signals');
+        console.log('[/api/rrg/claim] Buyer has no ERC-8004 registration, skipping buyer signals');
       }
     } catch (repErr) {
-      // Non-fatal — purchase + mint still succeeded
-      console.error('[/api/rrg/claim] ERC-8004 reputation signal failed:', repErr);
+      // Non-fatal, purchase + mint still succeeded
+      console.error('[/api/rrg/claim] ERC-8004 buyer reputation signal failed:', repErr);
     }
 
-    // ── IPFS upload (synchronous — CID included in response) ─────────────
+    // ── ERC-8004 brand sale signal (sequential, nonce chained from buyer signals) ──
+    // Attests the brand agent completed a verified sale on RRG (tag: sale/brand).
+    // Only fires when the drop belongs to a brand (brand_id set + is_brand_product).
+    // Hash is appended to the distribution row's notes after auto-payout.
+    let brandSaleSignalHash: string | null = null;
+    if (submission.brand_id && submission.is_brand_product) {
+      try {
+        const brandForSignal = await getBrandById(submission.brand_id);
+        if (brandForSignal?.wallet_address) {
+          brandSaleSignalHash = await postBrandSaleSignal({
+            brandWallet: brandForSignal.wallet_address,
+            priceUsdc:   effectivePrice.toString(),
+            tokenId,
+            txHash,
+            nonce:       nextSignalNonce,
+          });
+          if (nextSignalNonce !== undefined) nextSignalNonce++;
+          if (brandSaleSignalHash) {
+            console.log(`[/api/rrg/claim] ERC-8004 brand sale signal posted: ${brandSaleSignalHash.slice(0, 10)}…`);
+          } else {
+            console.log('[/api/rrg/claim] Brand wallet has no ERC-8004 registration, skipping brand sale signal');
+          }
+        }
+      } catch (brandSignalErr) {
+        console.error('[/api/rrg/claim] ERC-8004 brand sale signal failed:', brandSignalErr);
+      }
+    }
+
+    // ── IPFS upload (synchronous, CID included in response) ─────────────
     let ipfsResult: { imageCid: string; metadataCid: string; metadataUrl: string } | null = null;
     try {
       ipfsResult = await uploadToIpfsInBackground(submission);
@@ -425,7 +452,7 @@ export async function POST(req: NextRequest) {
         });
         voucherData = await formatVoucherForDisplay(voucher);
         console.log(`[claim] Voucher generated: ${voucher.code} (expires ${voucher.expires_at})`);
-        // Fire ERC-8004 voucher signal (awaited — sequential to avoid nonce collision)
+        // Fire ERC-8004 voucher signal (awaited, sequential to avoid nonce collision)
         try {
           await fireVoucherSignal({
             buyerWallet: buyerWallet.toLowerCase(),
@@ -446,6 +473,7 @@ export async function POST(req: NextRequest) {
     // ── Record revenue distribution + auto-payout ────────────────────
     // MUST run AFTER all ERC-8004 signals to avoid deployer wallet nonce collisions.
     let brandPayoutTxHash: string | null = null;
+    let distributionId: string | null = null;
     try {
       const brandId = submission.brand_id ?? RRG_BRAND_ID;
       const brand   = brandId !== RRG_BRAND_ID ? await getBrandById(brandId) : null;
@@ -468,9 +496,25 @@ export async function POST(req: NextRequest) {
         tokenId,
         mintMethod: 'operator', // direct USDC transfer to platform + operatorMint
       });
+      distributionId    = payoutResult.distributionId;
       brandPayoutTxHash = payoutResult.brandTxHash;
 
-      // Marketing attribution — commission is on platform share only.
+      // Append ERC-8004 brand sale signal hash to distribution notes for audit trail.
+      if (distributionId && brandSaleSignalHash) {
+        const { data: distRow } = await db
+          .from('rrg_distributions')
+          .select('notes')
+          .eq('id', distributionId)
+          .single();
+        const updatedNotes = distRow?.notes
+          ? `${distRow.notes} | reputation:${brandSaleSignalHash}`
+          : `reputation:${brandSaleSignalHash}`;
+        await db.from('rrg_distributions')
+          .update({ notes: updatedNotes })
+          .eq('id', distributionId);
+      }
+
+      // Marketing attribution, commission is on platform share only.
       // This covers both organic candidates and referred wallets; there is
       // no separate per-purchase `?ref=` layer.
       firePurchaseAttribution(buyerWallet.toLowerCase(), txHash, split.platformUsdc);
@@ -507,7 +551,7 @@ export async function POST(req: NextRequest) {
           .eq('tx_hash', txHash);
       } catch (emailErr) {
         console.error('[/api/rrg/claim] Email delivery error:', emailErr);
-        // Non-fatal — download URL still returned in response
+        // Non-fatal, download URL still returned in response
       }
     }
 
