@@ -15,6 +15,7 @@ import { AvatarPicker } from '@/components/agent/AvatarPicker';
 import { TopUpModal } from '@/components/agent/TopUpModal';
 import { LlmStatusCard } from '@/components/agent/LlmStatusCard';
 import { ChatPanel } from '@/components/agent/ChatPanel';
+import { UpgradeToConcierge } from '@/components/agent/UpgradeToConcierge';
 import { STYLE_TAGS, TIER_DISPLAY, LLM_PROVIDER_OPTIONS } from '@/lib/agent/types';
 import { formatChatCost } from '@/lib/agent/credit-display';
 import { PRESET_AVATARS } from '@/lib/agent/avatars';
@@ -42,6 +43,7 @@ const ACTIVITY_LABELS: Record<string, string> = {
   avatar_updated: 'Avatar updated',
   avatar_removed: 'Avatar removed',
   credit_topup: 'Credits topped up',
+  tier_upgraded: 'Upgraded to Concierge',
 };
 
 const MEMORY_TYPE_LABELS: Record<string, string> = {
@@ -334,7 +336,7 @@ export default function DashboardPage() {
       try {
         const res = await fetch(`/api/agent/session?email=${encodeURIComponent(email)}`);
         if (res.ok) {
-          // Cookie set by the route — reload to pick it up
+          // Cookie set by the route. Reload to pick it up.
           await loadDashboard();
           return;
         }
@@ -383,7 +385,7 @@ export default function DashboardPage() {
 
           <h2 className="text-sm font-semibold mb-2">First time here?</h2>
           <p className="text-xs mb-3" style={{ color: 'var(--ink-3)' }}>
-            Get your own Personal Shopper or Concierge — they search the VIA network for you.
+            Get your own Personal Shopper or Concierge. They search the VIA network for you.
           </p>
           <Button onClick={() => router.push('/agents')}>Get started</Button>
         </main>
@@ -401,7 +403,7 @@ export default function DashboardPage() {
         {/* Agent header */}
         <div className="flex items-start justify-between mb-8">
           <div className="flex items-start gap-4">
-            {/* Avatar — click to change */}
+            {/* Avatar. Click to change. */}
             <button
               onClick={() => setShowAvatarPicker(true)}
               className="w-14 h-14 rounded-full flex items-center justify-center text-xl font-light flex-shrink-0 bg-white/10 text-white/60 hover:ring-2 hover:ring-green-500/50 transition-all cursor-pointer overflow-hidden group relative"
@@ -460,6 +462,14 @@ export default function DashboardPage() {
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          {/* Upgrade CTA (Personal Shopper only) */}
+          {agent.tier === 'basic' && (
+            <UpgradeToConcierge
+              agent={agent}
+              onUpgraded={(next) => setAgent(next)}
+            />
+          )}
+
           {/* Persona */}
           <PersonaCard agent={agent} onSave={savePersona} />
 
@@ -496,16 +506,18 @@ export default function DashboardPage() {
                   value={editForm.budget_ceiling_usdc}
                   onChange={(e) => setEditForm(prev => ({ ...prev, budget_ceiling_usdc: e.target.value }))}
                 />
-                <Select
-                  label="Bid style"
-                  value={editForm.bid_aggression}
-                  onChange={(v) => setEditForm(prev => ({ ...prev, bid_aggression: v }))}
-                  options={[
-                    { value: 'conservative', label: 'Conservative' },
-                    { value: 'balanced', label: 'Balanced' },
-                    { value: 'aggressive', label: 'Aggressive' },
-                  ]}
-                />
+                {agent.tier === 'pro' && (
+                  <Select
+                    label="Bid style"
+                    value={editForm.bid_aggression}
+                    onChange={(v) => setEditForm(prev => ({ ...prev, bid_aggression: v }))}
+                    options={[
+                      { value: 'conservative', label: 'Conservative' },
+                      { value: 'balanced', label: 'Balanced' },
+                      { value: 'aggressive', label: 'Aggressive' },
+                    ]}
+                  />
+                )}
                 {agent.tier === 'pro' && (
                   <Select
                     label="LLM provider"
@@ -543,10 +555,12 @@ export default function DashboardPage() {
                   <span className="text-white/40">Budget ceiling</span>
                   <span className="text-green-700">{agent.budget_ceiling_usdc ? `$${agent.budget_ceiling_usdc}` : 'No limit'}</span>
                 </div>
-                <div className="flex justify-between">
-                  <span className="text-white/40">Bid style</span>
-                  <span>{agent.bid_aggression}</span>
-                </div>
+                {agent.tier === 'pro' && (
+                  <div className="flex justify-between">
+                    <span className="text-white/40">Bid style</span>
+                    <span>{agent.bid_aggression}</span>
+                  </div>
+                )}
                 {agent.tier === 'pro' && (
                   <div className="flex justify-between">
                     <span className="text-white/40">LLM</span>
@@ -566,7 +580,7 @@ export default function DashboardPage() {
             />
           )}
 
-          {/* What I know about you (Concierge only) — surfaces seeded + chat-extracted memory */}
+          {/* What I know about you (Concierge only). Surfaces seeded + chat-extracted memory. */}
           {agent.tier === 'pro' && (
             <Card className="md:col-span-2">
               <h2 className="text-base font-semibold mb-1">What I know about you</h2>
@@ -608,7 +622,9 @@ export default function DashboardPage() {
             <h2 className="text-base font-semibold mb-4">Activity</h2>
             {activity.length === 0 ? (
               <p className="text-sm text-white/40">
-                No activity yet. Your {tierDisplay.label} will start evaluating drops when they go live.
+                {agent.tier === 'basic'
+                  ? 'No activity yet. Your Personal Shopper will start searching the VIA network and reporting back to you here.'
+                  : 'No activity yet. Your Concierge will start evaluating drops and chatting with you here.'}
               </p>
             ) : (
               <div className="space-y-2">

@@ -148,7 +148,7 @@ interface Contributor {
   brands_contributed: string[];
 }
 
-type Tab = 'briefs' | 'submissions' | 'drops' | 'brands' | 'concierge' | 'distributions' | 'contributors' | 'referrals' | 'purchases';
+type Tab = 'briefs' | 'submissions' | 'drops' | 'brands' | 'concierge' | 'distributions' | 'contributors' | 'referrals' | 'purchases' | 'agents';
 
 // ── Main component ─────────────────────────────────────────────────────
 export default function AdminPage() {
@@ -247,7 +247,7 @@ export default function AdminPage() {
 
       {/* Tabs */}
       <div className="border-b border-white/10 px-6 flex gap-6">
-        {(['submissions', 'briefs', 'drops', 'brands', 'concierge', 'distributions', 'contributors', 'referrals', 'purchases'] as Tab[]).map((t) => (
+        {(['submissions', 'briefs', 'drops', 'brands', 'concierge', 'agents', 'distributions', 'contributors', 'referrals', 'purchases'] as Tab[]).map((t) => (
           <button
             key={t}
             onClick={() => setTab(t)}
@@ -269,6 +269,7 @@ export default function AdminPage() {
         {tab === 'drops'         && <DropsTab />}
         {tab === 'brands'        && <BrandsTab />}
         {tab === 'concierge'     && <ConciergeTab />}
+        {tab === 'agents'       && <AgentsTab />}
         {tab === 'distributions' && <DistributionsTab />}
         {tab === 'contributors' && <ContributorsTab />}
         {tab === 'referrals'    && <ReferralsTab />}
@@ -2257,6 +2258,354 @@ function ConciergeTab() {
           </a>
         ))}
       </div>
+    </div>
+  );
+}
+
+// ── Agents Tab (Personal Shopper + Concierge users) ──────────────────
+interface AdminAgentRow {
+  id: string;
+  email: string;
+  name: string;
+  tier: 'basic' | 'pro';
+  status: string;
+  wallet_address: string;
+  wallet_type: string;
+  llm_provider: string;
+  credit_balance_usdc: number;
+  budget_ceiling_usdc: number | null;
+  erc8004_agent_id: number | null;
+  erc8004_linked: boolean;
+  style_tags: string[];
+  free_instructions: string | null;
+  bid_aggression: string;
+  persona_bio: string | null;
+  avatar_path: string | null;
+  avatar_source: string | null;
+  created_at: string;
+  chat_messages: number;
+  chat_user_messages: number;
+  chat_sessions: number;
+  chat_tokens: number;
+  chat_cost_usdc: number;
+  last_chat_at: string | null;
+  evaluations: number;
+  bids: number;
+  skips: number;
+  owner_approvals: number;
+  credit_topup_total_usdc: number;
+  credit_deduction_total_usdc: number;
+  credit_refund_total_usdc: number;
+  credit_tx_count: number;
+  last_activity_at: string | null;
+  last_action: string | null;
+  activity_count: number;
+}
+
+interface AdminAgentStats {
+  total: number;
+  basic: number;
+  pro: number;
+  linked: number;
+  pending_via: number;
+  total_credit_balance_usdc: number;
+  total_chat_messages: number;
+}
+
+function AgentsTab() {
+  const [agents, setAgents] = useState<AdminAgentRow[]>([]);
+  const [stats, setStats] = useState<AdminAgentStats | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [tierFilter, setTierFilter] = useState<'all' | 'basic' | 'pro'>('all');
+  const [expanded, setExpanded] = useState<string | null>(null);
+
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      setLoading(true);
+      try {
+        const res = await fetch('/api/rrg/admin/agents');
+        if (!res.ok) throw new Error('Failed to fetch');
+        const data = await res.json();
+        if (!alive) return;
+        setAgents(data.agents ?? []);
+        setStats(data.stats ?? null);
+      } catch (err) {
+        console.error(err);
+      } finally {
+        if (alive) setLoading(false);
+      }
+    })();
+    return () => { alive = false; };
+  }, []);
+
+  const filtered = tierFilter === 'all'
+    ? agents
+    : agents.filter((a) => a.tier === tierFilter);
+
+  if (loading) {
+    return <p className="text-white/50 font-mono text-base py-8">Loading agents…</p>;
+  }
+
+  return (
+    <div className="space-y-6">
+      {stats && (
+        <div className="grid grid-cols-2 md:grid-cols-6 gap-4">
+          <div className="border border-white/10 p-4">
+            <p className="text-xs text-white/60 font-mono uppercase tracking-wider">Total</p>
+            <p className="text-base font-mono mt-1">{stats.total}</p>
+          </div>
+          <div className="border border-white/10 p-4">
+            <p className="text-xs text-white/60 font-mono uppercase tracking-wider">Personal Shopper</p>
+            <p className="text-base font-mono mt-1">{stats.basic}</p>
+          </div>
+          <div className="border border-white/10 p-4">
+            <p className="text-xs text-white/60 font-mono uppercase tracking-wider">Concierge</p>
+            <p className="text-base font-mono mt-1">{stats.pro}</p>
+          </div>
+          <div className="border border-white/10 p-4">
+            <p className="text-xs text-white/60 font-mono uppercase tracking-wider">VIA linked</p>
+            <p className="text-base font-mono mt-1">{stats.linked}/{stats.total}</p>
+          </div>
+          <div className="border border-white/10 p-4">
+            <p className="text-xs text-white/60 font-mono uppercase tracking-wider">Credit balance</p>
+            <p className="text-base font-mono mt-1">${stats.total_credit_balance_usdc.toFixed(2)}</p>
+          </div>
+          <div className="border border-white/10 p-4">
+            <p className="text-xs text-white/60 font-mono uppercase tracking-wider">Chat msgs</p>
+            <p className="text-base font-mono mt-1">{stats.total_chat_messages}</p>
+          </div>
+        </div>
+      )}
+
+      <div className="flex gap-3">
+        {(['all', 'basic', 'pro'] as const).map((f) => (
+          <button
+            key={f}
+            onClick={() => setTierFilter(f)}
+            className={`px-3 py-1.5 text-xs font-mono uppercase tracking-wider border transition-all
+              ${tierFilter === f
+                ? 'text-white border-white'
+                : 'text-white/50 border-white/10 hover:text-white/80'
+              }`}
+          >
+            {f === 'all' && `All (${agents.length})`}
+            {f === 'basic' && `Personal Shopper (${stats?.basic ?? 0})`}
+            {f === 'pro' && `Concierge (${stats?.pro ?? 0})`}
+          </button>
+        ))}
+      </div>
+
+      {filtered.length === 0 ? (
+        <p className="text-white/50 text-sm font-mono py-4">No agents match this filter.</p>
+      ) : (
+        <div className="border border-white/10">
+          <table className="w-full text-xs font-mono">
+            <thead>
+              <tr className="border-b border-white/10 text-white/60 uppercase tracking-wider text-xs">
+                <th className="text-left p-3">Created</th>
+                <th className="text-left p-3">Name</th>
+                <th className="text-left p-3">Tier</th>
+                <th className="text-left p-3">Email</th>
+                <th className="text-left p-3">Wallet</th>
+                <th className="text-left p-3">LLM</th>
+                <th className="text-right p-3">Credit</th>
+                <th className="text-right p-3">VIA #</th>
+                <th className="text-right p-3">Chats</th>
+                <th className="text-right p-3">Evals</th>
+                <th className="text-left p-3">Last activity</th>
+                <th className="text-left p-3 w-10"></th>
+              </tr>
+            </thead>
+            <tbody>
+              {filtered.map((a) => (
+                <Fragment key={a.id}>
+                  <tr
+                    className={`border-b border-white/5 hover:bg-white/5 transition-colors cursor-pointer
+                      ${expanded === a.id ? 'bg-white/[0.04]' : ''}`}
+                    onClick={() => setExpanded((cur) => (cur === a.id ? null : a.id))}
+                  >
+                    <td className="p-3 text-white/60">{new Date(a.created_at).toLocaleDateString()}</td>
+                    <td className="p-3 text-white/80">{a.name}</td>
+                    <td className="p-3">
+                      <span className={`px-2 py-0.5 text-[10px] uppercase
+                        ${a.tier === 'pro'
+                          ? 'bg-purple-400/20 text-purple-300 border border-purple-400/30'
+                          : 'bg-blue-400/20 text-blue-300 border border-blue-400/30'
+                        }`}
+                      >
+                        {a.tier === 'pro' ? 'Concierge' : 'Personal Shopper'}
+                      </span>
+                    </td>
+                    <td className="p-3 text-white/60 truncate">{a.email}</td>
+                    <td className="p-3 text-white/80">
+                      <CopyWallet address={a.wallet_address} />
+                    </td>
+                    <td className="p-3 text-white/60">{a.llm_provider}</td>
+                    <td className="p-3 text-right text-green-400">${a.credit_balance_usdc.toFixed(2)}</td>
+                    <td className="p-3 text-right">
+                      {a.erc8004_linked && a.erc8004_agent_id ? (
+                        <a
+                          href={`/agents/via/${a.erc8004_agent_id}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          onClick={(e) => e.stopPropagation()}
+                          className="text-green-400 hover:underline"
+                        >
+                          #{a.erc8004_agent_id}
+                        </a>
+                      ) : (
+                        <span className="text-amber-400">pending</span>
+                      )}
+                    </td>
+                    <td className="p-3 text-right text-white/80">{a.chat_messages}</td>
+                    <td className="p-3 text-right text-white/80">{a.evaluations}</td>
+                    <td className="p-3 text-white/60">
+                      {a.last_activity_at
+                        ? new Date(a.last_activity_at).toLocaleString()
+                        : '-'}
+                    </td>
+                    <td className="p-3 text-white/40">{expanded === a.id ? '−' : '+'}</td>
+                  </tr>
+                  {expanded === a.id && (
+                    <tr className="bg-white/[0.02] border-b border-white/10">
+                      <td colSpan={12} className="p-5">
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 text-xs">
+                          <div>
+                            <p className="text-white/40 uppercase tracking-wider mb-2">Identity</p>
+                            <dl className="space-y-1 text-white/80">
+                              <div className="flex justify-between gap-3">
+                                <dt className="text-white/50">Agent ID</dt>
+                                <dd className="font-mono break-all text-right">{a.id}</dd>
+                              </div>
+                              <div className="flex justify-between gap-3">
+                                <dt className="text-white/50">Status</dt>
+                                <dd>{a.status}</dd>
+                              </div>
+                              <div className="flex justify-between gap-3">
+                                <dt className="text-white/50">Wallet type</dt>
+                                <dd>{a.wallet_type}</dd>
+                              </div>
+                              <div className="flex justify-between gap-3">
+                                <dt className="text-white/50">VIA token</dt>
+                                <dd>
+                                  {a.erc8004_agent_id
+                                    ? `#${a.erc8004_agent_id} ${a.erc8004_linked ? '(linked)' : '(unlinked)'}`
+                                    : 'not minted'}
+                                </dd>
+                              </div>
+                              <div className="flex justify-between gap-3">
+                                <dt className="text-white/50">Bid aggression</dt>
+                                <dd>{a.bid_aggression}</dd>
+                              </div>
+                              <div className="flex justify-between gap-3">
+                                <dt className="text-white/50">Budget ceiling</dt>
+                                <dd>{a.budget_ceiling_usdc !== null ? `$${a.budget_ceiling_usdc}` : 'none'}</dd>
+                              </div>
+                            </dl>
+                          </div>
+                          <div>
+                            <p className="text-white/40 uppercase tracking-wider mb-2">Credit ledger</p>
+                            <dl className="space-y-1 text-white/80">
+                              <div className="flex justify-between gap-3">
+                                <dt className="text-white/50">Current balance</dt>
+                                <dd className="text-green-400">${a.credit_balance_usdc.toFixed(4)}</dd>
+                              </div>
+                              <div className="flex justify-between gap-3">
+                                <dt className="text-white/50">Total topped up</dt>
+                                <dd>${a.credit_topup_total_usdc.toFixed(4)}</dd>
+                              </div>
+                              <div className="flex justify-between gap-3">
+                                <dt className="text-white/50">Total deducted</dt>
+                                <dd>${a.credit_deduction_total_usdc.toFixed(4)}</dd>
+                              </div>
+                              <div className="flex justify-between gap-3">
+                                <dt className="text-white/50">Total refunded</dt>
+                                <dd>${a.credit_refund_total_usdc.toFixed(4)}</dd>
+                              </div>
+                              <div className="flex justify-between gap-3">
+                                <dt className="text-white/50">Transactions</dt>
+                                <dd>{a.credit_tx_count}</dd>
+                              </div>
+                            </dl>
+                          </div>
+                          <div>
+                            <p className="text-white/40 uppercase tracking-wider mb-2">Usage</p>
+                            <dl className="space-y-1 text-white/80">
+                              <div className="flex justify-between gap-3">
+                                <dt className="text-white/50">Chat sessions</dt>
+                                <dd>{a.chat_sessions}</dd>
+                              </div>
+                              <div className="flex justify-between gap-3">
+                                <dt className="text-white/50">Chat messages</dt>
+                                <dd>{a.chat_messages} ({a.chat_user_messages} from owner)</dd>
+                              </div>
+                              <div className="flex justify-between gap-3">
+                                <dt className="text-white/50">Chat tokens</dt>
+                                <dd>{a.chat_tokens.toLocaleString()}</dd>
+                              </div>
+                              <div className="flex justify-between gap-3">
+                                <dt className="text-white/50">Chat spend</dt>
+                                <dd>${a.chat_cost_usdc.toFixed(4)}</dd>
+                              </div>
+                              <div className="flex justify-between gap-3">
+                                <dt className="text-white/50">Last chat</dt>
+                                <dd>{a.last_chat_at ? new Date(a.last_chat_at).toLocaleString() : '-'}</dd>
+                              </div>
+                              <div className="flex justify-between gap-3">
+                                <dt className="text-white/50">Evaluations</dt>
+                                <dd>{a.evaluations} ({a.bids} bid · {a.skips} skip)</dd>
+                              </div>
+                              <div className="flex justify-between gap-3">
+                                <dt className="text-white/50">Owner approvals</dt>
+                                <dd>{a.owner_approvals}</dd>
+                              </div>
+                              <div className="flex justify-between gap-3">
+                                <dt className="text-white/50">Activity events</dt>
+                                <dd>{a.activity_count}</dd>
+                              </div>
+                              <div className="flex justify-between gap-3">
+                                <dt className="text-white/50">Last action</dt>
+                                <dd>{a.last_action ?? '-'}</dd>
+                              </div>
+                            </dl>
+                          </div>
+                          {(a.style_tags.length > 0 || a.free_instructions || a.persona_bio) && (
+                            <div className="md:col-span-3 pt-3 border-t border-white/10 space-y-2">
+                              {a.style_tags.length > 0 && (
+                                <div>
+                                  <p className="text-white/40 uppercase tracking-wider mb-1">Style tags</p>
+                                  <div className="flex flex-wrap gap-1">
+                                    {a.style_tags.map((t) => (
+                                      <span key={t} className="px-2 py-0.5 border border-white/15 text-white/70">{t}</span>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
+                              {a.free_instructions && (
+                                <div>
+                                  <p className="text-white/40 uppercase tracking-wider mb-1">Instructions</p>
+                                  <p className="text-white/70 whitespace-pre-wrap">{a.free_instructions}</p>
+                                </div>
+                              )}
+                              {a.persona_bio && (
+                                <div>
+                                  <p className="text-white/40 uppercase tracking-wider mb-1">Persona</p>
+                                  <p className="text-white/70 whitespace-pre-wrap">{a.persona_bio}</p>
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                </Fragment>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   );
 }
