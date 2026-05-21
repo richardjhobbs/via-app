@@ -3,7 +3,7 @@
  *
  * The agent operates EXCLUSIVELY within the VIA network. Today the VIA
  * network = Real Real Genuine. Future partner platforms will be reachable
- * via the same `via_*` tools without changing the LLM contract — the
+ * via the same `via_*` tools without changing the LLM contract. The
  * handlers fan out to additional backends server-side.
  *
  * OpenAI-compatible function-calling format. DeepSeek consumes this shape
@@ -26,7 +26,7 @@ export const VIA_TOOL_SCHEMAS = [
         'Today the VIA network = Real Real Genuine (RRG). Returns up to 20 ' +
         'matching drops as compact summaries (title, brand, price USDC, ' +
         'editions remaining, `url`, `brand_url`). Descriptions are NOT ' +
-        'included — call via_get_drop for one drop if you need full detail. ' +
+        'included. Call via_get_drop for one drop if you need full detail. ' +
         'Use this as your PRIMARY discovery tool: one well-scoped search ' +
         'almost always beats multiple via_get_brand calls. Never invent ' +
         'inventory. For generic queries link `brand_url`; for specific ' +
@@ -87,7 +87,7 @@ export const VIA_TOOL_SCHEMAS = [
         'name, brand_url, and active drop count. Returns ~39 brands. ' +
         'CALL AT MOST ONCE PER CHAT SESSION. The brand list does not ' +
         'change mid-session, so after the first call the result is in ' +
-        'your conversation context — do NOT call it again. Only useful ' +
+        'your conversation context. Do NOT call it again. Only useful ' +
         'when you need to discover a brand slug you don\'t already know.',
       parameters: { type: 'object', properties: {} },
     },
@@ -98,10 +98,10 @@ export const VIA_TOOL_SCHEMAS = [
       name: 'via_get_brand',
       description:
         'Get a brand\'s name and all their currently active drops by slug ' +
-        '(compact summaries, no descriptions — call via_get_drop for one ' +
+        '(compact summaries, no descriptions; call via_get_drop for one ' +
         'drop if needed). Use ONLY when the owner explicitly names a brand. ' +
         'For "show me X" queries prefer via_search_drops with a query ' +
-        'string instead — it\'s one round-trip vs many.',
+        'string instead, since it\'s one round-trip vs many.',
       parameters: {
         type: 'object',
         properties: {
@@ -116,7 +116,7 @@ export const VIA_TOOL_SCHEMAS = [
     function: {
       name: 'via_recall_owner',
       description:
-        'Recall what you have learned about your owner across past sessions — ' +
+        'Recall what you have learned about your owner across past sessions: ' +
         'their brands, sizes, taste, budget sensitivity, etc. Call this whenever ' +
         'you need to ground a recommendation in their preferences.',
       parameters: { type: 'object', properties: {} },
@@ -144,14 +144,31 @@ interface Drop {
   ipfs_image_cid: string | null;
 }
 
+// In-process cache for the lite drops catalogue.
+//
+// Why: every via_search_drops / via_get_drop / via_list_brands / via_get_brand
+// call hits /api/rrg/drops. Without a cache, a single chat turn that runs 2-3
+// tool iterations re-paginates the entire catalogue 2-3 times. With ~500+
+// approved drops at 1000-row PAGE_SIZE that's a quarter to a half second per
+// fetch, plus network round-trip. 60 s TTL is short enough that an admin
+// approving a new drop sees it surface within a minute, long enough that
+// a single chat session reuses the same fetch.
+let DROPS_CACHE: { ts: number; drops: Drop[] } | null = null;
+const DROPS_TTL_MS = 60_000;
+
 async function fetchAllDrops(): Promise<Drop[]> {
-  const res = await fetch(`${SITE_URL}/api/rrg/drops`, {
+  if (DROPS_CACHE && Date.now() - DROPS_CACHE.ts < DROPS_TTL_MS) {
+    return DROPS_CACHE.drops;
+  }
+  const res = await fetch(`${SITE_URL}/api/rrg/drops?lite=1`, {
     signal: AbortSignal.timeout(15000),
   });
   if (!res.ok) throw new Error(`drops API ${res.status}`);
   const data = await res.json();
   const drops: Drop[] = (data.drops ?? []) as Drop[];
-  return drops.filter(d => !d.hidden && d.status === 'approved');
+  const filtered = drops.filter(d => !d.hidden && d.status === 'approved');
+  DROPS_CACHE = { ts: Date.now(), drops: filtered };
+  return filtered;
 }
 
 function dropUrl(tokenId: number): string {
@@ -163,8 +180,8 @@ function brandUrl(slug: string | null): string | null {
 }
 
 // Compact summary for list contexts (search results, brand listings).
-// Strips description/enhanced_description to keep token cost low —
-// the agent calls via_get_drop for one-drop deep-dive when needed.
+// Strips description/enhanced_description to keep token cost low.
+// The agent calls via_get_drop for one-drop deep-dive when needed.
 function summariseDrop(d: Drop) {
   return {
     token_id: d.token_id,
