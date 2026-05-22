@@ -1,38 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getApprovedDrops, getDropByTokenId, getCurrentBrief, getAllActiveBrands, db, getCurrentNetwork, getNonActiveBrandIds } from '@/lib/rrg/db';
+import { getApprovedDrops, getDropByTokenId, getCurrentBrief, getAllActiveBrands } from '@/lib/rrg/db';
 import { getRRGReadOnly } from '@/lib/rrg/contract';
 
 export const dynamic = 'force-dynamic';
 
-// Columns the agent tool layer actually consumes. Trimming the projection
-// here is what takes the lite response from ~25 MB to a few hundred KB.
-const LITE_DROP_COLUMNS = [
-  'token_id',
-  'title',
-  'description',
-  'enhanced_description',
-  'price_usdc',
-  'edition_size',
-  'brand_id',
-  'drop_type',
-  'status',
-  'hidden',
-  'is_brand_product',
-  'jpeg_storage_path',
-  'ipfs_image_cid',
-  'approved_at',
-].join(',');
-
 // GET /api/rrg/drops. Public: all approved drops with on-chain minted counts.
 // GET /api/rrg/drops?tokenId=N. Single drop.
-// GET /api/rrg/drops?lite=1. Agent-tool path: skip on-chain enrichment AND
-//   the heavy media columns, keep only the fields the chat tools project on.
-//   Sub-second instead of 30+ s, ~200 KB instead of 25 MB.
+//
+// Note: the short-lived `?lite=1` branch was removed once the agent chat
+// tools moved to direct Postgres FTS via lib/agent/via-tools-spec.ts.
 export async function GET(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url);
     const tokenIdParam = searchParams.get('tokenId');
-    const lite = searchParams.get('lite') === '1';
 
     if (tokenIdParam) {
       // Single drop
@@ -62,51 +42,6 @@ export async function GET(req: NextRequest) {
       }
 
       return NextResponse.json({ drop: { ...drop, onChain } });
-    }
-
-    // ── Lite mode for agent tools ────────────────────────────────────
-    // No on-chain enrichment, no media-heavy columns, no brands sidecar.
-    // The shape mirrors the legacy response (drops[].brand_name / brand_slug)
-    // so via-tools-spec keeps working without changes there.
-    if (lite) {
-      const network = getCurrentNetwork();
-      const suspendedIds = await getNonActiveBrandIds();
-      const brands = await getAllActiveBrands();
-      const brandMap = new Map(brands.map(b => [b.id, { name: b.name, slug: b.slug }]));
-
-      const PAGE_SIZE = 1000;
-      const rows: Record<string, unknown>[] = [];
-      for (let from = 0; ; from += PAGE_SIZE) {
-        let q = db
-          .from('rrg_submissions')
-          .select(LITE_DROP_COLUMNS)
-          .eq('status', 'approved')
-          .eq('network', network)
-          .eq('hidden', false);
-        if (suspendedIds.length > 0) {
-          q = q.not('brand_id', 'in', `(${suspendedIds.join(',')})`);
-        }
-        const { data, error } = await q
-          .order('approved_at', { ascending: false })
-          .range(from, from + PAGE_SIZE - 1);
-        if (error) throw error;
-        if (!data || data.length === 0) break;
-        rows.push(...(data as unknown as Record<string, unknown>[]));
-        if (data.length < PAGE_SIZE) break;
-      }
-
-      const liteDrops = rows.map((drop) => {
-        const brandId = drop.brand_id as string | null;
-        const brand = brandId ? brandMap.get(brandId) : null;
-        return {
-          ...drop,
-          brand_name: brand?.name ?? null,
-          brand_slug: brand?.slug ?? null,
-          onChain: null,
-        };
-      });
-
-      return NextResponse.json({ drops: liteDrops });
     }
 
     // All drops + brands for enrichment

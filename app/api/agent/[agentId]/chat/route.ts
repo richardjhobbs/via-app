@@ -8,6 +8,21 @@ import type { Agent } from '@/lib/agent/types';
 export const dynamic = 'force-dynamic';
 
 /**
+ * Strip em (U+2014) and en (U+2013) dashes from streamed LLM output.
+ *
+ * Defence in depth alongside the prompt rule in core-prompt.ts. DeepSeek
+ * occasionally emits dashes anyway. The two-pass replace turns " WORD , NEXT "
+ * cases into clean " WORD, NEXT " when both whitespace sides arrive in the
+ * same chunk; the fallback strips a lone dash that survives across chunk
+ * boundaries.
+ */
+function stripDashes(s: string): string {
+  return s
+    .replace(/\s+[\u2014\u2013]\s+/g, ', ')
+    .replace(/[\u2014\u2013]/g, ',');
+}
+
+/**
  * POST /api/agent/[agentId]/chat
  *
  * Streaming chat with the agent's configured LLM.
@@ -75,7 +90,7 @@ export async function POST(
   const memoriesBlock = formatMemoriesForPrompt(memories);
   const systemPrompt = buildChatPrompt(agent as Agent, is_eval_preview, memoriesBlock);
 
-  // Tool calls fired during this single chat turn — used for the
+  // Tool calls fired during this single chat turn. Used for the
   // chat_completed roll-up row written at the end of the stream.
   const toolNamesThisTurn: string[] = [];
 
@@ -126,8 +141,9 @@ export async function POST(
           while (true) {
             const { done, value } = await reader.read();
             if (done) break;
-            fullResponse += value;
-            controller.enqueue(encoder.encode(`data: ${JSON.stringify(value)}\n\n`));
+            const cleaned = stripDashes(value);
+            fullResponse += cleaned;
+            controller.enqueue(encoder.encode(`data: ${JSON.stringify(cleaned)}\n\n`));
           }
 
           // Store assistant message and deduct credits
@@ -149,8 +165,8 @@ export async function POST(
 
           await deductCredits(agentId, tokensUsed, agent.llm_provider);
 
-          // Roll-up activity row for the dashboard's Activity panel —
-          // one entry per user message rather than one per tool call.
+          // Roll-up activity row for the dashboard's Activity panel.
+          // One entry per user message rather than one per tool call.
           // Individual tool_call rows remain for audit but are hidden
           // from the UI by the activity API.
           try {
