@@ -152,6 +152,8 @@ interface DropRow {
   jpeg_storage_path: string | null;
   ipfs_image_cid: string | null;
   approved_at: string | null;
+  rank?: number;
+  match_type?: 'exact' | 'fuzzy';
 }
 
 // Columns the summary path needs. Critically does NOT include the heavy
@@ -200,6 +202,10 @@ function summariseRow(row: DropRow, brands: Map<string, { name: string; slug: st
     is_physical: row.is_brand_product,
     url: dropUrl(row.token_id),
     brand_url: brandUrl(brand?.slug ?? null),
+    // Match quality from agent_search_drops. 'fuzzy' means the row was
+    // recovered via trigram word_similarity because the FTS query had a
+    // typo. The agent should phrase fuzzy results as "I think you meant".
+    match_type: row.match_type ?? 'exact',
   };
 }
 
@@ -280,12 +286,33 @@ async function via_search_drops(args: {
   }
 
   const rows = (data ?? []) as unknown as DropRow[];
-  return {
+  const summarised = rows.map(r => summariseRow(r, brands));
+  const fuzzyCount = summarised.filter(d => d.match_type === 'fuzzy').length;
+  const matchMode: 'exact' | 'fuzzy' | 'mixed' =
+    fuzzyCount === 0 ? 'exact' :
+    fuzzyCount === summarised.length ? 'fuzzy' : 'mixed';
+
+  const result: {
+    network: string;
+    backend: string;
+    count: number;
+    match: typeof matchMode;
+    drops: typeof summarised;
+    note?: string;
+  } = {
     network: 'via',
     backend: 'rrg',
     count: rows.length,
-    drops: rows.map(r => summariseRow(r, brands)),
+    match: matchMode,
+    drops: summarised,
   };
+
+  if (matchMode !== 'exact' && args.query) {
+    result.note =
+      `No exact text match for "${args.query}". The drops below are typo-tolerant recovery via trigram similarity. Confirm with the owner that this is what they meant before recommending.`;
+  }
+
+  return result;
 }
 
 async function via_get_drop(args: { token_id: number }) {
