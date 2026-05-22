@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { Fragment, useEffect, useState } from 'react';
 import LoginButton from './LoginButton';
+import NavSearch from './NavSearch';
 import ThemeToggle from './ThemeToggle';
 
 type NavKey = 'store' | 'brands' | 'concierge' | 'cocreators' | 'agent' | 'drops';
@@ -114,6 +115,7 @@ export default function RRGHeader({ active, showMarquee = true }: { active?: Nav
           </Link>
 
           <div className="topbar-right">
+            <NavSearch variant="desktop" />
             <LoginButton />
             <ThemeToggle />
           </div>
@@ -124,6 +126,7 @@ export default function RRGHeader({ active, showMarquee = true }: { active?: Nav
           className={`topbar-mobile${menuOpen ? ' is-open' : ''}`}
           hidden={!menuOpen}
         >
+          <NavSearch variant="mobile" />
           <Link href="/rrg" className={current === 'store' ? 'is-active' : ''}>Store</Link>
           <Link href="/brand" className={current === 'brands' ? 'is-active' : ''}>Brands</Link>
           <Link href="/agents" className={current === 'concierge' ? 'is-active' : ''}>Concierge</Link>

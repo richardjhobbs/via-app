@@ -203,6 +203,65 @@ body {
 }
 .theme-toggle:hover { border-color: var(--ink); }
 
+/* ─── Nav search ─────────────────────────────────────────────────────── */
+.nav-search { position: relative; width: 220px; }
+.nav-search-input {
+  width: 100%;
+  background: transparent;
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  padding: 7px 14px;
+  font: inherit;
+  font-size: 13px;
+  letter-spacing: 0.01em;
+  color: var(--ink);
+  outline: none;
+  transition: border-color 0.15s;
+}
+.nav-search-input::placeholder { color: var(--ink-3); }
+.nav-search-input:focus { border-color: var(--ink); }
+.nav-search-input::-webkit-search-cancel-button { -webkit-appearance: none; appearance: none; }
+.nav-search-dropdown {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  left: 0;
+  background: color-mix(in srgb, var(--bg) 94%, transparent);
+  backdrop-filter: saturate(1.2) blur(12px);
+  border: 1px solid var(--line-strong);
+  border-radius: 10px;
+  padding: 4px;
+  z-index: 60;
+  box-shadow: 0 12px 32px -8px color-mix(in srgb, var(--ink) 18%, transparent);
+  max-height: 60vh;
+  overflow-y: auto;
+}
+.nav-search-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: transparent;
+  border: none;
+  padding: 8px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  color: var(--ink);
+  transition: background 0.12s;
+}
+.nav-search-item.is-active,
+.nav-search-item:hover { background: var(--bg-2); }
+.nav-search-name { font-size: 13px; letter-spacing: 0.01em; }
+.nav-search-headline {
+  font-size: 11px;
+  color: var(--ink-3);
+  margin-top: 2px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* Mobile variant always renders full width inside the drawer. */
+.nav-search.nav-search-mobile { width: 100%; margin-bottom: 8px; }
+
 /* ─── Section chrome ─────────────────────────────────────────────────── */
 .maison-section { max-width: 1440px; margin: 0 auto; padding: 0 40px; }
 .section-head {
@@ -319,6 +378,7 @@ body {
   .topbar-nav { display: none; }
   .topbar-burger { display: inline-flex; }
   .topbar-mobile.is-open { display: flex; }
+  .nav-search.nav-search-desktop { display: none; }
   .maison-section { padding: 0 20px; }
   .maison-footer { padding: 40px 20px 24px; }
   .foot-top { grid-template-columns: 1fr 1fr; }

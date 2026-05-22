@@ -5,7 +5,7 @@ import { unstable_cache } from 'next/cache';
 //
 // Placeholder fallbacks exist so `next build` can import this module without
 // env vars (e.g. on a CI image). At runtime on the VPS, a missing service key
-// or URL means every query silently returns empty — which is how the landing
+// or URL means every query silently returns empty , which is how the landing
 // page shipped with no brands when `.env.local` wasn't symlinked into the
 // standalone output. Log once at module load so the PM2 log shows the
 // misconfiguration instead of a quiet empty store.
@@ -13,7 +13,7 @@ const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const SUPABASE_KEY = process.env.SUPABASE_SERVICE_KEY;
 if (!SUPABASE_URL || !SUPABASE_KEY) {
   console.error(
-    '[rrg/db] missing Supabase env at module load — NEXT_PUBLIC_SUPABASE_URL=%s SUPABASE_SERVICE_KEY=%s. Every query will fail and public surfaces (landing brand grid, /rrg, /brand) will render empty.',
+    '[rrg/db] missing Supabase env at module load , NEXT_PUBLIC_SUPABASE_URL=%s SUPABASE_SERVICE_KEY=%s. Every query will fail and public surfaces (landing brand grid, /rrg, /brand) will render empty.',
     SUPABASE_URL ? 'set' : 'MISSING',
     SUPABASE_KEY ? 'set' : 'MISSING',
   );
@@ -46,7 +46,7 @@ export type DistributionStatus = 'pending' | 'completed' | 'failed';
 
 // ── Network helpers ────────────────────────────────────────────────────
 
-/** Returns the network name — always 'base' (mainnet). */
+/** Returns the network name , always 'base' (mainnet). */
 export function getCurrentNetwork(): RrgNetwork {
   return 'base';
 }
@@ -79,9 +79,9 @@ export interface RrgBrand {
   shopify_domain: string | null;
   /** Encrypted Shopify Storefront Access Token */
   shopify_storefront_token_encrypted: string | null;
-  /** True if brand has garment sizing — enables size selector UI + sizing guide MCP tool */
+  /** True if brand has garment sizing , enables size selector UI + sizing guide MCP tool */
   supports_sizing: boolean;
-  /** Free-form brand config — includes shipping flat-rate, custom policies, etc. See lib/rrg/shipping.ts for the shipping shape. */
+  /** Free-form brand config , includes shipping flat-rate, custom policies, etc. See lib/rrg/shipping.ts for the shipping shape. */
   brand_data: Record<string, unknown> | null;
 }
 
@@ -218,13 +218,13 @@ export interface RrgDistribution {
   split_type: string;
   status: DistributionStatus;
   notes: string | null;
-  /** Joined from rrg_purchases — the buyer's on-chain purchase tx hash */
+  /** Joined from rrg_purchases , the buyer's on-chain purchase tx hash */
   purchase_tx_hash?: string | null;
-  /** Joined from rrg_purchases — the token ID */
+  /** Joined from rrg_purchases , the token ID */
   token_id?: number | null;
-  /** Joined from rrg_purchases → rrg_submissions — the product title */
+  /** Joined from rrg_purchases → rrg_submissions , the product title */
   submission_title?: string | null;
-  /** Joined from rrg_brands — the brand name */
+  /** Joined from rrg_brands , the brand name */
   brand_name?: string | null;
 }
 
@@ -268,6 +268,29 @@ export const getAllActiveBrands = unstable_cache(
   { revalidate: 60, tags: ['brands'] },
 );
 
+export interface BrandSearchItem {
+  slug: string;
+  name: string;
+  headline: string | null;
+}
+
+/** Lightweight index for the nav-bar typeahead. ~100 rows, filtered client-side. */
+export const getBrandSearchIndex = unstable_cache(
+  async (): Promise<BrandSearchItem[]> => {
+    const { data, error } = await db
+      .from('rrg_brands')
+      .select('slug, name, headline')
+      .eq('status', 'active')
+      .order('name', { ascending: true });
+    if (error) {
+      console.error('[getBrandSearchIndex] supabase query failed:', error);
+    }
+    return data ?? [];
+  },
+  ['brand-search-index'],
+  { revalidate: 60, tags: ['brands'] },
+);
+
 export interface BrandDirectoryItem {
   id: string;
   slug: string;
@@ -298,7 +321,7 @@ export const getBrandsForDirectory = unstable_cache(
 
     // Aggregate counts via the brand_product_counts() RPC (scripts/008-...sql).
     // Aggregating server-side returns one row per brand, so we never hit
-    // PostgREST's 1000-row response cap — that cap previously truncated
+    // PostgREST's 1000-row response cap , that cap previously truncated
     // totalMcpProducts to 1000 once the catalogue grew past 1k rows.
     const brandIds = brands.map((b) => b.id);
     const { data: stats, error: statsError } = await db.rpc('brand_product_counts', { brand_ids: brandIds });
@@ -546,7 +569,7 @@ export async function getApprovedDrops(brandId?: string): Promise<RrgSubmission[
   const suspendedIds = brandId ? [] : await getNonActiveBrandIds();
 
   // PostgREST caps each request at 1000 rows by default. With the ui_visible
-  // expansion some brands (e.g. 13DE MARZO) cleared 1k MCP rows — without
+  // expansion some brands (e.g. 13DE MARZO) cleared 1k MCP rows , without
   // chunking, list_drops and get_brand silently truncated to the first 1000.
   // Page through the table in 1000-row chunks until exhausted.
   const PAGE_SIZE = 1000;
