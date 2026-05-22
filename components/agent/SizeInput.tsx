@@ -38,7 +38,7 @@ export function SizeInput({ value, onChange }: Props) {
             { value: '', label: 'Not specified' },
             { value: 'menswear', label: 'Menswear' },
             { value: 'womenswear', label: 'Womenswear' },
-            { value: 'unisex', label: 'Unisex / both' },
+            { value: 'both', label: 'Both' },
           ]}
         />
         <Input

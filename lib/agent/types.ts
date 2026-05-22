@@ -25,7 +25,7 @@ export interface InterestSelection {
 
 /** Optional structured size profile captured at signup. Any field may be empty. */
 export interface SizeProfile {
-  sex?: 'menswear' | 'womenswear' | 'unisex' | '';
+  sex?: 'menswear' | 'womenswear' | 'both' | '';
   tops?: string;          // e.g. "M", "10", "EU 38"
   bottoms?: string;       // e.g. "32W 32L", "UK 10"
   shoes?: string;         // e.g. "UK 9", "EU 43", "US 10"
