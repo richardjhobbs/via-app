@@ -244,7 +244,7 @@ async function via_search_drops(args: {
 
   // Resolve brand_slug -> brand_id up front, since rrg_submissions only
   // stores brand_id. An unknown slug yields zero matches (no need to query).
-  let scopedBrandId: string | null | undefined = undefined;
+  let scopedBrandId: string | null = null;
   if (args.brand_slug) {
     const slug = args.brand_slug.toLowerCase();
     const entry = Array.from(brands.entries()).find(([, b]) => b.slug.toLowerCase() === slug);
@@ -253,7 +253,6 @@ async function via_search_drops(args: {
         network: 'via',
         backend: 'rrg',
         count: 0,
-        total_matches: 0,
         drops: [],
         note: `No brand with slug "${slug}" is active on the VIA network. Call via_list_brands to see available slugs.`,
       };
@@ -261,22 +260,20 @@ async function via_search_drops(args: {
     scopedBrandId = entry[0];
   }
 
-  let q = baseDropsQuery(SUMMARY_COLUMNS, suspendedIds);
-  if (scopedBrandId) q = q.eq('brand_id', scopedBrandId);
-  if (args.max_price_usdc !== undefined) q = q.lte('price_usdc', args.max_price_usdc);
-  if (args.drop_type && args.drop_type !== 'any') q = q.eq('drop_type', args.drop_type);
-  if (args.query && args.query.trim()) {
-    q = q.textSearch('search_tsv', args.query.trim(), {
-      type: 'websearch',
-      config: 'english',
-    });
-  }
-
-  // Without ts_rank we order by recency. The index does the matching; the
-  // sort is over the small filtered set after the bitmap scan.
-  const { data, error } = await q
-    .order('approved_at', { ascending: false })
-    .limit(limit);
+  // Ranked search via the agent_search_drops Postgres function. ts_rank
+  // orders by relevance (best match first); ties fall back to approved_at
+  // desc. PL/pgSQL captures the tsquery as a local variable so the planner
+  // uses the idx_rrg_submissions_search_tsv GIN index. ~10 ms regardless
+  // of catalogue size.
+  const { data, error } = await db.rpc('agent_search_drops', {
+    q: args.query?.trim() || null,
+    brand_id_filter: scopedBrandId,
+    max_price: args.max_price_usdc ?? null,
+    drop_type_filter: args.drop_type ?? null,
+    suspended_ids: suspendedIds,
+    result_limit: limit,
+    network_filter: getCurrentNetwork(),
+  });
 
   if (error) {
     return { error: `search failed: ${error.message}` };
