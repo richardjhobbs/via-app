@@ -202,13 +202,34 @@ export default function AgentsPage() {
             </div>
 
             {/* Already signed up */}
-            <div style={{ display: 'flex', justifyContent: 'center', marginTop: 40 }}>
+            <div
+              style={{
+                marginTop: 40,
+                padding: '24px 28px',
+                background: 'var(--paper)',
+                border: '1px solid var(--accent)',
+                borderRadius: 4,
+                display: 'flex',
+                flexWrap: 'wrap',
+                gap: 20,
+                alignItems: 'center',
+                justifyContent: 'space-between',
+              }}
+            >
+              <div style={{ minWidth: 0, flex: '1 1 320px' }}>
+                <div className="uc-mono" style={{ color: 'var(--accent)', fontSize: 11, letterSpacing: '0.14em', marginBottom: 6 }}>
+                  Returning?
+                </div>
+                <div style={{ fontSize: 16, color: 'var(--ink)', lineHeight: 1.4 }}>
+                  Already signed up? Pick up where you left off.
+                </div>
+              </div>
               <button
                 onClick={() => router.push('/agents/dashboard')}
-                className="btn ghost"
-                style={{ fontSize: 11, padding: '12px 24px', letterSpacing: '0.14em', textTransform: 'uppercase' }}
+                className="btn accent"
+                style={{ fontSize: 12, padding: '12px 24px', letterSpacing: '0.08em' }}
               >
-                Already signed up? Go to your dashboard <span className="arrow">→</span>
+                Go to your dashboard <span className="arrow">→</span>
               </button>
             </div>
           </>
