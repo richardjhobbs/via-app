@@ -57,6 +57,11 @@ export interface Agent {
   status: AgentStatus;
   last_active_at: string | null;
   last_poll_at: string | null;
+  // Owner's sex, persisted from wizard's SizeProfile.sex at signup.
+  // Drives the default audience_filter on agent_search_drops so the
+  // catalogue is pre-scoped to the owner's gender unless they ask
+  // for something else.
+  sex: 'male' | 'female' | 'other' | null;
   // Persona fields
   persona_bio: string | null;
   persona_voice: string | null;

@@ -4,7 +4,7 @@ import { parseInstructions } from '@/lib/agent/rules';
 
 export const dynamic = 'force-dynamic';
 
-/** GET /api/agent/[agentId] — Read agent profile */
+/** GET /api/agent/[agentId]: Read agent profile */
 export async function GET(
   _req: NextRequest,
   { params }: { params: Promise<{ agentId: string }> }
@@ -24,7 +24,7 @@ export async function GET(
   return NextResponse.json({ agent: { ...agent, via_agent_id: agent.erc8004_agent_id } });
 }
 
-/** PATCH /api/agent/[agentId] — Update preferences */
+/** PATCH /api/agent/[agentId]: Update preferences */
 export async function PATCH(
   req: NextRequest,
   { params }: { params: Promise<{ agentId: string }> }
@@ -47,6 +47,7 @@ export async function PATCH(
     'interest_categories',
     'avatar_path',
     'avatar_source',
+    'sex',
   ];
 
   const updates: Record<string, unknown> = {};

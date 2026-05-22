@@ -99,6 +99,16 @@ export async function POST(req: NextRequest) {
     // Parse instructions into rules for Basic tier (or as fallback for Pro)
     const parsed_rules = parseInstructions(free_instructions);
 
+    // Map the wizard's SizeProfile.sex label to the agent_agents.sex
+    // domain ('male'|'female'|'other'|null). 'unisex' and unset both
+    // become null so agent_search_drops applies no audience filter and
+    // the owner sees the full catalogue by default.
+    const wizardSex = sizes?.sex ?? '';
+    const persistedSex: 'male' | 'female' | 'other' | null =
+      wizardSex === 'menswear' ? 'male' :
+      wizardSex === 'womenswear' ? 'female' :
+      null;
+
     const { data: agent, error } = await db
       .from('agent_agents')
       .insert({
@@ -122,6 +132,7 @@ export async function POST(req: NextRequest) {
         persona_voice,
         persona_comm_style,
         interest_categories,
+        sex: persistedSex,
       })
       .select('*')
       .single();
@@ -157,7 +168,7 @@ export async function POST(req: NextRequest) {
     // Seed agent_memory from the structured wizard inputs. These rows have
     // source_session_id = NULL, which lets the prompt formatter group them
     // as "Set at signup" vs the chat-extracted ones. The concierge sees
-    // them in the system prompt from the very first chat — no training
+    // them in the system prompt from the very first chat, no training
     // phase required.
     try {
       const seedTasks: Promise<void>[] = [];
@@ -177,7 +188,7 @@ export async function POST(req: NextRequest) {
       if (sizes.bottoms) sizeParts.push(`bottoms ${sizes.bottoms}`);
       if (sizes.shoes) sizeParts.push(`shoes ${sizes.shoes}`);
       if (sizeParts.length > 0) {
-        const note = sizes.notes ? ` — ${sizes.notes}` : '';
+        const note = sizes.notes ? `, ${sizes.notes}` : '';
         seedTasks.push(saveMemory(agent.id, 'size', `${sizeParts.join(', ')}${note} (set at signup)`));
       } else if (sizes.notes) {
         seedTasks.push(saveMemory(agent.id, 'size', `${sizes.notes} (set at signup)`));

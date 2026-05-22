@@ -23,6 +23,55 @@ function stripDashes(s: string): string {
 }
 
 /**
+ * Drop "Let me check\u2026" / "I'll search\u2026" preambles from the front of the
+ * streamed response. Returns a per-stream stateful function: while still
+ * in warmup (no substantive content emitted yet) it buffers chunks, peels
+ * narration sentences off the front, and emits only once a non-narration
+ * sentence arrives. Once a substantive chunk is emitted it switches off
+ * and becomes a pass-through.
+ *
+ * Why server-side as well as the prompt rule: DeepSeek often opens every
+ * tool-using turn with "Let me\u2026" despite the rule. Stripping it at the
+ * stream layer is deterministic.
+ */
+const NARRATION_RE =
+  /^(let me\s+(search|check|look|try|find|see|pull|grab|fetch|hop|also|do|run|take a look)|i'?ll\s+(search|check|look|try|find|see|pull|grab|fetch|run|take a look)|i'?m\s+(going to|gonna)\s+(search|check|look|try|find|pull|grab|run)|one (sec|second|moment)|hold on|give me (a sec|a second|a moment)|searching for|looking for|checking the|let's see|let's check|let's try|let's look)\b/i;
+
+function makeNarrationStripper(): (chunk: string) => string {
+  let warmup = true;
+  let buf = '';
+  const MAX_BUF = 400;
+
+  return (chunk: string): string => {
+    if (!warmup) return chunk;
+    buf += chunk;
+
+    while (buf.length > 0) {
+      const termMatch = buf.match(/^([^.!?\n]*[.!?\n])\s*/);
+      if (!termMatch) {
+        if (buf.length > MAX_BUF) {
+          warmup = false;
+          const out = buf;
+          buf = '';
+          return out;
+        }
+        return '';
+      }
+      const sentence = termMatch[1].trim();
+      if (NARRATION_RE.test(sentence)) {
+        buf = buf.slice(termMatch[0].length);
+        continue;
+      }
+      warmup = false;
+      const out = buf;
+      buf = '';
+      return out;
+    }
+    return '';
+  };
+}
+
+/**
  * POST /api/agent/[agentId]/chat
  *
  * Streaming chat with the agent's configured LLM.
@@ -128,10 +177,12 @@ export async function POST(
           }
         },
       },
+      (agent as Agent).sex ?? null,
     );
 
     // Collect full response while streaming to client
     let fullResponse = '';
+    const peelNarration = makeNarrationStripper();
 
     const encoder = new TextEncoder();
     const outputStream = new ReadableStream({
@@ -141,7 +192,8 @@ export async function POST(
           while (true) {
             const { done, value } = await reader.read();
             if (done) break;
-            const cleaned = stripDashes(value);
+            const cleaned = stripDashes(peelNarration(value));
+            if (cleaned.length === 0) continue;
             fullResponse += cleaned;
             controller.enqueue(encoder.encode(`data: ${JSON.stringify(cleaned)}\n\n`));
           }

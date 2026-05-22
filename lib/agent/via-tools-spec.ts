@@ -64,6 +64,11 @@ export const VIA_TOOL_SCHEMAS = [
             enum: ['co_created', 'brand_product', 'any'],
             description: 'Filter by drop kind. Default: any.',
           },
+          audience: {
+            type: 'string',
+            enum: ['men', 'women', 'unisex', 'any'],
+            description: 'Audience scope. By default this is filled in from the owner\'s profile (e.g. a male owner sees men + unisex). Set explicitly only when the owner is shopping for someone else, e.g. "find a gift for my partner"; pass "any" to override the default scope and search the whole catalogue.',
+          },
           limit: {
             type: 'integer',
             minimum: 1,
@@ -235,13 +240,17 @@ function baseDropsQuery(columns: string, suspendedIds: string[]) {
   return q;
 }
 
-async function via_search_drops(args: {
-  query?: string;
-  brand_slug?: string;
-  max_price_usdc?: number;
-  drop_type?: string;
-  limit?: number;
-}) {
+async function via_search_drops(
+  args: {
+    query?: string;
+    brand_slug?: string;
+    max_price_usdc?: number;
+    drop_type?: string;
+    audience?: 'men' | 'women' | 'unisex' | 'any';
+    limit?: number;
+  },
+  ctx: { agentId: string; ownerSex: 'male' | 'female' | 'other' | null }
+) {
   const limit = Math.min(Math.max(args.limit ?? 10, 1), 20);
   const [suspendedIds, brands] = await Promise.all([
     getNonActiveBrandIds(),
@@ -266,6 +275,23 @@ async function via_search_drops(args: {
     scopedBrandId = entry[0];
   }
 
+  // Audience filter resolution. The LLM can override the default by
+  // passing args.audience. 'any' means "search the whole catalogue
+  // even if I have a sex on file". Otherwise default to the owner's
+  // sex mapped to the catalogue's audience vocabulary.
+  let audienceFilter: 'men' | 'women' | null = null;
+  if (args.audience === 'men' || args.audience === 'women' || args.audience === 'unisex') {
+    // Unisex is the same as "no filter" at the function level (unisex
+    // rows surface to anyone), but treat as null for clarity.
+    audienceFilter = args.audience === 'unisex' ? null : args.audience;
+  } else if (args.audience === 'any') {
+    audienceFilter = null;
+  } else if (ctx.ownerSex === 'male') {
+    audienceFilter = 'men';
+  } else if (ctx.ownerSex === 'female') {
+    audienceFilter = 'women';
+  }
+
   // Ranked search via the agent_search_drops Postgres function. ts_rank
   // orders by relevance (best match first); ties fall back to approved_at
   // desc. PL/pgSQL captures the tsquery as a local variable so the planner
@@ -279,6 +305,7 @@ async function via_search_drops(args: {
     suspended_ids: suspendedIds,
     result_limit: limit,
     network_filter: getCurrentNetwork(),
+    audience_filter: audienceFilter,
   });
 
   if (error) {
@@ -421,10 +448,15 @@ async function via_recall_owner(_args: Record<string, never>, ctx: { agentId: st
 
 // ── Dispatcher ───────────────────────────────────────────────────────
 
+export interface ToolCtx {
+  agentId: string;
+  ownerSex: 'male' | 'female' | 'other' | null;
+}
+
 export async function executeViaTool(
   name: string,
   argsJson: string,
-  ctx: { agentId: string }
+  ctx: ToolCtx
 ): Promise<string> {
   let args: Record<string, unknown>;
   try {
@@ -435,7 +467,7 @@ export async function executeViaTool(
 
   try {
     switch (name) {
-      case 'via_search_drops': return JSON.stringify(await via_search_drops(args as Parameters<typeof via_search_drops>[0]));
+      case 'via_search_drops': return JSON.stringify(await via_search_drops(args as Parameters<typeof via_search_drops>[0], ctx));
       case 'via_get_drop':     return JSON.stringify(await via_get_drop(args as Parameters<typeof via_get_drop>[0]));
       case 'via_list_brands':  return JSON.stringify(await via_list_brands());
       case 'via_get_brand':    return JSON.stringify(await via_get_brand(args as Parameters<typeof via_get_brand>[0]));

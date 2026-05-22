@@ -1,8 +1,8 @@
 /**
- * LLM provider abstraction — Claude (Anthropic) and DeepSeek.
+ * LLM provider abstraction, Claude (Anthropic) and DeepSeek.
  *
  * Used by Concierge agents for chat and drop evaluation.
- * Platform provides the API keys — owner pays per use via Concierge Credits.
+ * Platform provides the API keys, owner pays per use via Concierge Credits.
  */
 
 import type { LlmProvider, EvalDecision, Agent } from './types';
@@ -153,11 +153,11 @@ Your current state:
 
 Evaluate the following drop listing and respond with exactly one of:
 
-SKIP — not relevant to owner's preferences. Explain briefly why.
+SKIP, not relevant to owner's preferences. Explain briefly why.
 
-RECOMMEND — interesting but uncertain. Explain why the owner might want this and suggest a bid amount.
+RECOMMEND, interesting but uncertain. Explain why the owner might want this and suggest a bid amount.
 
-BID $[amount] — matches preferences, bid autonomously. Explain your reasoning and state the exact bid amount.
+BID $[amount], matches preferences, bid autonomously. Explain your reasoning and state the exact bid amount.
 
 Your reasoning should be concise (2-3 sentences max). Always state the decision word first on its own line.`;
 }
@@ -231,7 +231,7 @@ export async function streamChatResponse(
 // when the LLM emits tool_calls, execute them, append results, continue
 // until the LLM produces a final text-only response.
 //
-// DeepSeek implementation (OpenAI-format tools) — Anthropic falls back
+// DeepSeek implementation (OpenAI-format tools), Anthropic falls back
 // to the non-tooled streamClaude until Phase 4.
 
 export interface ToolCallRecord {
@@ -247,7 +247,7 @@ export interface StreamChatOpts {
   /** Per-tool-call hook for audit logging. Called once per tool execution.
    *  Awaited; failure is logged but does not abort the stream. */
   onToolCall?: (record: ToolCallRecord) => Promise<void> | void;
-  /** Hard cap on tool-use iterations (runaway protection only — cost is
+  /** Hard cap on tool-use iterations (runaway protection only, cost is
    *  governed by the agent's USDC pool via deductCredits at the chat-turn
    *  level). Default: 20. */
   maxIterations?: number;
@@ -259,10 +259,11 @@ export async function streamChatWithTools(
   messages: ChatMessage[],
   agentId: string,
   opts: StreamChatOpts = {},
+  ownerSex: 'male' | 'female' | 'other' | null = null,
 ): Promise<{ stream: ReadableStream<string>; getTokensUsed: () => number }> {
   switch (provider) {
     case 'deepseek':
-      return streamDeepSeekWithTools(systemPrompt, messages, agentId, opts);
+      return streamDeepSeekWithTools(systemPrompt, messages, agentId, opts, ownerSex);
     case 'claude':
       // TODO: Anthropic tool-use (separate phase). Falls back to plain stream.
       return streamClaude(systemPrompt, messages);
@@ -274,6 +275,7 @@ async function streamDeepSeekWithTools(
   initialMessages: ChatMessage[],
   agentId: string,
   opts: StreamChatOpts,
+  ownerSex: 'male' | 'female' | 'other' | null,
 ): Promise<{ stream: ReadableStream<string>; getTokensUsed: () => number }> {
   const OpenAI = (await import('openai')).default;
   const { VIA_TOOL_SCHEMAS, executeViaTool } = await import('./via-tools-spec');
@@ -285,7 +287,7 @@ async function streamDeepSeekWithTools(
 
   let tokensUsed = 0;
   // Iteration cap is runaway-protection only. Cost is governed by the agent's
-  // USDC pool via deductCredits at the end of the chat turn — agents that
+  // USDC pool via deductCredits at the end of the chat turn, agents that
   // need 15 tool calls to answer a complex question pay for them out of
   // their own balance and that's fine.
   const MAX_ITERATIONS = opts.maxIterations ?? 20;
@@ -359,7 +361,7 @@ async function streamDeepSeekWithTools(
 
           for (const tc of toolCallsArr) {
             const tStart = Date.now();
-            const result = await executeViaTool(tc.name, tc.args, { agentId });
+            const result = await executeViaTool(tc.name, tc.args, { agentId, ownerSex });
             const duration_ms = Date.now() - tStart;
 
             convo.push({
@@ -368,7 +370,7 @@ async function streamDeepSeekWithTools(
               content: result,
             });
 
-            // Best-effort audit log per tool call — captures what the agent
+            // Best-effort audit log per tool call, captures what the agent
             // actually called, with what args, and what it cost. Failure here
             // does NOT abort the stream.
             if (opts.onToolCall) {
