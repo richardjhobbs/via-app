@@ -150,31 +150,45 @@ body {
 .topbar-nav a:hover, .topbar-nav a.is-active { color: var(--ink); }
 .topbar-right { display: flex; gap: 18px; justify-content: flex-end; align-items: center; font-size: 13px; color: var(--ink-2); }
 
-/* Unread indicator on the Concierge nav link (and mirrored mobile menu link). */
+/* Unread indicator on the Concierge nav link (and mirrored mobile menu link).
+   Steady inner glow keeps the dot visible mid-cycle; the outer ring
+   expands outward each pulse for emphasis. */
 .nav-unread-dot {
   display: inline-block;
-  width: 7px;
-  height: 7px;
+  width: 9px;
+  height: 9px;
   border-radius: 50%;
   background: #2b9a66;
-  animation: nav-unread-pulse 1.6s ease-in-out infinite;
+  animation: nav-unread-pulse 1.4s ease-out infinite;
 }
 
 @keyframes nav-unread-pulse {
-  0%, 100% {
-    box-shadow: 0 0 0 0 color-mix(in srgb, #2b9a66 55%, transparent);
+  0% {
+    box-shadow:
+      0 0 6px 1px color-mix(in srgb, #2b9a66 70%, transparent),
+      0 0 0 0 color-mix(in srgb, #2b9a66 90%, transparent);
     transform: scale(1);
   }
-  50% {
-    box-shadow: 0 0 0 6px color-mix(in srgb, #2b9a66 0%, transparent);
-    transform: scale(1.15);
+  70% {
+    box-shadow:
+      0 0 6px 1px color-mix(in srgb, #2b9a66 70%, transparent),
+      0 0 0 14px color-mix(in srgb, #2b9a66 0%, transparent);
+    transform: scale(1.25);
+  }
+  100% {
+    box-shadow:
+      0 0 6px 1px color-mix(in srgb, #2b9a66 70%, transparent),
+      0 0 0 14px color-mix(in srgb, #2b9a66 0%, transparent);
+    transform: scale(1);
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
   .nav-unread-dot {
     animation: none;
-    box-shadow: 0 0 0 2px color-mix(in srgb, #2b9a66 30%, transparent);
+    box-shadow:
+      0 0 6px 1px color-mix(in srgb, #2b9a66 70%, transparent),
+      0 0 0 3px color-mix(in srgb, #2b9a66 40%, transparent);
   }
 }
 
