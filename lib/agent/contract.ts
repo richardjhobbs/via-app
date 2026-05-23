@@ -67,3 +67,43 @@ export function usdcToRaw(amount: number): bigint {
 export function rawToUsdc(raw: bigint): number {
   return Number(raw) / 1_000_000;
 }
+
+/**
+ * Read on-chain USDC allowance the agent wallet has granted to a
+ * spender. The settlement cron uses this to verify approval exists +
+ * has enough headroom before attempting transferFrom.
+ */
+export async function getUsdcAllowance(
+  owner: string,
+  spender: string,
+): Promise<number> {
+  const usdc = getUsdcContract();
+  const raw: bigint = await usdc.allowance(owner, spender);
+  return Number(raw) / 1_000_000;
+}
+
+/**
+ * Server-side settlement transfer. The platform signer (typically the
+ * PLATFORM/DEPLOYER key) calls USDC.transferFrom to pull `amount` from
+ * the agent wallet into `to`. The agent wallet must have a sufficient
+ * approval granted to the signer's address (or the PLATFORM_WALLET if
+ * we use a different signer than the recipient).
+ *
+ * Throws on revert (insufficient allowance, insufficient balance, etc.).
+ * Returns the on-chain transaction hash on success.
+ */
+export async function transferUsdcFromAgent(
+  fromAgentWallet: string,
+  to: string,
+  amount: number,
+): Promise<string> {
+  if (!Number.isFinite(amount) || amount <= 0) {
+    throw new Error(`transferUsdcFromAgent: invalid amount ${amount}`);
+  }
+  const signer = getPlatformSigner();
+  const usdc = getUsdcContract(signer);
+  const raw = usdcToRaw(amount);
+  const tx = await usdc.transferFrom(fromAgentWallet, to, raw);
+  const receipt = await tx.wait();
+  return receipt?.hash ?? tx.hash;
+}

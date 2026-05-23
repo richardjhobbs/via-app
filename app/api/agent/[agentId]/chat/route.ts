@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/rrg/db';
 import { buildChatPrompt, streamChatWithTools } from '@/lib/agent/llm';
-import { hasCredits, deductCredits } from '@/lib/agent/credits';
+import { hasCredits, deductCredits, hasCapAvailable } from '@/lib/agent/credits';
 import { loadMemories, formatMemoriesForPrompt, extractMemoriesFromSession } from '@/lib/agent/memory';
 import type { Agent } from '@/lib/agent/types';
 
@@ -110,6 +110,21 @@ export async function POST(
   const canPay = await hasCredits(agentId);
   if (!canPay) {
     return NextResponse.json({ error: 'Insufficient credits for chat' }, { status: 402 });
+  }
+
+  // Hard weekly cap. Even with credits available the agent stops making
+  // LLM calls once the cap is hit. Owner gets the cap-hit email and can
+  // raise the cap from the dashboard.
+  const capOk = await hasCapAvailable(agentId);
+  if (!capOk) {
+    return NextResponse.json(
+      {
+        error: 'weekly_cap_reached',
+        message:
+          "This agent has reached this week's LLM cap. The cap protects you from runaway LLM cost. Raise the cap from your dashboard to keep going this week.",
+      },
+      { status: 429 },
+    );
   }
 
   // Store user message

@@ -46,7 +46,7 @@ import {
   type DigestListing,
   type DigestPayload,
 } from './email';
-import { deductCredits } from './credits';
+import { deductCredits, hasCapAvailable } from './credits';
 
 interface AgentRow {
   id: string;
@@ -731,6 +731,14 @@ export async function runDropMatchScan(opts: ScanOpts = {}): Promise<ScanResult>
       // comes from the response usage; deduct best-effort, never fail
       // the scan on a billing hiccup.
       if (anchor && !anchor.fromWatchTerm && !isLovedBrand) {
+        // Honour the per-agent weekly LLM cap. If this agent has hit
+        // its cap, skip the relevance gate entirely (no LLM call, no
+        // candidate). Returning silently is right: the watcher should
+        // not surface a notification that would have required a paid
+        // LLM call the owner has not authorised.
+        const capOk = await hasCapAvailable(agent.id);
+        if (!capOk) continue;
+
         const verdict = await llmListingMatchesRequest(
           anchor.snippet,
           d.title,

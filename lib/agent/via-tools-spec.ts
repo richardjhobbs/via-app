@@ -360,7 +360,16 @@ async function via_search_drops(
   if (rawQuery.length > 0 && process.env.OPENAI_API_KEY) {
     try {
       const { embedText, toPgVectorLiteral } = await import('./embeddings');
-      const { deductCredits } = await import('./credits');
+      const { deductCredits, hasCapAvailable } = await import('./credits');
+
+      // Skip the semantic path entirely when the agent has hit its
+      // weekly cap. The lexical fallback below still runs (no LLM
+      // cost), so the user still gets results, just without semantic
+      // ranking until the cap resets or the owner raises it.
+      const capOk = await hasCapAvailable(ctx.agentId);
+      if (!capOk) {
+        throw new Error('cap-exceeded');
+      }
 
       const embedded = await embedText(rawQuery);
 

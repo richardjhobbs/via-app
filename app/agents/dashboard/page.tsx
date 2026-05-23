@@ -235,6 +235,130 @@ function CollapsibleCard({
   );
 }
 
+function WeeklyCapPill({
+  cap,
+  onRaise,
+}: {
+  cap: { weeklyCap: number; weeklySpent: number; windowEndsAt: string; capHit: boolean };
+  onRaise: () => void;
+}) {
+  const remaining = Math.max(0, cap.weeklyCap - cap.weeklySpent);
+  const pct = Math.min(100, Math.round((cap.weeklySpent / cap.weeklyCap) * 100));
+  const tone = cap.capHit
+    ? 'bg-amber-500/10 text-amber-700 border-amber-500/40'
+    : pct >= 75
+      ? 'bg-amber-500/10 text-amber-700 border-amber-500/30'
+      : 'bg-white/5 text-white/60 border-white/10';
+  return (
+    <button
+      onClick={onRaise}
+      title={`Window ends ${new Date(cap.windowEndsAt).toLocaleString()}. Click to raise cap.`}
+      className={`mt-2 inline-flex items-center gap-1.5 px-2 py-0.5 text-[10px] font-mono uppercase tracking-widest border rounded transition-colors cursor-pointer ${tone}`}
+    >
+      {cap.capHit
+        ? `Weekly cap reached`
+        : `LLM cap $${cap.weeklySpent.toFixed(2)} / $${cap.weeklyCap.toFixed(2)}`}
+      <span style={{ opacity: 0.6 }}>{cap.capHit ? '· raise' : `· ${remaining.toFixed(2)} left`}</span>
+    </button>
+  );
+}
+
+function WeeklyCapModal({
+  agent,
+  cap,
+  onClose,
+  onSaved,
+}: {
+  agent: Agent;
+  cap: { weeklyCap: number; weeklySpent: number; windowEndsAt: string; capHit: boolean };
+  onClose: () => void;
+  onSaved: (cap: { weeklyCap: number; weeklySpent: number; windowEndsAt: string; capHit: boolean }) => void;
+}) {
+  const [newCap, setNewCap] = useState<string>(String(cap.weeklyCap));
+  const [saving, setSaving] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  async function save() {
+    const value = Number(newCap);
+    if (!Number.isFinite(value) || value < 0.1 || value > 100) {
+      setErr('Enter a value between 0.10 and 100 USDC');
+      return;
+    }
+    setSaving(true);
+    setErr(null);
+    try {
+      const res = await fetch(`/api/agent/${agent.id}/cap`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ weekly_cap_usdc: value }),
+      });
+      if (!res.ok) {
+        const j = await res.json().catch(() => ({}));
+        setErr(j.error ?? 'Save failed');
+        return;
+      }
+      const { cap: updated } = await res.json();
+      onSaved(updated);
+      onClose();
+    } catch (e) {
+      setErr((e as Error).message);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 50, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}
+      onClick={onClose}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          background: 'var(--bg)', color: 'var(--ink)', border: '1px solid var(--line)',
+          maxWidth: 460, width: '100%', padding: 24,
+        }}
+      >
+        <h2 style={{ fontFamily: 'var(--font-fraunces), serif', fontSize: 22, fontWeight: 400, margin: '0 0 8px' }}>
+          Weekly LLM cap
+        </h2>
+        <p style={{ fontSize: 13, color: 'var(--ink-3)', lineHeight: 1.5, margin: '0 0 16px' }}>
+          The platform pays for LLM calls upfront and pulls the cost back from your agent wallet at the end of each week, up to this cap. Raising it lets the agent keep working this week; lowering it tightens the upper bound on what the platform can settle.
+        </p>
+        <div style={{ fontSize: 12, color: 'var(--ink-3)', margin: '0 0 16px' }}>
+          Spent this week: <strong style={{ color: 'var(--ink)' }}>${cap.weeklySpent.toFixed(4)}</strong> · Window ends {new Date(cap.windowEndsAt).toLocaleString()}
+        </div>
+        <label style={{ display: 'block', fontSize: 12, color: 'var(--ink-3)', marginBottom: 6 }}>
+          New cap (USDC per week)
+        </label>
+        <input
+          type="number"
+          step="0.10"
+          min="0.10"
+          max="100"
+          value={newCap}
+          onChange={(e) => setNewCap(e.target.value)}
+          disabled={saving}
+          style={{
+            width: '100%', padding: '10px 12px', fontSize: 14,
+            background: 'var(--paper)', border: '1px solid var(--line-strong)', color: 'var(--ink)',
+            outline: 'none',
+          }}
+        />
+        {err && (
+          <p style={{ fontSize: 12, color: 'var(--accent-warn, #b5453a)', margin: '8px 0 0' }}>{err}</p>
+        )}
+        <div style={{ display: 'flex', gap: 8, marginTop: 18, justifyContent: 'flex-end' }}>
+          <Button size="sm" variant="ghost" onClick={onClose} disabled={saving}>Cancel</Button>
+          <Button size="sm" onClick={save} loading={saving}>Save cap</Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 const NOTIFICATIONS_PREVIEW_CAP = 5;
 const ACTIVITY_PREVIEW_CAP = 5;
 
@@ -467,6 +591,8 @@ export default function DashboardPage() {
   const router = useRouter();
   const [agent, setAgent] = useState<Agent | null>(null);
   const [balance, setBalance] = useState<number | null>(null);
+  const [cap, setCap] = useState<{ weeklyCap: number; weeklySpent: number; windowEndsAt: string; capHit: boolean } | null>(null);
+  const [showCapModal, setShowCapModal] = useState(false);
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
   const [showAvatarPicker, setShowAvatarPicker] = useState(false);
   const [showTopUp, setShowTopUp] = useState(false);
@@ -566,6 +692,15 @@ export default function DashboardPage() {
           if (syncRes.ok) {
             const { credit_balance } = await syncRes.json();
             setAgent(prev => prev ? { ...prev, credit_balance_usdc: Number(credit_balance) } : prev);
+          }
+        } catch {}
+
+        // Weekly cap state for the header pill / raise-cap modal.
+        try {
+          const capRes = await fetch(`/api/agent/${a.id}/cap`);
+          if (capRes.ok) {
+            const { cap: capData } = await capRes.json();
+            if (capData) setCap(capData);
           }
         } catch {}
       }
@@ -831,6 +966,9 @@ export default function DashboardPage() {
                 Top up
               </button>
             )}
+            {agent.tier === 'pro' && cap && (
+              <WeeklyCapPill cap={cap} onRaise={() => setShowCapModal(true)} />
+            )}
           </div>
         </div>
 
@@ -942,6 +1080,16 @@ export default function DashboardPage() {
             setAgent(prev => prev ? { ...prev, credit_balance_usdc: newBalance } : prev);
             setShowTopUp(false);
           }}
+        />
+      )}
+
+      {/* Weekly cap modal */}
+      {showCapModal && agent && cap && (
+        <WeeklyCapModal
+          agent={agent}
+          cap={cap}
+          onClose={() => setShowCapModal(false)}
+          onSaved={(updated) => setCap(updated)}
         />
       )}
 
