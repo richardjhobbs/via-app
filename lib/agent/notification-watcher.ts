@@ -46,6 +46,7 @@ import {
   type DigestListing,
   type DigestPayload,
 } from './email';
+import { deductCredits } from './credits';
 
 interface AgentRow {
   id: string;
@@ -322,9 +323,9 @@ async function llmListingMatchesRequest(
   userMessage: string,
   listingTitle: string,
   brandName: string | null,
-): Promise<{ matches: boolean; reason: string }> {
+): Promise<{ matches: boolean; reason: string; tokensUsed: number }> {
   if (!process.env.DEEPSEEK_API_KEY) {
-    return { matches: true, reason: 'llm-skipped (no key)' };
+    return { matches: true, reason: 'llm-skipped (no key)', tokensUsed: 0 };
   }
   try {
     const OpenAI = (await import('openai')).default;
@@ -355,10 +356,12 @@ async function llmListingMatchesRequest(
     const text = (response.choices[0]?.message?.content ?? '').trim();
     const firstLine = text.split(/\r?\n/)[0]?.trim().toUpperCase() ?? '';
     const matches = firstLine.startsWith('YES');
-    return { matches, reason: text.slice(0, 200) };
+    const tokensUsed =
+      (response.usage?.prompt_tokens ?? 0) + (response.usage?.completion_tokens ?? 0);
+    return { matches, reason: text.slice(0, 200), tokensUsed };
   } catch (err) {
     console.error('[watcher llm gate]', err);
-    return { matches: true, reason: 'llm-error (fail open)' };
+    return { matches: true, reason: 'llm-error (fail open)', tokensUsed: 0 };
   }
 }
 
@@ -704,12 +707,25 @@ export async function runDropMatchScan(opts: ScanOpts = {}): Promise<ScanResult>
       // in the listing copy. A small DeepSeek yes/no per candidate kills
       // that class of false positive. Skip for watch_term (LLM-explicit
       // already) and loved_brand (user chose the brand themselves).
+      //
+      // Each gate call is billed to the agent that triggered it (the
+      // owner pays for their own concierge's relevance filtering), at
+      // standard DeepSeek pricing + 25% platform margin. Token count
+      // comes from the response usage; deduct best-effort, never fail
+      // the scan on a billing hiccup.
       if (anchor && !anchor.fromWatchTerm && !isLovedBrand) {
         const verdict = await llmListingMatchesRequest(
           anchor.snippet,
           d.title,
           d.brand_name,
         );
+        if (verdict.tokensUsed > 0) {
+          try {
+            await deductCredits(agent.id, verdict.tokensUsed, 'deepseek');
+          } catch (err) {
+            console.error('[watcher credit deduct]', err);
+          }
+        }
         if (!verdict.matches) continue;
       }
 
