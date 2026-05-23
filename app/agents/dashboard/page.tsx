@@ -745,9 +745,11 @@ export default function DashboardPage() {
     <div style={{ minHeight: '100vh', background: 'var(--bg)', color: 'var(--ink)' }}>
       <RRGHeader active="concierge" />
       <main className="page-pad" style={{ maxWidth: 1000 }}>
-        {/* Agent header */}
-        <div className="flex items-start justify-between mb-8">
-          <div className="flex items-start gap-4">
+        {/* Agent header. On mobile the row stacks vertically and the
+            wallet pill, badges, and name are size-constrained so nothing
+            bleeds outside the viewport. */}
+        <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4 mb-8">
+          <div className="flex items-start gap-3 sm:gap-4 min-w-0 flex-1">
             {/* Avatar. Click to change. */}
             <button
               onClick={() => setShowAvatarPicker(true)}
@@ -772,9 +774,9 @@ export default function DashboardPage() {
                 <span className="text-xs text-white/80">Edit</span>
               </div>
             </button>
-            <div>
-              <div className="flex items-center gap-3 mb-2">
-                <h1 className="text-3xl font-light">{agent.name}</h1>
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-2 sm:gap-3 mb-2 flex-wrap">
+                <h1 className="text-2xl sm:text-3xl font-light leading-tight">{agent.name}</h1>
                 <Badge variant={agent.tier === 'pro' ? 'pro' : 'default'}>
                   {tierDisplay.label}
                 </Badge>
@@ -805,18 +807,26 @@ export default function DashboardPage() {
                   </span>
                 )}
               </div>
-              <p className="text-sm text-white/40 font-mono">{agent.wallet_address}</p>
+              {/* Wallet address: full on desktop, truncated middle on mobile so the row never overflows */}
+              <p className="text-sm text-white/40 font-mono break-all sm:break-normal">
+                <span className="hidden sm:inline">{agent.wallet_address}</span>
+                <span className="sm:hidden">
+                  {agent.wallet_address.slice(0, 6)}…{agent.wallet_address.slice(-4)}
+                </span>
+              </p>
             </div>
           </div>
-          <div className="text-right">
-            <div className="text-2xl font-light text-green-700">
-              {balance !== null ? `$${balance.toFixed(2)}` : '...'}
+          <div className="flex sm:flex-col items-center sm:items-end justify-between sm:justify-start gap-3 sm:gap-0 flex-shrink-0">
+            <div className="sm:text-right">
+              <div className="text-2xl font-light text-green-700">
+                {balance !== null ? `$${balance.toFixed(2)}` : '...'}
+              </div>
+              <div className="text-xs text-white/40">Wallet balance</div>
             </div>
-            <div className="text-xs text-white/40">Wallet balance</div>
             {agent.tier === 'pro' && (
               <button
                 onClick={() => setShowTopUp(true)}
-                className="mt-2 text-xs text-green-700 hover:text-green-800 transition-colors cursor-pointer"
+                className="text-xs text-green-700 hover:text-green-800 transition-colors cursor-pointer sm:mt-2"
               >
                 Top up
               </button>
