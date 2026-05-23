@@ -101,12 +101,19 @@ export const VIA_TOOL_SCHEMAS = [
     function: {
       name: 'via_list_brands',
       description:
-        'List all brands currently on the VIA network with their slug, ' +
-        'name, brand_url, and active drop count. ' +
+        'List all brands currently on the VIA network. Each brand returns ' +
+        'slug, name, brand_url, active drop_count, plus a sample_title and ' +
+        'sample_snippet drawn from one representative product. The samples ' +
+        'let you SEMANTICALLY infer brand category when the brand name ' +
+        'alone is opaque (e.g. "Nolo" + "Caramel Swirl is Nolo\'s flavoured ' +
+        'decaf cold-brewed Arabica" => Nolo is a decaf coffee brand). ' +
         'CALL AT MOST ONCE PER CHAT SESSION. The brand list does not ' +
         'change mid-session, so after the first call the result is in ' +
-        'your conversation context. Do NOT call it again. Only useful ' +
-        'when you need to discover a brand slug you don\'t already know.',
+        'your conversation context. Do NOT call it again. ' +
+        'Use this as your PRIMARY discovery tool for category questions ' +
+        '("any food?", "any coffee?", "anything from Japan?", "any ' +
+        'baseball caps?") because text search on the user\'s word will ' +
+        'miss brands whose product titles don\'t literally contain it.',
       parameters: { type: 'object', properties: {} },
     },
   },
@@ -416,21 +423,55 @@ async function via_list_brands() {
     counts.set(row.brand_id, (counts.get(row.brand_id) ?? 0) + 1);
   }
 
+  // Per-brand semantic hint: a sample non-membership product title plus the
+  // first chunk of its description. Lets the LLM infer category from
+  // products (e.g. "Caramel Swirl ... cold-brewed decaf" => coffee brand)
+  // when the brand name alone is opaque ("Nolo", "Clooudie"). One LATERAL
+  // query, ~10 ms total, ~250 bytes per brand on the wire.
+  const brandIds = Array.from(counts.keys());
+  const sampleByBrand = new Map<string, { title: string; snippet: string }>();
+  if (brandIds.length > 0) {
+    const { data: samples } = await db.rpc('agent_brand_samples', {
+      brand_ids: brandIds,
+    });
+    for (const row of (samples ?? []) as unknown as Array<{
+      brand_id: string; sample_title: string | null; sample_snippet: string | null;
+    }>) {
+      if (!row.brand_id) continue;
+      sampleByBrand.set(row.brand_id, {
+        title: row.sample_title ?? '',
+        snippet: (row.sample_snippet ?? '').slice(0, 220),
+      });
+    }
+  }
+
   const listed = Array.from(counts.entries())
     .map(([brandId, drop_count]) => {
       const b = brands.get(brandId);
       if (!b) return null;
+      const sample = sampleByBrand.get(brandId);
       return {
         brand_name: b.name,
         brand_slug: b.slug,
         brand_url: brandUrl(b.slug),
         drop_count,
+        sample_title: sample?.title || null,
+        sample_snippet: sample?.snippet || null,
       };
     })
-    .filter((x): x is { brand_name: string; brand_slug: string; brand_url: string | null; drop_count: number } => x !== null)
+    .filter((x): x is { brand_name: string; brand_slug: string; brand_url: string | null; drop_count: number; sample_title: string | null; sample_snippet: string | null } => x !== null)
     .sort((a, b) => b.drop_count - a.drop_count);
 
-  return { network: 'via', backend: 'rrg', count: listed.length, brands: listed };
+  return {
+    network: 'via',
+    backend: 'rrg',
+    count: listed.length,
+    brands: listed,
+    note:
+      'sample_title and sample_snippet are a representative non-membership product ' +
+      'per brand. Use them to infer brand category when the name alone is opaque ' +
+      '(e.g. "Nolo" => decaf coffee from "Caramel Swirl ... cold-brewed decaf").',
+  };
 }
 
 async function via_get_brand(args: { slug: string }) {
