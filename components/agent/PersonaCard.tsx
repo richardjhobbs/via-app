@@ -4,9 +4,9 @@ import { useState } from 'react';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Textarea } from '@/components/ui/Textarea';
-import { Select } from '@/components/ui/Select';
+import { Select, TagSelect } from '@/components/ui/Select';
 import { InterestSelector } from './InterestSelector';
-import { VOICE_PRESETS, COMM_STYLE_PRESETS, TIER_DISPLAY } from '@/lib/agent/types';
+import { VOICE_PRESETS, COMM_STYLE_PRESETS, TIER_DISPLAY, STYLE_TAGS } from '@/lib/agent/types';
 import type { Agent, InterestSelection } from '@/lib/agent/types';
 
 interface Props {
@@ -19,6 +19,8 @@ interface PersonaForm {
   persona_voice: string;
   persona_comm_style: string;
   interest_categories: InterestSelection[];
+  style_tags: string[];
+  free_instructions: string;
 }
 
 export function PersonaCard({ agent, onSave }: Props) {
@@ -30,6 +32,8 @@ export function PersonaCard({ agent, onSave }: Props) {
     persona_voice: '',
     persona_comm_style: '',
     interest_categories: [],
+    style_tags: [],
+    free_instructions: '',
   });
 
   const tierLabel = TIER_DISPLAY[agent.tier].label;
@@ -40,6 +44,8 @@ export function PersonaCard({ agent, onSave }: Props) {
       persona_voice: agent.persona_voice || '',
       persona_comm_style: agent.persona_comm_style || '',
       interest_categories: agent.interest_categories || [],
+      style_tags: agent.style_tags || [],
+      free_instructions: agent.free_instructions || '',
     });
     setEditing(true);
   }
@@ -52,6 +58,8 @@ export function PersonaCard({ agent, onSave }: Props) {
         persona_voice: form.persona_voice || null,
         persona_comm_style: form.persona_comm_style || null,
         interest_categories: form.interest_categories,
+        style_tags: form.style_tags,
+        free_instructions: form.free_instructions || null,
       } as Partial<Agent>);
       setEditing(false);
     } finally {
@@ -59,7 +67,13 @@ export function PersonaCard({ agent, onSave }: Props) {
     }
   }
 
-  const hasPersona = agent.persona_bio || agent.persona_voice || agent.persona_comm_style || (agent.interest_categories?.length > 0);
+  const hasPersona =
+    agent.persona_bio ||
+    agent.persona_voice ||
+    agent.persona_comm_style ||
+    (agent.interest_categories?.length > 0) ||
+    (agent.style_tags?.length > 0) ||
+    !!agent.free_instructions;
 
   // Determine select value for form
   const formVoicePreset = VOICE_PRESETS.some(p => p.value === form.persona_voice) ? form.persona_voice : 'custom';
@@ -72,9 +86,12 @@ export function PersonaCard({ agent, onSave }: Props) {
     const bits: string[] = [];
     if (agent.persona_voice) bits.push(`voice: ${agent.persona_voice.replace(/-/g, ' ')}`);
     if (agent.persona_comm_style) bits.push(`style: ${agent.persona_comm_style.replace(/-/g, ' ')}`);
+    const styleCount = agent.style_tags?.length ?? 0;
+    if (styleCount > 0) bits.push(`${styleCount} style ${styleCount === 1 ? 'tag' : 'tags'}`);
     const interestCount = agent.interest_categories?.length ?? 0;
     if (interestCount > 0) bits.push(`${interestCount} interest ${interestCount === 1 ? 'group' : 'groups'}`);
     if (agent.persona_bio) bits.push('bio set');
+    if (agent.free_instructions) bits.push('instructions set');
     if (bits.length > 0) summary = bits.join(' · ');
   } else {
     summary = `Not configured. Give your ${tierLabel} a personality and voice.`;
@@ -189,6 +206,21 @@ export function PersonaCard({ agent, onSave }: Props) {
             onChange={(ic) => setForm(prev => ({ ...prev, interest_categories: ic }))}
           />
 
+          <TagSelect
+            label="Style tags"
+            selected={form.style_tags}
+            onChange={(tags) => setForm(prev => ({ ...prev, style_tags: tags }))}
+            options={[...STYLE_TAGS]}
+          />
+
+          <Textarea
+            label="Instructions"
+            placeholder={`Anything specific you want your ${tierLabel} to keep in mind. Brands you like, what to skip, things you collect.`}
+            value={form.free_instructions}
+            onChange={(e) => setForm(prev => ({ ...prev, free_instructions: e.target.value }))}
+            hint={`Free text. Your ${tierLabel} reasons about these every chat.`}
+          />
+
           <div className="flex gap-2 pt-2">
             <Button size="sm" onClick={save} loading={saving}>Save</Button>
             <Button size="sm" variant="ghost" onClick={() => setEditing(false)}>Cancel</Button>
@@ -236,6 +268,29 @@ export function PersonaCard({ agent, onSave }: Props) {
                   </div>
                 ))}
               </div>
+            </div>
+          )}
+          {agent.style_tags?.length > 0 && (
+            <div>
+              <div style={{ color: 'var(--ink-3)', fontFamily: 'var(--font-jetbrains), monospace', fontSize: 10, letterSpacing: '0.14em', textTransform: 'uppercase', marginBottom: 6 }}>Style tags</div>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+                {agent.style_tags.map(tag => (
+                  <span key={tag} style={{
+                    padding: '2px 8px',
+                    fontFamily: 'var(--font-jetbrains), monospace',
+                    fontSize: 10, letterSpacing: '0.1em', textTransform: 'uppercase',
+                    border: '1px solid var(--accent)', color: 'var(--accent)',
+                  }}>
+                    {tag.replace(/-/g, ' ')}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+          {agent.free_instructions && (
+            <div>
+              <div style={{ color: 'var(--ink-3)', fontFamily: 'var(--font-jetbrains), monospace', fontSize: 10, letterSpacing: '0.14em', textTransform: 'uppercase', marginBottom: 6 }}>Instructions</div>
+              <div className="text-white/80" style={{ whiteSpace: 'pre-wrap' }}>{agent.free_instructions}</div>
             </div>
           )}
         </div>

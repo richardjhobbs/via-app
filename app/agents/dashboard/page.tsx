@@ -7,20 +7,16 @@ import RRGFooter from '@/components/rrg/RRGFooter';
 import { Card } from '@/components/ui/Card';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
-import { Input } from '@/components/ui/Input';
-import { Select, TagSelect } from '@/components/ui/Select';
-import { Textarea } from '@/components/ui/Textarea';
 import { PersonaCard } from '@/components/agent/PersonaCard';
 import { AvatarPicker } from '@/components/agent/AvatarPicker';
 import { TopUpModal } from '@/components/agent/TopUpModal';
 import { LlmStatusCard } from '@/components/agent/LlmStatusCard';
 import { ChatPanel } from '@/components/agent/ChatPanel';
 import { UpgradeToConcierge } from '@/components/agent/UpgradeToConcierge';
-import { STYLE_TAGS, TIER_DISPLAY, LLM_PROVIDER_OPTIONS } from '@/lib/agent/types';
+import { TIER_DISPLAY } from '@/lib/agent/types';
 import { formatChatCost } from '@/lib/agent/credit-display';
-import { PRESET_AVATARS } from '@/lib/agent/avatars';
 import { useActiveAccount } from 'thirdweb/react';
-import type { Agent, ActivityLogEntry, AgentEvaluation, LlmProvider } from '@/lib/agent/types';
+import type { Agent, ActivityLogEntry, AgentEvaluation } from '@/lib/agent/types';
 
 interface MemoryRow {
   id: string;
@@ -335,15 +331,6 @@ export default function DashboardPage() {
   const [knowExpanded, setKnowExpanded] = useState(false);
   const [activityExpanded, setActivityExpanded] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [editing, setEditing] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const [editForm, setEditForm] = useState({
-    style_tags: [] as string[],
-    free_instructions: '',
-    budget_ceiling_usdc: '',
-    bid_aggression: 'balanced',
-    llm_provider: 'claude',
-  });
   const [recoverEmail, setRecoverEmail] = useState('');
   const [recovering, setRecovering] = useState(false);
   const [recoverError, setRecoverError] = useState<string | null>(null);
@@ -468,41 +455,6 @@ export default function DashboardPage() {
         if (recRes.ok) { const { recommendations: recs } = await recRes.json(); setRecommendations(recs); }
       }
     } catch {} finally { setLoading(false); }
-  }
-
-  function startEdit() {
-    if (!agent) return;
-    setEditForm({
-      style_tags: agent.style_tags,
-      free_instructions: agent.free_instructions || '',
-      budget_ceiling_usdc: agent.budget_ceiling_usdc?.toString() || '',
-      bid_aggression: agent.bid_aggression,
-      llm_provider: agent.llm_provider,
-    });
-    setEditing(true);
-  }
-
-  async function savePreferences() {
-    if (!agent) return;
-    setSaving(true);
-    try {
-      const res = await fetch(`/api/agent/${agent.id}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          style_tags: editForm.style_tags,
-          free_instructions: editForm.free_instructions || null,
-          budget_ceiling_usdc: editForm.budget_ceiling_usdc ? parseFloat(editForm.budget_ceiling_usdc) : null,
-          bid_aggression: editForm.bid_aggression,
-          llm_provider: editForm.llm_provider,
-        }),
-      });
-      if (res.ok) {
-        const { agent: updated } = await res.json();
-        setAgent(updated);
-        setEditing(false);
-      }
-    } catch {} finally { setSaving(false); }
   }
 
   async function markNotificationRead(notifId: string) {
@@ -731,113 +683,10 @@ export default function DashboardPage() {
             <ChatPanel agent={agent} />
           )}
 
-          {/* Persona, collapsed by default to keep the chat front-and-centre. */}
+          {/* Persona: bio, voice, comm style, interests, style tags and
+              free-text instructions. Collapsed by default so the chat
+              stays front-and-centre. */}
           <PersonaCard agent={agent} onSave={savePersona} />
-
-          {/* Preferences */}
-          <Card>
-            <div className="flex items-start justify-between mb-4 gap-4">
-              <SectionHeading>Preferences</SectionHeading>
-              {!editing && (
-                <button
-                  onClick={startEdit}
-                  style={{
-                    background: 'transparent', border: 'none', cursor: 'pointer',
-                    fontFamily: 'var(--font-jetbrains), monospace',
-                    fontSize: 10, letterSpacing: '0.14em', textTransform: 'uppercase',
-                    color: 'var(--accent)', padding: 0,
-                    borderBottom: '1px solid color-mix(in srgb, var(--accent) 35%, transparent)',
-                    whiteSpace: 'nowrap',
-                  }}
-                >
-                  Edit
-                </button>
-              )}
-            </div>
-
-            {editing ? (
-              <div className="space-y-3">
-                <TagSelect
-                  label="Style tags"
-                  selected={editForm.style_tags}
-                  onChange={(tags) => setEditForm(prev => ({ ...prev, style_tags: tags }))}
-                  options={[...STYLE_TAGS]}
-                />
-                <Textarea
-                  label="Instructions"
-                  value={editForm.free_instructions}
-                  onChange={(e) => setEditForm(prev => ({ ...prev, free_instructions: e.target.value }))}
-                />
-                <Input
-                  label="Budget ceiling (USDC)"
-                  type="number"
-                  value={editForm.budget_ceiling_usdc}
-                  onChange={(e) => setEditForm(prev => ({ ...prev, budget_ceiling_usdc: e.target.value }))}
-                />
-                {agent.tier === 'pro' && (
-                  <Select
-                    label="Bid style"
-                    value={editForm.bid_aggression}
-                    onChange={(v) => setEditForm(prev => ({ ...prev, bid_aggression: v }))}
-                    options={[
-                      { value: 'conservative', label: 'Conservative' },
-                      { value: 'balanced', label: 'Balanced' },
-                      { value: 'aggressive', label: 'Aggressive' },
-                    ]}
-                  />
-                )}
-                {agent.tier === 'pro' && (
-                  <Select
-                    label="LLM provider"
-                    value={editForm.llm_provider}
-                    onChange={(v) => setEditForm(prev => ({ ...prev, llm_provider: v }))}
-                    options={[...LLM_PROVIDER_OPTIONS]}
-                  />
-                )}
-                <div className="flex gap-2 pt-2">
-                  <Button size="sm" onClick={savePreferences} loading={saving}>Save</Button>
-                  <Button size="sm" variant="ghost" onClick={() => setEditing(false)}>Cancel</Button>
-                </div>
-              </div>
-            ) : (
-              <div className="space-y-3 text-sm">
-                {agent.style_tags.length > 0 && (
-                  <div>
-                    <div className="text-white/40 mb-1">Style tags</div>
-                    <div className="flex flex-wrap gap-1">
-                      {agent.style_tags.map((tag) => (
-                        <span key={tag} className="px-2 py-0.5 text-xs border border-green-500/30 text-green-700/80 rounded">
-                          {tag}
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-                )}
-                {agent.free_instructions && (
-                  <div>
-                    <div className="text-white/40 mb-1">Instructions</div>
-                    <div className="text-white/80">{agent.free_instructions}</div>
-                  </div>
-                )}
-                <div className="flex justify-between">
-                  <span className="text-white/40">Budget ceiling</span>
-                  <span className="text-green-700">{agent.budget_ceiling_usdc ? `$${agent.budget_ceiling_usdc}` : 'No limit'}</span>
-                </div>
-                {agent.tier === 'pro' && (
-                  <div className="flex justify-between">
-                    <span className="text-white/40">Bid style</span>
-                    <span>{agent.bid_aggression}</span>
-                  </div>
-                )}
-                {agent.tier === 'pro' && (
-                  <div className="flex justify-between">
-                    <span className="text-white/40">LLM</span>
-                    <span>{agent.llm_provider}</span>
-                  </div>
-                )}
-              </div>
-            )}
-          </Card>
 
           {/* LLM Provider Status (Concierge only) */}
           {agent.tier === 'pro' && (
