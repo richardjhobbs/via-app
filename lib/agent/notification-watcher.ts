@@ -11,34 +11,41 @@
  *   1. Newly approved listings from the last 24h.
  *   2. Brands that became active on RRG in the last 24h.
  *
- * For each, four paths can fire a match:
+ * For each, paths that can fire an in-app notification:
  *   A. Loved-brand path: the brand is in the owner's loved set.
  *   B. Explicit watch path: a previous chat_followup notification
  *      persisted a watch_term (the LLM called via_notify_owner) and
  *      this item hits one of those terms.
  *   C. Past-question path: a previous user message asked about
  *      something with ≥2 distinct meaningful tokens overlapping the
- *      item. The alert quotes that message and its date.
- *   D. Profile path: text hits at least 2 distinct signal axes drawn
- *      from style_tags, interest_categories, persona_bio +
- *      free_instructions, and learned agent_memory facts.
+ *      item.
+ *   D. Profile path (BRANDS ONLY): text hits at least 2 distinct
+ *      signal axes drawn from style_tags, interest_categories,
+ *      persona_bio + free_instructions, and learned agent_memory.
+ *
+ * Listings no longer fire on profile-only matches. Per user spec,
+ * product emails require a concrete past-conversation, watch_term,
+ * or loved-brand anchor.
  *
  * Avoided brands are blocked from every path.
  *
- * The notification body and email subject prefer the most personal
- * anchor available: explicit watch > past-question > loved-brand >
- * profile. The point is the owner reads it and thinks "it remembered",
- * not "the platform is promoting".
- *
- * Per match: one in-app notification row AND one email. No digests,
- * no bundling. Per-agent cap (default 5 per scan, across listings +
- * brands) is the only spam guardrail; with stricter matching plus
- * the chat-anchor logic, most days produce zero.
+ * EMAIL POLICY (per user spec 2026-05-23):
+ *   - At most ONE email per owner email address per rolling 24h window.
+ *   - All matches across all agents an owner controls are merged,
+ *     dedup'd by brand_id / token_id, and delivered as a single
+ *     digest email.
+ *   - Dashboard notifications still fire per-agent per-match. The
+ *     bundling is purely email-layer.
  */
 
 import { db } from '@/lib/rrg/db';
 import type { AgentMemory } from './memory';
-import { sendNewListingMatch, sendNewBrandMatch } from './email';
+import {
+  sendOwnerDailyDigest,
+  type DigestBrand,
+  type DigestListing,
+  type DigestPayload,
+} from './email';
 
 interface AgentRow {
   id: string;
@@ -88,6 +95,9 @@ export interface ScanResult {
   notifications_created: number;
   emails_sent: number;
   dedup_skipped: number;
+  owners_emailed: number;
+  owners_capped_today: number;
+  owners_with_no_email: number;
 }
 
 const SITE_URL = (process.env.NEXT_PUBLIC_SITE_URL ?? 'https://realrealgenuine.com').replace(/\/$/, '');
@@ -373,9 +383,39 @@ function composeReason(opts: {
     : `${itemLabel}${brandName ? ` from ${brandName}` : ''} lines up with your ${summariseSignals(profileHits)}.`;
 }
 
+/**
+ * Per-agent in-bucket caps. These exist to keep the digest email a
+ * reasonable length when the catalogue dumps a lot of new product in
+ * one day; they are NOT the spam guardrail (that is the per-owner
+ * 24h email cap).
+ */
+const BUCKET_MAX_BRANDS_PER_AGENT = 10;
+const BUCKET_MAX_LISTINGS_PER_AGENT = 20;
+const OWNER_EMAIL_COOLDOWN_HOURS = 24;
+
+interface BucketAgentEntry {
+  agentId: string;
+  agentName: string;
+  brands: Array<{ id: string; name: string; slug: string }>;
+  listings: Array<{
+    tokenId: number;
+    title: string;
+    brandName: string | null;
+    priceUsdc: number | null;
+    reason: string;
+  }>;
+}
+
+interface OwnerBucket {
+  email: string;
+  agents: Map<string, BucketAgentEntry>;
+}
+
 export async function runDropMatchScan(opts: ScanOpts = {}): Promise<ScanResult> {
   const hoursBack = opts.hoursBack ?? 24;
-  const perAgentLimit = opts.perAgentLimit ?? 5;
+  // perAgentLimit retained for backward compat on the in-app notification
+  // write path; bucket caps are separate (see BUCKET_MAX_* above).
+  const perAgentLimit = opts.perAgentLimit ?? 50;
   const since = new Date(Date.now() - hoursBack * 3600 * 1000).toISOString();
 
   const result: ScanResult = {
@@ -385,7 +425,33 @@ export async function runDropMatchScan(opts: ScanOpts = {}): Promise<ScanResult>
     notifications_created: 0,
     emails_sent: 0,
     dedup_skipped: 0,
+    owners_emailed: 0,
+    owners_capped_today: 0,
+    owners_with_no_email: 0,
   };
+
+  const ownerBuckets = new Map<string /* lower(email) */, OwnerBucket>();
+  function bucketFor(agent: AgentRow): BucketAgentEntry | null {
+    if (!agent.email) return null;
+    const key = agent.email.trim().toLowerCase();
+    if (!key) return null;
+    let bucket = ownerBuckets.get(key);
+    if (!bucket) {
+      bucket = { email: agent.email.trim(), agents: new Map() };
+      ownerBuckets.set(key, bucket);
+    }
+    let entry = bucket.agents.get(agent.id);
+    if (!entry) {
+      entry = {
+        agentId: agent.id,
+        agentName: agent.name,
+        brands: [],
+        listings: [],
+      };
+      bucket.agents.set(agent.id, entry);
+    }
+    return entry;
+  }
 
   const { data: agents, error: agentsErr } = await db
     .from('agent_agents')
@@ -551,17 +617,9 @@ export async function runDropMatchScan(opts: ScanOpts = {}): Promise<ScanResult>
       notifiedBrandIds.add(b.id);
       brandsAlertedThisRun.add(b.id);
 
-      if (agent.email) {
-        try {
-          await sendNewBrandMatch(agent.email, agent.name, {
-            brandName: b.name,
-            brandUrl,
-            reason,
-          });
-          result.emails_sent++;
-        } catch (err) {
-          console.error('[watcher email brand]', err);
-        }
+      const entry = bucketFor(agent);
+      if (entry && entry.brands.length < BUCKET_MAX_BRANDS_PER_AGENT) {
+        entry.brands.push({ id: b.id, name: b.name, slug: b.slug });
       }
     }
 
@@ -580,9 +638,11 @@ export async function runDropMatchScan(opts: ScanOpts = {}): Promise<ScanResult>
       const haystack = `${d.title} ${d.enhanced_description ?? ''} ${d.description ?? ''}`;
       const anchor = findChatAnchor(haystack, convo);
       const scored = scoreText(haystack, profile);
-      const profileOk = scored.sources.length >= 2;
 
-      if (!isLovedBrand && !anchor && !profileOk) continue;
+      // Tighter than brands: profile-only matches no longer fire for
+      // listings. Per user spec, product alerts require a concrete
+      // anchor (past chat / explicit watch term / loved brand).
+      if (!isLovedBrand && !anchor) continue;
 
       const titleQuoted = `"${d.title}"`;
       const reason = composeReason({
@@ -623,22 +683,151 @@ export async function runDropMatchScan(opts: ScanOpts = {}): Promise<ScanResult>
       writtenForThisAgent++;
       notifiedTokens.add(d.token_id);
 
-      if (agent.email) {
-        try {
-          await sendNewListingMatch(agent.email, agent.name, {
-            brandName: d.brand_name,
-            title: d.title,
-            url,
-            priceUsdc: d.price_usdc,
-            reason,
-          });
-          result.emails_sent++;
-        } catch (err) {
-          console.error('[watcher email listing]', err);
-        }
+      const entry = bucketFor(agent);
+      if (entry && entry.listings.length < BUCKET_MAX_LISTINGS_PER_AGENT) {
+        entry.listings.push({
+          tokenId: d.token_id,
+          title: d.title,
+          brandName: d.brand_name,
+          priceUsdc: d.price_usdc,
+          reason,
+        });
       }
     }
   }
 
+  // ── Pass 2: per-owner daily digest email ─────────────────────────────
+  await sendOwnerDigests(ownerBuckets, result);
+
   return result;
+}
+
+/**
+ * For each owner with at least one new match across their agents:
+ *   1. Skip if a digest was already sent to this email in the last 24h.
+ *   2. Merge brands across agents (dedup by brand id, union agent names).
+ *   3. Merge listings across agents (dedup by token id, union agent names).
+ *   4. Send one cream/serif digest email.
+ *   5. Record the send as a `daily_owner_digest` notification row, scoped
+ *      to one of the matched agents (the row needs an agent_id) so the
+ *      24h cap query tomorrow finds it.
+ */
+async function sendOwnerDigests(
+  buckets: Map<string, OwnerBucket>,
+  result: ScanResult,
+): Promise<void> {
+  if (buckets.size === 0) return;
+
+  const cooldownSince = new Date(
+    Date.now() - OWNER_EMAIL_COOLDOWN_HOURS * 3600 * 1000,
+  ).toISOString();
+
+  for (const bucket of buckets.values()) {
+    if (!bucket.email) {
+      result.owners_with_no_email++;
+      continue;
+    }
+
+    // Flatten + dedup across agents.
+    const brandMap = new Map<string, DigestBrand & { brandId: string }>();
+    const listingMap = new Map<number, DigestListing>();
+    const matchedAgentIds = new Set<string>();
+    const matchedAgentNames = new Set<string>();
+
+    for (const entry of bucket.agents.values()) {
+      for (const b of entry.brands) {
+        const existing = brandMap.get(b.id);
+        if (existing) {
+          if (!existing.matchedAgentNames.includes(entry.agentName)) {
+            existing.matchedAgentNames.push(entry.agentName);
+          }
+        } else {
+          brandMap.set(b.id, {
+            brandId: b.id,
+            name: b.name,
+            url: `${SITE_URL}/brand/${b.slug}`,
+            matchedAgentNames: [entry.agentName],
+          });
+        }
+      }
+      for (const l of entry.listings) {
+        const existing = listingMap.get(l.tokenId);
+        if (existing) {
+          if (!existing.matchedAgentNames.includes(entry.agentName)) {
+            existing.matchedAgentNames.push(entry.agentName);
+          }
+        } else {
+          listingMap.set(l.tokenId, {
+            title: l.title,
+            brandName: l.brandName,
+            url: `${SITE_URL}/rrg/drop/${l.tokenId}`,
+            priceUsdc: l.priceUsdc,
+            reason: l.reason,
+            matchedAgentNames: [entry.agentName],
+          });
+        }
+      }
+      if (entry.brands.length > 0 || entry.listings.length > 0) {
+        matchedAgentIds.add(entry.agentId);
+        matchedAgentNames.add(entry.agentName);
+      }
+    }
+
+    if (brandMap.size === 0 && listingMap.size === 0) continue;
+
+    // Per-owner 24h cap. We pull any daily_owner_digest row for any of
+    // this owner's matched agents and inspect the payload's owner_email.
+    // Cheaper than a JSON predicate scan, and gives us the audit trail
+    // when we insert the new row below.
+    const { data: priorDigests } = await db
+      .from('agent_notifications')
+      .select('id, payload, created_at')
+      .in('agent_id', Array.from(matchedAgentIds))
+      .eq('kind', 'daily_owner_digest')
+      .gte('created_at', cooldownSince);
+
+    const ownerKey = bucket.email.trim().toLowerCase();
+    const alreadySent = (priorDigests ?? []).some(r => {
+      const p = r.payload as { owner_email?: string } | null;
+      return p?.owner_email?.toLowerCase() === ownerKey;
+    });
+    if (alreadySent) {
+      result.owners_capped_today++;
+      continue;
+    }
+
+    const payload: DigestPayload = {
+      brands: Array.from(brandMap.values()).map(({ brandId: _drop, ...rest }) => rest),
+      listings: Array.from(listingMap.values()),
+    };
+
+    try {
+      await sendOwnerDailyDigest(bucket.email, payload);
+      result.emails_sent++;
+      result.owners_emailed++;
+
+      // Record the send under one of the matched agents so it shows up
+      // in tomorrow's cap query.
+      const auditAgentId = matchedAgentIds.values().next().value;
+      if (auditAgentId) {
+        await db.from('agent_notifications').insert({
+          agent_id: auditAgentId,
+          kind: 'daily_owner_digest',
+          title: 'Daily digest sent',
+          body: `Sent to ${bucket.email}: ${payload.brands.length} brands, ${payload.listings.length} listings.`,
+          payload: {
+            source: 'watcher',
+            owner_email: bucket.email,
+            agent_ids: Array.from(matchedAgentIds),
+            agent_names: Array.from(matchedAgentNames),
+            brand_ids: Array.from(brandMap.keys()),
+            listing_token_ids: Array.from(listingMap.keys()),
+            sent_at: new Date().toISOString(),
+          },
+        });
+      }
+    } catch (err) {
+      console.error('[watcher digest send]', err);
+    }
+  }
 }

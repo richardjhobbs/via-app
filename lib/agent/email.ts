@@ -5,7 +5,9 @@
 
 import { Resend } from 'resend';
 
-const FROM = process.env.FROM_EMAIL ?? 'drops@realrealgenuine.com';
+const FROM = process.env.FROM_EMAIL ?? 'fresh@realrealgenuine.com';
+const DIGEST_FROM = process.env.DIGEST_FROM_EMAIL ?? 'fresh@realrealgenuine.com';
+const SITE_URL = (process.env.NEXT_PUBLIC_SITE_URL ?? 'https://realrealgenuine.com').replace(/\/$/, '');
 
 function getResend() {
   return new Resend(process.env.RESEND_API_KEY ?? '');
@@ -15,20 +17,29 @@ interface EmailParams {
   to: string;
   subject: string;
   html: string;
+  fromOverride?: string;
 }
 
-async function send({ to, subject, html }: EmailParams) {
+async function send({ to, subject, html, fromOverride }: EmailParams) {
   if (!process.env.RESEND_API_KEY) {
     console.log(`[email-stub] To: ${to} | Subject: ${subject}`);
     return;
   }
 
   await getResend().emails.send({
-    from: `VIA Drops <${FROM}>`,
+    from: fromOverride ?? `VIA Drops <${FROM}>`,
     to,
     subject,
     html,
   });
+}
+
+function escHtml(str: string): string {
+  return str
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
 }
 
 // ── Notification templates ───────────────────────────────────────────
@@ -116,9 +127,8 @@ export async function sendBidLost(
 }
 
 /**
- * Sent by the watcher when a newly listed product genuinely fits the
- * owner's profile. One product per email. No bundles, no daily digest.
- * Only fires when the relevance bar in notification-watcher.ts says yes.
+ * @deprecated Replaced by sendOwnerDailyDigest. Retained for one release;
+ * remove in the next pass when no callers remain.
  */
 export async function sendNewListingMatch(
   email: string,
@@ -146,8 +156,7 @@ export async function sendNewListingMatch(
 }
 
 /**
- * Sent by the watcher when a brand newly active on RRG fits the owner's
- * profile. One brand per email. Triggered separately from listing alerts.
+ * @deprecated Replaced by sendOwnerDailyDigest. Retained for one release.
  */
 export async function sendNewBrandMatch(
   email: string,
@@ -165,6 +174,149 @@ export async function sendNewBrandMatch(
         <p style="color:#666; font-size:12px; margin-top:28px;">${agentName} only emails when a new brand genuinely fits your profile. Quiet days stay quiet.</p>
       </div>
     `,
+  });
+}
+
+// ── Owner daily digest ─────────────────────────────────────────────────
+
+export interface DigestBrand {
+  name: string;
+  url: string;
+  matchedAgentNames: string[];
+}
+
+export interface DigestListing {
+  title: string;
+  brandName: string | null;
+  url: string;
+  priceUsdc: number | null;
+  reason: string;
+  matchedAgentNames: string[];
+}
+
+export interface DigestPayload {
+  brands: DigestBrand[];
+  listings: DigestListing[];
+}
+
+function digestSubject(p: DigestPayload): string {
+  const b = p.brands.length;
+  const l = p.listings.length;
+  if (b === 1 && l === 0) return `${p.brands[0].name} just joined RRG`;
+  if (b === 0 && l === 1) return `One new listing on RRG for you`;
+  if (b === 1 && l > 0) return `${p.brands[0].name} just joined RRG, plus ${l} more`;
+  return `Today on RRG: ${b + l} new for you`;
+}
+
+function agentList(names: string[]): string {
+  if (names.length === 0) return '';
+  if (names.length === 1) return names[0];
+  if (names.length === 2) return `${names[0]} and ${names[1]}`;
+  return `${names.slice(0, -1).join(', ')}, and ${names[names.length - 1]}`;
+}
+
+function digestHtml(p: DigestPayload): string {
+  const brandsSection = p.brands.length === 0 ? '' : `
+      <p class="lbl">New brands</p>
+      <div class="block">
+        ${p.brands.map(b => `
+          <div class="row">
+            <h3 class="row-title">${escHtml(b.name)}</h3>
+            <p class="row-body">${escHtml(b.name)} has just joined RRG and has products you, or your agent ${escHtml(agentList(b.matchedAgentNames))}, may want to see.</p>
+            <a class="row-btn" href="${b.url}">Visit the brand &rarr;</a>
+          </div>
+        `).join('')}
+      </div>
+  `;
+
+  const listingsSection = p.listings.length === 0 ? '' : `
+      <p class="lbl">${p.brands.length > 0 ? 'Also for you' : 'For you'}</p>
+      <div class="block">
+        ${p.listings.map(l => {
+          const price = l.priceUsdc != null ? `<span class="price">$${l.priceUsdc.toFixed(2)} USDC</span>` : '';
+          const matched = l.matchedAgentNames.length > 1
+            ? `<span class="matched">Matched for ${escHtml(agentList(l.matchedAgentNames))}.</span>`
+            : '';
+          return `
+          <div class="row">
+            <h3 class="row-title">${l.brandName ? `${escHtml(l.brandName)} &middot; ` : ''}${escHtml(l.title)}</h3>
+            <p class="row-body">${escHtml(l.reason)}</p>
+            ${price ? `<p class="row-meta">${price}</p>` : ''}
+            ${matched ? `<p class="row-meta">${matched}</p>` : ''}
+            <a class="row-btn" href="${l.url}">View on RRG &rarr;</a>
+          </div>
+        `;
+        }).join('')}
+      </div>
+  `;
+
+  return `
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><style>
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', sans-serif; background: #faf7f2; color: #1a1612; margin: 0; padding: 40px 20px; }
+  .wrap { max-width: 580px; margin: 0 auto; }
+  .wordmark { font-family: Georgia, 'Times New Roman', serif; font-size: 18px; font-weight: 400; font-style: italic; letter-spacing: 0.01em; color: #1a1612; margin: 0 0 24px; }
+  .card { background: #ffffff; border: 1px solid #e8e3db; }
+  .card-head { padding: 28px 32px 24px; border-bottom: 1px solid #e8e3db; }
+  .eyebrow { font-family: 'Courier New', Courier, monospace; font-size: 10px; letter-spacing: 0.16em; text-transform: uppercase; color: #2b9a66; margin: 0 0 8px; }
+  h1 { margin: 0; font-family: Georgia, 'Times New Roman', serif; font-size: 26px; font-weight: 400; font-style: italic; color: #1a1612; letter-spacing: -0.01em; }
+  .body { padding: 28px 32px; }
+  .body > p.intro { margin: 0 0 24px; line-height: 1.6; color: #3a342d; font-size: 14px; }
+  .lbl { font-family: 'Courier New', Courier, monospace; font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; color: #6e665c; margin: 0 0 12px; }
+  .block { border: 1px solid #e8e3db; margin: 0 0 24px; }
+  .row { padding: 18px 20px; border-bottom: 1px solid #e8e3db; }
+  .row:last-child { border-bottom: none; }
+  .row-title { font-family: Georgia, 'Times New Roman', serif; font-size: 16px; font-style: italic; font-weight: 400; margin: 0 0 8px; color: #1a1612; }
+  .row-body { font-size: 14px; line-height: 1.6; color: #3a342d; margin: 0 0 8px; }
+  .row-meta { font-size: 12px; color: #6e665c; margin: 0 0 6px; }
+  .price { color: #6b4f3a; font-weight: 600; }
+  .matched { color: #6e665c; font-style: italic; }
+  .row-btn { display: inline-block; margin-top: 8px; font-family: 'Courier New', Courier, monospace; font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase; color: #6b4f3a; text-decoration: none; }
+  .footer-note { padding: 18px 32px; border-top: 1px solid #e8e3db; font-size: 12px; color: #6e665c; line-height: 1.6; }
+</style></head>
+<body>
+<div class="wrap">
+  <p class="wordmark">Real Real Genuine</p>
+  <div class="card">
+    <div class="card-head">
+      <p class="eyebrow">Today on RRG</p>
+      <h1>A summary of what arrived for you</h1>
+    </div>
+    <div class="body">
+      <p class="intro">Your concierge keeps watch. Here is what came in over the last day that fits.</p>
+      ${brandsSection}
+      ${listingsSection}
+    </div>
+    <div class="footer-note">RRG only emails you when something genuinely fits. At most one summary per day. Quiet days stay quiet.</div>
+  </div>
+  <table width="100%" cellpadding="0" cellspacing="0" style="margin-top:32px;padding-top:20px;border-top:1px solid #e8e3db;"><tbody><tr>
+    <td style="font-family:'Courier New',Courier,monospace;font-size:10px;letter-spacing:0.12em;text-transform:uppercase;color:#6e665c;">RRG / Real Real Genuine</td>
+    <td align="right" style="font-family:'Courier New',Courier,monospace;font-size:10px;letter-spacing:0.12em;text-transform:uppercase;color:#6e665c;text-align:right;"><a href="${SITE_URL}" style="color:#6e665c;text-decoration:none;">realrealgenuine.com</a></td>
+  </tr></tbody></table>
+</div>
+</body>
+</html>`;
+}
+
+/**
+ * Owner-level daily digest. Sent at most once per owner per 24h window
+ * (cap enforced by the caller in notification-watcher.ts).
+ *
+ * Bundles every brand-join and listing match the owner is eligible for
+ * across all the agents they own. Cream/serif RRG transactional design.
+ */
+export async function sendOwnerDailyDigest(
+  email: string,
+  payload: DigestPayload,
+): Promise<void> {
+  if (payload.brands.length === 0 && payload.listings.length === 0) return;
+
+  await send({
+    to: email,
+    subject: digestSubject(payload),
+    html: digestHtml(payload),
+    fromOverride: `Real Real Genuine <${DIGEST_FROM}>`,
   });
 }
 
