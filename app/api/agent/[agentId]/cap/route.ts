@@ -26,7 +26,21 @@ export async function GET(
   }
 
   const cap = await readWeeklyCapForUI(agentId);
-  return NextResponse.json({ cap });
+  const { data: row } = await db
+    .from('agent_agents')
+    .select('approval_tx_hash, approval_spender, approval_at, settled_total_usdc')
+    .eq('id', agentId)
+    .single();
+  const approval = row
+    ? {
+        granted: !!row.approval_at,
+        tx_hash: row.approval_tx_hash ?? null,
+        spender: row.approval_spender ?? null,
+        at: row.approval_at ?? null,
+        settled_total_usdc: Number(row.settled_total_usdc ?? 0),
+      }
+    : { granted: false, tx_hash: null, spender: null, at: null, settled_total_usdc: 0 };
+  return NextResponse.json({ cap, approval });
 }
 
 export async function POST(

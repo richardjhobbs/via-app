@@ -13,6 +13,7 @@ import { TopUpModal } from '@/components/agent/TopUpModal';
 import { LlmStatusCard } from '@/components/agent/LlmStatusCard';
 import { ChatPanel } from '@/components/agent/ChatPanel';
 import { UpgradeToConcierge } from '@/components/agent/UpgradeToConcierge';
+import { ApprovalModal } from '@/components/agent/ApprovalModal';
 import { TIER_DISPLAY } from '@/lib/agent/types';
 import { formatChatCost } from '@/lib/agent/credit-display';
 import { useActiveAccount } from 'thirdweb/react';
@@ -592,7 +593,9 @@ export default function DashboardPage() {
   const [agent, setAgent] = useState<Agent | null>(null);
   const [balance, setBalance] = useState<number | null>(null);
   const [cap, setCap] = useState<{ weeklyCap: number; weeklySpent: number; windowEndsAt: string; capHit: boolean } | null>(null);
+  const [approval, setApproval] = useState<{ granted: boolean; at: string | null } | null>(null);
   const [showCapModal, setShowCapModal] = useState(false);
+  const [showApprovalModal, setShowApprovalModal] = useState(false);
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
   const [showAvatarPicker, setShowAvatarPicker] = useState(false);
   const [showTopUp, setShowTopUp] = useState(false);
@@ -695,12 +698,13 @@ export default function DashboardPage() {
           }
         } catch {}
 
-        // Weekly cap state for the header pill / raise-cap modal.
+        // Weekly cap + approval state for the header pill and approval CTA.
         try {
           const capRes = await fetch(`/api/agent/${a.id}/cap`);
           if (capRes.ok) {
-            const { cap: capData } = await capRes.json();
+            const { cap: capData, approval: approvalData } = await capRes.json();
             if (capData) setCap(capData);
+            if (approvalData) setApproval({ granted: !!approvalData.granted, at: approvalData.at ?? null });
           }
         } catch {}
       }
@@ -972,6 +976,44 @@ export default function DashboardPage() {
           </div>
         </div>
 
+        {/* One-time LLM cost-recovery authorisation. Shows only on pro tier
+            and only when the owner has not yet signed the on-chain approve. */}
+        {agent.tier === 'pro' && approval && !approval.granted && (
+          <div
+            style={{
+              border: '1px solid color-mix(in srgb, #b5453a 35%, transparent)',
+              background: 'color-mix(in srgb, #b5453a 6%, transparent)',
+              padding: '14px 18px',
+              marginBottom: 24,
+              display: 'flex',
+              gap: 14,
+              alignItems: 'flex-start',
+              justifyContent: 'space-between',
+              flexWrap: 'wrap',
+            }}
+          >
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontFamily: 'var(--font-jetbrains), monospace', fontSize: 10, letterSpacing: '0.14em', textTransform: 'uppercase', color: '#b5453a', marginBottom: 4 }}>
+                Action required
+              </div>
+              <div style={{ fontSize: 14, color: 'var(--ink)', lineHeight: 1.5 }}>
+                Authorise LLM cost recovery so {agent.name} keeps running. One on-chain signature, capped at 1 USDC per week.
+              </div>
+            </div>
+            <button
+              onClick={() => setShowApprovalModal(true)}
+              style={{
+                background: 'var(--ink)', color: 'var(--bg)',
+                padding: '8px 14px', fontSize: 12, letterSpacing: '0.04em',
+                fontWeight: 500, border: 'none', cursor: 'pointer',
+                flexShrink: 0,
+              }}
+            >
+              Authorise
+            </button>
+          </div>
+        )}
+
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           {/* Upgrade CTA (Personal Shopper only) */}
           {agent.tier === 'basic' && (
@@ -1080,6 +1122,17 @@ export default function DashboardPage() {
             setAgent(prev => prev ? { ...prev, credit_balance_usdc: newBalance } : prev);
             setShowTopUp(false);
           }}
+        />
+      )}
+
+      {/* Approval modal (one-time USDC.approve for LLM cost recovery) */}
+      {showApprovalModal && agent && (
+        <ApprovalModal
+          agentId={agent.id}
+          agentName={agent.name}
+          agentWalletAddress={agent.wallet_address}
+          onClose={() => setShowApprovalModal(false)}
+          onApproved={() => setApproval({ granted: true, at: new Date().toISOString() })}
         />
       )}
 
