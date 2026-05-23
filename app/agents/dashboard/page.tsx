@@ -725,7 +725,13 @@ export default function DashboardPage() {
             />
           )}
 
-          {/* Persona */}
+          {/* Chat (Concierge only). Top of the dashboard, it's the
+              primary surface and what the owner is here for. */}
+          {agent.tier === 'pro' && (
+            <ChatPanel agent={agent} />
+          )}
+
+          {/* Persona, collapsed by default to keep the chat front-and-centre. */}
           <PersonaCard agent={agent} onSave={savePersona} />
 
           {/* Preferences */}
@@ -840,12 +846,6 @@ export default function DashboardPage() {
               onProviderChange={(provider) => setAgent(prev => prev ? { ...prev, llm_provider: provider } : prev)}
               onTopUp={() => setShowTopUp(true)}
             />
-          )}
-
-          {/* Chat (Concierge only). Sits directly under the configuration
-              cards because it's the primary surface. */}
-          {agent.tier === 'pro' && (
-            <ChatPanel agent={agent} />
           )}
 
           {/* Notifications (Concierge only). Async messages from the

@@ -24,6 +24,7 @@ interface PersonaForm {
 export function PersonaCard({ agent, onSave }: Props) {
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [expanded, setExpanded] = useState(false);
   const [form, setForm] = useState<PersonaForm>({
     persona_bio: '',
     persona_voice: '',
@@ -60,42 +61,64 @@ export function PersonaCard({ agent, onSave }: Props) {
 
   const hasPersona = agent.persona_bio || agent.persona_voice || agent.persona_comm_style || (agent.interest_categories?.length > 0);
 
-  // Check if the current voice/comm_style matches a preset
-  const voiceIsPreset = VOICE_PRESETS.some(p => p.value === agent.persona_voice);
-  const commIsPreset = COMM_STYLE_PRESETS.some(p => p.value === agent.persona_comm_style);
-
   // Determine select value for form
   const formVoicePreset = VOICE_PRESETS.some(p => p.value === form.persona_voice) ? form.persona_voice : 'custom';
   const formCommPreset = COMM_STYLE_PRESETS.some(p => p.value === form.persona_comm_style) ? form.persona_comm_style : 'custom';
 
+  // One-line summary for the collapsed state. Mirrors the pattern Activity
+  // and "What I know about you" use on the dashboard.
+  let summary = `Shape how your ${tierLabel} thinks, communicates, and understands you.`;
+  if (hasPersona) {
+    const bits: string[] = [];
+    if (agent.persona_voice) bits.push(`voice: ${agent.persona_voice.replace(/-/g, ' ')}`);
+    if (agent.persona_comm_style) bits.push(`style: ${agent.persona_comm_style.replace(/-/g, ' ')}`);
+    const interestCount = agent.interest_categories?.length ?? 0;
+    if (interestCount > 0) bits.push(`${interestCount} interest ${interestCount === 1 ? 'group' : 'groups'}`);
+    if (agent.persona_bio) bits.push('bio set');
+    if (bits.length > 0) summary = bits.join(' · ');
+  } else {
+    summary = `Not configured. Give your ${tierLabel} a personality and voice.`;
+  }
+
+  const linkButton: React.CSSProperties = {
+    background: 'transparent', border: 'none', cursor: 'pointer',
+    fontFamily: 'var(--font-jetbrains), monospace',
+    fontSize: 10, letterSpacing: '0.14em', textTransform: 'uppercase',
+    color: 'var(--accent)', padding: 0,
+    borderBottom: '1px solid color-mix(in srgb, var(--accent) 35%, transparent)',
+    whiteSpace: 'nowrap',
+  };
+
   return (
     <Card className="md:col-span-2">
-      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 16, gap: 16 }}>
-        <div>
-          <h2 style={{ fontFamily: 'var(--font-fraunces), serif', fontSize: 22, fontWeight: 400, letterSpacing: '-0.01em', margin: '0 0 4px' }}>
+      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16 }}>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <h2 style={{ fontFamily: 'var(--font-fraunces), serif', fontSize: 22, fontWeight: 400, letterSpacing: '-0.01em', margin: 0 }}>
             Persona
           </h2>
-          <p style={{ fontSize: 12, color: 'var(--ink-3)', lineHeight: 1.5, margin: 0 }}>
-            Shape how your {tierLabel} thinks, communicates, and understands you.
+          <p style={{ fontSize: 12, color: 'var(--ink-3)', lineHeight: 1.5, margin: '4px 0 0' }}>
+            {summary}
           </p>
         </div>
-        {!editing && (
-          <button
-            onClick={startEdit}
-            style={{
-              background: 'transparent', border: 'none', cursor: 'pointer',
-              fontFamily: 'var(--font-jetbrains), monospace',
-              fontSize: 10, letterSpacing: '0.14em', textTransform: 'uppercase',
-              color: 'var(--accent)', padding: 0,
-              borderBottom: '1px solid color-mix(in srgb, var(--accent) 35%, transparent)',
-            }}
-          >
-            {hasPersona ? 'Edit' : 'Set up'}
-          </button>
-        )}
+        <div style={{ display: 'flex', gap: 14, alignItems: 'center', flexShrink: 0 }}>
+          {expanded && !editing && (
+            <button onClick={startEdit} style={linkButton}>
+              {hasPersona ? 'Edit' : 'Set up'}
+            </button>
+          )}
+          {!editing && (
+            <button
+              onClick={() => setExpanded(v => !v)}
+              aria-expanded={expanded}
+              style={linkButton}
+            >
+              {expanded ? 'Collapse' : 'Expand'}
+            </button>
+          )}
+        </div>
       </div>
 
-      {editing ? (
+      {!expanded ? null : editing ? (
         <div className="space-y-4">
           <Textarea
             label="Bio"
