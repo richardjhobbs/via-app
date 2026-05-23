@@ -307,6 +307,61 @@ function snippetFor(text: string, maxLen = 110): string {
   return clean.slice(0, maxLen - 1).replace(/\s+\S*$/, '') + '…';
 }
 
+/**
+ * LLM relevance gate for listing emails anchored to a past chat message.
+ * Token overlap is too permissive (e.g. "Any white knitted shirts for men"
+ * matches a black hoodie because "white" appears in "white ink print").
+ * Before we add a listing to the digest, we ask DeepSeek a tight yes/no:
+ * does this product DIRECTLY answer the user's stated request?
+ *
+ * Returns true if relevant (proceed) or if the LLM is unavailable / errors.
+ * Fail-open is intentional: a missing key or a flaky call should not silence
+ * the watcher; the token gate is still the first line of defence.
+ */
+async function llmListingMatchesRequest(
+  userMessage: string,
+  listingTitle: string,
+  brandName: string | null,
+): Promise<{ matches: boolean; reason: string }> {
+  if (!process.env.DEEPSEEK_API_KEY) {
+    return { matches: true, reason: 'llm-skipped (no key)' };
+  }
+  try {
+    const OpenAI = (await import('openai')).default;
+    const client = new OpenAI({
+      apiKey: process.env.DEEPSEEK_API_KEY,
+      baseURL: 'https://api.deepseek.com',
+    });
+
+    const product = brandName ? `${brandName} - ${listingTitle}` : listingTitle;
+    const system =
+      'You decide whether a single product directly answers a user\'s past request. ' +
+      'Be strict. The product must satisfy ALL specifics the user stated: colour, ' +
+      'gender, category (shirt vs hoodie vs trainers), material, and any other ' +
+      'qualifier. A black hoodie does NOT answer "white shirts". Off-white trainers ' +
+      'do NOT answer "white shirts". Reply with exactly YES or NO on the first line, ' +
+      'then one short sentence of reason.';
+    const user = `User asked: "${userMessage}"\nProduct: ${product}\n\nDoes the product directly answer the request?`;
+
+    const response = await client.chat.completions.create({
+      model: 'deepseek-chat',
+      max_tokens: 60,
+      temperature: 0,
+      messages: [
+        { role: 'system', content: system },
+        { role: 'user', content: user },
+      ],
+    });
+    const text = (response.choices[0]?.message?.content ?? '').trim();
+    const firstLine = text.split(/\r?\n/)[0]?.trim().toUpperCase() ?? '';
+    const matches = firstLine.startsWith('YES');
+    return { matches, reason: text.slice(0, 200) };
+  } catch (err) {
+    console.error('[watcher llm gate]', err);
+    return { matches: true, reason: 'llm-error (fail open)' };
+  }
+}
+
 function formatDate(iso: string): string {
   const d = new Date(iso);
   return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
@@ -643,6 +698,20 @@ export async function runDropMatchScan(opts: ScanOpts = {}): Promise<ScanResult>
       // listings. Per user spec, product alerts require a concrete
       // anchor (past chat / explicit watch term / loved brand).
       if (!isLovedBrand && !anchor) continue;
+
+      // LLM relevance gate for past-chat anchors. Token overlap matches
+      // "white shirt" against a black hoodie if "white" appears anywhere
+      // in the listing copy. A small DeepSeek yes/no per candidate kills
+      // that class of false positive. Skip for watch_term (LLM-explicit
+      // already) and loved_brand (user chose the brand themselves).
+      if (anchor && !anchor.fromWatchTerm && !isLovedBrand) {
+        const verdict = await llmListingMatchesRequest(
+          anchor.snippet,
+          d.title,
+          d.brand_name,
+        );
+        if (!verdict.matches) continue;
+      }
 
       const titleQuoted = `"${d.title}"`;
       const reason = composeReason({
