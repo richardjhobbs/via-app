@@ -157,7 +157,25 @@ body {
   height: 7px;
   border-radius: 50%;
   background: #2b9a66;
-  box-shadow: 0 0 0 2px color-mix(in srgb, #2b9a66 30%, transparent);
+  animation: nav-unread-pulse 1.6s ease-in-out infinite;
+}
+
+@keyframes nav-unread-pulse {
+  0%, 100% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, #2b9a66 55%, transparent);
+    transform: scale(1);
+  }
+  50% {
+    box-shadow: 0 0 0 6px color-mix(in srgb, #2b9a66 0%, transparent);
+    transform: scale(1.15);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .nav-unread-dot {
+    animation: none;
+    box-shadow: 0 0 0 2px color-mix(in srgb, #2b9a66 30%, transparent);
+  }
 }
 
 .topbar-burger {
