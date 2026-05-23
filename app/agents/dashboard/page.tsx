@@ -85,7 +85,11 @@ function MemoryPanel({ memories }: { memories: MemoryRow[] }) {
   );
 }
 
+const MEMORY_PREVIEW_CHARS = 200;
+
 function MemorySection({ title, rows }: { title: string; rows: MemoryRow[] }) {
+  const [showAll, setShowAll] = useState(false);
+
   // Group by type so brands/sizes/style each get a clean sub-block.
   const byType = new Map<string, MemoryRow[]>();
   for (const r of rows) {
@@ -94,21 +98,59 @@ function MemorySection({ title, rows }: { title: string; rows: MemoryRow[] }) {
     byType.set(r.type, arr);
   }
   const orderedTypes = ['brand', 'size', 'style', 'preference', 'consolidated', 'general'];
+
+  // Compose a single linearised preview of the section (stripping the
+  // signup-suffix) so we can cap by character count consistently.
+  const linear = orderedTypes
+    .filter(t => byType.has(t))
+    .flatMap(t => byType.get(t)!.map(m => m.content.replace(/\s*\(set at signup\)\s*$/, '')))
+    .join(' · ');
+  const truncated = !showAll && linear.length > MEMORY_PREVIEW_CHARS;
+
+  const linkButton: React.CSSProperties = {
+    background: 'transparent', border: 'none', cursor: 'pointer',
+    fontFamily: 'var(--font-jetbrains), monospace',
+    fontSize: 10, letterSpacing: '0.14em', textTransform: 'uppercase',
+    color: 'var(--accent)', padding: 0,
+    borderBottom: '1px solid color-mix(in srgb, var(--accent) 35%, transparent)',
+    whiteSpace: 'nowrap',
+  };
+
   return (
     <div>
       <div className="text-xs uppercase tracking-widest text-white/40 mb-2">{title}</div>
-      <div className="space-y-3">
-        {orderedTypes.filter(t => byType.has(t)).map(t => (
-          <div key={t}>
-            <div className="text-xs text-white/40 mb-1">{MEMORY_TYPE_LABELS[t] ?? t}</div>
-            <ul className="text-sm text-white/80 space-y-1">
-              {byType.get(t)!.map(m => (
-                <li key={m.id}>{m.content.replace(/\s*\(set at signup\)\s*$/, '')}</li>
-              ))}
-            </ul>
+      {truncated ? (
+        <div>
+          <p className="text-sm text-white/80" style={{ margin: 0 }}>
+            {linear.slice(0, MEMORY_PREVIEW_CHARS).replace(/\s+\S*$/, '')}…
+          </p>
+          <div style={{ marginTop: 8 }}>
+            <button onClick={() => setShowAll(true)} style={linkButton}>
+              Show all {linear.length} chars
+            </button>
           </div>
-        ))}
-      </div>
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {orderedTypes.filter(t => byType.has(t)).map(t => (
+            <div key={t}>
+              <div className="text-xs text-white/40 mb-1">{MEMORY_TYPE_LABELS[t] ?? t}</div>
+              <ul className="text-sm text-white/80 space-y-1">
+                {byType.get(t)!.map(m => (
+                  <li key={m.id}>{m.content.replace(/\s*\(set at signup\)\s*$/, '')}</li>
+                ))}
+              </ul>
+            </div>
+          ))}
+          {showAll && linear.length > MEMORY_PREVIEW_CHARS && (
+            <div>
+              <button onClick={() => setShowAll(false)} style={linkButton}>
+                Show preview
+              </button>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -190,6 +232,115 @@ function CollapsibleCard({
       </div>
       {expanded && <div style={{ marginTop: 16 }}>{children}</div>}
     </Card>
+  );
+}
+
+const NOTIFICATIONS_PREVIEW_CAP = 5;
+const ACTIVITY_PREVIEW_CAP = 5;
+
+function ActivityList({ activity }: { activity: ActivityLogEntry[] }) {
+  const [showAll, setShowAll] = useState(false);
+  const visible = showAll ? activity : activity.slice(0, ACTIVITY_PREVIEW_CAP);
+  const linkButton: React.CSSProperties = {
+    background: 'transparent', border: 'none', cursor: 'pointer',
+    fontFamily: 'var(--font-jetbrains), monospace',
+    fontSize: 10, letterSpacing: '0.14em', textTransform: 'uppercase',
+    color: 'var(--accent)', padding: 0,
+    borderBottom: '1px solid color-mix(in srgb, var(--accent) 35%, transparent)',
+    whiteSpace: 'nowrap',
+  };
+  return (
+    <div className="space-y-2">
+      {visible.map((entry) => {
+        const label = ACTIVITY_LABELS[entry.action] ?? entry.action.replace(/_/g, ' ');
+        const detail = renderActivityDetail(entry);
+        return (
+          <div key={entry.id} className="flex items-start justify-between text-sm py-2 border-b border-white/5 last:border-0 gap-4">
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-2">
+                <span className="text-white/80">{label}</span>
+                {entry.tx_hash && (
+                  <a href={`https://basescan.org/tx/${entry.tx_hash}`} target="_blank" rel="noopener noreferrer"
+                     className="text-xs text-green-700 hover:underline">tx</a>
+                )}
+              </div>
+              {detail && (
+                <div className="text-xs text-white/40 mt-0.5 truncate">{detail}</div>
+              )}
+            </div>
+            <span className="text-xs text-white/30 shrink-0">
+              {new Date(entry.created_at).toLocaleString()}
+            </span>
+          </div>
+        );
+      })}
+      {activity.length > ACTIVITY_PREVIEW_CAP && (
+        <div style={{ paddingTop: 6 }}>
+          <button onClick={() => setShowAll(v => !v)} style={linkButton}>
+            {showAll
+              ? `Show last ${ACTIVITY_PREVIEW_CAP}`
+              : `View all ${activity.length}`}
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function NotificationsList({
+  notifications,
+  onMarkRead,
+  linkButton,
+}: {
+  notifications: NotificationRow[];
+  onMarkRead: (id: string) => void;
+  linkButton: React.CSSProperties;
+}) {
+  const [showAll, setShowAll] = useState(false);
+  const visible = showAll ? notifications : notifications.slice(0, NOTIFICATIONS_PREVIEW_CAP);
+  const hidden = notifications.length - visible.length;
+  return (
+    <div id="notifications-list" className="space-y-2" style={{ marginTop: 16 }}>
+      {visible.map((n) => {
+        const unread = !n.read_at;
+        return (
+          <div
+            key={n.id}
+            className={`p-3 rounded border ${unread ? 'border-green-500/30 bg-green-500/5' : 'border-white/5 bg-transparent'}`}
+          >
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-2 mb-1">
+                  {unread && <span className="w-1.5 h-1.5 rounded-full bg-green-600 shrink-0" />}
+                  <span className="text-sm font-medium text-white/90">{n.title}</span>
+                </div>
+                <div className="text-xs text-white/60 whitespace-pre-wrap">{n.body}</div>
+              </div>
+              <div className="flex flex-col items-end gap-1 shrink-0">
+                <span className="text-xs text-white/30">{new Date(n.created_at).toLocaleString()}</span>
+                {unread && (
+                  <button
+                    onClick={() => onMarkRead(n.id)}
+                    className="text-xs text-green-700 hover:text-green-800 transition-colors cursor-pointer"
+                  >
+                    Mark read
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+        );
+      })}
+      {(hidden > 0 || showAll) && notifications.length > NOTIFICATIONS_PREVIEW_CAP && (
+        <div style={{ paddingTop: 6 }}>
+          <button onClick={() => setShowAll(v => !v)} style={linkButton}>
+            {showAll
+              ? `Show last ${NOTIFICATIONS_PREVIEW_CAP}`
+              : `View all ${notifications.length}`}
+          </button>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -282,38 +433,11 @@ function NotificationsCard({
       </div>
 
       {expanded && (
-        <div id="notifications-list" className="space-y-2" style={{ marginTop: 16 }}>
-          {notifications.map((n) => {
-            const unread = !n.read_at;
-            return (
-              <div
-                key={n.id}
-                className={`p-3 rounded border ${unread ? 'border-green-500/30 bg-green-500/5' : 'border-white/5 bg-transparent'}`}
-              >
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2 mb-1">
-                      {unread && <span className="w-1.5 h-1.5 rounded-full bg-green-600 shrink-0" />}
-                      <span className="text-sm font-medium text-white/90">{n.title}</span>
-                    </div>
-                    <div className="text-xs text-white/60 whitespace-pre-wrap">{n.body}</div>
-                  </div>
-                  <div className="flex flex-col items-end gap-1 shrink-0">
-                    <span className="text-xs text-white/30">{new Date(n.created_at).toLocaleString()}</span>
-                    {unread && (
-                      <button
-                        onClick={() => onMarkRead(n.id)}
-                        className="text-xs text-green-700 hover:text-green-800 transition-colors cursor-pointer"
-                      >
-                        Mark read
-                      </button>
-                    )}
-                  </div>
-                </div>
-              </div>
-            );
-          })}
-        </div>
+        <NotificationsList
+          notifications={notifications}
+          onMarkRead={onMarkRead}
+          linkButton={linkButton}
+        />
       )}
     </Card>
   );
@@ -631,7 +755,16 @@ export default function DashboardPage() {
               title="Change avatar"
             >
               {avatarUrl ? (
-                <img src={avatarUrl} alt={agent.name} className="w-full h-full object-cover" />
+                // Always render via the same-origin proxy route. The
+                // signed Supabase URL is blocked on UK VPN exits and
+                // sometimes by mobile DNS/ad-blockers; the proxy serves
+                // the bytes from realrealgenuine.com. See
+                // feedback_vpn_blocks_supabase.md.
+                <img
+                  src={`/api/agent/${agent.id}/avatar/image`}
+                  alt={agent.name}
+                  className="w-full h-full object-cover"
+                />
               ) : (
                 agent.name.charAt(0).toUpperCase()
               )}
@@ -784,31 +917,7 @@ export default function DashboardPage() {
             {activity.length === 0 ? (
               <p className="text-sm text-white/40">No activity yet.</p>
             ) : (
-              <div className="space-y-2">
-                {activity.map((entry) => {
-                  const label = ACTIVITY_LABELS[entry.action] ?? entry.action.replace(/_/g, ' ');
-                  const detail = renderActivityDetail(entry);
-                  return (
-                    <div key={entry.id} className="flex items-start justify-between text-sm py-2 border-b border-white/5 last:border-0 gap-4">
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-2">
-                          <span className="text-white/80">{label}</span>
-                          {entry.tx_hash && (
-                            <a href={`https://basescan.org/tx/${entry.tx_hash}`} target="_blank" rel="noopener noreferrer"
-                               className="text-xs text-green-700 hover:underline">tx</a>
-                          )}
-                        </div>
-                        {detail && (
-                          <div className="text-xs text-white/40 mt-0.5 truncate">{detail}</div>
-                        )}
-                      </div>
-                      <span className="text-xs text-white/30 shrink-0">
-                        {new Date(entry.created_at).toLocaleString()}
-                      </span>
-                    </div>
-                  );
-                })}
-              </div>
+              <ActivityList activity={activity} />
             )}
           </CollapsibleCard>
         </div>
