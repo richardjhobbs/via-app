@@ -37,9 +37,32 @@ export default function RRGHeader({ active, showMarquee = true }: { active?: Nav
 
   const [items, setItems] = useState<string[]>(FALLBACK_MARQUEE_ITEMS);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [unreadCount, setUnreadCount] = useState(0);
 
   useEffect(() => {
     setMenuOpen(false);
+  }, [pathname]);
+
+  // Poll for unread notification count to drive the Concierge nav dot.
+  // 401 / 0 / network failure all silently render no badge.
+  useEffect(() => {
+    let cancelled = false;
+    const fetchCount = async () => {
+      try {
+        const r = await fetch('/api/agent/session/unread-count', { cache: 'no-store' });
+        if (!r.ok) return;
+        const data = (await r.json()) as { count?: number };
+        if (!cancelled) setUnreadCount(typeof data.count === 'number' ? data.count : 0);
+      } catch {
+        // silent: keep last known count
+      }
+    };
+    fetchCount();
+    const id = setInterval(fetchCount, 60_000);
+    return () => {
+      cancelled = true;
+      clearInterval(id);
+    };
   }, [pathname]);
 
   useEffect(() => {
@@ -93,7 +116,21 @@ export default function RRGHeader({ active, showMarquee = true }: { active?: Nav
           <nav className="topbar-nav">
             <Link href="/rrg" className={current === 'store' ? 'is-active' : ''}>Store</Link>
             <Link href="/brand" className={current === 'brands' ? 'is-active' : ''}>Brands</Link>
-            <Link href="/agents" className={current === 'concierge' ? 'is-active' : ''}>Concierge</Link>
+            <Link
+              href="/agents"
+              className={current === 'concierge' ? 'is-active' : ''}
+              style={{ position: 'relative', display: 'inline-flex', alignItems: 'center', gap: 6 }}
+              aria-label={unreadCount > 0 ? `Concierge, ${unreadCount} unread` : 'Concierge'}
+            >
+              Concierge
+              {unreadCount > 0 && (
+                <span
+                  className="nav-unread-dot"
+                  aria-hidden="true"
+                  title={`${unreadCount} unread`}
+                />
+              )}
+            </Link>
             <Link href="/cocreators" className={current === 'cocreators' ? 'is-active' : ''}>Co-creators</Link>
           </nav>
 
@@ -129,7 +166,17 @@ export default function RRGHeader({ active, showMarquee = true }: { active?: Nav
           <NavSearch variant="mobile" />
           <Link href="/rrg" className={current === 'store' ? 'is-active' : ''}>Store</Link>
           <Link href="/brand" className={current === 'brands' ? 'is-active' : ''}>Brands</Link>
-          <Link href="/agents" className={current === 'concierge' ? 'is-active' : ''}>Concierge</Link>
+          <Link
+            href="/agents"
+            className={current === 'concierge' ? 'is-active' : ''}
+            style={{ position: 'relative', display: 'inline-flex', alignItems: 'center', gap: 6 }}
+            aria-label={unreadCount > 0 ? `Concierge, ${unreadCount} unread` : 'Concierge'}
+          >
+            Concierge
+            {unreadCount > 0 && (
+              <span className="nav-unread-dot" aria-hidden="true" title={`${unreadCount} unread`} />
+            )}
+          </Link>
           <Link href="/cocreators" className={current === 'cocreators' ? 'is-active' : ''}>Co-creators</Link>
         </div>
       </header>

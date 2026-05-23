@@ -150,6 +150,16 @@ body {
 .topbar-nav a:hover, .topbar-nav a.is-active { color: var(--ink); }
 .topbar-right { display: flex; gap: 18px; justify-content: flex-end; align-items: center; font-size: 13px; color: var(--ink-2); }
 
+/* Unread indicator on the Concierge nav link (and mirrored mobile menu link). */
+.nav-unread-dot {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #2b9a66;
+  box-shadow: 0 0 0 2px color-mix(in srgb, #2b9a66 30%, transparent);
+}
+
 .topbar-burger {
   display: none;
   background: transparent;
