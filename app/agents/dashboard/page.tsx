@@ -30,6 +30,16 @@ interface MemoryRow {
   source_session_id: string | null;
 }
 
+interface NotificationRow {
+  id: string;
+  created_at: string;
+  kind: 'match_found' | 'chat_followup' | 'system' | string;
+  title: string;
+  body: string;
+  payload: Record<string, unknown> | null;
+  read_at: string | null;
+}
+
 // Human-readable labels for activity log actions. Anything not in the
 // map falls back to the action name with underscores replaced.
 const ACTIVITY_LABELS: Record<string, string> = {
@@ -107,6 +117,189 @@ function MemorySection({ title, rows }: { title: string; rows: MemoryRow[] }) {
   );
 }
 
+function SectionHeading({ children, sub }: { children: React.ReactNode; sub?: string }) {
+  return (
+    <div>
+      <h2
+        style={{
+          fontFamily: 'var(--font-fraunces), serif',
+          fontSize: 22,
+          fontWeight: 400,
+          letterSpacing: '-0.01em',
+          margin: 0,
+        }}
+      >
+        {children}
+      </h2>
+      {sub && (
+        <p style={{ fontSize: 12, color: 'var(--ink-3)', lineHeight: 1.5, margin: '4px 0 0' }}>
+          {sub}
+        </p>
+      )}
+    </div>
+  );
+}
+
+function CollapsibleCard({
+  title,
+  summary,
+  expanded,
+  onToggle,
+  children,
+}: {
+  title: string;
+  summary: string;
+  expanded: boolean;
+  onToggle: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <Card className="md:col-span-2">
+      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16 }}>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <h2
+            style={{
+              fontFamily: 'var(--font-fraunces), serif',
+              fontSize: 22,
+              fontWeight: 400,
+              letterSpacing: '-0.01em',
+              margin: 0,
+            }}
+          >
+            {title}
+          </h2>
+          <p style={{ fontSize: 12, color: 'var(--ink-3)', lineHeight: 1.5, margin: '4px 0 0' }}>
+            {summary}
+          </p>
+        </div>
+        <button
+          onClick={onToggle}
+          aria-expanded={expanded}
+          style={{
+            background: 'transparent',
+            border: 'none',
+            cursor: 'pointer',
+            fontFamily: 'var(--font-jetbrains), monospace',
+            fontSize: 10,
+            letterSpacing: '0.14em',
+            textTransform: 'uppercase',
+            color: 'var(--accent)',
+            padding: 0,
+            borderBottom: '1px solid color-mix(in srgb, var(--accent) 35%, transparent)',
+            whiteSpace: 'nowrap',
+          }}
+        >
+          {expanded ? 'Collapse' : 'Expand'}
+        </button>
+      </div>
+      {expanded && <div style={{ marginTop: 16 }}>{children}</div>}
+    </Card>
+  );
+}
+
+function NotificationsCard({
+  notifications,
+  unreadCount,
+  onMarkRead,
+  onMarkAllRead,
+}: {
+  notifications: NotificationRow[];
+  unreadCount: number;
+  onMarkRead: (id: string) => void;
+  onMarkAllRead: () => void;
+}) {
+  if (notifications.length === 0) {
+    return (
+      <Card className="md:col-span-2">
+        <SectionHeading sub="Async messages from your concierge and the catalogue watcher.">
+          Notifications
+        </SectionHeading>
+        <p className="text-sm text-white/40" style={{ marginTop: 16 }}>
+          Nothing yet. Ask your concierge to message you when something appears, or wait for the catalogue watcher to flag a match.
+        </p>
+      </Card>
+    );
+  }
+
+  return (
+    <Card className="md:col-span-2">
+      <div className="flex items-start justify-between mb-4 gap-4">
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div className="flex items-center gap-3">
+            <h2
+              style={{
+                fontFamily: 'var(--font-fraunces), serif',
+                fontSize: 22,
+                fontWeight: 400,
+                letterSpacing: '-0.01em',
+                margin: 0,
+              }}
+            >
+              Notifications
+            </h2>
+            {unreadCount > 0 && (
+              <span className="inline-flex items-center gap-1.5 px-2 py-0.5 text-xs font-mono bg-green-500/10 text-green-700 border border-green-500/30 rounded">
+                <span className="w-1.5 h-1.5 rounded-full bg-green-600 animate-pulse" />
+                {unreadCount} unread
+              </span>
+            )}
+          </div>
+          <p style={{ fontSize: 12, color: 'var(--ink-3)', lineHeight: 1.5, margin: '4px 0 0' }}>
+            Async messages from your concierge and the catalogue watcher.
+          </p>
+        </div>
+        {unreadCount > 0 && (
+          <button
+            onClick={onMarkAllRead}
+            style={{
+              background: 'transparent', border: 'none', cursor: 'pointer',
+              fontFamily: 'var(--font-jetbrains), monospace',
+              fontSize: 10, letterSpacing: '0.14em', textTransform: 'uppercase',
+              color: 'var(--accent)', padding: 0,
+              borderBottom: '1px solid color-mix(in srgb, var(--accent) 35%, transparent)',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            Mark all read
+          </button>
+        )}
+      </div>
+      <div className="space-y-2">
+        {notifications.map((n) => {
+          const unread = !n.read_at;
+          return (
+            <div
+              key={n.id}
+              className={`p-3 rounded border ${unread ? 'border-green-500/30 bg-green-500/5' : 'border-white/5 bg-transparent'}`}
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2 mb-1">
+                    {unread && <span className="w-1.5 h-1.5 rounded-full bg-green-600 shrink-0" />}
+                    <span className="text-sm font-medium text-white/90">{n.title}</span>
+                  </div>
+                  <div className="text-xs text-white/60 whitespace-pre-wrap">{n.body}</div>
+                </div>
+                <div className="flex flex-col items-end gap-1 shrink-0">
+                  <span className="text-xs text-white/30">{new Date(n.created_at).toLocaleString()}</span>
+                  {unread && (
+                    <button
+                      onClick={() => onMarkRead(n.id)}
+                      className="text-xs text-green-700 hover:text-green-800 transition-colors cursor-pointer"
+                    >
+                      Mark read
+                    </button>
+                  )}
+                </div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </Card>
+  );
+}
+
 function renderActivityDetail(entry: ActivityLogEntry): string | null {
   const d = entry.details ?? {};
   if (entry.action === 'chat_completed') {
@@ -136,7 +329,11 @@ export default function DashboardPage() {
   const [showTopUp, setShowTopUp] = useState(false);
   const [activity, setActivity] = useState<ActivityLogEntry[]>([]);
   const [memories, setMemories] = useState<MemoryRow[]>([]);
+  const [notifications, setNotifications] = useState<NotificationRow[]>([]);
+  const [unreadCount, setUnreadCount] = useState(0);
   const [recommendations, setRecommendations] = useState<AgentEvaluation[]>([]);
+  const [knowExpanded, setKnowExpanded] = useState(false);
+  const [activityExpanded, setActivityExpanded] = useState(false);
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -245,6 +442,13 @@ export default function DashboardPage() {
       const memRes = await fetch(`/api/agent/${a.id}/memory`);
       if (memRes.ok) { const { memories: mems } = await memRes.json(); setMemories(mems ?? []); }
 
+      const notifRes = await fetch(`/api/agent/${a.id}/notifications`);
+      if (notifRes.ok) {
+        const { notifications: notifs, unread_count } = await notifRes.json();
+        setNotifications(notifs ?? []);
+        setUnreadCount(Number(unread_count ?? 0));
+      }
+
       // Resolve avatar URL via the resolve endpoint, which mints a fresh
       // signed URL for uploaded/generated avatars and looks up the bundled
       // asset for presets. Without this, uploaded avatars show as initials
@@ -299,6 +503,48 @@ export default function DashboardPage() {
         setEditing(false);
       }
     } catch {} finally { setSaving(false); }
+  }
+
+  async function markNotificationRead(notifId: string) {
+    if (!agent) return;
+    const prev = notifications;
+    const next = prev.map(n => n.id === notifId ? { ...n, read_at: new Date().toISOString() } : n);
+    setNotifications(next);
+    setUnreadCount(c => Math.max(0, c - 1));
+    try {
+      const res = await fetch(`/api/agent/${agent.id}/notifications/${notifId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ read: true }),
+      });
+      if (!res.ok) {
+        setNotifications(prev);
+        setUnreadCount(prev.filter(n => !n.read_at).length);
+      }
+    } catch {
+      setNotifications(prev);
+      setUnreadCount(prev.filter(n => !n.read_at).length);
+    }
+  }
+
+  async function markAllNotificationsRead() {
+    if (!agent) return;
+    const prev = notifications;
+    const now = new Date().toISOString();
+    setNotifications(prev.map(n => n.read_at ? n : { ...n, read_at: now }));
+    setUnreadCount(0);
+    try {
+      const res = await fetch(`/api/agent/${agent.id}/notifications/mark-all-read`, {
+        method: 'POST',
+      });
+      if (!res.ok) {
+        setNotifications(prev);
+        setUnreadCount(prev.filter(n => !n.read_at).length);
+      }
+    } catch {
+      setNotifications(prev);
+      setUnreadCount(prev.filter(n => !n.read_at).length);
+    }
   }
 
   async function savePersona(updates: Partial<Agent>) {
@@ -441,6 +687,15 @@ export default function DashboardPage() {
                     VIA pending
                   </span>
                 )}
+                {unreadCount > 0 && (
+                  <span
+                    className="inline-flex items-center gap-1.5 px-2 py-0.5 text-xs font-mono bg-green-500/10 text-green-700 border border-green-500/30 rounded"
+                    title={`${unreadCount} unread notification${unreadCount === 1 ? '' : 's'}`}
+                  >
+                    <span className="w-1.5 h-1.5 rounded-full bg-green-600 animate-pulse" />
+                    {unreadCount} new
+                  </span>
+                )}
               </div>
               <p className="text-sm text-white/40 font-mono">{agent.wallet_address}</p>
             </div>
@@ -475,12 +730,19 @@ export default function DashboardPage() {
 
           {/* Preferences */}
           <Card>
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-base font-semibold">Preferences</h2>
+            <div className="flex items-start justify-between mb-4 gap-4">
+              <SectionHeading>Preferences</SectionHeading>
               {!editing && (
                 <button
                   onClick={startEdit}
-                  className="text-xs text-green-700 hover:text-green-800 transition-colors cursor-pointer"
+                  style={{
+                    background: 'transparent', border: 'none', cursor: 'pointer',
+                    fontFamily: 'var(--font-jetbrains), monospace',
+                    fontSize: 10, letterSpacing: '0.14em', textTransform: 'uppercase',
+                    color: 'var(--accent)', padding: 0,
+                    borderBottom: '1px solid color-mix(in srgb, var(--accent) 35%, transparent)',
+                    whiteSpace: 'nowrap',
+                  }}
                 >
                   Edit
                 </button>
@@ -580,22 +842,29 @@ export default function DashboardPage() {
             />
           )}
 
-          {/* What I know about you (Concierge only). Surfaces seeded + chat-extracted memory. */}
+          {/* Chat (Concierge only). Sits directly under the configuration
+              cards because it's the primary surface. */}
           {agent.tier === 'pro' && (
-            <Card className="md:col-span-2">
-              <h2 className="text-base font-semibold mb-1">What I know about you</h2>
-              <p className="text-xs text-white/40 mb-4">
-                Seeded at signup and learned over time. Used by your concierge in every chat.
-              </p>
-              <MemoryPanel memories={memories} />
-            </Card>
+            <ChatPanel agent={agent} />
           )}
 
-          {/* Recommendations (Concierge only) */}
+          {/* Notifications (Concierge only). Async messages from the
+              concierge tool + drop-match watcher. */}
+          {agent.tier === 'pro' && (
+            <NotificationsCard
+              notifications={notifications}
+              unreadCount={unreadCount}
+              onMarkRead={markNotificationRead}
+              onMarkAllRead={markAllNotificationsRead}
+            />
+          )}
+
+          {/* Recommendations (Concierge only). Only renders when there is
+              something to show. */}
           {agent.tier === 'pro' && recommendations.length > 0 && (
             <Card className="md:col-span-2">
-              <h2 className="text-base font-semibold mb-4">Recommendations</h2>
-              <div className="space-y-3">
+              <SectionHeading>Recommendations</SectionHeading>
+              <div className="space-y-3" style={{ marginTop: 16 }}>
                 {recommendations.map((rec) => (
                   <div key={rec.id} className="flex items-start justify-between p-3 bg-white/5 rounded-lg">
                     <div>
@@ -612,20 +881,37 @@ export default function DashboardPage() {
             </Card>
           )}
 
-          {/* Chat (Concierge only) */}
+          {/* What I know about you (Concierge only). Collapsed by default. */}
           {agent.tier === 'pro' && (
-            <ChatPanel agent={agent} />
+            <CollapsibleCard
+              title="What I know about you"
+              summary={
+                memories.length === 0
+                  ? 'Nothing learned yet. Seeded at signup and extended from chat.'
+                  : `${memories.length} ${memories.length === 1 ? 'fact' : 'facts'} on file. Used by your concierge in every chat.`
+              }
+              expanded={knowExpanded}
+              onToggle={() => setKnowExpanded(v => !v)}
+            >
+              <MemoryPanel memories={memories} />
+            </CollapsibleCard>
           )}
 
-          {/* Activity log */}
-          <Card className="md:col-span-2">
-            <h2 className="text-base font-semibold mb-4">Activity</h2>
+          {/* Activity log. Collapsed by default. */}
+          <CollapsibleCard
+            title="Activity"
+            summary={
+              activity.length === 0
+                ? (agent.tier === 'basic'
+                    ? 'No activity yet. Your Personal Shopper will report back to you here.'
+                    : 'No activity yet. Your Concierge will evaluate drops and chat with you here.')
+                : `${activity.length} ${activity.length === 1 ? 'entry' : 'entries'}. Most recent: ${new Date(activity[0].created_at).toLocaleString()}.`
+            }
+            expanded={activityExpanded}
+            onToggle={() => setActivityExpanded(v => !v)}
+          >
             {activity.length === 0 ? (
-              <p className="text-sm text-white/40">
-                {agent.tier === 'basic'
-                  ? 'No activity yet. Your Personal Shopper will start searching the VIA network and reporting back to you here.'
-                  : 'No activity yet. Your Concierge will start evaluating drops and chatting with you here.'}
-              </p>
+              <p className="text-sm text-white/40">No activity yet.</p>
             ) : (
               <div className="space-y-2">
                 {activity.map((entry) => {
@@ -653,7 +939,7 @@ export default function DashboardPage() {
                 })}
               </div>
             )}
-          </Card>
+          </CollapsibleCard>
         </div>
       </main>
 

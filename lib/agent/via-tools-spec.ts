@@ -140,6 +140,40 @@ export const VIA_TOOL_SCHEMAS = [
       parameters: { type: 'object', properties: {} },
     },
   },
+  {
+    type: 'function' as const,
+    function: {
+      name: 'via_notify_owner',
+      description:
+        'Leave an asynchronous notification for the owner in their dashboard. ' +
+        'Use this when the owner asks you to message or alert them later (e.g. ' +
+        '"let me know if something similar comes along", "ping me when X drops", ' +
+        '"follow up tomorrow"). The notification appears on their dashboard with ' +
+        'an unread flag. Do NOT use it to reply inside the current chat turn, ' +
+        'and do NOT use it for routine acknowledgements. Always include a clear ' +
+        'title and a body that explains exactly what is being watched, so the ' +
+        'owner can understand it days later without rereading the chat.',
+      parameters: {
+        type: 'object',
+        properties: {
+          title: {
+            type: 'string',
+            description: 'Short headline, under 80 chars. Example: "Watching for new Soulland drops".',
+          },
+          body: {
+            type: 'string',
+            description: 'One or two sentences describing the watch, the trigger, and what the owner will see when it fires.',
+          },
+          watch_terms: {
+            type: 'array',
+            items: { type: 'string' },
+            description: 'Optional list of brand slugs, style keywords, or product terms the watch is tied to. Persisted alongside the notification so future searches can dedupe.',
+          },
+        },
+        required: ['title', 'body'],
+      },
+    },
+  },
 ];
 
 // ── Handlers ─────────────────────────────────────────────────────────
@@ -446,11 +480,57 @@ async function via_recall_owner(_args: Record<string, never>, ctx: { agentId: st
   };
 }
 
+async function via_notify_owner(
+  args: { title?: string; body?: string; watch_terms?: string[] },
+  ctx: { agentId: string; sessionId: string | null },
+) {
+  const title = (args.title ?? '').trim();
+  const body = (args.body ?? '').trim();
+  if (!title || !body) {
+    return { ok: false, error: 'title and body are required.' };
+  }
+  if (title.length > 200) {
+    return { ok: false, error: 'title too long (200 char max).' };
+  }
+
+  const watchTerms = Array.isArray(args.watch_terms)
+    ? args.watch_terms.filter((t): t is string => typeof t === 'string' && t.length > 0).slice(0, 12)
+    : [];
+
+  const { data, error } = await db
+    .from('agent_notifications')
+    .insert({
+      agent_id: ctx.agentId,
+      kind: 'chat_followup',
+      title: title.slice(0, 200),
+      body: body.slice(0, 2000),
+      payload: {
+        session_id: ctx.sessionId,
+        watch_terms: watchTerms,
+        source: 'concierge_tool',
+      },
+    })
+    .select('id, created_at')
+    .single();
+
+  if (error) {
+    return { ok: false, error: error.message };
+  }
+
+  return {
+    ok: true,
+    notification_id: data?.id ?? null,
+    created_at: data?.created_at ?? null,
+    note: 'Notification queued. The owner will see it on their dashboard with an unread flag.',
+  };
+}
+
 // ── Dispatcher ───────────────────────────────────────────────────────
 
 export interface ToolCtx {
   agentId: string;
   ownerSex: 'male' | 'female' | 'other' | null;
+  sessionId?: string | null;
 }
 
 export async function executeViaTool(
@@ -472,6 +552,10 @@ export async function executeViaTool(
       case 'via_list_brands':  return JSON.stringify(await via_list_brands());
       case 'via_get_brand':    return JSON.stringify(await via_get_brand(args as Parameters<typeof via_get_brand>[0]));
       case 'via_recall_owner': return JSON.stringify(await via_recall_owner({}, ctx));
+      case 'via_notify_owner': return JSON.stringify(await via_notify_owner(
+        args as Parameters<typeof via_notify_owner>[0],
+        { agentId: ctx.agentId, sessionId: ctx.sessionId ?? null },
+      ));
       default:
         return JSON.stringify({ error: `unknown tool: ${name}` });
     }

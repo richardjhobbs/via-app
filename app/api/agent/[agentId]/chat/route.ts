@@ -150,6 +150,7 @@ export async function POST(
       messages,
       agentId,
       {
+        sessionId: session_id,
         // Per-tool-call audit log. Each row carries the tool name, args,
         // result preview, the tokens consumed by the LLM iteration that
         // produced this call (which become USDC cost when reconciled at

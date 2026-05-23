@@ -115,6 +115,50 @@ export async function sendBidLost(
   });
 }
 
+/**
+ * Daily digest sent by the drop-match watcher when, and only when, the
+ * scan wrote new match_found notifications for this agent in the current
+ * run. Bundles every match into one email so it is not spammy: at most
+ * one of these arrives per agent per day, and only on days with hits.
+ */
+export async function sendMatchDigest(
+  email: string,
+  agentName: string,
+  matches: Array<{ title: string; brandName: string | null; url: string; priceUsdc: number | null; reason: string }>,
+) {
+  if (matches.length === 0) return;
+
+  const rows = matches.map(m => {
+    const price = m.priceUsdc != null ? ` &middot; $${m.priceUsdc.toFixed(2)} USDC` : '';
+    const brand = m.brandName ? `<span style="color:#999">${m.brandName}</span> ` : '';
+    return `
+      <div style="background:#1a1a1a; padding:14px 16px; border-radius:8px; margin:10px 0;">
+        <div style="font-size:15px; margin-bottom:4px;">${brand}<strong>${m.title}</strong>${price}</div>
+        <div style="color:#bbb; font-size:13px; margin-bottom:10px;">${m.reason}</div>
+        <a href="${m.url}" style="color:#60a5fa; font-size:13px; text-decoration:none;">View on RRG &rarr;</a>
+      </div>
+    `;
+  }).join('');
+
+  const count = matches.length;
+  const subject = count === 1
+    ? `${agentName}: 1 new drop matches your taste`
+    : `${agentName}: ${count} new drops match your taste`;
+
+  await send({
+    to: email,
+    subject,
+    html: `
+      <div style="font-family: sans-serif; color: #ededed; background: #0a0a0a; padding: 32px;">
+        <h2 style="color: #fff; margin:0 0 8px;">${count === 1 ? 'A drop landed' : `${count} drops landed`}</h2>
+        <p style="color:#bbb; margin:0 0 20px;">${agentName} flagged ${count === 1 ? 'this' : 'these'} from today's catalogue against the brands and styles you've shared.</p>
+        ${rows}
+        <p style="color:#666; font-size:12px; margin-top:24px;">You're only getting this email because there were matches today. Days with nothing new go silent.</p>
+      </div>
+    `,
+  });
+}
+
 export async function sendLowBalance(
   email: string,
   agentName: string,

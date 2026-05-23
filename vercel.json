@@ -3,6 +3,10 @@
     {
       "path": "/api/rrg/admin/marketing/auto-scan",
       "schedule": "0 8 * * *"
+    },
+    {
+      "path": "/api/rrg/admin/agent-notifications/scan",
+      "schedule": "0 2 * * *"
     }
   ]
 }

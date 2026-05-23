@@ -251,6 +251,9 @@ export interface StreamChatOpts {
    *  governed by the agent's USDC pool via deductCredits at the chat-turn
    *  level). Default: 20. */
   maxIterations?: number;
+  /** Threaded into the tool ctx so persistent tools (e.g. via_notify_owner)
+   *  can stamp the originating chat session on their writes. */
+  sessionId?: string | null;
 }
 
 export async function streamChatWithTools(
@@ -361,7 +364,7 @@ async function streamDeepSeekWithTools(
 
           for (const tc of toolCallsArr) {
             const tStart = Date.now();
-            const result = await executeViaTool(tc.name, tc.args, { agentId, ownerSex });
+            const result = await executeViaTool(tc.name, tc.args, { agentId, ownerSex, sessionId: opts.sessionId ?? null });
             const duration_ms = Date.now() - tStart;
 
             convo.push({
