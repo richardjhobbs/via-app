@@ -116,44 +116,53 @@ export async function sendBidLost(
 }
 
 /**
- * Daily digest sent by the drop-match watcher when, and only when, the
- * scan wrote new match_found notifications for this agent in the current
- * run. Bundles every match into one email so it is not spammy: at most
- * one of these arrives per agent per day, and only on days with hits.
+ * Sent by the watcher when a newly listed product genuinely fits the
+ * owner's profile. One product per email. No bundles, no daily digest.
+ * Only fires when the relevance bar in notification-watcher.ts says yes.
  */
-export async function sendMatchDigest(
+export async function sendNewListingMatch(
   email: string,
   agentName: string,
-  matches: Array<{ title: string; brandName: string | null; url: string; priceUsdc: number | null; reason: string }>,
+  match: { brandName: string | null; title: string; url: string; priceUsdc: number | null; reason: string },
 ) {
-  if (matches.length === 0) return;
-
-  const rows = matches.map(m => {
-    const price = m.priceUsdc != null ? ` &middot; $${m.priceUsdc.toFixed(2)} USDC` : '';
-    const brand = m.brandName ? `<span style="color:#999">${m.brandName}</span> ` : '';
-    return `
-      <div style="background:#1a1a1a; padding:14px 16px; border-radius:8px; margin:10px 0;">
-        <div style="font-size:15px; margin-bottom:4px;">${brand}<strong>${m.title}</strong>${price}</div>
-        <div style="color:#bbb; font-size:13px; margin-bottom:10px;">${m.reason}</div>
-        <a href="${m.url}" style="color:#60a5fa; font-size:13px; text-decoration:none;">View on RRG &rarr;</a>
-      </div>
-    `;
-  }).join('');
-
-  const count = matches.length;
-  const subject = count === 1
-    ? `${agentName}: 1 new drop matches your taste`
-    : `${agentName}: ${count} new drops match your taste`;
+  const price = match.priceUsdc != null ? `$${match.priceUsdc.toFixed(2)} USDC` : '';
+  const subject = match.brandName
+    ? `${match.brandName} matches your profile: ${match.title}`
+    : `New on RRG, matches your profile: ${match.title}`;
 
   await send({
     to: email,
     subject,
     html: `
       <div style="font-family: sans-serif; color: #ededed; background: #0a0a0a; padding: 32px;">
-        <h2 style="color: #fff; margin:0 0 8px;">${count === 1 ? 'A drop landed' : `${count} drops landed`}</h2>
-        <p style="color:#bbb; margin:0 0 20px;">${agentName} flagged ${count === 1 ? 'this' : 'these'} from today's catalogue against the brands and styles you've shared.</p>
-        ${rows}
-        <p style="color:#666; font-size:12px; margin-top:24px;">You're only getting this email because there were matches today. Days with nothing new go silent.</p>
+        <h2 style="color: #fff; margin:0 0 12px;">${match.brandName ? `${match.brandName} &middot; ` : ''}${match.title}</h2>
+        <p style="color:#bbb; margin:0 0 14px;">${match.reason}</p>
+        ${price ? `<div style="color:#bbb; margin:0 0 18px;">${price}</div>` : ''}
+        <a href="${match.url}" style="display:inline-block; background:#fff; color:#000; padding:12px 24px; border-radius:6px; text-decoration:none; font-weight:600;">View on RRG</a>
+        <p style="color:#666; font-size:12px; margin-top:28px;">${agentName} only emails when a new listing genuinely fits your profile. Quiet days stay quiet.</p>
+      </div>
+    `,
+  });
+}
+
+/**
+ * Sent by the watcher when a brand newly active on RRG fits the owner's
+ * profile. One brand per email. Triggered separately from listing alerts.
+ */
+export async function sendNewBrandMatch(
+  email: string,
+  agentName: string,
+  match: { brandName: string; brandUrl: string; reason: string },
+) {
+  await send({
+    to: email,
+    subject: `${match.brandName} joined RRG and matches your profile`,
+    html: `
+      <div style="font-family: sans-serif; color: #ededed; background: #0a0a0a; padding: 32px;">
+        <h2 style="color: #fff; margin:0 0 12px;">${match.brandName} on RRG</h2>
+        <p style="color:#bbb; margin:0 0 18px;">${match.reason}</p>
+        <a href="${match.brandUrl}" style="display:inline-block; background:#fff; color:#000; padding:12px 24px; border-radius:6px; text-decoration:none; font-weight:600;">See the brand</a>
+        <p style="color:#666; font-size:12px; margin-top:28px;">${agentName} only emails when a new brand genuinely fits your profile. Quiet days stay quiet.</p>
       </div>
     `,
   });
