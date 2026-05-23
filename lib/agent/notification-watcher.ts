@@ -229,6 +229,8 @@ interface ChatTurn {
   created_at: string;
   content: string;
   tokens: Set<string>;
+  role: 'user' | 'assistant';
+  sessionId: string | null;
 }
 
 interface WatchTerm {
@@ -237,35 +239,46 @@ interface WatchTerm {
 }
 
 interface ChatAnchor {
-  /** When the owner said the thing being quoted. */
+  /** When the owner said the thing being quoted (the preceding user
+   *  message when the matched turn was an assistant reply). */
   created_at: string;
   /** What they said, trimmed to fit a notification body. */
   snippet: string;
-  /** Tokens from the past message that the new listing also contains. */
+  /** Tokens from the past conversation that the new listing also contains. */
   matched: string[];
   /** True if this came from a via_notify_owner watch_term (LLM-explicit). */
   fromWatchTerm: boolean;
+  /** True if the originating overlap was on an assistant reply, not a
+   *  user message. The reason copy still quotes the preceding user turn,
+   *  but this flag lets callers know the anchor is one-step indirect. */
+  fromAssistantReply: boolean;
 }
 
 interface ConversationContext {
-  /** Recent user-side chat turns, newest first. */
+  /** Recent chat turns (user + assistant), newest first. */
   turns: ChatTurn[];
   /** Explicit watch terms persisted by via_notify_owner calls. */
   watchTerms: WatchTerm[];
 }
 
 const CONVO_LOOKBACK_DAYS = 30;
-const CONVO_MAX_TURNS = 60;
-const CONVO_MIN_OVERLAP = 2;
+const CONVO_MAX_TURNS = 120;
+// Token overlap minimum. The LLM gate downstream is the relevance
+// authority, so this just needs to be a cheap pre-filter that catches
+// any plausible candidate; 1 lets short, specific user questions
+// like "cookies?" or a brand name dropped by the concierge anchor a
+// match. Cost is bounded by the per-listing LLM call which is billed
+// to the agent.
+const CONVO_MIN_OVERLAP = 1;
 
 async function loadConversationContext(agentId: string): Promise<ConversationContext> {
   const since = new Date(Date.now() - CONVO_LOOKBACK_DAYS * 86400 * 1000).toISOString();
 
   const { data: msgs } = await db
     .from('agent_chat_messages')
-    .select('created_at, content')
+    .select('created_at, content, role, session_id')
     .eq('agent_id', agentId)
-    .eq('role', 'user')
+    .in('role', ['user', 'assistant'])
     .eq('is_eval_preview', false)
     .gte('created_at', since)
     .order('created_at', { ascending: false })
@@ -274,10 +287,17 @@ async function loadConversationContext(agentId: string): Promise<ConversationCon
   const turns: ChatTurn[] = [];
   for (const m of msgs ?? []) {
     const content = (m.content as string | null)?.trim() ?? '';
-    if (content.length < 8) continue;
+    if (content.length < 4) continue;
     const tokens = tokenize(content);
-    if (tokens.size < 2) continue;
-    turns.push({ created_at: m.created_at as string, content, tokens });
+    if (tokens.size === 0) continue;
+    const role = (m.role as string) === 'assistant' ? 'assistant' : 'user';
+    turns.push({
+      created_at: m.created_at as string,
+      content,
+      tokens,
+      role,
+      sessionId: (m.session_id as string | null) ?? null,
+    });
   }
 
   const { data: notifs } = await db
@@ -393,25 +413,74 @@ function findChatAnchor(text: string, ctx: ConversationContext): ChatAnchor | nu
       snippet: bestWatch.term,
       matched: [bestWatch.term],
       fromWatchTerm: true,
+      fromAssistantReply: false,
     };
   }
 
-  // 2. Past-question path: pick the user message with the highest meaningful
-  //    overlap. CONVO_MIN_OVERLAP gates noise from incidental token matches.
+  // 2. Conversation overlap path. Score across user AND assistant turns
+  //    so the watcher catches brands the concierge surfaced in reply
+  //    (e.g. owner asked "any skateboard brands?" and the agent named
+  //    Adapt). If the best-scoring turn is an assistant reply, the
+  //    snippet still quotes the OWNER's nearest preceding question in
+  //    the same session, so the email reads "On May X you said ..."
+  //    rather than quoting the concierge back at itself.
   let best: { turn: ChatTurn; overlap: string[] } | null = null;
   for (const turn of ctx.turns) {
     const overlap: string[] = [];
     for (const t of docTokens) if (turn.tokens.has(t)) overlap.push(t);
     if (overlap.length < CONVO_MIN_OVERLAP) continue;
-    if (!best || overlap.length > best.overlap.length) best = { turn, overlap };
+    if (
+      !best ||
+      overlap.length > best.overlap.length ||
+      // Tie-break: prefer the most recent overlap so freshness wins.
+      (overlap.length === best.overlap.length &&
+        new Date(turn.created_at) > new Date(best.turn.created_at))
+    ) {
+      best = { turn, overlap };
+    }
   }
   if (!best) return null;
 
+  if (best.turn.role === 'user') {
+    return {
+      created_at: best.turn.created_at,
+      snippet: snippetFor(best.turn.content),
+      matched: best.overlap.slice(0, 5),
+      fromWatchTerm: false,
+      fromAssistantReply: false,
+    };
+  }
+
+  // Assistant reply matched: find the nearest preceding user turn in
+  // the same session for the snippet. ctx.turns is sorted newest first,
+  // so walk forward from the matched turn (since later in the array =
+  // earlier in time).
+  const matchIdx = ctx.turns.indexOf(best.turn);
+  let userPrior: ChatTurn | null = null;
+  for (let i = matchIdx + 1; i < ctx.turns.length; i++) {
+    const t = ctx.turns[i];
+    if (t.role !== 'user') continue;
+    if (best.turn.sessionId && t.sessionId && t.sessionId !== best.turn.sessionId) continue;
+    userPrior = t;
+    break;
+  }
+  if (userPrior) {
+    return {
+      created_at: userPrior.created_at,
+      snippet: snippetFor(userPrior.content),
+      matched: best.overlap.slice(0, 5),
+      fromWatchTerm: false,
+      fromAssistantReply: true,
+    };
+  }
+  // No preceding user turn (shouldn't happen often). Fall back to a
+  // trimmed assistant snippet.
   return {
     created_at: best.turn.created_at,
     snippet: snippetFor(best.turn.content),
     matched: best.overlap.slice(0, 5),
     fromWatchTerm: false,
+    fromAssistantReply: true,
   };
 }
 
