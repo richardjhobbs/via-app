@@ -1,29 +1,39 @@
 /**
  * Relevance-match watcher for the personal Concierge.
  *
- * Twice the surface area of the first cut:
- *   1. Newly approved listings from the last 24h, scored against each
- *      pro-tier agent's full profile.
- *   2. New brands that became active on RRG in the last 24h, scored
- *      against the same profile.
+ * The notification has to read like the agent is acting in the owner's
+ * interest. NOT "the platform recommends this". The way we get there:
+ * every alert is anchored to something the owner has actually said or
+ * shown, and the alert quotes back that moment so they can see the
+ * agent remembered.
  *
- * Stricter matching than v1. A listing or brand counts as a match if:
- *   - The brand is in the owner's loved-brand set (and not avoided), OR
- *   - Its text hits AT LEAST 2 DISTINCT signal axes drawn from the owner's
- *     style_tags, interest_categories, persona_bio + free_instructions,
- *     and learned agent_memory facts (excluding pure brand memories,
- *     which feed the loved/avoided sets above).
+ * Two surfaces are scanned each run:
+ *   1. Newly approved listings from the last 24h.
+ *   2. Brands that became active on RRG in the last 24h.
  *
- * One style_tag substring is no longer enough on its own. The point is:
- * an email only fires when something genuinely lines up with the agent's
- * profile, not on a single keyword coincidence.
+ * For each, four paths can fire a match:
+ *   A. Loved-brand path: the brand is in the owner's loved set.
+ *   B. Explicit watch path: a previous chat_followup notification
+ *      persisted a watch_term (the LLM called via_notify_owner) and
+ *      this item hits one of those terms.
+ *   C. Past-question path: a previous user message asked about
+ *      something with ≥2 distinct meaningful tokens overlapping the
+ *      item. The alert quotes that message and its date.
+ *   D. Profile path: text hits at least 2 distinct signal axes drawn
+ *      from style_tags, interest_categories, persona_bio +
+ *      free_instructions, and learned agent_memory facts.
  *
- * Per match: one in-app notification row AND one email. No digests, no
- * bundling. The per-agent cap (default 5 across listings + brands) keeps
- * a single scan from flooding the inbox if the signals get noisy.
+ * Avoided brands are blocked from every path.
  *
- * Audience: a male owner skips women-only listings, female owner skips
- * men-only, unisex/unknown always passes.
+ * The notification body and email subject prefer the most personal
+ * anchor available: explicit watch > past-question > loved-brand >
+ * profile. The point is the owner reads it and thinks "it remembered",
+ * not "the platform is promoting".
+ *
+ * Per match: one in-app notification row AND one email. No digests,
+ * no bundling. Per-agent cap (default 5 per scan, across listings +
+ * brands) is the only spam guardrail; with stricter matching plus
+ * the chat-anchor logic, most days produce zero.
  */
 
 import { db } from '@/lib/rrg/db';
@@ -204,6 +214,165 @@ function summariseSignals(hits: Map<string, string[]>): string {
   return parts.join(' and ');
 }
 
+interface ChatTurn {
+  created_at: string;
+  content: string;
+  tokens: Set<string>;
+}
+
+interface WatchTerm {
+  term: string;
+  created_at: string;
+}
+
+interface ChatAnchor {
+  /** When the owner said the thing being quoted. */
+  created_at: string;
+  /** What they said, trimmed to fit a notification body. */
+  snippet: string;
+  /** Tokens from the past message that the new listing also contains. */
+  matched: string[];
+  /** True if this came from a via_notify_owner watch_term (LLM-explicit). */
+  fromWatchTerm: boolean;
+}
+
+interface ConversationContext {
+  /** Recent user-side chat turns, newest first. */
+  turns: ChatTurn[];
+  /** Explicit watch terms persisted by via_notify_owner calls. */
+  watchTerms: WatchTerm[];
+}
+
+const CONVO_LOOKBACK_DAYS = 30;
+const CONVO_MAX_TURNS = 60;
+const CONVO_MIN_OVERLAP = 2;
+
+async function loadConversationContext(agentId: string): Promise<ConversationContext> {
+  const since = new Date(Date.now() - CONVO_LOOKBACK_DAYS * 86400 * 1000).toISOString();
+
+  const { data: msgs } = await db
+    .from('agent_chat_messages')
+    .select('created_at, content')
+    .eq('agent_id', agentId)
+    .eq('role', 'user')
+    .eq('is_eval_preview', false)
+    .gte('created_at', since)
+    .order('created_at', { ascending: false })
+    .limit(CONVO_MAX_TURNS);
+
+  const turns: ChatTurn[] = [];
+  for (const m of msgs ?? []) {
+    const content = (m.content as string | null)?.trim() ?? '';
+    if (content.length < 8) continue;
+    const tokens = tokenize(content);
+    if (tokens.size < 2) continue;
+    turns.push({ created_at: m.created_at as string, content, tokens });
+  }
+
+  const { data: notifs } = await db
+    .from('agent_notifications')
+    .select('created_at, payload')
+    .eq('agent_id', agentId)
+    .eq('kind', 'chat_followup')
+    .gte('created_at', since)
+    .order('created_at', { ascending: false })
+    .limit(40);
+
+  const watchTerms: WatchTerm[] = [];
+  for (const n of notifs ?? []) {
+    const p = n.payload as { watch_terms?: string[] } | null;
+    if (!p || !Array.isArray(p.watch_terms)) continue;
+    for (const raw of p.watch_terms) {
+      const term = String(raw ?? '').trim().toLowerCase();
+      if (term.length >= 2) watchTerms.push({ term, created_at: n.created_at as string });
+    }
+  }
+
+  return { turns, watchTerms };
+}
+
+function snippetFor(text: string, maxLen = 110): string {
+  const clean = text.replace(/\s+/g, ' ').trim();
+  if (clean.length <= maxLen) return clean;
+  return clean.slice(0, maxLen - 1).replace(/\s+\S*$/, '') + '…';
+}
+
+function formatDate(iso: string): string {
+  const d = new Date(iso);
+  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+}
+
+function findChatAnchor(text: string, ctx: ConversationContext): ChatAnchor | null {
+  const docTokens = tokenize(text);
+  const haystackLower = text.toLowerCase();
+
+  // 1. Explicit watch_term wins. The LLM said "watch for X" on a given day.
+  //    If the new item literally contains that term, this is the strongest
+  //    possible anchor: the agent kept its word.
+  let bestWatch: WatchTerm | null = null;
+  for (const w of ctx.watchTerms) {
+    if (!w.term) continue;
+    const phrase = w.term.toLowerCase();
+    if (haystackLower.includes(phrase)) {
+      if (!bestWatch || new Date(w.created_at) < new Date(bestWatch.created_at)) {
+        bestWatch = w;
+      }
+    }
+  }
+  if (bestWatch) {
+    return {
+      created_at: bestWatch.created_at,
+      snippet: bestWatch.term,
+      matched: [bestWatch.term],
+      fromWatchTerm: true,
+    };
+  }
+
+  // 2. Past-question path: pick the user message with the highest meaningful
+  //    overlap. CONVO_MIN_OVERLAP gates noise from incidental token matches.
+  let best: { turn: ChatTurn; overlap: string[] } | null = null;
+  for (const turn of ctx.turns) {
+    const overlap: string[] = [];
+    for (const t of docTokens) if (turn.tokens.has(t)) overlap.push(t);
+    if (overlap.length < CONVO_MIN_OVERLAP) continue;
+    if (!best || overlap.length > best.overlap.length) best = { turn, overlap };
+  }
+  if (!best) return null;
+
+  return {
+    created_at: best.turn.created_at,
+    snippet: snippetFor(best.turn.content),
+    matched: best.overlap.slice(0, 5),
+    fromWatchTerm: false,
+  };
+}
+
+function composeReason(opts: {
+  itemKind: 'listing' | 'brand';
+  itemLabel: string;
+  brandName: string | null;
+  anchor: ChatAnchor | null;
+  lovedBrand: boolean;
+  profileHits: Map<string, string[]>;
+}): string {
+  const { itemKind, itemLabel, brandName, anchor, lovedBrand, profileHits } = opts;
+
+  if (anchor && anchor.fromWatchTerm) {
+    return `You asked me on ${formatDate(anchor.created_at)} to keep an eye out for "${anchor.snippet}". ${itemKind === 'brand' ? `${itemLabel} just joined RRG and fits.` : `${itemLabel}${brandName ? ` from ${brandName}` : ''} just landed and fits.`}`;
+  }
+  if (anchor) {
+    return `On ${formatDate(anchor.created_at)} you said "${anchor.snippet}". ${itemKind === 'brand' ? `${itemLabel} just joined RRG and lines up with that.` : `${itemLabel}${brandName ? ` from ${brandName}` : ''} just landed and lines up with that.`}`;
+  }
+  if (lovedBrand && brandName) {
+    return itemKind === 'brand'
+      ? `${itemLabel} is on your brand list and just joined RRG.`
+      : `${brandName} is on your brand list. New listing: ${itemLabel}.`;
+  }
+  return itemKind === 'brand'
+    ? `${itemLabel} joined RRG and lines up with your ${summariseSignals(profileHits)}.`
+    : `${itemLabel}${brandName ? ` from ${brandName}` : ''} lines up with your ${summariseSignals(profileHits)}.`;
+}
+
 export async function runDropMatchScan(opts: ScanOpts = {}): Promise<ScanResult> {
   const hoursBack = opts.hoursBack ?? 24;
   const perAgentLimit = opts.perAgentLimit ?? 5;
@@ -311,6 +480,12 @@ export async function runDropMatchScan(opts: ScanOpts = {}): Promise<ScanResult>
       if (p?.brand_id) notifiedBrandIds.add(p.brand_id);
     }
 
+    // Conversation context. Pulled once per agent and reused across all
+    // listings and brands. This is what makes the alerts feel personal:
+    // every match prefers anchoring to something the owner has actually
+    // said to the concierge.
+    const convo = await loadConversationContext(agent.id);
+
     let writtenForThisAgent = 0;
     const brandsAlertedThisRun = new Set<string>();
 
@@ -321,23 +496,37 @@ export async function runDropMatchScan(opts: ScanOpts = {}): Promise<ScanResult>
       if (brandInSet(b.slug, b.name, profile.avoided)) continue;
 
       const isLoved = brandInSet(b.slug, b.name, profile.loved);
-      let scored: { sources: string[]; hits: Map<string, string[]> } = { sources: [], hits: new Map() };
 
-      if (!isLoved) {
-        const bd = b.brand_data ?? {};
-        const parts: string[] = [b.name];
-        for (const key of ['tagline', 'description', 'bio', 'story', 'about', 'mission']) {
-          const v = bd[key];
-          if (typeof v === 'string') parts.push(v);
-        }
-        scored = scoreText(parts.join(' '), profile);
-        if (scored.sources.length < 2) continue;
+      const bd = b.brand_data ?? {};
+      const brandTextParts: string[] = [b.name];
+      for (const key of ['tagline', 'description', 'bio', 'story', 'about', 'mission']) {
+        const v = bd[key];
+        if (typeof v === 'string') brandTextParts.push(v);
       }
+      const brandText = brandTextParts.join(' ');
 
-      const reason = isLoved
-        ? `${b.name} is on your brand list and just joined RRG.`
-        : `${b.name} joined RRG and lines up with your ${summariseSignals(scored.hits)}.`;
+      const anchor = findChatAnchor(brandText, convo);
+      const scored = scoreText(brandText, profile);
+      const profileOk = scored.sources.length >= 2;
+
+      // Fire when ANY of: loved brand, anchored to past chat, or profile
+      // hits at least 2 distinct axes.
+      if (!isLoved && !anchor && !profileOk) continue;
+
+      const reason = composeReason({
+        itemKind: 'brand',
+        itemLabel: b.name,
+        brandName: b.name,
+        anchor,
+        lovedBrand: isLoved,
+        profileHits: scored.hits,
+      });
       const brandUrl = `${SITE_URL}/brand/${b.slug}`;
+      const matchSource: 'watch_term' | 'past_chat' | 'loved_brand' | 'multi_signal' =
+        anchor?.fromWatchTerm ? 'watch_term'
+          : anchor ? 'past_chat'
+            : isLoved ? 'loved_brand'
+              : 'multi_signal';
 
       const { error: insertErr } = await db.from('agent_notifications').insert({
         agent_id: agent.id,
@@ -346,10 +535,13 @@ export async function runDropMatchScan(opts: ScanOpts = {}): Promise<ScanResult>
         body: reason,
         payload: {
           source: 'watcher',
-          match_source: isLoved ? 'loved_brand' : 'multi_signal',
+          match_source: matchSource,
           brand_id: b.id,
           brand_slug: b.slug,
           hits: Object.fromEntries(scored.hits),
+          chat_anchor: anchor
+            ? { created_at: anchor.created_at, snippet: anchor.snippet, from_watch_term: anchor.fromWatchTerm }
+            : null,
           reason,
         },
       });
@@ -385,19 +577,29 @@ export async function runDropMatchScan(opts: ScanOpts = {}): Promise<ScanResult>
       if (d.brand_id && brandsAlertedThisRun.has(d.brand_id)) continue;
 
       const isLovedBrand = brandInSet(d.brand_slug, d.brand_name, profile.loved);
-      let scored: { sources: string[]; hits: Map<string, string[]> } = { sources: [], hits: new Map() };
+      const haystack = `${d.title} ${d.enhanced_description ?? ''} ${d.description ?? ''}`;
+      const anchor = findChatAnchor(haystack, convo);
+      const scored = scoreText(haystack, profile);
+      const profileOk = scored.sources.length >= 2;
 
-      if (!isLovedBrand) {
-        const haystack = `${d.title} ${d.enhanced_description ?? ''} ${d.description ?? ''}`;
-        scored = scoreText(haystack, profile);
-        if (scored.sources.length < 2) continue;
-      }
+      if (!isLovedBrand && !anchor && !profileOk) continue;
 
-      const reason = isLovedBrand
-        ? `${d.brand_name ?? d.brand_slug} is on your brand list. New listing: "${d.title}".`
-        : `"${d.title}"${d.brand_name ? ` by ${d.brand_name}` : ''} lines up with your ${summariseSignals(scored.hits)}.`;
+      const titleQuoted = `"${d.title}"`;
+      const reason = composeReason({
+        itemKind: 'listing',
+        itemLabel: titleQuoted,
+        brandName: d.brand_name,
+        anchor,
+        lovedBrand: isLovedBrand,
+        profileHits: scored.hits,
+      });
       const url = `${SITE_URL}/rrg/drop/${d.token_id}`;
       const priceTag = d.price_usdc != null ? ` ($${d.price_usdc.toFixed(2)} USDC)` : '';
+      const matchSource: 'watch_term' | 'past_chat' | 'loved_brand' | 'multi_signal' =
+        anchor?.fromWatchTerm ? 'watch_term'
+          : anchor ? 'past_chat'
+            : isLovedBrand ? 'loved_brand'
+              : 'multi_signal';
 
       const { error: insertErr } = await db.from('agent_notifications').insert({
         agent_id: agent.id,
@@ -406,10 +608,13 @@ export async function runDropMatchScan(opts: ScanOpts = {}): Promise<ScanResult>
         body: `${reason}${priceTag}`,
         payload: {
           source: 'watcher',
-          match_source: isLovedBrand ? 'loved_brand' : 'multi_signal',
+          match_source: matchSource,
           drop_token_ids: [d.token_id],
           brand_slug: d.brand_slug,
           hits: Object.fromEntries(scored.hits),
+          chat_anchor: anchor
+            ? { created_at: anchor.created_at, snippet: anchor.snippet, from_watch_term: anchor.fromWatchTerm }
+            : null,
           reason,
         },
       });
