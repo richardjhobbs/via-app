@@ -46,6 +46,7 @@ export function LlmStatusCard({ agent, onProviderChange, onTopUp }: Props) {
   const [providerDraft, setProviderDraft] = useState<LlmProvider>(agent.llm_provider);
   const [savingProvider, setSavingProvider] = useState(false);
   const [providerError, setProviderError] = useState<string | null>(null);
+  const [expanded, setExpanded] = useState(false);
 
   useEffect(() => {
     fetch(`/api/agent/${agent.id}/llm-status`)
@@ -96,23 +97,55 @@ export function LlmStatusCard({ agent, onProviderChange, onTopUp }: Props) {
 
   if (agent.tier !== 'pro') return null;
 
+  const linkButton: React.CSSProperties = {
+    background: 'transparent', border: 'none', cursor: 'pointer',
+    fontFamily: 'var(--font-jetbrains), monospace',
+    fontSize: 10, letterSpacing: '0.14em', textTransform: 'uppercase',
+    color: 'var(--accent)', padding: 0,
+    borderBottom: '1px solid color-mix(in srgb, var(--accent) 35%, transparent)',
+    whiteSpace: 'nowrap',
+  };
+
+  // One-line collapsed summary mirroring the Persona / Activity / What I
+  // know cards: provider label, connection state, credit balance.
+  let summary = 'Loading…';
+  if (status) {
+    const conn = status.api_key_configured ? 'connected' : 'no API key';
+    summary = `${status.label} (${status.model}) · ${conn} · ${formatCredits(status.credit_balance)}`;
+  }
+
   return (
-    <Card>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
-        <h2 style={{ fontFamily: 'var(--font-fraunces), serif', fontSize: 22, fontWeight: 400, letterSpacing: '-0.01em', margin: 0 }}>
-          LLM Provider
-        </h2>
-        {!editingProvider && (
+    <Card className="md:col-span-2">
+      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16 }}>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <h2 style={{ fontFamily: 'var(--font-fraunces), serif', fontSize: 22, fontWeight: 400, letterSpacing: '-0.01em', margin: 0 }}>
+            LLM Provider
+          </h2>
+          <p style={{ fontSize: 12, color: 'var(--ink-3)', lineHeight: 1.5, margin: '4px 0 0' }}>
+            {summary}
+          </p>
+        </div>
+        <div style={{ display: 'flex', gap: 14, alignItems: 'center', flexShrink: 0 }}>
+          {expanded && !editingProvider && (
+            <button
+              onClick={() => { setProviderDraft(agent.llm_provider); setEditingProvider(true); }}
+              style={linkButton}
+            >
+              Switch
+            </button>
+          )}
           <button
-            onClick={() => { setProviderDraft(agent.llm_provider); setEditingProvider(true); }}
-            className="text-xs text-green-700 hover:text-green-800 transition-colors cursor-pointer"
-            style={{ background: 'transparent', border: 'none', padding: 0 }}
+            onClick={() => setExpanded(v => !v)}
+            aria-expanded={expanded}
+            style={linkButton}
           >
-            Switch
+            {expanded ? 'Collapse' : 'Expand'}
           </button>
-        )}
+        </div>
       </div>
 
+      {!expanded ? null : (
+      <div style={{ marginTop: 16 }}>
       {editingProvider && (
         <div style={{ marginBottom: 16, padding: 12, border: '1px solid var(--line)', display: 'flex', flexDirection: 'column', gap: 10 }}>
           <Select
@@ -224,6 +257,8 @@ export function LlmStatusCard({ agent, onProviderChange, onTopUp }: Props) {
             )}
           </div>
         </div>
+      )}
+      </div>
       )}
     </Card>
   );
