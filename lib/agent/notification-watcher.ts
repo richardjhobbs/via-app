@@ -358,10 +358,10 @@ function composeReason(opts: {
   const { itemKind, itemLabel, brandName, anchor, lovedBrand, profileHits } = opts;
 
   if (anchor && anchor.fromWatchTerm) {
-    return `You asked me on ${formatDate(anchor.created_at)} to keep an eye out for "${anchor.snippet}". ${itemKind === 'brand' ? `${itemLabel} just joined RRG and fits.` : `${itemLabel}${brandName ? ` from ${brandName}` : ''} just landed and fits.`}`;
+    return `You asked me on ${formatDate(anchor.created_at)} to keep an eye out for "${anchor.snippet}". ${itemKind === 'brand' ? `${itemLabel} is now on RRG and fits.` : `${itemLabel}${brandName ? ` from ${brandName}` : ''} is now listed and fits.`}`;
   }
   if (anchor) {
-    return `On ${formatDate(anchor.created_at)} you said "${anchor.snippet}". ${itemKind === 'brand' ? `${itemLabel} just joined RRG and lines up with that.` : `${itemLabel}${brandName ? ` from ${brandName}` : ''} just landed and lines up with that.`}`;
+    return `On ${formatDate(anchor.created_at)} you said "${anchor.snippet}". ${itemKind === 'brand' ? `${itemLabel} is now on RRG and lines up with that.` : `${itemLabel}${brandName ? ` from ${brandName}` : ''} is now listed and lines up with that.`}`;
   }
   if (lovedBrand && brandName) {
     return itemKind === 'brand'
