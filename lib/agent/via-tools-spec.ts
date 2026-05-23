@@ -35,7 +35,13 @@ export const VIA_TOOL_SCHEMAS = [
     function: {
       name: 'via_search_drops',
       description:
-        'Search the VIA network catalogue for drops matching criteria. ' +
+        'Semantically search the VIA network catalogue. The query is ' +
+        'embedded and matched against product embeddings (text-embedding-3-small ' +
+        'cosine). This means "any coffee?" finds Nolo (decaf cold-brew) even ' +
+        'though no Nolo product title contains "coffee"; "warm for winter" ' +
+        'finds heavy knits, coats, wool pieces by INTENT, not literal text. ' +
+        'Use natural intent phrases, not just keywords: "anything boho" beats ' +
+        '"boho", "something for a wedding" beats "formal". ' +
         'Today the VIA network = Real Real Genuine (RRG). Returns up to 20 ' +
         'matching drops as compact summaries (title, brand, price USDC, ' +
         'editions remaining, `url`, `brand_url`). Descriptions are NOT ' +
@@ -333,19 +339,83 @@ async function via_search_drops(
     audienceFilter = 'women';
   }
 
+  const rawQuery = args.query?.trim() ?? '';
+  const network = getCurrentNetwork();
+
+  // ── Semantic path (PRIMARY) ────────────────────────────────────────
+  // Per the agentic-commerce vision, intent-driven retrieval is the
+  // default. Embed the query, cosine-search the product space, surface
+  // results regardless of whether the literal word appears in titles
+  // or descriptions. "Any coffee?" finds Nolo even though no Nolo
+  // product title contains "coffee".
+  //
+  // Falls back to tsvector + trigram only if:
+  //   - no query (filters-only browse)
+  //   - OPENAI_API_KEY missing
+  //   - embedding call fails
+  //   - semantic search returns 0 hits (typo tolerance)
+  //
+  // Cost: ~25 tokens per query × $0.02/M = $0.0000005, billed to the
+  // agent via deductCredits below.
+  if (rawQuery.length > 0 && process.env.OPENAI_API_KEY) {
+    try {
+      const { embedText, toPgVectorLiteral } = await import('./embeddings');
+      const { deductCredits } = await import('./credits');
+
+      const embedded = await embedText(rawQuery);
+
+      // Best-effort billing. A failed deduct must NOT block the search;
+      // the query still happens and the user gets an answer.
+      try {
+        await deductCredits(ctx.agentId, embedded.tokensUsed, 'deepseek');
+      } catch (billErr) {
+        console.error('[via_search_drops embed bill]', billErr);
+      }
+
+      const { data: semData, error: semErr } = await db.rpc('agent_semantic_search', {
+        query_embedding: toPgVectorLiteral(embedded.vector),
+        brand_id_filter: scopedBrandId,
+        max_price: args.max_price_usdc ?? null,
+        drop_type_filter: args.drop_type ?? null,
+        suspended_ids: suspendedIds,
+        result_limit: limit,
+        network_filter: network,
+        audience_filter: audienceFilter,
+        min_similarity: 0.25,
+      });
+
+      if (!semErr && semData && (semData as unknown as DropRow[]).length > 0) {
+        const rows = semData as unknown as DropRow[];
+        const summarised = rows.map(r => summariseRow(r, brands));
+        return {
+          network: 'via',
+          backend: 'rrg',
+          count: rows.length,
+          match: 'semantic' as const,
+          drops: summarised,
+        };
+      }
+      // Fall through to lexical path if semantic returned 0 or errored.
+      if (semErr) console.error('[agent_semantic_search]', semErr);
+    } catch (err) {
+      console.error('[via_search_drops semantic]', err);
+      // Fall through to lexical path.
+    }
+  }
+
+  // ── Lexical path (FALLBACK / no-query browse) ──────────────────────
   // Ranked search via the agent_search_drops Postgres function. ts_rank
   // orders by relevance (best match first); ties fall back to approved_at
   // desc. PL/pgSQL captures the tsquery as a local variable so the planner
-  // uses the idx_rrg_submissions_search_tsv GIN index. ~10 ms regardless
-  // of catalogue size.
+  // uses the idx_rrg_submissions_search_tsv GIN index.
   const { data, error } = await db.rpc('agent_search_drops', {
-    q: args.query?.trim() || null,
+    q: rawQuery || null,
     brand_id_filter: scopedBrandId,
     max_price: args.max_price_usdc ?? null,
     drop_type_filter: args.drop_type ?? null,
     suspended_ids: suspendedIds,
     result_limit: limit,
-    network_filter: getCurrentNetwork(),
+    network_filter: network,
     audience_filter: audienceFilter,
   });
 
@@ -375,9 +445,9 @@ async function via_search_drops(
     drops: summarised,
   };
 
-  if (matchMode !== 'exact' && args.query) {
+  if (matchMode !== 'exact' && rawQuery) {
     result.note =
-      `No exact text match for "${args.query}". The drops below are typo-tolerant recovery via trigram similarity. Confirm with the owner that this is what they meant before recommending.`;
+      `No semantic or exact text match for "${rawQuery}". The drops below are typo-tolerant recovery via trigram similarity. Confirm with the owner that this is what they meant before recommending.`;
   }
 
   return result;
