@@ -204,9 +204,9 @@ function NotificationsCard({
   onMarkRead: (id: string) => void;
   onMarkAllRead: () => void;
 }) {
-  // Collapsed by default to keep the dashboard scannable. Opens to the
-  // full list on click; auto-opens once if unread arrives while the
-  // user is on the page so they see the new item.
+  // Collapsed by default, matching Persona / Activity / "What I know"
+  // on this dashboard. Auto-opens once if new unread arrives while the
+  // page is open so the user sees the freshly-landed item.
   const [expanded, setExpanded] = useState(false);
   const lastSeenUnread = useRef(unreadCount);
   useEffect(() => {
@@ -214,57 +214,43 @@ function NotificationsCard({
     lastSeenUnread.current = unreadCount;
   }, [unreadCount]);
 
+  const linkButton: React.CSSProperties = {
+    background: 'transparent', border: 'none', cursor: 'pointer',
+    fontFamily: 'var(--font-jetbrains), monospace',
+    fontSize: 10, letterSpacing: '0.14em', textTransform: 'uppercase',
+    color: 'var(--accent)', padding: 0,
+    borderBottom: '1px solid color-mix(in srgb, var(--accent) 35%, transparent)',
+    whiteSpace: 'nowrap',
+  };
+
   if (notifications.length === 0) {
     return (
       <Card className="md:col-span-2">
-        <SectionHeading sub="Async messages from your concierge and the catalogue watcher.">
-          Notifications
-        </SectionHeading>
-        <p className="text-sm text-white/40" style={{ marginTop: 16 }}>
-          Nothing yet. Ask your concierge to message you when something appears, or wait for the catalogue watcher to flag a match.
-        </p>
+        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16 }}>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <h2 style={{ fontFamily: 'var(--font-fraunces), serif', fontSize: 22, fontWeight: 400, letterSpacing: '-0.01em', margin: 0 }}>
+              Notifications
+            </h2>
+            <p style={{ fontSize: 12, color: 'var(--ink-3)', lineHeight: 1.5, margin: '4px 0 0' }}>
+              Nothing yet. Your concierge and the catalogue watcher will write here when something appears.
+            </p>
+          </div>
+        </div>
       </Card>
     );
   }
 
   const summary =
     unreadCount > 0
-      ? `${unreadCount} unread of ${notifications.length}`
-      : `${notifications.length} total, all read`;
+      ? `${unreadCount} unread of ${notifications.length}.`
+      : `${notifications.length} total, all read.`;
 
   return (
     <Card className="md:col-span-2">
-      <div className="flex items-start justify-between mb-4 gap-4">
-        <button
-          type="button"
-          onClick={() => setExpanded((v) => !v)}
-          aria-expanded={expanded}
-          aria-controls="notifications-list"
-          style={{
-            flex: 1, minWidth: 0, textAlign: 'left',
-            background: 'transparent', border: 'none', padding: 0, cursor: 'pointer',
-            color: 'inherit',
-          }}
-        >
-          <div className="flex items-center gap-3">
-            <span
-              aria-hidden="true"
-              style={{
-                display: 'inline-block', width: 10, fontFamily: 'var(--font-jetbrains), monospace',
-                color: 'var(--ink-3)', fontSize: 11, lineHeight: '22px',
-                transform: expanded ? 'rotate(90deg)' : 'none',
-                transition: 'transform 0.15s',
-              }}
-            >▶</span>
-            <h2
-              style={{
-                fontFamily: 'var(--font-fraunces), serif',
-                fontSize: 22,
-                fontWeight: 400,
-                letterSpacing: '-0.01em',
-                margin: 0,
-              }}
-            >
+      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16 }}>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <h2 style={{ fontFamily: 'var(--font-fraunces), serif', fontSize: 22, fontWeight: 400, letterSpacing: '-0.01em', margin: 0 }}>
               Notifications
             </h2>
             {unreadCount > 0 && (
@@ -274,30 +260,29 @@ function NotificationsCard({
               </span>
             )}
           </div>
-          <p style={{ fontSize: 12, color: 'var(--ink-3)', lineHeight: 1.5, margin: '4px 0 0 22px' }}>
-            {expanded
-              ? 'Async messages from your concierge and the catalogue watcher.'
-              : summary + '. Click to expand.'}
+          <p style={{ fontSize: 12, color: 'var(--ink-3)', lineHeight: 1.5, margin: '4px 0 0' }}>
+            {summary} Async messages from your concierge and the catalogue watcher.
           </p>
-        </button>
-        {unreadCount > 0 && (
+        </div>
+        <div style={{ display: 'flex', gap: 14, alignItems: 'center', flexShrink: 0 }}>
+          {expanded && unreadCount > 0 && (
+            <button onClick={onMarkAllRead} style={linkButton}>
+              Mark all read
+            </button>
+          )}
           <button
-            onClick={(e) => { e.stopPropagation(); onMarkAllRead(); }}
-            style={{
-              background: 'transparent', border: 'none', cursor: 'pointer',
-              fontFamily: 'var(--font-jetbrains), monospace',
-              fontSize: 10, letterSpacing: '0.14em', textTransform: 'uppercase',
-              color: 'var(--accent)', padding: 0,
-              borderBottom: '1px solid color-mix(in srgb, var(--accent) 35%, transparent)',
-              whiteSpace: 'nowrap',
-            }}
+            onClick={() => setExpanded((v) => !v)}
+            aria-expanded={expanded}
+            aria-controls="notifications-list"
+            style={linkButton}
           >
-            Mark all read
+            {expanded ? 'Collapse' : 'Expand'}
           </button>
-        )}
+        </div>
       </div>
+
       {expanded && (
-        <div id="notifications-list" className="space-y-2">
+        <div id="notifications-list" className="space-y-2" style={{ marginTop: 16 }}>
           {notifications.map((n) => {
             const unread = !n.read_at;
             return (
@@ -721,9 +706,19 @@ export default function DashboardPage() {
             <ChatPanel agent={agent} />
           )}
 
+          {/* Notifications (Concierge only). Sits directly under chat so
+              the owner sees anything async right after they sit down. */}
+          {agent.tier === 'pro' && (
+            <NotificationsCard
+              notifications={notifications}
+              unreadCount={unreadCount}
+              onMarkRead={markNotificationRead}
+              onMarkAllRead={markAllNotificationsRead}
+            />
+          )}
+
           {/* Persona: bio, voice, comm style, interests, style tags and
-              free-text instructions. Collapsed by default so the chat
-              stays front-and-centre. */}
+              free-text instructions. Collapsed by default. */}
           <PersonaCard agent={agent} onSave={savePersona} />
 
           {/* LLM Provider Status (Concierge only) */}
@@ -732,17 +727,6 @@ export default function DashboardPage() {
               agent={agent}
               onProviderChange={(provider) => setAgent(prev => prev ? { ...prev, llm_provider: provider } : prev)}
               onTopUp={() => setShowTopUp(true)}
-            />
-          )}
-
-          {/* Notifications (Concierge only). Async messages from the
-              concierge tool + drop-match watcher. */}
-          {agent.tier === 'pro' && (
-            <NotificationsCard
-              notifications={notifications}
-              unreadCount={unreadCount}
-              onMarkRead={markNotificationRead}
-              onMarkAllRead={markAllNotificationsRead}
             />
           )}
 
