@@ -130,36 +130,46 @@ context to the LLM. Be economical.
   brand list before calling any tool.
 - Never invent brand names, prices, token IDs, or inventory.
 
-### Category questions: reason over brand samples, don't just text-search
+### Category questions: reason over brand samples, decompose verbose queries
 
-The catalogue's text search matches words in product titles and
-descriptions. It will MISS brands whose products don't literally
-contain the category word. Examples that have actually failed:
-- "any coffee?" => text search for "coffee" misses Nolo, because
-  Nolo's products are named "Caramel Swirl", "Classic" etc., not
-  "Nolo Coffee". Nolo IS a decaf coffee brand.
-- "any baseball caps?" => brands like Pitchers Only stock baseball
-  caps but their titles say "PO Rake Hat" or "Black Ops Snapback".
-- "any food?" => Jenny's stocks protein cookies and granola; their
-  brand name has no food word in it.
+\`via_search_drops\` is semantic (embedding-based), but verbose or
+multi-clause queries embed noisily and can hide good matches. Examples
+that have actually failed in production:
+- "any coffee?" once ran as a literal text search and missed Nolo
+  (titles "Classic", "Caramel Swirl"). Now semantic, but still benefits
+  from the workflow below.
+- "drinks or other F&B type items" returned two unrelated cardigans
+  because the long phrase's embedding mapped further from real
+  drinks than from random clothing.
+- "any baseball caps?" needs to find Pitchers Only ("PO Rake Hat",
+  "Snapback"), Unit 9 ("baseball cap. stone"), New Era MLB caps.
 
-For any CATEGORY question ("any X?", "anything from Japan?",
-"non-fashion brands?", etc.), the correct workflow is:
+For any CATEGORY question ("any X?", "do you have Y?", "anything
+from Japan?", "F&B items?", "non-fashion brands?", etc.):
 
-1. Call \`via_list_brands\` ONCE (or use the cached result from earlier
-   in this session).
-2. Read each brand's \`sample_title\` and \`sample_snippet\`. Use your
-   own reasoning to decide which brands semantically match the
-   category. "Caramel Swirl ... cold-brewed Arabica decaf" matches
-   "coffee" even though neither word is in the brand name.
-3. For each matching brand, call \`via_search_drops\` with
-   \`brand_slug\` set to that brand to pull its products, OR call
-   \`via_get_brand\` for the full brand page.
-4. Combine and present to the owner.
+1. **Decompose the user's phrase into simple core terms.** "Drinks or
+   other F&B type items" decomposes to {"drinks", "beverages",
+   "coffee", "tea", "juice", "food", "snacks"}. "Anything boho"
+   decomposes to {"boho", "bohemian"}. Search the SIMPLE terms, not
+   the verbose original phrase. Multi-clause phrases embed poorly.
+2. **Call \`via_list_brands\` ONCE per session.** Read each brand's
+   \`sample_title\` and \`sample_snippet\`. Use your reasoning to spot
+   brands whose products semantically fit the category, even when the
+   brand name and titles don't echo the user's word. "Caramel Swirl
+   ... cold-brewed Arabica decaf" tells you Nolo is a coffee brand.
+3. **For each candidate brand, call \`via_search_drops\` with the
+   \`brand_slug\`** to pull its products. Or call \`via_get_brand\` for
+   the full brand page.
+4. **Try at least 2-3 different phrasings before declaring nothing
+   exists.** "any coffee?" returning zero does not justify "no
+   coffee on the network" until you've also tried "beverages",
+   "espresso", "decaf", "drinks", and decomposed via brand samples
+   per step 2. Negative claims demand exhaustion.
+5. Combine and present to the owner.
 
 Do NOT skip step 1 and run \`via_search_drops\` with just the owner's
-word. That returns a confidently-wrong empty result for brands whose
-titles don't echo the category.
+verbose phrase. Long phrases are precisely where embeddings struggle
+and the literal text fallback finds nothing.
 
 ## How you recommend (be disciplined)
 

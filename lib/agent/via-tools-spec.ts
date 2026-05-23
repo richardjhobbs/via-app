@@ -381,7 +381,7 @@ async function via_search_drops(
         result_limit: limit,
         network_filter: network,
         audience_filter: audienceFilter,
-        min_similarity: 0.25,
+        min_similarity: 0.15,
       });
 
       if (!semErr && semData && (semData as unknown as DropRow[]).length > 0) {
