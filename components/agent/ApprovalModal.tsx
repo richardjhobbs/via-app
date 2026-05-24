@@ -34,10 +34,13 @@ const SETTLEMENT_SPENDER = (
   '0xbfd71eA27FFc99747dA2873372f84346d9A8b7ed'
 ).toLowerCase();
 
-// One full year of the default 1 USDC/week cap. Bounded enough not to
-// alarm; large enough not to require frequent re-signing. The real
-// per-week ceiling is enforced server-side in the settlement cron.
-const APPROVAL_LIFETIME_USDC = 52;
+// One month of the default 1 USDC/week cap. Owner re-signs roughly
+// monthly; that keeps the on-chain ceiling visibly bounded ("at most
+// 4 USDC ever") rather than the alarming-but-true alternative of an
+// effectively unlimited allowance. Owner can revoke any time from
+// their wallet. The real per-week ceiling is enforced server-side
+// in the settlement cron.
+const APPROVAL_LIFETIME_USDC = 4;
 
 // Same wallet set as registration so the modal works for the user's
 // existing wallet without forcing them to leave the dashboard.
@@ -132,13 +135,19 @@ export function ApprovalModal({
         }}
       >
         <h2 style={{ fontFamily: 'var(--font-fraunces), serif', fontSize: 22, fontWeight: 400, margin: '0 0 8px' }}>
-          Authorise LLM cost recovery
+          Give {agentName} a runway
         </h2>
         <p style={{ fontSize: 13, color: 'var(--ink-3)', lineHeight: 1.55, margin: '0 0 12px' }}>
-          The platform pays the LLM providers (DeepSeek, OpenAI) up front for every chat, watcher run and search {agentName} makes. This authorisation lets us pull the cost back from your agent wallet at the end of each week, capped at <strong style={{ color: 'var(--ink)' }}>1 USDC per week</strong>. If usage exceeds the cap, {agentName} pauses until you raise it.
+          You're already up and running on us. The <strong style={{ color: 'var(--ink)' }}>1 USDC welcome credit</strong> we gave you covers a lot of concierge work, a daily chat with {agentName} can run for a couple of months on the welcome alone.
+        </p>
+        <p style={{ fontSize: 13, color: 'var(--ink-3)', lineHeight: 1.55, margin: '0 0 12px' }}>
+          This authorisation is for <em>later</em>, when {agentName} is doing more for you (saving you time on the search, flagging things at the right moment) and we need to settle the LLM cost it's incurring. The platform pays the LLM providers up front; this lets us recover that cost from your agent wallet, <strong style={{ color: 'var(--ink)' }}>at most 1 USDC per week</strong>, in arrears.
         </p>
         <p style={{ fontSize: 13, color: 'var(--ink-3)', lineHeight: 1.55, margin: '0 0 16px' }}>
-          You sign this once. Works the same way whether you registered with a Thirdweb in-app wallet (Google / email) or connected an external wallet (MetaMask / Coinbase). The weekly cap is what governs what we can actually settle; we enforce it server-side and you can change it any time from your dashboard.
+          <strong style={{ color: 'var(--ink)' }}>You stay in control.</strong> The weekly cap is the actual ceiling and is enforced server-side; we can never pull more than that in a week. The on-chain allowance you sign here is intentionally small (~one month at the cap) so the visible exposure is bounded; you'll re-sign a similar amount each month. You can lower the weekly cap to zero from your dashboard any time, or revoke the allowance from your wallet directly.
+        </p>
+        <p style={{ fontSize: 12, color: 'var(--ink-3)', lineHeight: 1.5, margin: '0 0 16px', fontStyle: 'italic' }}>
+          Works the same whether you signed up with a Thirdweb in-app wallet (Google / email) or connected an external wallet (MetaMask / Coinbase).
         </p>
 
         {/* Inline connect when no wallet is active. Embedded wallets
@@ -182,7 +191,7 @@ export function ApprovalModal({
               You are about to sign
             </div>
             <div style={{ marginBottom: 8 }}>
-              <strong style={{ color: 'var(--ink)' }}>USDC.approve</strong> to the platform settlement spender, capacity {APPROVAL_LIFETIME_USDC} USDC. That is roughly <strong style={{ color: 'var(--ink)' }}>one year of weekly caps</strong> at the default 1 USDC/week, so you do not have to re-sign every week. The platform can never pull more than the weekly cap regardless of allowance.
+              <strong style={{ color: 'var(--ink)' }}>USDC.approve</strong> for {APPROVAL_LIFETIME_USDC} USDC to the platform settlement spender. That is roughly <strong style={{ color: 'var(--ink)' }}>one month at the default 1 USDC/week cap</strong>, so you will sign one of these every month or so. We can never pull more than the weekly cap in a week regardless of allowance.
             </div>
             <details style={{ fontSize: 11, color: 'var(--ink-3)' }}>
               <summary style={{ cursor: 'pointer', userSelect: 'none' }}>Show raw call</summary>

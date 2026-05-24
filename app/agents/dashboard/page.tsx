@@ -976,13 +976,16 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        {/* One-time LLM cost-recovery authorisation. Shows only on pro tier
-            and only when the owner has not yet signed the on-chain approve. */}
+        {/* Forward-looking nudge to set up the cost-recovery rail. Not
+            "action required", since the welcome credit covers a lot of
+            normal use; this is for when the concierge is doing more
+            and we need to settle. Shown only on pro tier, only when
+            the on-chain approve has not yet been signed. */}
         {agent.tier === 'pro' && approval && !approval.granted && (
           <div
             style={{
-              border: '1px solid color-mix(in srgb, #b5453a 35%, transparent)',
-              background: 'color-mix(in srgb, #b5453a 6%, transparent)',
+              border: '1px solid var(--line)',
+              background: 'var(--paper)',
               padding: '14px 18px',
               marginBottom: 24,
               display: 'flex',
@@ -993,11 +996,11 @@ export default function DashboardPage() {
             }}
           >
             <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontFamily: 'var(--font-jetbrains), monospace', fontSize: 10, letterSpacing: '0.14em', textTransform: 'uppercase', color: '#b5453a', marginBottom: 4 }}>
-                Action required
+              <div style={{ fontFamily: 'var(--font-jetbrains), monospace', fontSize: 10, letterSpacing: '0.14em', textTransform: 'uppercase', color: 'var(--ink-3)', marginBottom: 4 }}>
+                Set up for the future
               </div>
               <div style={{ fontSize: 14, color: 'var(--ink)', lineHeight: 1.5 }}>
-                Authorise LLM cost recovery so {agent.name} keeps running. One on-chain signature, capped at 1 USDC per week.
+                {agent.name} is running on your welcome credit. Set up the runway for when it starts doing more, capped at 1 USDC per week, with the cap enforced server-side.
               </div>
             </div>
             <button
@@ -1009,7 +1012,7 @@ export default function DashboardPage() {
                 flexShrink: 0,
               }}
             >
-              Authorise
+              Set up
             </button>
           </div>
         )}
