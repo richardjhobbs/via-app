@@ -26,12 +26,19 @@ async function send({ to, subject, html, fromOverride }: EmailParams) {
     return;
   }
 
-  await getResend().emails.send({
+  // Resend's SDK returns { data, error } rather than throwing on API errors
+  // such as a revoked key (401) or unverified sender domain. Surface those
+  // explicitly so the calling route logs the failure instead of silently
+  // succeeding with no email actually delivered.
+  const result = await getResend().emails.send({
     from: fromOverride ?? `VIA Drops <${FROM}>`,
     to,
     subject,
     html,
   });
+  if (result.error) {
+    throw new Error(`Resend send failed: ${result.error.name} ${result.error.message}`);
+  }
 }
 
 function escHtml(str: string): string {

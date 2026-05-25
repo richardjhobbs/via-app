@@ -61,12 +61,22 @@ export async function issueSignInLink(
     return { issued: false, rawToken: null, agent: null };
   }
 
-  const { data: agent } = await db
+  // .maybeSingle() returns null when MORE than one row matches, which
+  // happens for legacy duplicate emails (older signups predate the
+  // application-level uniqueness check in /api/agent/create). Pick the
+  // most recently created agent so the sign-in flow does not silently
+  // dead-end. The right long-term fix is a unique constraint on
+  // agent_agents.email plus a manual reconciliation of legacy rows.
+  const { data: agents, error: lookupError } = await db
     .from('agent_agents')
     .select('id, name, email')
     .eq('email', normalised)
-    .maybeSingle();
-
+    .order('created_at', { ascending: false })
+    .limit(1);
+  if (lookupError) {
+    throw new Error(`issueSignInLink: lookup failed: ${lookupError.message}`);
+  }
+  const agent = agents && agents.length > 0 ? agents[0] : null;
   if (!agent) {
     return { issued: false, rawToken: null, agent: null };
   }
