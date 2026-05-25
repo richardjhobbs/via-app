@@ -154,11 +154,17 @@ export function StepRegistration({ state, update, onNext, onBack }: Props) {
       // Read-only existence check. The endpoint returns { exists: true|false }
       // and does NOT mint a session, so the new dashboard handoff is via the
       // verified email sign-in link triggered below.
+      //
+      // setExistingAgent uses functional form so it is idempotent. Setting
+      // a fresh object literal on every effect run created a render loop
+      // (each new object reference triggered a rerender, which retriggered
+      // this effect, ad infinitum). Now we only set the state once, on
+      // first discovery.
       fetch(`/api/agent/session?wallet=${account.address}`)
         .then(r => r.ok ? r.json() : null)
         .then(data => {
           if (data?.exists) {
-            setExistingAgent({ name: '', tier: 'pro' });
+            setExistingAgent((prev) => prev ?? { name: '', tier: 'pro' });
           }
         })
         .catch(() => {});
@@ -179,7 +185,7 @@ export function StepRegistration({ state, update, onNext, onBack }: Props) {
       if (sessionRes.ok) {
         const data = await sessionRes.json();
         if (data?.exists) {
-          setExistingAgent({ name: '', tier: 'pro' });
+          setExistingAgent((prev) => prev ?? { name: '', tier: 'pro' });
           return;
         }
       }

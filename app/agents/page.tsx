@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import RRGHeader from '@/components/rrg/RRGHeader';
 import RRGFooter from '@/components/rrg/RRGFooter';
@@ -53,8 +53,17 @@ export default function AgentsPage() {
   const [state, setState] = useState<WizardState>(initialState);
   const [agentId, setAgentId] = useState<string | null>(null);
 
-  const update = (partial: Partial<WizardState>) =>
-    setState((prev) => ({ ...prev, ...partial }));
+  // useCallback stabilises the reference so child effects that depend
+  // on `update` do not retrigger on every parent render. Without this,
+  // StepRegistration's wallet-connect useEffect fires in a loop on
+  // every render of this page (the loop manifests as repeat hits to
+  // /api/agent/session?wallet=...), which is what produced the
+  // "client-side exception" crash after the magic-link change.
+  const update = useCallback(
+    (partial: Partial<WizardState>) =>
+      setState((prev) => ({ ...prev, ...partial })),
+    [],
+  );
   const next = () => setStep((s) => Math.min(s + 1, WIZARD_STEPS.length - 1));
   const back = () => {
     if (step === 0) setWizardActive(false);
