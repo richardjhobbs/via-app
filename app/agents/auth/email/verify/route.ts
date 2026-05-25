@@ -4,6 +4,25 @@ import { consumeSignInToken } from '@/lib/agent/auth-email';
 export const dynamic = 'force-dynamic';
 
 /**
+ * Resolve the public-facing base URL. Behind nginx, req.nextUrl.origin
+ * reflects the internal listener (e.g. http://0.0.0.0:3001), not the
+ * public host the client actually hit, so NextResponse.redirect ends up
+ * pointing at the bind address and the browser shows ERR_ADDRESS_INVALID.
+ * We prefer the forwarded headers nginx sets, fall back to the public
+ * site URL from env, and finally to the request's own origin.
+ */
+function resolvePublicOrigin(req: NextRequest): string {
+  const fwdHost = req.headers.get('x-forwarded-host') ?? req.headers.get('host');
+  const fwdProto = req.headers.get('x-forwarded-proto') ?? 'https';
+  if (fwdHost && !fwdHost.startsWith('0.0.0.0') && !fwdHost.startsWith('127.0.0.1')) {
+    return `${fwdProto}://${fwdHost}`;
+  }
+  const envUrl = process.env.NEXT_PUBLIC_SITE_URL?.replace(/\/$/, '');
+  if (envUrl) return envUrl;
+  return req.nextUrl.origin;
+}
+
+/**
  * GET /agents/auth/email/verify?token=<raw>
  *
  * Route handler (NOT a page) because Next.js 16 forbids cookies().set()
@@ -22,9 +41,10 @@ export const dynamic = 'force-dynamic';
 export async function GET(req: NextRequest) {
   const token = req.nextUrl.searchParams.get('token') ?? '';
   const result = await consumeSignInToken(token);
+  const origin = resolvePublicOrigin(req);
 
   if (result.ok && result.agentId) {
-    const dashboardUrl = new URL('/agents/dashboard', req.nextUrl.origin);
+    const dashboardUrl = new URL('/agents/dashboard', origin);
     const response = NextResponse.redirect(dashboardUrl, { status: 302 });
     response.cookies.set('via_agent_session', result.agentId, {
       httpOnly: true,
@@ -36,7 +56,7 @@ export async function GET(req: NextRequest) {
     return response;
   }
 
-  const expiredUrl = new URL('/agents/auth/email/expired', req.nextUrl.origin);
+  const expiredUrl = new URL('/agents/auth/email/expired', origin);
   expiredUrl.searchParams.set('reason', result.reason);
   return NextResponse.redirect(expiredUrl, { status: 302 });
 }
