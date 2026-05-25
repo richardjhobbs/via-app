@@ -1,8 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/rrg/db';
 import { parseInstructions } from '@/lib/agent/rules';
+import { LLM_PROVIDER_OPTIONS } from '@/lib/agent/types';
 
 export const dynamic = 'force-dynamic';
+
+// Single source of truth for which LLM providers a Personal Agent may run
+// on. Derived from the same array the wizard / dashboard render, so adding
+// Claude back to LLM_PROVIDER_OPTIONS automatically re-enables the PATCH.
+const ALLOWED_LLM_PROVIDERS = new Set(
+  LLM_PROVIDER_OPTIONS.map((o) => o.value),
+);
 
 /** GET /api/agent/[agentId]: Read agent profile */
 export async function GET(
@@ -55,6 +63,17 @@ export async function PATCH(
     if (key in body) {
       updates[key] = body[key];
     }
+  }
+
+  // Reject any llm_provider not in the active option set. Belt-and-braces
+  // alongside the UI: a stale client or scripted PATCH can't silently put
+  // an agent back onto a provider whose code path isn't wired (e.g. Claude
+  // without tool-use), which would re-introduce the hallucinated-URL bug.
+  if ('llm_provider' in updates && !ALLOWED_LLM_PROVIDERS.has(updates.llm_provider as never)) {
+    return NextResponse.json(
+      { error: `llm_provider '${updates.llm_provider}' is not currently supported` },
+      { status: 400 },
+    );
   }
 
   // Re-parse rules if instructions changed

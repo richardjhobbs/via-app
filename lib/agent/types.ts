@@ -6,8 +6,12 @@ export type BidAggression = 'conservative' | 'balanced' | 'aggressive';
 export type WalletType = 'embedded' | 'imported';
 export type LlmProvider = 'claude' | 'deepseek';
 
+// Claude was disabled 2026-05-25: the chat path lacks Anthropic tool-use
+// wiring, so Claude-backed concierges hallucinated tool calls and dumped
+// raw `</function_result>` blocks into chat with fabricated URLs. DeepSeek
+// has working tool-use via streamDeepSeekWithTools. Add Claude back here
+// after wiring real Anthropic tool-use in lib/agent/llm.ts.
 export const LLM_PROVIDER_OPTIONS = [
-  { value: 'claude' as LlmProvider, label: 'Claude (Anthropic)' },
   { value: 'deepseek' as LlmProvider, label: 'DeepSeek' },
 ] as const;
 export type AgentStatus = 'active' | 'suspended' | 'archived';

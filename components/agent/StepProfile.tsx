@@ -8,7 +8,7 @@ import { Select, TagSelect } from '@/components/ui/Select';
 import { InterestSelector } from './InterestSelector';
 import { BrandPicker } from './BrandPicker';
 import { SizeInput } from './SizeInput';
-import { STYLE_TAGS, VOICE_PRESETS, COMM_STYLE_PRESETS, TIER_DISPLAY, LLM_PROVIDER_OPTIONS } from '@/lib/agent/types';
+import { STYLE_TAGS, VOICE_PRESETS, COMM_STYLE_PRESETS, TIER_DISPLAY } from '@/lib/agent/types';
 import type { WizardState } from '@/lib/agent/types';
 
 interface Props {
@@ -119,16 +119,10 @@ export function StepProfile({ state, update, onNext, onBack }: Props) {
           ]}
         />
 
-        {state.tier === 'pro' && (
-          <Select
-            label="LLM provider"
-            value={state.llm_provider}
-            onChange={(v) =>
-              update({ llm_provider: v as 'claude' | 'deepseek' })
-            }
-            options={[...LLM_PROVIDER_OPTIONS]}
-          />
-        )}
+        {/* LLM provider selector removed 2026-05-25: only DeepSeek is wired
+            for tool use. Wizard defaults llm_provider to 'deepseek' (see
+            CreateAgentWizard.tsx), so nothing to choose. Restore the Select
+            here once a second provider is supported. */}
       </div>
 
       {/* Persona section (optional, collapsible) */}

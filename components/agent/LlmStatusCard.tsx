@@ -126,7 +126,7 @@ export function LlmStatusCard({ agent, onProviderChange, onTopUp }: Props) {
           </p>
         </div>
         <div style={{ display: 'flex', gap: 14, alignItems: 'center', flexShrink: 0 }}>
-          {expanded && !editingProvider && (
+          {expanded && !editingProvider && LLM_PROVIDER_OPTIONS.length > 1 && (
             <button
               onClick={() => { setProviderDraft(agent.llm_provider); setEditingProvider(true); }}
               style={linkButton}
