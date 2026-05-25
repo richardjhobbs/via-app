@@ -1,46 +1,26 @@
-import { redirect } from 'next/navigation';
-import { cookies } from 'next/headers';
 import Link from 'next/link';
-import { consumeSignInToken } from '@/lib/agent/auth-email';
 import RRGHeader from '@/components/rrg/RRGHeader';
 import RRGFooter from '@/components/rrg/RRGFooter';
 
 export const dynamic = 'force-dynamic';
 
 /**
- * /agents/auth/email/verify?token=<raw>
+ * /agents/auth/email/expired?reason=expired|used|invalid|missing
  *
- * Server component. Consumes the magic-link token, mints the
- * via_agent_session httpOnly cookie, then redirects to the dashboard.
- * Tokens are single-use and expire 15 minutes after issue.
- *
- * On any failure (missing/invalid/expired/used token), renders an
- * inline page with a "Request a new link" link back to /agents. No
- * auto-action so a stale browser tab cannot loop on a dead token.
+ * Friendly landing page for failed magic-link consumption. The verify
+ * route handler redirects here on any non-ok outcome so the user gets a
+ * clear explanation and a path back to requesting a fresh link instead
+ * of staring at a server error page.
  */
-export default async function VerifyEmailSignInPage({
+export default async function MagicLinkExpiredPage({
   searchParams,
 }: {
-  searchParams: Promise<{ token?: string }>;
+  searchParams: Promise<{ reason?: string }>;
 }) {
-  const { token } = await searchParams;
-  const result = await consumeSignInToken(token ?? '');
-
-  if (result.ok && result.agentId) {
-    const cookieJar = await cookies();
-    cookieJar.set('via_agent_session', result.agentId, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'lax',
-      maxAge: 60 * 60 * 24 * 30,
-      path: '/',
-    });
-    redirect('/agents/dashboard');
-  }
-
+  const { reason } = await searchParams;
   const headline =
-    result.reason === 'expired' ? 'This sign-in link has expired.'
-    : result.reason === 'used'  ? 'This sign-in link has already been used.'
+    reason === 'expired' ? 'This sign-in link has expired.'
+    : reason === 'used'  ? 'This sign-in link has already been used.'
     : 'This sign-in link is not valid.';
 
   return (
