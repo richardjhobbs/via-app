@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
+import { useRouter } from 'next/navigation';
 import { ConnectEmbed, lightTheme, useActiveAccount, useProfiles } from 'thirdweb/react';
 import { base } from 'thirdweb/chains';
 import { inAppWallet, createWallet } from 'thirdweb/wallets';
@@ -9,6 +10,7 @@ import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { TIER_DISPLAY } from '@/lib/agent/types';
 import type { WizardState } from '@/lib/agent/types';
+import { fetchJson } from '@/lib/util/fetchWithTimeout';
 
 interface Props {
   state: WizardState;
@@ -95,6 +97,7 @@ const subhead: React.CSSProperties = {
 };
 
 export function StepRegistration({ state, update, onNext, onBack }: Props) {
+  const router = useRouter();
   const [walletMode, setWalletMode] = useState<'new' | 'import'>('new');
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [existingCreator, setExistingCreator] = useState<boolean>(false);
@@ -103,6 +106,28 @@ export function StepRegistration({ state, update, onNext, onBack }: Props) {
   const [lookupDismissed, setLookupDismissed] = useState(false);
   const account = useActiveAccount();
   const { data: profiles } = useProfiles({ client: thirdwebClient });
+
+  // Whenever an existing agent is detected (either via Thirdweb wallet
+  // connect or via email-blur preflight), mint the session cookie and
+  // route to the dashboard. The "Welcome back" card only flashes for a
+  // beat so the user sees what's happening, but no clicking is required.
+  useEffect(() => {
+    if (!existingAgent) return;
+    const target = state.email
+      ? `/api/agent/session?email=${encodeURIComponent(state.email)}`
+      : account?.address
+        ? `/api/agent/session?wallet=${account.address}`
+        : null;
+    if (!target) return;
+    let cancelled = false;
+    (async () => {
+      const r = await fetchJson(target, { timeoutMs: 15_000 });
+      if (cancelled) return;
+      if (r.kind === 'ok') router.push('/agents/dashboard');
+      else window.location.href = '/agents/dashboard';
+    })();
+    return () => { cancelled = true; };
+  }, [existingAgent, state.email, account?.address, router]);
 
   useEffect(() => {
     if (account?.address) {
@@ -207,32 +232,15 @@ export function StepRegistration({ state, update, onNext, onBack }: Props) {
   if (existingAgent) {
     return (
       <div>
-        <h2 style={heading}>Welcome back.</h2>
+        <h2 style={heading}>Welcome back, {existingAgent.name}.</h2>
         <div style={{ ...panelSuccess, marginBottom: 24 }}>
-          <p style={{ color: 'var(--accent)', margin: '0 0 8px', fontFamily: 'var(--font-fraunces), serif', fontSize: 16 }}>
-            You already have a {existingAgent.tier === 'pro' ? 'Concierge' : 'Personal Shopper'}: <strong>{existingAgent.name}</strong>
+          <p style={{ color: 'var(--ink)', margin: '0 0 4px', fontFamily: 'var(--font-fraunces), serif', fontSize: 16 }}>
+            Signing you in.
           </p>
-          <p style={{ color: 'var(--ink-2)', fontSize: 13, lineHeight: 1.55, margin: '0 0 14px' }}>
-            Go to your dashboard to manage preferences, chat, and view activity.
+          <p style={{ color: 'var(--ink-2)', fontSize: 13, lineHeight: 1.55, margin: 0 }}>
+            Taking you to your dashboard now.
           </p>
-          <a
-            href="/agents/dashboard"
-            className="btn"
-            style={{ display: 'inline-flex', fontSize: 12, padding: '10px 18px' }}
-          >
-            Go to your dashboard <span style={{ marginLeft: 6 }}>→</span>
-          </a>
         </div>
-        <button
-          onClick={onBack}
-          style={{
-            background: 'transparent', border: 'none', cursor: 'pointer',
-            fontFamily: 'var(--font-jetbrains), monospace', fontSize: 10, letterSpacing: '0.14em',
-            textTransform: 'uppercase', color: 'var(--ink-3)',
-          }}
-        >
-          ← Back
-        </button>
       </div>
     );
   }

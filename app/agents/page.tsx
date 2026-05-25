@@ -8,11 +8,15 @@ import { Stepper } from '@/components/ui/Stepper';
 import { StepRegistration } from '@/components/agent/StepRegistration';
 import { StepProfile } from '@/components/agent/StepProfile';
 import { StepReview } from '@/components/agent/StepReview';
-import type { AgentTier, WizardState } from '@/lib/agent/types';
+import type { WizardState } from '@/lib/agent/types';
 import { EMPTY_SIZE_PROFILE } from '@/lib/agent/types';
+import { fetchJson } from '@/lib/util/fetchWithTimeout';
 
 const initialState: WizardState = {
-  tier: 'basic',
+  // All new agents are Concierge. Basic tier is no longer offered (the
+  // welcome credit puts every new user straight into Concierge from
+  // signup), so the wizard hard-codes tier='pro'.
+  tier: 'pro',
   email: '',
   name: '',
   wallet_address: '',
@@ -34,7 +38,10 @@ const initialState: WizardState = {
   sizes: { ...EMPTY_SIZE_PROFILE },
 };
 
-const WIZARD_STEPS = ['Service', 'Registration', 'Profile', 'Review'];
+// Three wizard steps now that tier selection is removed (everyone is
+// Concierge). The Stepper shows numbered progress; the indices below
+// are 0-based and match the conditional render order in the JSX.
+const WIZARD_STEPS = ['Register', 'Profile', 'Review'];
 
 export default function AgentsPage() {
   const router = useRouter();
@@ -42,7 +49,7 @@ export default function AgentsPage() {
   const [sessionCheckFailed, setSessionCheckFailed] = useState(false);
 
   const [wizardActive, setWizardActive] = useState(false);
-  const [step, setStep] = useState(1);
+  const [step, setStep] = useState(0);
   const [state, setState] = useState<WizardState>(initialState);
   const [agentId, setAgentId] = useState<string | null>(null);
 
@@ -50,8 +57,8 @@ export default function AgentsPage() {
     setState((prev) => ({ ...prev, ...partial }));
   const next = () => setStep((s) => Math.min(s + 1, WIZARD_STEPS.length - 1));
   const back = () => {
-    if (step === 1) setWizardActive(false);
-    else setStep((s) => Math.max(s - 1, 1));
+    if (step === 0) setWizardActive(false);
+    else setStep((s) => Math.max(s - 1, 0));
   };
 
   // Session check with one retry on transient network failure. Previously
@@ -97,10 +104,40 @@ export default function AgentsPage() {
     };
   }, [router]);
 
-  function selectTier(tier: AgentTier) {
-    setState(prev => ({ ...prev, tier }));
-    setStep(1);
+  function startSignup() {
+    setStep(0);
     setWizardActive(true);
+  }
+
+  // Email-only sign-in for returning users. Hits the session lookup
+  // (which mints the cookie when it finds the agent) and routes to the
+  // dashboard. Bounded fetch so a hang can't trap the user.
+  const [signInEmail, setSignInEmail] = useState('');
+  const [signInBusy, setSignInBusy] = useState(false);
+  const [signInError, setSignInError] = useState<string | null>(null);
+
+  async function signInWithEmail(e?: React.FormEvent) {
+    e?.preventDefault();
+    const email = signInEmail.trim().toLowerCase();
+    if (!email || !email.includes('@')) {
+      setSignInError('Enter the email you signed up with.');
+      return;
+    }
+    setSignInBusy(true);
+    setSignInError(null);
+    const r = await fetchJson('/api/agent/session?email=' + encodeURIComponent(email), {
+      timeoutMs: 15_000,
+    });
+    setSignInBusy(false);
+    if (r.kind === 'ok') {
+      router.push('/agents/dashboard');
+      return;
+    }
+    if (r.kind === 'http' && r.status === 401) {
+      setSignInError("We couldn't find an agent with that email. Sign up below.");
+      return;
+    }
+    setSignInError('Sign in is having trouble. Try again, or sign up below.');
   }
 
   if (checking) {
@@ -149,77 +186,28 @@ export default function AgentsPage() {
                 margin: '0 0 20px',
                 color: 'var(--ink)',
               }}>
-                Your <em>Personal Shopper.</em><br/>Your <em>Concierge.</em>
+                Your <em>Concierge.</em>
               </h1>
               <p style={{ fontSize: 16, color: 'var(--ink-2)', lineHeight: 1.65, maxWidth: '62ch', fontWeight: 300 }}>
-                Start with a Personal Shopper that handles the basics, finding,
-                filtering, and surfacing what matches your taste on Real Real Genuine.
-                Upgrade to a Concierge that learns your style, negotiates on your
-                behalf, and acts with judgement. You set the rules. They do the work.
+                An AI agent that learns your taste, finds what matches on Real Real
+                Genuine, and acts with judgement on your behalf. You set the rules.
+                It does the work.
               </p>
             </div>
 
-            {/* ── Two-tier choice ──────────────────────────── */}
+            {/* ── Single Concierge offer ─────────────────── */}
             <div className="collab-inner" style={{ padding: 0, marginBottom: 40 }}>
-              {/* Personal Shopper */}
               <button
                 type="button"
-                onClick={() => selectTier('basic')}
-                className="collab-card"
-                style={{ textAlign: 'left', background: 'var(--paper)', cursor: 'pointer', minHeight: 420 }}
-              >
-                <div className="tag-line">
-                  <span className="uc-mono" style={{ color: 'var(--accent)' }}>Tier one</span>
-                  <span className="uc-mono" style={{ color: 'var(--ink-3)' }}>Free</span>
-                </div>
-                <div>
-                  <h4><em>Personal Shopper.</em></h4>
-                  <p>
-                    Works on the preferences you set. Finds, filters, and surfaces what matches.
-                    Like having someone on retainer at your favourite store.
-                  </p>
-                  <ul style={{ listStyle: 'none', padding: 0, margin: '0 0 24px', fontSize: 14, color: 'var(--ink-2)', lineHeight: 1.8 }}>
-                    <li style={{ paddingLeft: 14, position: 'relative' }}>
-                      <span style={{ position: 'absolute', left: 0, color: 'var(--accent)' }}>·</span>
-                      Works on your set preferences and criteria
-                    </li>
-                    <li style={{ paddingLeft: 14, position: 'relative' }}>
-                      <span style={{ position: 'absolute', left: 0, color: 'var(--accent)' }}>·</span>
-                      Automatic bidding when rules match
-                    </li>
-                    <li style={{ paddingLeft: 14, position: 'relative' }}>
-                      <span style={{ position: 'absolute', left: 0, color: 'var(--accent)' }}>·</span>
-                      Wallet and a VIA Agent identity (ERC-8004 verified)
-                    </li>
-                    <li style={{ paddingLeft: 14, position: 'relative' }}>
-                      <span style={{ position: 'absolute', left: 0, color: 'var(--accent)' }}>·</span>
-                      Dashboard and email notifications
-                    </li>
-                  </ul>
-                </div>
-                <div className="c-cta">
-                  <span className="btn" style={{ padding: '12px 20px', fontSize: 12 }}>
-                    Get started free <span className="arrow">→</span>
-                  </span>
-                </div>
-              </button>
-
-              {/* Concierge */}
-              <button
-                type="button"
-                onClick={() => selectTier('pro')}
+                onClick={startSignup}
                 className="collab-card"
                 style={{ textAlign: 'left', background: 'var(--paper)', cursor: 'pointer', minHeight: 420, borderColor: 'var(--accent)' }}
               >
-                <div className="tag-line">
-                  <span className="uc-mono" style={{ color: 'var(--accent)' }}>Tier two</span>
-                  <span className="uc-mono" style={{ color: 'var(--ink-3)' }}>Credit-based</span>
-                </div>
                 <div>
                   <h4><em>Concierge.</em></h4>
                   <p>
-                    Learns your taste, understands nuance, and negotiates on your behalf.
-                    Powered by DeepSeek. The relationship deepens over time.
+                    Learns your taste, understands nuance, and acts on your behalf.
+                    The relationship deepens with every conversation.
                   </p>
                   <ul style={{ listStyle: 'none', padding: 0, margin: '0 0 24px', fontSize: 14, color: 'var(--ink-2)', lineHeight: 1.8 }}>
                     <li style={{ paddingLeft: 14, position: 'relative' }}>
@@ -236,60 +224,85 @@ export default function AgentsPage() {
                     </li>
                     <li style={{ paddingLeft: 14, position: 'relative' }}>
                       <span style={{ position: 'absolute', left: 0, color: 'var(--accent)' }}>·</span>
-                      Falls back to Personal Shopper when credits run out
+                      A wallet and an on-chain VIA identity (ERC-8004)
+                    </li>
+                    <li style={{ paddingLeft: 14, position: 'relative' }}>
+                      <span style={{ position: 'absolute', left: 0, color: 'var(--accent)' }}>·</span>
+                      Welcome credit included, top up any time
                     </li>
                   </ul>
                 </div>
                 <div className="c-cta">
                   <span className="btn accent" style={{ padding: '12px 20px', fontSize: 12 }}>
-                    Get started with Concierge <span className="arrow">→</span>
+                    Get started <span className="arrow">→</span>
                   </span>
                 </div>
               </button>
             </div>
 
-            {/* Already signed up */}
-            <div
+            {/* Returning? email-only sign-in */}
+            <form
+              onSubmit={signInWithEmail}
               style={{
                 marginTop: 40,
                 padding: '24px 28px',
                 background: 'var(--paper)',
                 border: '1px solid var(--accent)',
                 borderRadius: 4,
-                display: 'flex',
-                flexWrap: 'wrap',
-                gap: 20,
-                alignItems: 'center',
-                justifyContent: 'space-between',
               }}
             >
-              <div style={{ minWidth: 0, flex: '1 1 320px' }}>
-                <div className="uc-mono" style={{ color: 'var(--accent)', fontSize: 11, letterSpacing: '0.14em', marginBottom: 6 }}>
-                  Returning?
-                </div>
-                <div style={{ fontSize: 16, color: 'var(--ink)', lineHeight: 1.4 }}>
-                  Already signed up? Pick up where you left off.
-                </div>
+              <div className="uc-mono" style={{ color: 'var(--accent)', fontSize: 11, letterSpacing: '0.14em', marginBottom: 6 }}>
+                Returning?
               </div>
-              <button
-                onClick={() => router.push('/agents/dashboard')}
-                className="btn accent"
-                style={{ fontSize: 12, padding: '12px 24px', letterSpacing: '0.08em' }}
-              >
-                Go to your dashboard <span className="arrow">→</span>
-              </button>
-            </div>
+              <div style={{ fontSize: 16, color: 'var(--ink)', lineHeight: 1.4, marginBottom: 14 }}>
+                Sign in with the email you used at signup. Works on any device.
+              </div>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'stretch' }}>
+                <input
+                  type="email"
+                  inputMode="email"
+                  autoComplete="email"
+                  placeholder="you@example.com"
+                  value={signInEmail}
+                  onChange={(e) => { setSignInEmail(e.target.value); setSignInError(null); }}
+                  disabled={signInBusy}
+                  style={{
+                    flex: '1 1 240px',
+                    minWidth: 0,
+                    padding: '10px 12px',
+                    fontFamily: 'var(--font-jetbrains), monospace',
+                    fontSize: 13,
+                    background: 'var(--bg)',
+                    border: '1px solid var(--line-strong)',
+                    color: 'var(--ink)',
+                  }}
+                />
+                <button
+                  type="submit"
+                  disabled={signInBusy}
+                  className="btn accent"
+                  style={{ fontSize: 12, padding: '10px 20px', letterSpacing: '0.08em', opacity: signInBusy ? 0.7 : 1 }}
+                >
+                  {signInBusy ? 'Signing you in...' : <>Continue <span className="arrow">→</span></>}
+                </button>
+              </div>
+              {signInError && (
+                <p style={{ marginTop: 10, fontSize: 12, color: '#8a2e25', fontFamily: 'var(--font-jetbrains), monospace', letterSpacing: '0.04em' }}>
+                  {signInError}
+                </p>
+              )}
+            </form>
           </>
         ) : (
           <div style={{ maxWidth: 720, margin: '0 auto' }}>
             <Stepper steps={WIZARD_STEPS} currentStep={step} />
-            {step === 1 && (
+            {step === 0 && (
               <StepRegistration state={state} update={update} onNext={next} onBack={back} />
             )}
-            {step === 2 && (
+            {step === 1 && (
               <StepProfile state={state} update={update} onNext={next} onBack={back} />
             )}
-            {step === 3 && (
+            {step === 2 && (
               <StepReview state={state} onBack={back} onComplete={(id) => setAgentId(id)} agentId={agentId} />
             )}
           </div>

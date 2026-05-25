@@ -46,9 +46,8 @@ export function StepProfile({ state, update, onNext, onBack }: Props) {
     <div>
       <h2 style={headingStyle}>Configure your {tierLabel}.</h2>
       <p style={subheadStyle}>
-        Tell your {tierLabel} what to look for. {state.tier === 'basic'
-          ? 'Instructions are parsed into rules, be specific.'
-          : `Your ${tierLabel} will interpret these with judgement and adapt over time.`}
+        Tell your {tierLabel} what to look for. It will interpret these with
+        judgement and adapt over time.
       </p>
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: 20, marginBottom: 24 }}>
@@ -82,18 +81,10 @@ export function StepProfile({ state, update, onNext, onBack }: Props) {
 
         <Textarea
           label="Instructions"
-          placeholder={
-            state.tier === 'basic'
-              ? 'e.g. "Only streetwear. Never bid over $200. Skip luxury brands. Prefer deadstock."'
-              : 'e.g. "I collect deadstock Nike from the 90s-2000s. Willing to pay premium for unworn condition. Skip anything mass-produced unless it\'s genuinely rare."'
-          }
+          placeholder={'e.g. "I collect deadstock Nike from the 90s and 2000s. Willing to pay premium for unworn condition. Skip anything mass-produced unless it is genuinely rare."'}
           value={state.free_instructions}
           onChange={(e) => update({ free_instructions: e.target.value })}
-          hint={
-            state.tier === 'basic'
-              ? 'These are parsed into rules: price limits, brand/tag whitelists, keyword filters.'
-              : `Your ${tierLabel} will use these to reason about each drop.`
-          }
+          hint={`Your ${tierLabel} will use these to reason about each drop.`}
         />
 
         <Input

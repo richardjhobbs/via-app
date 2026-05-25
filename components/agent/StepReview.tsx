@@ -156,11 +156,11 @@ export function StepReview({ state, onBack, onComplete, agentId }: Props) {
     setError(fetchErrorMessage(result));
   };
 
-  // Existing-account jump-out. We mint a fresh cookie via the session
-  // endpoint (which already looks up by email and stamps via_agent_session)
-  // then route to the dashboard. The dashboard's own bootstrap therefore
-  // sees a valid cookie and skips its wallet-lookup fallback, so the
-  // hand-off is clean even for someone who arrived in a new browser.
+  // Existing-account auto-route. We mint a fresh cookie via the session
+  // endpoint (looks up by email and stamps via_agent_session) then route
+  // to the dashboard. No button click. The dashboard's own bootstrap sees
+  // a valid cookie and skips its wallet-lookup fallback, so the hand-off
+  // is clean even for someone who arrived in a new browser.
   const signInToExisting = async () => {
     setSigningIn(true);
     setError(null);
@@ -168,7 +168,6 @@ export function StepReview({ state, onBack, onComplete, agentId }: Props) {
       method: 'GET',
       timeoutMs: 15_000,
     });
-    setSigningIn(false);
     if (r.kind === 'ok') {
       router.push('/agents/dashboard');
     } else {
@@ -178,6 +177,25 @@ export function StepReview({ state, onBack, onComplete, agentId }: Props) {
       window.location.href = '/agents/dashboard';
     }
   };
+
+  // When the create POST returns a 409 collision, auto-mint the cookie
+  // and route, no click required. The "Welcome back" card still flashes
+  // briefly so the user sees what's happening.
+  useEffect(() => {
+    if (conflict && !signingIn) {
+      signInToExisting();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [conflict]);
+
+  // When create succeeds, flash the confirmation then auto-route. The
+  // delay gives the user a beat to register the success state; without
+  // it the success view is invisible to a quick eye.
+  useEffect(() => {
+    if (!agentId) return;
+    const t = setTimeout(() => router.push('/agents/dashboard'), 1_500);
+    return () => clearTimeout(t);
+  }, [agentId, router]);
 
   if (agentId) {
     return (
@@ -204,12 +222,8 @@ export function StepReview({ state, onBack, onComplete, agentId }: Props) {
           lineHeight: 1.55,
           fontWeight: 300,
         }}>
-          A VIA Agent ID will be assigned when your on-chain identity is linked.
-          This is your portable identity across the VIA network.
+          Taking you to your dashboard now.
         </p>
-        <Button onClick={() => router.push('/agents/dashboard')}>
-          Go to dashboard <span style={{ marginLeft: 6 }}>→</span>
-        </Button>
       </div>
     );
   }
@@ -224,9 +238,7 @@ export function StepReview({ state, onBack, onComplete, agentId }: Props) {
       <Card style={{ marginBottom: 24 }}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 14, fontSize: 14 }}>
           <Row label="Service">
-            <Badge variant={state.tier === 'pro' ? 'pro' : 'default'}>
-              {tierDisplay.label}
-            </Badge>
+            <Badge variant="pro">{tierDisplay.label}</Badge>
           </Row>
           <Row label="Name">{state.name}</Row>
           <Row label="Email">{state.email}</Row>
@@ -262,9 +274,6 @@ export function StepReview({ state, onBack, onComplete, agentId }: Props) {
             <Row label="Budget ceiling">${state.budget_ceiling_usdc} USDC</Row>
           )}
           <Row label="Bid style">{state.bid_aggression}</Row>
-          {state.tier === 'pro' && (
-            <Row label="LLM provider">{state.llm_provider}</Row>
-          )}
           {state.persona_bio && (
             <Row label="Persona bio">{state.persona_bio}</Row>
           )}
@@ -295,18 +304,9 @@ export function StepReview({ state, onBack, onComplete, agentId }: Props) {
           <p style={{ margin: '0 0 4px', fontFamily: 'var(--font-fraunces), serif', fontSize: 16 }}>
             Welcome back, {conflict.name}.
           </p>
-          <p style={{ margin: '0 0 12px', color: 'var(--ink-2)', fontSize: 13 }}>
-            You already have {conflict.tier === 'pro' ? 'a Concierge' : 'a Personal Shopper'} under this account.
-            Sign in to your dashboard to keep going.
+          <p style={{ margin: 0, color: 'var(--ink-2)', fontSize: 13 }}>
+            Signing you in and taking you to your dashboard.
           </p>
-          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-            <Button onClick={signInToExisting} loading={signingIn}>
-              Sign in to your dashboard
-            </Button>
-            <Button variant="ghost" onClick={onBack} disabled={signingIn}>
-              Use a different email
-            </Button>
-          </div>
         </div>
       )}
 
