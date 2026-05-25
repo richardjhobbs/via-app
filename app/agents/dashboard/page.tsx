@@ -610,6 +610,7 @@ export default function DashboardPage() {
   const [recoverEmail, setRecoverEmail] = useState('');
   const [recovering, setRecovering] = useState(false);
   const [recoverError, setRecoverError] = useState<string | null>(null);
+  const [recoverSent, setRecoverSent] = useState(false);
 
   const activeAccount = useActiveAccount();
 
@@ -649,22 +650,16 @@ export default function DashboardPage() {
 
   async function loadDashboard() {
     try {
-      // Try session cookie first
-      let res = await fetch('/api/agent/session');
+      // Session is determined exclusively by the via_agent_session cookie.
+      // The previous wallet/email fallbacks that minted a cookie from a
+      // bare lookup were a critical impersonation hole and have been
+      // removed; to recover a session on a fresh browser the user goes
+      // through the magic-link flow at /agents.
+      const res = await fetch('/api/agent/session');
       let raw = null;
-
       if (res.ok) {
         const data = await res.json();
         raw = data.agent;
-      }
-
-      // Fallback: if no cookie but Thirdweb wallet is connected, look up by wallet
-      if (!raw && activeAccount?.address) {
-        const walletRes = await fetch(`/api/agent/session?wallet=${activeAccount.address}`);
-        if (walletRes.ok) {
-          const data = await walletRes.json();
-          raw = data.agent;
-        }
       }
 
       if (!raw) { setLoading(false); return; }
@@ -811,6 +806,10 @@ export default function DashboardPage() {
   }
 
   if (!agent) {
+    // Sign in (magic link) for users on a fresh browser/device. POSTs the
+    // email to the request endpoint, which mails a one-shot, time-limited
+    // link. We never mint a session from email alone, that lets anyone
+    // impersonate any owner.
     async function tryRecoverByEmail(e: React.FormEvent) {
       e.preventDefault();
       const email = recoverEmail.toLowerCase().trim();
@@ -818,58 +817,81 @@ export default function DashboardPage() {
       setRecovering(true);
       setRecoverError(null);
       try {
-        const res = await fetch(`/api/agent/session?email=${encodeURIComponent(email)}`);
+        const res = await fetch('/api/agent/auth/email/request', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email }),
+        });
         if (res.ok) {
-          // Cookie set by the route. Reload to pick it up.
-          await loadDashboard();
+          // Endpoint returns 200 regardless so it cannot enumerate accounts.
+          setRecoverSent(true);
           return;
         }
-        setRecoverError('No agent found for that email. Either the address is different from what you registered with, or you have not created an agent yet.');
+        setRecoverError('Sign in is having trouble. Try again in a moment.');
       } catch {
-        setRecoverError('Recovery failed. Try again.');
+        setRecoverError('Network error. Try again.');
       } finally {
         setRecovering(false);
       }
     }
 
-    const checkedWallet = activeAccount?.address ?? null;
-
     return (
       <div style={{ minHeight: '100vh', background: 'var(--bg)', color: 'var(--ink)' }}>
         <RRGHeader active="concierge" />
         <main className="px-6 py-12 max-w-2xl mx-auto">
-          <h1 className="text-xl font-semibold mb-3">No service found for this session</h1>
+          <h1 className="text-xl font-semibold mb-3">Sign in to your Concierge</h1>
           <p className="text-sm mb-6" style={{ color: 'var(--ink-2)' }}>
-            We checked for a session cookie{checkedWallet ? <> and the connected wallet <span className="font-mono text-xs">{checkedWallet.slice(0, 6)}…{checkedWallet.slice(-4)}</span></> : null}, but no agent matches.
+            You are not signed in on this browser. Enter your email and we will send you a one-shot sign-in link.
           </p>
 
           <div className="mb-8 p-4 rounded" style={{ background: 'var(--paper)', border: '1px solid var(--line)' }}>
-            <h2 className="text-sm font-semibold mb-2">Already have an agent?</h2>
-            <p className="text-xs mb-3" style={{ color: 'var(--ink-3)' }}>
-              If you signed up before with a different login method, recover by entering the email you used.
-            </p>
-            <form onSubmit={tryRecoverByEmail} className="flex gap-2 items-stretch">
-              <input
-                type="email"
-                value={recoverEmail}
-                onChange={(e) => setRecoverEmail(e.target.value)}
-                placeholder="you@example.com"
-                disabled={recovering}
-                className="flex-1 px-3 py-2 text-sm rounded outline-none"
-                style={{ background: 'var(--bg)', border: '1px solid var(--line-strong)', color: 'var(--ink)' }}
-              />
-              <Button type="submit" loading={recovering} disabled={!recoverEmail.trim()}>
-                Recover
-              </Button>
-            </form>
-            {recoverError && (
-              <p className="text-xs mt-2" style={{ color: 'var(--accent-warn, #b5453a)' }}>{recoverError}</p>
+            {recoverSent ? (
+              <>
+                <h2 className="text-sm font-semibold mb-2">Check your inbox.</h2>
+                <p className="text-xs" style={{ color: 'var(--ink-3)' }}>
+                  If <strong>{recoverEmail}</strong> is registered, we just sent a sign-in link. Open it on any device. The link works once and expires in 15 minutes.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => { setRecoverSent(false); setRecoverEmail(''); }}
+                  className="mt-3 text-xs uppercase tracking-wider"
+                  style={{ color: 'var(--accent)', background: 'transparent', border: 'none', cursor: 'pointer', padding: 0 }}
+                >
+                  Use a different email
+                </button>
+              </>
+            ) : (
+              <>
+                <h2 className="text-sm font-semibold mb-2">Sign in by email</h2>
+                <p className="text-xs mb-3" style={{ color: 'var(--ink-3)' }}>
+                  Works on any device. We never sign you in without the verified link.
+                </p>
+                <form onSubmit={tryRecoverByEmail} className="flex gap-2 items-stretch">
+                  <input
+                    type="email"
+                    inputMode="email"
+                    autoComplete="email"
+                    value={recoverEmail}
+                    onChange={(e) => setRecoverEmail(e.target.value)}
+                    placeholder="you@example.com"
+                    disabled={recovering}
+                    className="flex-1 px-3 py-2 text-sm rounded outline-none"
+                    style={{ background: 'var(--bg)', border: '1px solid var(--line-strong)', color: 'var(--ink)' }}
+                  />
+                  <Button type="submit" loading={recovering} disabled={!recoverEmail.trim()}>
+                    Email me a link
+                  </Button>
+                </form>
+                {recoverError && (
+                  <p className="text-xs mt-2" style={{ color: '#b5453a' }}>{recoverError}</p>
+                )}
+              </>
             )}
           </div>
 
           <h2 className="text-sm font-semibold mb-2">First time here?</h2>
           <p className="text-xs mb-3" style={{ color: 'var(--ink-3)' }}>
-            Get your own Personal Shopper or Concierge. They search the VIA network for you.
+            Get your own Concierge. It searches the VIA network for you.
           </p>
           <Button onClick={() => router.push('/agents')}>Get started</Button>
         </main>

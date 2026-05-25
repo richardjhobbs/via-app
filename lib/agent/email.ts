@@ -42,6 +42,48 @@ function escHtml(str: string): string {
     .replace(/"/g, '&quot;');
 }
 
+// ── Sign-in (magic link) ─────────────────────────────────────────────
+
+/**
+ * One-shot sign-in link. Replaces the previous unauthenticated session
+ * lookup. The link contains a single-use token that the server verifies
+ * server-side before minting a session cookie. Tokens expire in 15 min.
+ */
+export async function sendSignInLink(
+  email: string,
+  agentName: string,
+  rawToken: string,
+) {
+  const link = `${SITE_URL}/agents/auth/email/verify?token=${encodeURIComponent(rawToken)}`;
+  await send({
+    to: email,
+    subject: `Sign in to Real Real Genuine`,
+    html: `
+      <div style="font-family: sans-serif; color: #1a1612; background: #faf7f2; padding: 32px;">
+        <h2 style="color: #1a1612; font-family: serif; font-weight: 400; margin: 0 0 12px;">Sign in to your Concierge</h2>
+        <p style="margin: 0 0 16px; color: #3a342d; line-height: 1.55;">
+          Hi ${escHtml(agentName)},
+        </p>
+        <p style="margin: 0 0 20px; color: #3a342d; line-height: 1.55;">
+          Click the button below to sign in. The link works once and expires in 15 minutes.
+        </p>
+        <a href="${link}" style="display: inline-block; background: #1a1612; color: #faf7f2; padding: 14px 28px; text-decoration: none; font-weight: 500; margin: 8px 0 20px;">
+          Sign in
+        </a>
+        <p style="margin: 0 0 8px; color: #6b6058; font-size: 13px; line-height: 1.55;">
+          If the button does not work, paste this URL into your browser:
+        </p>
+        <p style="margin: 0 0 24px; color: #6b6058; font-size: 12px; word-break: break-all;">
+          ${link}
+        </p>
+        <p style="margin: 0; color: #6b6058; font-size: 12px; line-height: 1.55;">
+          Did not request this? You can ignore this email. No one can sign in without the link above.
+        </p>
+      </div>
+    `,
+  });
+}
+
 // ── Notification templates ───────────────────────────────────────────
 
 export async function sendRecommendation(

@@ -76,11 +76,13 @@ export async function POST(req: NextRequest) {
       .maybeSingle();
 
     if (existing) {
+      // Deliberately does NOT include agent name or id in the response,
+      // so a stranger POSTing garbage cannot enumerate which wallets are
+      // registered or learn the owner's chosen agent name.
       return NextResponse.json(
         {
-          error: `You already have ${existing.tier === 'pro' ? 'a Concierge' : 'a Personal Shopper'} (${existing.name}). Sign in to your dashboard.`,
+          error: 'This wallet is already registered. We will email a sign-in link to the address on file.',
           conflict: 'wallet',
-          existing: { id: existing.id, name: existing.name, tier: existing.tier },
         },
         { status: 409 },
       );
@@ -96,11 +98,11 @@ export async function POST(req: NextRequest) {
       .maybeSingle();
 
     if (existingEmail) {
+      // Same redaction as the wallet branch: do not leak agent name or id.
       return NextResponse.json(
         {
-          error: `You already have ${existingEmail.tier === 'pro' ? 'a Concierge' : 'a Personal Shopper'} (${existingEmail.name}) under this email. Sign in to your dashboard.`,
+          error: 'This email is already registered. We will email you a sign-in link.',
           conflict: 'email',
-          existing: { id: existingEmail.id, name: existingEmail.name, tier: existingEmail.tier },
         },
         { status: 409 },
       );

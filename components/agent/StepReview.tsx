@@ -36,7 +36,6 @@ const SLOW_HINT_MS = 8_000;
 
 type ConflictPayload = {
   conflict?: 'email' | 'wallet';
-  existing?: { id: string; name: string; tier: 'basic' | 'pro' };
   error?: string;
 };
 
@@ -69,7 +68,7 @@ export function StepReview({ state, onBack, onComplete, agentId }: Props) {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [conflict, setConflict] = useState<ConflictPayload['existing'] | null>(null);
+  const [conflict, setConflict] = useState<'email' | 'wallet' | null>(null);
   const [stageIndex, setStageIndex] = useState(0);
   const [slowHint, setSlowHint] = useState(false);
   const [signingIn, setSigningIn] = useState(false);
@@ -143,50 +142,47 @@ export function StepReview({ state, onBack, onComplete, agentId }: Props) {
       return;
     }
 
-    // Collision: the server identifies the existing agent so we can
-    // route the user out cleanly instead of just shouting a string.
+    // Collision: a known email or wallet collided. The server intentionally
+    // does NOT return the existing agent's name/id (enumeration hardening),
+    // so the conflict state is just the type of collision; the magic-link
+    // request below sends the sign-in email regardless.
     if (result.kind === 'http' && result.status === 409) {
       const payload = result.body as ConflictPayload;
-      if (payload?.existing) {
-        setConflict(payload.existing);
-        return;
-      }
+      setConflict(payload?.conflict === 'wallet' ? 'wallet' : 'email');
+      return;
     }
 
     setError(fetchErrorMessage(result));
   };
 
-  // Existing-account auto-route. We mint a fresh cookie via the session
-  // endpoint (looks up by email and stamps via_agent_session) then route
-  // to the dashboard. No button click. The dashboard's own bootstrap sees
-  // a valid cookie and skips its wallet-lookup fallback, so the hand-off
-  // is clean even for someone who arrived in a new browser.
-  const signInToExisting = async () => {
-    setSigningIn(true);
-    setError(null);
-    const r = await fetchJson('/api/agent/session?email=' + encodeURIComponent(state.email), {
-      method: 'GET',
-      timeoutMs: 15_000,
-    });
-    if (r.kind === 'ok') {
-      router.push('/agents/dashboard');
-    } else {
-      // Last-resort: hard nav. The dashboard's wallet-fallback or its
-      // own session check will pick up the trail if Thirdweb is still
-      // connected; otherwise the user gets a clear "sign in" state.
-      window.location.href = '/agents/dashboard';
-    }
-  };
-
-  // When the create POST returns a 409 collision, auto-mint the cookie
-  // and route, no click required. The "Welcome back" card still flashes
-  // briefly so the user sees what's happening.
+  // Email collision: send the magic sign-in link to the registered email
+  // and surface a "check your inbox" panel. We never mint a session from
+  // email alone, that lets anyone impersonate any owner.
+  //
+  // Wallet collision: we don't have the registered email locally (the
+  // server redacts it for enumeration hardening), so we redirect the
+  // user to the dedicated sign-in page where they enter the address
+  // tied to the wallet.
+  const [linkSent, setLinkSent] = useState(false);
+  const [linkError, setLinkError] = useState<string | null>(null);
   useEffect(() => {
-    if (conflict && !signingIn) {
-      signInToExisting();
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [conflict]);
+    if (conflict !== 'email' || !state.email) return;
+    let cancelled = false;
+    setSigningIn(true);
+    (async () => {
+      const r = await fetchJson('/api/agent/auth/email/request', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: state.email }),
+        timeoutMs: 15_000,
+      });
+      if (cancelled) return;
+      setSigningIn(false);
+      if (r.kind === 'ok') setLinkSent(true);
+      else setLinkError('Could not send the sign-in link. Open the sign-in page and try again.');
+    })();
+    return () => { cancelled = true; };
+  }, [conflict, state.email]);
 
   // When create succeeds, flash the confirmation then auto-route. The
   // delay gives the user a beat to register the success state; without
@@ -291,7 +287,7 @@ export function StepReview({ state, onBack, onComplete, agentId }: Props) {
         </div>
       </Card>
 
-      {conflict && (
+      {conflict === 'email' && (
         <div style={{
           marginBottom: 16,
           padding: 16,
@@ -302,11 +298,44 @@ export function StepReview({ state, onBack, onComplete, agentId }: Props) {
           lineHeight: 1.55,
         }}>
           <p style={{ margin: '0 0 4px', fontFamily: 'var(--font-fraunces), serif', fontSize: 16 }}>
-            Welcome back, {conflict.name}.
+            Welcome back.
           </p>
           <p style={{ margin: 0, color: 'var(--ink-2)', fontSize: 13 }}>
-            Signing you in and taking you to your dashboard.
+            {linkSent
+              ? <>We just emailed a sign-in link to <strong>{state.email}</strong>. Open it on any device. The link works once and expires in 15 minutes.</>
+              : signingIn
+                ? 'Sending you a sign-in link...'
+                : 'We need to verify it is you before signing you in.'}
           </p>
+          {linkError && (
+            <p style={{ margin: '8px 0 0', color: '#8a2e25', fontSize: 12 }}>{linkError}</p>
+          )}
+        </div>
+      )}
+
+      {conflict === 'wallet' && (
+        <div style={{
+          marginBottom: 16,
+          padding: 16,
+          background: 'color-mix(in srgb, var(--accent) 6%, transparent)',
+          border: '1px solid var(--accent)',
+          fontSize: 14,
+          color: 'var(--ink)',
+          lineHeight: 1.55,
+        }}>
+          <p style={{ margin: '0 0 4px', fontFamily: 'var(--font-fraunces), serif', fontSize: 16 }}>
+            This wallet already has an agent.
+          </p>
+          <p style={{ margin: '0 0 12px', color: 'var(--ink-2)', fontSize: 13 }}>
+            Sign in with the email you registered. We will send a one-shot link there.
+          </p>
+          <a
+            href="/agents"
+            className="btn accent"
+            style={{ fontSize: 12, padding: '10px 18px', letterSpacing: '0.08em', display: 'inline-block' }}
+          >
+            Go to sign in <span className="arrow">→</span>
+          </a>
         </div>
       )}
 

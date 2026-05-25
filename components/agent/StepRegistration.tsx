@@ -107,27 +107,30 @@ export function StepRegistration({ state, update, onNext, onBack }: Props) {
   const account = useActiveAccount();
   const { data: profiles } = useProfiles({ client: thirdwebClient });
 
-  // Whenever an existing agent is detected (either via Thirdweb wallet
-  // connect or via email-blur preflight), mint the session cookie and
-  // route to the dashboard. The "Welcome back" card only flashes for a
-  // beat so the user sees what's happening, but no clicking is required.
+  // When an existing agent is detected, automatically request a magic
+  // sign-in link to the registered email. Cookie minting from a plain
+  // email/wallet lookup was a critical impersonation hole and has been
+  // removed server-side, so verified email is now the only out-of-band
+  // path. The dedicated "welcome back" UI then shows a "check your inbox"
+  // state and the user clicks the emailed link to actually sign in.
+  const [signInLinkSent, setSignInLinkSent] = useState(false);
+  const [signInLinkError, setSignInLinkError] = useState<string | null>(null);
   useEffect(() => {
-    if (!existingAgent) return;
-    const target = state.email
-      ? `/api/agent/session?email=${encodeURIComponent(state.email)}`
-      : account?.address
-        ? `/api/agent/session?wallet=${account.address}`
-        : null;
-    if (!target) return;
+    if (!existingAgent || !state.email) return;
     let cancelled = false;
     (async () => {
-      const r = await fetchJson(target, { timeoutMs: 15_000 });
+      const r = await fetchJson('/api/agent/auth/email/request', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: state.email }),
+        timeoutMs: 15_000,
+      });
       if (cancelled) return;
-      if (r.kind === 'ok') router.push('/agents/dashboard');
-      else window.location.href = '/agents/dashboard';
+      if (r.kind === 'ok') setSignInLinkSent(true);
+      else setSignInLinkError('Could not send the sign-in link. Try again from the sign-in page.');
     })();
     return () => { cancelled = true; };
-  }, [existingAgent, state.email, account?.address, router]);
+  }, [existingAgent, state.email]);
 
   useEffect(() => {
     if (account?.address) {
@@ -148,11 +151,14 @@ export function StepRegistration({ state, update, onNext, onBack }: Props) {
         .then(data => { if (data?.exists) setExistingCreator(true); })
         .catch(() => {});
 
+      // Read-only existence check. The endpoint returns { exists: true|false }
+      // and does NOT mint a session, so the new dashboard handoff is via the
+      // verified email sign-in link triggered below.
       fetch(`/api/agent/session?wallet=${account.address}`)
         .then(r => r.ok ? r.json() : null)
         .then(data => {
-          if (data?.agent) {
-            setExistingAgent({ name: data.agent.name, tier: data.agent.tier });
+          if (data?.exists) {
+            setExistingAgent({ name: '', tier: 'pro' });
           }
         })
         .catch(() => {});
@@ -163,21 +169,17 @@ export function StepRegistration({ state, update, onNext, onBack }: Props) {
     if (!email || !email.includes('@')) return;
     setLookupDismissed(false);
 
-    // First: authoritative agent-existence check. The session endpoint
-    // returns the canonical agent row (with tier) when one exists for
-    // this email, so we can route the user straight to "welcome back"
-    // before they spend any more time in the wizard. Pre-flight here
-    // is the difference between catching a duplicate at email-blur vs
-    // catching it at final submit (4 steps later).
+    // Read-only existence check. The endpoint deliberately does NOT
+    // disclose the agent's name (that would let an attacker enumerate
+    // accounts). If the email is registered, we trigger the magic-link
+    // sign-in flow rather than auto-minting a cookie, so a typo on the
+    // signup form cannot impersonate the real owner.
     try {
       const sessionRes = await fetch(`/api/agent/session?email=${encodeURIComponent(email)}`);
       if (sessionRes.ok) {
         const data = await sessionRes.json();
-        if (data?.agent) {
-          setExistingAgent({
-            name: data.agent.name || 'your agent',
-            tier: data.agent.tier === 'pro' ? 'pro' : 'basic',
-          });
+        if (data?.exists) {
+          setExistingAgent({ name: '', tier: 'pro' });
           return;
         }
       }
@@ -232,15 +234,33 @@ export function StepRegistration({ state, update, onNext, onBack }: Props) {
   if (existingAgent) {
     return (
       <div>
-        <h2 style={heading}>Welcome back, {existingAgent.name}.</h2>
+        <h2 style={heading}>Welcome back.</h2>
         <div style={{ ...panelSuccess, marginBottom: 24 }}>
           <p style={{ color: 'var(--ink)', margin: '0 0 4px', fontFamily: 'var(--font-fraunces), serif', fontSize: 16 }}>
-            Signing you in.
+            {signInLinkSent ? 'Check your inbox.' : 'Sending you a sign-in link...'}
           </p>
           <p style={{ color: 'var(--ink-2)', fontSize: 13, lineHeight: 1.55, margin: 0 }}>
-            Taking you to your dashboard now.
+            {signInLinkSent
+              ? <>We just emailed a sign-in link to <strong>{state.email}</strong>. Open it on any device. The link works once and expires in 15 minutes.</>
+              : 'We need to verify it is you before signing you in.'}
           </p>
+          {signInLinkError && (
+            <p style={{ color: '#8a2e25', fontSize: 12, marginTop: 8 }}>
+              {signInLinkError}
+            </p>
+          )}
         </div>
+        <button
+          type="button"
+          onClick={onBack}
+          style={{
+            background: 'transparent', border: 'none', cursor: 'pointer', padding: 0,
+            fontFamily: 'var(--font-jetbrains), monospace', fontSize: 11,
+            letterSpacing: '0.14em', textTransform: 'uppercase', color: 'var(--ink-3)',
+          }}
+        >
+          ← Use a different email
+        </button>
       </div>
     );
   }

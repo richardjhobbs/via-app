@@ -109,11 +109,12 @@ export default function AgentsPage() {
     setWizardActive(true);
   }
 
-  // Email-only sign-in for returning users. Hits the session lookup
-  // (which mints the cookie when it finds the agent) and routes to the
-  // dashboard. Bounded fetch so a hang can't trap the user.
+  // Magic-link sign-in for returning users. Submits the email, the server
+  // mails a one-shot, time-limited link. We deliberately do NOT mint a
+  // cookie from email alone, that would let anyone impersonate any owner.
   const [signInEmail, setSignInEmail] = useState('');
   const [signInBusy, setSignInBusy] = useState(false);
+  const [signInSent, setSignInSent] = useState(false);
   const [signInError, setSignInError] = useState<string | null>(null);
 
   async function signInWithEmail(e?: React.FormEvent) {
@@ -125,19 +126,21 @@ export default function AgentsPage() {
     }
     setSignInBusy(true);
     setSignInError(null);
-    const r = await fetchJson('/api/agent/session?email=' + encodeURIComponent(email), {
+    const r = await fetchJson('/api/agent/auth/email/request', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email }),
       timeoutMs: 15_000,
     });
     setSignInBusy(false);
     if (r.kind === 'ok') {
-      router.push('/agents/dashboard');
+      // Endpoint intentionally returns 200 whether or not the email is
+      // registered, so we cannot distinguish here. The "check your email"
+      // state covers both cases without leaking which addresses exist.
+      setSignInSent(true);
       return;
     }
-    if (r.kind === 'http' && r.status === 401) {
-      setSignInError("We couldn't find an agent with that email. Sign up below.");
-      return;
-    }
-    setSignInError('Sign in is having trouble. Try again, or sign up below.');
+    setSignInError('Sign in is having trouble. Try again in a moment.');
   }
 
   if (checking) {
@@ -240,9 +243,8 @@ export default function AgentsPage() {
               </button>
             </div>
 
-            {/* Returning? email-only sign-in */}
-            <form
-              onSubmit={signInWithEmail}
+            {/* Returning? magic-link sign-in */}
+            <div
               style={{
                 marginTop: 40,
                 padding: '24px 28px',
@@ -254,44 +256,70 @@ export default function AgentsPage() {
               <div className="uc-mono" style={{ color: 'var(--accent)', fontSize: 11, letterSpacing: '0.14em', marginBottom: 6 }}>
                 Returning?
               </div>
-              <div style={{ fontSize: 16, color: 'var(--ink)', lineHeight: 1.4, marginBottom: 14 }}>
-                Sign in with the email you used at signup. Works on any device.
-              </div>
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'stretch' }}>
-                <input
-                  type="email"
-                  inputMode="email"
-                  autoComplete="email"
-                  placeholder="you@example.com"
-                  value={signInEmail}
-                  onChange={(e) => { setSignInEmail(e.target.value); setSignInError(null); }}
-                  disabled={signInBusy}
-                  style={{
-                    flex: '1 1 240px',
-                    minWidth: 0,
-                    padding: '10px 12px',
-                    fontFamily: 'var(--font-jetbrains), monospace',
-                    fontSize: 13,
-                    background: 'var(--bg)',
-                    border: '1px solid var(--line-strong)',
-                    color: 'var(--ink)',
-                  }}
-                />
-                <button
-                  type="submit"
-                  disabled={signInBusy}
-                  className="btn accent"
-                  style={{ fontSize: 12, padding: '10px 20px', letterSpacing: '0.08em', opacity: signInBusy ? 0.7 : 1 }}
-                >
-                  {signInBusy ? 'Signing you in...' : <>Continue <span className="arrow">→</span></>}
-                </button>
-              </div>
-              {signInError && (
-                <p style={{ marginTop: 10, fontSize: 12, color: '#8a2e25', fontFamily: 'var(--font-jetbrains), monospace', letterSpacing: '0.04em' }}>
-                  {signInError}
-                </p>
+              {signInSent ? (
+                <>
+                  <div style={{ fontSize: 16, color: 'var(--ink)', lineHeight: 1.5, marginBottom: 8 }}>
+                    Check your inbox.
+                  </div>
+                  <p style={{ fontSize: 13, color: 'var(--ink-2)', lineHeight: 1.6, margin: '0 0 12px', maxWidth: '52ch' }}>
+                    If <strong>{signInEmail}</strong> is registered, we just sent a sign-in link.
+                    Open it on any device. The link works once and expires in 15 minutes.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => { setSignInSent(false); setSignInEmail(''); }}
+                    style={{
+                      background: 'transparent', border: 'none', cursor: 'pointer', padding: 0,
+                      fontFamily: 'var(--font-jetbrains), monospace', fontSize: 11,
+                      letterSpacing: '0.14em', textTransform: 'uppercase', color: 'var(--accent)',
+                      borderBottom: '1px solid color-mix(in srgb, var(--accent) 35%, transparent)',
+                    }}
+                  >
+                    Use a different email
+                  </button>
+                </>
+              ) : (
+                <form onSubmit={signInWithEmail}>
+                  <div style={{ fontSize: 16, color: 'var(--ink)', lineHeight: 1.4, marginBottom: 14 }}>
+                    Enter the email you signed up with. We will send you a sign-in link.
+                  </div>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'stretch' }}>
+                    <input
+                      type="email"
+                      inputMode="email"
+                      autoComplete="email"
+                      placeholder="you@example.com"
+                      value={signInEmail}
+                      onChange={(e) => { setSignInEmail(e.target.value); setSignInError(null); }}
+                      disabled={signInBusy}
+                      style={{
+                        flex: '1 1 240px',
+                        minWidth: 0,
+                        padding: '10px 12px',
+                        fontFamily: 'var(--font-jetbrains), monospace',
+                        fontSize: 13,
+                        background: 'var(--bg)',
+                        border: '1px solid var(--line-strong)',
+                        color: 'var(--ink)',
+                      }}
+                    />
+                    <button
+                      type="submit"
+                      disabled={signInBusy}
+                      className="btn accent"
+                      style={{ fontSize: 12, padding: '10px 20px', letterSpacing: '0.08em', opacity: signInBusy ? 0.7 : 1 }}
+                    >
+                      {signInBusy ? 'Sending...' : <>Email me a link <span className="arrow">→</span></>}
+                    </button>
+                  </div>
+                  {signInError && (
+                    <p style={{ marginTop: 10, fontSize: 12, color: '#8a2e25', fontFamily: 'var(--font-jetbrains), monospace', letterSpacing: '0.04em' }}>
+                      {signInError}
+                    </p>
+                  )}
+                </form>
               )}
-            </form>
+            </div>
           </>
         ) : (
           <div style={{ maxWidth: 720, margin: '0 auto' }}>
