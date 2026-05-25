@@ -1,12 +1,13 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { Badge } from '@/components/ui/Badge';
 import { TIER_DISPLAY } from '@/lib/agent/types';
 import type { WizardState } from '@/lib/agent/types';
+import { fetchJson, fetchErrorMessage } from '@/lib/util/fetchWithTimeout';
 
 // Stages the user sees while the create POST is in flight. Advances
 // on a fixed cadence so there's visible progress; the actual API does
@@ -20,6 +21,24 @@ const CREATE_STAGES = [
   'Preparing your dashboard',
 ] as const;
 const STAGE_INTERVAL_MS = 800;
+
+// Hard upper bound on a single create attempt. Past this we abort and
+// surface a clear retry path; the spinner is never allowed to pin
+// forever (see lib/util/fetchWithTimeout). Generous because ERC-8004
+// minting is fire-and-forget but the synchronous Supabase round-trips
+// can be slow on a cold VPS connection.
+const CREATE_TIMEOUT_MS = 30_000;
+
+// Threshold at which the "taking longer than expected" hint replaces
+// the default helper text. Mid-deploy + slow Supabase round-trips can
+// push the request past the stage indicator without it being broken.
+const SLOW_HINT_MS = 8_000;
+
+type ConflictPayload = {
+  conflict?: 'email' | 'wallet';
+  existing?: { id: string; name: string; tier: 'basic' | 'pro' };
+  error?: string;
+};
 
 interface Props {
   state: WizardState;
@@ -50,66 +69,113 @@ export function StepReview({ state, onBack, onComplete, agentId }: Props) {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [conflict, setConflict] = useState<ConflictPayload['existing'] | null>(null);
   const [stageIndex, setStageIndex] = useState(0);
+  const [slowHint, setSlowHint] = useState(false);
+  const [signingIn, setSigningIn] = useState(false);
+  const slowTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const tierDisplay = TIER_DISPLAY[state.tier];
 
   // Advance the stage indicator while the create POST is in flight.
   // Caps at the final stage so we hold on "Preparing your dashboard"
-  // if the request runs longer than the interval window.
+  // if the request runs longer than the interval window. The hard
+  // timeout in fetchJson ensures we never sit here forever.
   useEffect(() => {
     if (!loading) {
       setStageIndex(0);
+      setSlowHint(false);
+      if (slowTimerRef.current) {
+        clearTimeout(slowTimerRef.current);
+        slowTimerRef.current = null;
+      }
       return;
     }
     const id = setInterval(() => {
       setStageIndex((i) => Math.min(i + 1, CREATE_STAGES.length - 1));
     }, STAGE_INTERVAL_MS);
-    return () => clearInterval(id);
+    slowTimerRef.current = setTimeout(() => setSlowHint(true), SLOW_HINT_MS);
+    return () => {
+      clearInterval(id);
+      if (slowTimerRef.current) {
+        clearTimeout(slowTimerRef.current);
+        slowTimerRef.current = null;
+      }
+    };
   }, [loading]);
 
   const handleCreate = async () => {
     setLoading(true);
     setError(null);
+    setConflict(null);
 
-    try {
-      const body: Record<string, unknown> = {
-        email: state.email,
-        name: state.name,
-        tier: state.tier,
-        style_tags: state.style_tags,
-        free_instructions: state.free_instructions || null,
-        budget_ceiling_usdc: state.budget_ceiling_usdc ? parseFloat(state.budget_ceiling_usdc) : null,
-        bid_aggression: state.bid_aggression,
-        llm_provider: state.llm_provider,
-        wallet_address: state.wallet_address,
-        wallet_type: state.wallet_type,
-        persona_bio: state.persona_bio || null,
-        persona_voice: state.persona_voice || null,
-        persona_comm_style: state.persona_comm_style || null,
-        interest_categories: state.interest_categories,
-        loved_brands: state.loved_brands,
-        avoided_brands: state.avoided_brands,
-        sizes: state.sizes,
-      };
+    const body: Record<string, unknown> = {
+      email: state.email,
+      name: state.name,
+      tier: state.tier,
+      style_tags: state.style_tags,
+      free_instructions: state.free_instructions || null,
+      budget_ceiling_usdc: state.budget_ceiling_usdc ? parseFloat(state.budget_ceiling_usdc) : null,
+      bid_aggression: state.bid_aggression,
+      llm_provider: state.llm_provider,
+      wallet_address: state.wallet_address,
+      wallet_type: state.wallet_type,
+      persona_bio: state.persona_bio || null,
+      persona_voice: state.persona_voice || null,
+      persona_comm_style: state.persona_comm_style || null,
+      interest_categories: state.interest_categories,
+      loved_brands: state.loved_brands,
+      avoided_brands: state.avoided_brands,
+      sizes: state.sizes,
+    };
 
-      const res = await fetch('/api/agent/create', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-      });
+    const result = await fetchJson<{ agent: { id: string } }>('/api/agent/create', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+      timeoutMs: CREATE_TIMEOUT_MS,
+    });
 
-      if (!res.ok) {
-        const data = await res.json();
-        throw new Error(data.error || `Failed to create ${tierDisplay.label}`);
+    setLoading(false);
+
+    if (result.kind === 'ok') {
+      onComplete(result.data.agent.id);
+      return;
+    }
+
+    // Collision: the server identifies the existing agent so we can
+    // route the user out cleanly instead of just shouting a string.
+    if (result.kind === 'http' && result.status === 409) {
+      const payload = result.body as ConflictPayload;
+      if (payload?.existing) {
+        setConflict(payload.existing);
+        return;
       }
+    }
 
-      const { agent } = await res.json();
-      onComplete(agent.id);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Something went wrong');
-    } finally {
-      setLoading(false);
+    setError(fetchErrorMessage(result));
+  };
+
+  // Existing-account jump-out. We mint a fresh cookie via the session
+  // endpoint (which already looks up by email and stamps via_agent_session)
+  // then route to the dashboard. The dashboard's own bootstrap therefore
+  // sees a valid cookie and skips its wallet-lookup fallback, so the
+  // hand-off is clean even for someone who arrived in a new browser.
+  const signInToExisting = async () => {
+    setSigningIn(true);
+    setError(null);
+    const r = await fetchJson('/api/agent/session?email=' + encodeURIComponent(state.email), {
+      method: 'GET',
+      timeoutMs: 15_000,
+    });
+    setSigningIn(false);
+    if (r.kind === 'ok') {
+      router.push('/agents/dashboard');
+    } else {
+      // Last-resort: hard nav. The dashboard's wallet-fallback or its
+      // own session check will pick up the trail if Thirdweb is still
+      // connected; otherwise the user gets a clear "sign in" state.
+      window.location.href = '/agents/dashboard';
     }
   };
 
@@ -216,7 +282,35 @@ export function StepReview({ state, onBack, onComplete, agentId }: Props) {
         </div>
       </Card>
 
-      {error && (
+      {conflict && (
+        <div style={{
+          marginBottom: 16,
+          padding: 16,
+          background: 'color-mix(in srgb, var(--accent) 6%, transparent)',
+          border: '1px solid var(--accent)',
+          fontSize: 14,
+          color: 'var(--ink)',
+          lineHeight: 1.55,
+        }}>
+          <p style={{ margin: '0 0 4px', fontFamily: 'var(--font-fraunces), serif', fontSize: 16 }}>
+            Welcome back, {conflict.name}.
+          </p>
+          <p style={{ margin: '0 0 12px', color: 'var(--ink-2)', fontSize: 13 }}>
+            You already have {conflict.tier === 'pro' ? 'a Concierge' : 'a Personal Shopper'} under this account.
+            Sign in to your dashboard to keep going.
+          </p>
+          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+            <Button onClick={signInToExisting} loading={signingIn}>
+              Sign in to your dashboard
+            </Button>
+            <Button variant="ghost" onClick={onBack} disabled={signingIn}>
+              Use a different email
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {error && !conflict && (
         <div style={{
           marginBottom: 16,
           padding: 14,
@@ -226,28 +320,17 @@ export function StepReview({ state, onBack, onComplete, agentId }: Props) {
           color: '#8a2e25',
           lineHeight: 1.55,
         }}>
-          {error}
-          {(error.includes('already registered') || error.includes('already')) && (
-            <div style={{ marginTop: 8 }}>
-              <a
-                href="/agents/dashboard"
-                style={{
-                  color: 'var(--accent)',
-                  textDecoration: 'none',
-                  borderBottom: '1px solid color-mix(in srgb, var(--accent) 35%, transparent)',
-                  paddingBottom: 1,
-                }}
-              >
-                Go to your dashboard
-              </a>
-            </div>
-          )}
+          <p style={{ margin: '0 0 10px' }}>{error}</p>
+          <div style={{ display: 'flex', gap: 10 }}>
+            <Button onClick={handleCreate} size="sm">Try again</Button>
+            <Button variant="ghost" onClick={onBack} size="sm">Back</Button>
+          </div>
         </div>
       )}
 
       {loading ? (
-        <CreateStages tierLabel={tierDisplay.label} stageIndex={stageIndex} />
-      ) : (
+        <CreateStages tierLabel={tierDisplay.label} stageIndex={stageIndex} slowHint={slowHint} />
+      ) : !conflict ? (
         <div style={{ display: 'flex', gap: 10 }}>
           <Button variant="ghost" onClick={onBack} disabled={loading}>
             Back
@@ -256,12 +339,12 @@ export function StepReview({ state, onBack, onComplete, agentId }: Props) {
             Create {tierDisplay.label}
           </Button>
         </div>
-      )}
+      ) : null}
     </div>
   );
 }
 
-function CreateStages({ tierLabel, stageIndex }: { tierLabel: string; stageIndex: number }) {
+function CreateStages({ tierLabel, stageIndex, slowHint }: { tierLabel: string; stageIndex: number; slowHint: boolean }) {
   return (
     <div style={{
       border: '1px solid var(--line)',
@@ -319,9 +402,11 @@ function CreateStages({ tierLabel, stageIndex }: { tierLabel: string; stageIndex
         })}
       </ul>
       <p style={{
-        fontSize: 11, color: 'var(--ink-3)', margin: 0, lineHeight: 1.5,
+        fontSize: 11, color: slowHint ? '#8a2e25' : 'var(--ink-3)', margin: 0, lineHeight: 1.5,
       }}>
-        Your wallet identity may take a few seconds to mint on Base. You can use the dashboard immediately, the VIA Agent ID will appear once linked.
+        {slowHint
+          ? "Still working. If this doesn't finish in a moment, refresh and try again, we'll keep the details you entered."
+          : 'Your wallet identity may take a few seconds to mint on Base. You can use the dashboard immediately, the VIA Agent ID will appear once linked.'}
       </p>
       <style jsx>{`
         @keyframes spin {

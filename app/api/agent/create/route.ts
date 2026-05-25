@@ -66,17 +66,23 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Check wallet not already registered
+    // Check wallet not already registered. The 409 response carries the
+    // existing agent's identity so the wizard can render a direct
+    // "sign in to your dashboard" CTA instead of a string dead-end.
     const { data: existing } = await db
       .from('agent_agents')
-      .select('id')
+      .select('id, name, tier')
       .eq('wallet_address', wallet_address.toLowerCase())
-      .single();
+      .maybeSingle();
 
     if (existing) {
       return NextResponse.json(
-        { error: 'This wallet is already registered. Go to your dashboard to manage it.' },
-        { status: 409 }
+        {
+          error: `You already have ${existing.tier === 'pro' ? 'a Concierge' : 'a Personal Shopper'} (${existing.name}). Sign in to your dashboard.`,
+          conflict: 'wallet',
+          existing: { id: existing.id, name: existing.name, tier: existing.tier },
+        },
+        { status: 409 },
       );
     }
 
@@ -85,14 +91,18 @@ export async function POST(req: NextRequest) {
     // Without this, one email + N wallets could farm $N of LLM credits.
     const { data: existingEmail } = await db
       .from('agent_agents')
-      .select('id')
+      .select('id, name, tier')
       .eq('email', email.toLowerCase().trim())
       .maybeSingle();
 
     if (existingEmail) {
       return NextResponse.json(
-        { error: 'This email is already registered. Sign in from your dashboard.' },
-        { status: 409 }
+        {
+          error: `You already have ${existingEmail.tier === 'pro' ? 'a Concierge' : 'a Personal Shopper'} (${existingEmail.name}) under this email. Sign in to your dashboard.`,
+          conflict: 'email',
+          existing: { id: existingEmail.id, name: existingEmail.name, tier: existingEmail.tier },
+        },
+        { status: 409 },
       );
     }
 

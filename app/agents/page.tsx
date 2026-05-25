@@ -39,6 +39,7 @@ const WIZARD_STEPS = ['Service', 'Registration', 'Profile', 'Review'];
 export default function AgentsPage() {
   const router = useRouter();
   const [checking, setChecking] = useState(true);
+  const [sessionCheckFailed, setSessionCheckFailed] = useState(false);
 
   const [wizardActive, setWizardActive] = useState(false);
   const [step, setStep] = useState(1);
@@ -53,17 +54,47 @@ export default function AgentsPage() {
     else setStep((s) => Math.max(s - 1, 1));
   };
 
+  // Session check with one retry on transient network failure. Previously
+  // this caught all errors silently and dumped the user into the signup
+  // wizard, which is catastrophic for an already-signed-up tester on a
+  // flaky connection. We retry once after a short delay, and if it still
+  // fails we surface a banner instead of guessing.
   useEffect(() => {
-    (async () => {
+    let cancelled = false;
+    const attempt = async (signal: AbortSignal) => {
+      const ctl = new AbortController();
+      const t = setTimeout(() => ctl.abort(), 10_000);
+      signal.addEventListener('abort', () => ctl.abort(), { once: true });
       try {
-        const res = await fetch('/api/agent/session');
-        if (res.ok) {
-          router.push('/agents/dashboard');
-          return;
-        }
-      } catch {}
+        const res = await fetch('/api/agent/session', { signal: ctl.signal });
+        clearTimeout(t);
+        if (res.ok) return 'signed-in' as const;
+        if (res.status === 401) return 'anonymous' as const;
+        return 'error' as const;
+      } catch {
+        clearTimeout(t);
+        return 'error' as const;
+      }
+    };
+    const ctl = new AbortController();
+    (async () => {
+      let outcome = await attempt(ctl.signal);
+      if (outcome === 'error' && !cancelled) {
+        await new Promise((r) => setTimeout(r, 1_000));
+        outcome = await attempt(ctl.signal);
+      }
+      if (cancelled) return;
+      if (outcome === 'signed-in') {
+        router.push('/agents/dashboard');
+        return;
+      }
+      if (outcome === 'error') setSessionCheckFailed(true);
       setChecking(false);
     })();
+    return () => {
+      cancelled = true;
+      ctl.abort();
+    };
   }, [router]);
 
   function selectTier(tier: AgentTier) {
@@ -77,7 +108,7 @@ export default function AgentsPage() {
       <>
         <RRGHeader active="concierge" />
         <main className="page-pad">
-          <p style={{ color: 'var(--ink-3)', fontFamily: 'var(--font-jetbrains), monospace', fontSize: 12, letterSpacing: '0.14em', textTransform: 'uppercase' }}>Loading…</p>
+          <p style={{ color: 'var(--ink-3)', fontFamily: 'var(--font-jetbrains), monospace', fontSize: 12, letterSpacing: '0.14em', textTransform: 'uppercase' }}>Checking your session…</p>
         </main>
         <RRGFooter />
       </>
@@ -88,6 +119,22 @@ export default function AgentsPage() {
     <>
       <RRGHeader active="concierge" />
       <main className="page-pad" style={{ maxWidth: 1200 }}>
+        {sessionCheckFailed && !wizardActive && (
+          <div style={{
+            margin: '16px 0 0',
+            padding: 14,
+            background: 'color-mix(in srgb, #b5453a 6%, transparent)',
+            border: '1px solid #b5453a',
+            fontSize: 13,
+            color: '#8a2e25',
+            lineHeight: 1.55,
+          }}>
+            Couldn&rsquo;t check whether you&rsquo;re already signed in. If you have an existing
+            Personal Shopper or Concierge, refresh this page or open your{' '}
+            <a href="/agents/dashboard" style={{ color: '#8a2e25', borderBottom: '1px solid #8a2e25' }}>dashboard</a>.
+            Otherwise carry on with a fresh signup below.
+          </div>
+        )}
         {!wizardActive ? (
           <>
             {/* ── Hero intro ──────────────────────────────── */}

@@ -137,6 +137,31 @@ export function StepRegistration({ state, update, onNext, onBack }: Props) {
   const checkEmailWallet = useCallback(async (email: string) => {
     if (!email || !email.includes('@')) return;
     setLookupDismissed(false);
+
+    // First: authoritative agent-existence check. The session endpoint
+    // returns the canonical agent row (with tier) when one exists for
+    // this email, so we can route the user straight to "welcome back"
+    // before they spend any more time in the wizard. Pre-flight here
+    // is the difference between catching a duplicate at email-blur vs
+    // catching it at final submit (4 steps later).
+    try {
+      const sessionRes = await fetch(`/api/agent/session?email=${encodeURIComponent(email)}`);
+      if (sessionRes.ok) {
+        const data = await sessionRes.json();
+        if (data?.agent) {
+          setExistingAgent({
+            name: data.agent.name || 'your agent',
+            tier: data.agent.tier === 'pro' ? 'pro' : 'basic',
+          });
+          return;
+        }
+      }
+    } catch {
+      // Network blip on preflight: don't block, fall through to creator
+      // lookup. The server-side 409 in /api/agent/create is the final
+      // backstop.
+    }
+
     try {
       const res = await fetch(`/api/rrg/wallet-lookup?email=${encodeURIComponent(email)}`);
       if (res.ok) {

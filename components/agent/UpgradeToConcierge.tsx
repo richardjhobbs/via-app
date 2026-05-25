@@ -4,12 +4,15 @@ import { useState } from 'react';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { formatCredits } from '@/lib/agent/credit-display';
+import { fetchJson, fetchErrorMessage } from '@/lib/util/fetchWithTimeout';
 import type { Agent } from '@/lib/agent/types';
 
 interface Props {
   agent: Agent;
   onUpgraded: (next: Agent) => void;
 }
+
+const UPGRADE_TIMEOUT_MS = 20_000;
 
 /**
  * Personal Shopper → Concierge upgrade CTA.
@@ -28,19 +31,28 @@ export function UpgradeToConcierge({ agent, onUpgraded }: Props) {
   async function upgrade() {
     setBusy(true);
     setErr(null);
-    try {
-      const res = await fetch(`/api/agent/${agent.id}/upgrade`, { method: 'POST' });
-      const data = await res.json();
-      if (!res.ok) {
-        setErr(data?.error ?? 'Upgrade failed');
-        return;
-      }
-      onUpgraded(data.agent);
-    } catch {
-      setErr('Network error. Try again.');
-    } finally {
-      setBusy(false);
+
+    const r = await fetchJson<{ agent: Agent }>(`/api/agent/${agent.id}/upgrade`, {
+      method: 'POST',
+      timeoutMs: UPGRADE_TIMEOUT_MS,
+    });
+    setBusy(false);
+
+    if (r.kind === 'ok') {
+      onUpgraded(r.data.agent);
+      return;
     }
+
+    // Already on Concierge: the upgrade endpoint returns 409 in that
+    // case. Treat as a no-op success so the dashboard refreshes cleanly
+    // instead of telling the user "upgrade failed" when in fact they
+    // already are upgraded (e.g. concurrent tab, retry after timeout).
+    if (r.kind === 'http' && r.status === 409) {
+      onUpgraded({ ...agent, tier: 'pro' });
+      return;
+    }
+
+    setErr(fetchErrorMessage(r));
   }
 
   return (
