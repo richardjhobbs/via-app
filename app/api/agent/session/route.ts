@@ -33,25 +33,31 @@ export async function GET(req: NextRequest) {
   // Read-only existence check by wallet. NO cookie minted, NO agent details
   // returned. The wizard uses this to decide whether to surface "you already
   // have an account, sign in with magic link" vs continue.
+  //
+  // We use limit(1) (not maybeSingle) because legacy rows let the same email
+  // exist on multiple agents (e.g. richard@entrepot.asia has RJH + RRH).
+  // maybeSingle returns null on duplicates, which silently flipped the
+  // wizard to "this email is new" and pushed users back into signup.
   const wallet = req.nextUrl.searchParams.get('wallet')?.toLowerCase();
   if (wallet) {
     const { data } = await db
       .from('agent_agents')
       .select('id')
       .eq('wallet_address', wallet)
-      .maybeSingle();
-    return NextResponse.json({ exists: !!data }, { status: 200 });
+      .order('created_at', { ascending: false })
+      .limit(1);
+    return NextResponse.json({ exists: !!(data && data.length) }, { status: 200 });
   }
 
-  // Same contract for email.
   const email = req.nextUrl.searchParams.get('email')?.toLowerCase().trim();
   if (email) {
     const { data } = await db
       .from('agent_agents')
       .select('id')
       .eq('email', email)
-      .maybeSingle();
-    return NextResponse.json({ exists: !!data }, { status: 200 });
+      .order('created_at', { ascending: false })
+      .limit(1);
+    return NextResponse.json({ exists: !!(data && data.length) }, { status: 200 });
   }
 
   return NextResponse.json({ error: 'No active session' }, { status: 401 });

@@ -195,12 +195,18 @@ export function StepRegistration({ state, update, onNext, onBack }: Props) {
       // backstop.
     }
 
+    // Secondary lookup. wallet-lookup peers into rrg_contributors (creator
+    // records) AND agent_agents and returns the first match. If it finds
+    // an agent, treat it the same as the session check: surface the
+    // "Welcome back" panel and let the magic-link request fire. Even when
+    // the session check above is healthy, this is a belt-and-braces for
+    // any edge case where the session route fails to detect the duplicate.
     try {
       const res = await fetch(`/api/rrg/wallet-lookup?email=${encodeURIComponent(email)}`);
       if (res.ok) {
         const data = await res.json();
-        if (data.found && data.source === 'agent') {
-          setExistingAgent({ name: data.name || 'your agent', tier: 'basic' });
+        if (data.found && (data.source === 'agent' || data.bothExist)) {
+          setExistingAgent((prev) => prev ?? { name: data.name || '', tier: 'pro' });
         } else if (data.found && data.source === 'creator') {
           setEmailLookup(data);
         } else {
@@ -240,7 +246,9 @@ export function StepRegistration({ state, update, onNext, onBack }: Props) {
   if (existingAgent) {
     return (
       <div>
-        <h2 style={heading}>Welcome back.</h2>
+        <h2 style={heading}>
+          {existingAgent.name ? `Welcome back, ${existingAgent.name}.` : 'Welcome back.'}
+        </h2>
         <div style={{ ...panelSuccess, marginBottom: 24 }}>
           <p style={{ color: 'var(--ink)', margin: '0 0 4px', fontFamily: 'var(--font-fraunces), serif', fontSize: 16 }}>
             {signInLinkSent ? 'Check your inbox.' : 'Sending you a sign-in link...'}
