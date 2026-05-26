@@ -283,7 +283,7 @@ export default async function DropPage({ params, searchParams }: Props) {
             </div>
           )}
 
-          {/* Stats + purchase — wrapped in provider so Price stat, size
+          {/* Stats + purchase, wrapped in provider so Price stat, size
               selector, and Buy button all react to the same selected size.
               Non-Shopify drops have no variants, so the provider's selection
               stays null and effectivePrice stays at base price_usdc. */}
@@ -356,19 +356,6 @@ export default async function DropPage({ params, searchParams }: Props) {
             requireColor={hasColor}
           />
           </SelectedSizeProvider>
-
-          {/* What you get */}
-          <div style={{ marginTop: 32, paddingTop: 24, borderTop: '1px solid var(--line)' }}>
-            <p className="pdp-section-head">What you get</p>
-            <ul className="pdp-list">
-              <li>ERC-1155 token on Base (proof of ownership)</li>
-              <li>High-resolution JPEG download</li>
-              {drop.additional_files_path && <li>Source files, additional assets</li>}
-              {drop.is_physical_product && <li>Physical product shipped by the brand</li>}
-              {voucherTemplate && <li>{voucherTemplate.title} (redeemable voucher)</li>}
-              {shareLabel && <li>{shareLabel}</li>}
-            </ul>
-          </div>
         </div>
       </div>
     </div>

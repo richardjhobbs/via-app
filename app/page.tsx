@@ -35,7 +35,7 @@ export default async function Landing() {
     getApprovedDropsPaginated(1, 60),
   ]);
 
-  // The RRG house brand is excluded from § 01 brand cards and § 03 lookbook —
+  // The RRG house brand is excluded from § 01 brand cards and § 03 lookbook,
   // this landing page is the RRG surface itself, so its own imagery shouldn't
   // populate the "admitted brands" grid or the lookbook.
   const rrgBrandIds = new Set(allBrands.filter(b => b.slug === 'rrg').map(b => b.id));
@@ -51,10 +51,10 @@ export default async function Landing() {
   const filteredDropsPool = dropsPool.filter(d => !d.brand_id || !rrgBrandIds.has(d.brand_id));
 
   const totalBrands = allBrands.length;
-  // Storefront total (curated, ui_visible=true) — used in the brand-directory link strip
+  // Storefront total (curated, ui_visible=true), used in the brand-directory link strip
   // where the count corresponds to what's actually on the grid the link leads to.
   const totalProducts = directoryBrands.reduce((sum, b) => sum + b.product_count, 0);
-  // Full MCP catalogue total (every approved + non-hidden product) — used in the
+  // Full MCP catalogue total (every approved + non-hidden product), used in the
   // "in numbers" trust strip which represents the full agent-discoverable surface.
   const totalMcpProducts = directoryBrands.reduce((sum, b) => sum + b.mcp_product_count, 0);
   const totalOpenBriefs = openBriefs.length;
@@ -380,7 +380,7 @@ export default async function Landing() {
             const href = item.tokenId != null ? `/rrg/drop/${item.tokenId}` : '/rrg';
             return (
               <Link key={item.id} className="look-item" href={href}>
-                <div className="look-image" style={{ backgroundImage: `url('${item.imageUrl}')` }}></div>
+                <img className="look-image" src={item.imageUrl} alt={item.title} />
                 <h4 className="look-name">{item.title}</h4>
                 <p className="look-brand">{item.brandName}</p>
                 <div className="look-meta">

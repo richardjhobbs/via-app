@@ -68,6 +68,10 @@ export const viewport: Viewport = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en" data-theme="light">
+      <head>
+        <link rel="preconnect" href="https://sanvqnvvzdkjvfmxnxur.supabase.co" crossOrigin="" />
+        <link rel="dns-prefetch" href="https://sanvqnvvzdkjvfmxnxur.supabase.co" />
+      </head>
       <body className={`${fraunces.variable} ${inter.variable} ${jetbrains.variable}`}>
         <Providers>
           <SWRegister />

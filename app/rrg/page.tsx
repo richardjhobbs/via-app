@@ -115,10 +115,11 @@ export default async function StorePage({
             const href = item.tokenId != null ? `/rrg/drop/${item.tokenId}` : '/rrg';
             return (
               <Link key={item.id} className="look-item" href={href}>
-                <div
-                  className="look-image"
-                  style={item.imageUrl ? { backgroundImage: `url('${item.imageUrl}')` } : undefined}
-                />
+                {item.imageUrl ? (
+                  <img className="look-image" src={item.imageUrl} alt={item.title} />
+                ) : (
+                  <div className="look-image" />
+                )}
                 <h4 className="look-name">{item.title}</h4>
                 <p className="look-brand">{item.brandName}</p>
                 <div className="look-meta">

@@ -631,7 +631,10 @@ body {
 .look-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; }
 .look-item { text-decoration: none; color: inherit; cursor: pointer; display: block; }
 .look-image {
+  display: block;
+  width: 100%;
   aspect-ratio: 4 / 5;
+  object-fit: cover; object-position: center;
   background-size: cover; background-position: center;
   background-color: var(--bg-2);
   margin-bottom: 12px;

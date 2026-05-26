@@ -80,10 +80,11 @@ export default async function BrandStorefront({
     <div className="look-grid">
       {items.map(drop => (
         <Link key={drop.id} className="look-item" href={`/rrg/drop/${drop.token_id}`}>
-          <div
-            className="look-image"
-            style={drop.imageUrl ? { backgroundImage: `url('${drop.imageUrl}')` } : undefined}
-          />
+          {drop.imageUrl ? (
+            <img className="look-image" src={drop.imageUrl} alt={drop.title} />
+          ) : (
+            <div className="look-image" />
+          )}
           <h4 className="look-name">{drop.title}</h4>
           <p className="look-brand">{brand.name}</p>
           <div className="look-meta">
