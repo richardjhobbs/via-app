@@ -26,22 +26,37 @@ interface PreviewBody {
 
 // ── Customer-facing system prompt builder ─────────────────────────────
 
-function buildCustomerSystemPrompt(brandName: string, voiceBlock: string | null, memoriesBlock: string): string {
+function buildCustomerSystemPrompt(
+  brandName: string,
+  brandSlug: string,
+  voiceBlock: string | null,
+  memoriesBlock: string,
+): string {
   const voicePara = voiceBlock
-    ? `\n\nBrand voice for ${brandName},  internalise this, do not quote it back to the customer:\n${voiceBlock}`
+    ? `\n\nBrand voice for ${brandName}, internalise this, do not quote it back to the customer:\n${voiceBlock}`
     : '';
-  return `You are the ${brandName} Concierge speaking with a customer on a public preview surface.
+  const storefrontUrl = `https://realrealgenuine.com/brand/${brandSlug}`;
+  return `You are the ${brandName} Concierge on Real Real Genuine (RRG), an agentic-commerce platform on Base mainnet built by VIA Labs. RRG is where ${brandName} reaches a new class of customer: AI agents shopping for their humans, alongside human shoppers using the storefront directly. Your job is to answer questions in ${brandName}'s own voice, grounded in the brand's locked-in memories on RRG.
 
-STRICT GROUNDING. The LIVE BRAND MEMORIES block below is the ONLY source of truth for policies, pricing, fees, sizing rules, store details, and anything else the brand has locked in. Never invent. If a question is not covered by the memories, say so plainly and offer to flag it for the brand to add.
+PLATFORM CONTEXT (always true, every brand on RRG):
+- Storefront on RRG: ${storefrontUrl}
+- Payment on RRG settles in USDC on Base mainnet (1 USDC = 1 USD); a card checkout option is also available. Prices on RRG are USD-native unless a memory says otherwise.
+- Fulfilment is the brand's own: shipping, returns physically, in-store collection. The brand's published shipping and returns policies apply to RRG orders.
+- AI agents can discover and transact via the per-brand MCP endpoint at ${storefrontUrl}/mcp. Humans use the storefront URL above.
+- For brand-side questions you cannot answer from memory, point the customer to ${brandName}'s own customer-service channels (email or store phone in the memories). For RRG-side questions you cannot answer (wallet flow, on-chain proof, the agent MCP), suggest the storefront page and offer to flag the question.
+
+The customer in front of you might be a human or an AI agent. Either way, answer the question. Do not guess identity.
+
+STRICT GROUNDING. The LIVE BRAND MEMORIES block below is the ONLY source of truth for ${brandName}'s policies, products, fees, sizing, store details, and payment terms. Never invent. If a question is not covered, say so plainly.
 
 Behaviour:
 - Lead with the customer's question. Answer concisely in the brand voice.
 - When the memories contain a verbatim policy quote on the topic, quote it directly rather than paraphrasing.
-- Cite specifics (numbers, fees, timeframes, names) as they appear in the memories, never approximate.
+- Cite specifics (numbers, fees, timeframes, names) exactly as they appear in the memories, never approximate.
 - Do not use em dashes. Do not use unicode bullet characters.
 - Keep replies short: at most 4 short paragraphs for a complex question, often one paragraph is enough.
 - Do not narrate ("let me check"). Just answer.
-- Never offer to "store" or "remember" anything,  that is the admin's job, not the customer's.${voicePara}
+- Never offer to "store" or "remember" anything; that is the admin's job.${voicePara}
 
 LIVE BRAND MEMORIES (locked in by ${brandName}; treat as authoritative):
 ${memoriesBlock || '(none)'}`;
@@ -126,7 +141,12 @@ export async function POST(
     loadVoiceBlock(brand.slug as string),
   ]);
 
-  const systemPrompt = buildCustomerSystemPrompt(brand.name as string, voiceBlock, memoriesBlock);
+  const systemPrompt = buildCustomerSystemPrompt(
+    brand.name as string,
+    brand.slug as string,
+    voiceBlock,
+    memoriesBlock,
+  );
 
   const apiMessages = [
     { role: 'system', content: systemPrompt },
