@@ -41,6 +41,13 @@ jobs:
             # Blocks deploy if any brand-owned drop is registered with the
             # wrong on-chain creator (post-mortem: memory/feedback_register_drop_creator_must_be_platform.md)
             node scripts/ci-audit-check.mjs
+            # Clean build: Next.js 16 + Turbopack incremental builds do not
+            # always reconcile route-file moves/deletes between deploys; the
+            # client reference manifest ends up out of sync and every page
+            # 500s with "Invariant: client reference manifest for route X
+            # does not exist". Wiping .next before every build is the cheap
+            # guard. Costs ~30s of extra build time.
+            rm -rf .next
             npm run build
             cp -r .next/static .next/standalone/.next/static
             mkdir -p .next/standalone/public
