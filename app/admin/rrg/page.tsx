@@ -62,6 +62,7 @@ interface Drop {
   token_id: number;
   price_usdc: string;
   edition_size: number;
+  max_per_wallet?: number | null;
   creator_wallet: string;
   creator_email?: string | null;
   creator_handle?: string | null;
@@ -908,7 +909,7 @@ function DropsTab() {
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState<string | null>(null);
   const [editForm, setEditForm] = useState({
-    title: '', description: '', price_usdc: '', edition_size: '',
+    title: '', description: '', price_usdc: '', edition_size: '', max_per_wallet: '',
     creator_email: '', creator_handle: '', creator_bio: '',
     // Physical product fields
     physical_description: '',
@@ -985,6 +986,7 @@ function DropsTab() {
       description: d.description || '',
       price_usdc: parseFloat(d.price_usdc).toString(),
       edition_size: d.edition_size.toString(),
+      max_per_wallet: d.max_per_wallet != null ? d.max_per_wallet.toString() : '',
       creator_email: d.creator_email || '',
       creator_handle: d.creator_handle || '',
       creator_bio: d.creator_bio || '',
@@ -1030,6 +1032,7 @@ function DropsTab() {
     formData.append('description', editForm.description);
     formData.append('price_usdc', editForm.price_usdc);
     formData.append('edition_size', editForm.edition_size);
+    formData.append('max_per_wallet', editForm.max_per_wallet);
     formData.append('creator_email', editForm.creator_email);
     formData.append('creator_handle', editForm.creator_handle);
     formData.append('creator_bio', editForm.creator_bio);
@@ -1275,6 +1278,10 @@ function DropsTab() {
                     <div>
                       <label className={labelClass}>Edition Size</label>
                       <input type="number" required min={1} max={10000} value={editForm.edition_size} onChange={(e) => setEditForm({ ...editForm, edition_size: e.target.value })} className={inputClass} />
+                    </div>
+                    <div>
+                      <label className={labelClass}>Max per wallet <span className="text-white/40 normal-case tracking-normal">(blank = no cap, 1 = one per customer)</span></label>
+                      <input type="number" min={1} max={10000} placeholder="blank for no cap" value={editForm.max_per_wallet} onChange={(e) => setEditForm({ ...editForm, max_per_wallet: e.target.value })} className={inputClass} />
                     </div>
                     <div>
                       <label className={labelClass}>Creator Email</label>
@@ -2169,6 +2176,14 @@ function BrandsTab() {
                         className="px-4 py-1.5 text-sm border border-white/20 hover:border-white/50 transition-all"
                       >
                         Concierge Chat →
+                      </a>
+                      <a
+                        href={`/brand/${b.slug}/preview`}
+                        target="_blank"
+                        rel="noopener"
+                        className="px-4 py-1.5 text-sm border border-sky-400/40 text-sky-300/90 hover:border-sky-300 hover:text-sky-200 transition-all"
+                      >
+                        Customer Preview →
                       </a>
                       <button
                         onClick={() => { setInviting(b.id); setEditing(null); setInviteForm({ email: '', temp_password: '' }); }}

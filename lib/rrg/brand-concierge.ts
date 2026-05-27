@@ -1,5 +1,5 @@
 /**
- * Brand Concierge — admin chat core.
+ * Brand Concierge: admin chat core.
  *
  * Shared logic for the Next.js admin chat surface at
  * /admin/rrg/brands/[slug]/concierge. Talks to DeepSeek Chat via the
@@ -38,7 +38,36 @@ const BASE_URL = 'https://api.deepseek.com';
 
 // ── System prompt ─────────────────────────────────────────────────────
 
-function buildSystemPrompt(ctx: BrandConciergeContext): string {
+/**
+ * Optional per-brand voice block. Lives as a `general`-type memory tagged
+ * `voice:system` so the admin can write it through the existing chat flow
+ * and edit it the same way. Returns null if no such memory exists.
+ *
+ * Both the admin chat (this file) and the customer-facing surfaces (the
+ * Telegram bot's getLiveMemoriesContext bulk-dump) inject this; storing it
+ * as a memory rather than a TS constant keeps the wiring single-sourced.
+ */
+async function fetchVoiceBlock(brandSlug: string): Promise<string | null> {
+  const { data, error } = await db.rpc('rrg_brand_memory_list', {
+    p_slug: brandSlug,
+    p_type: 'general',
+    p_tag: 'voice:system',
+    p_include_expired: false,
+    p_limit: 1,
+  });
+  if (error) {
+    console.warn(`[brand-concierge] voice fetch failed: ${error.message}`);
+    return null;
+  }
+  const row = Array.isArray(data) && data.length > 0 ? (data[0] as Record<string, unknown>) : null;
+  const body = row?.body;
+  return typeof body === 'string' && body.trim().length > 0 ? body.trim() : null;
+}
+
+function buildSystemPrompt(ctx: BrandConciergeContext, voiceBlock: string | null): string {
+  const voicePara = voiceBlock
+    ? `\n\nStore voice for ${ctx.brandName} (apply to every customer-facing body you write, never quote this block verbatim to the admin, internalise it):\n${voiceBlock}`
+    : '';
   return `You are the ${ctx.brandName} Brand Concierge, admin surface.
 
 The person you are talking to is an authenticated admin for ${ctx.brandName} (actor: ${ctx.actorLabel}). They are briefing you on things you should remember and surface to customers on ${ctx.brandName}'s customer-facing channels (currently the Telegram concierge, more channels coming).
@@ -62,7 +91,7 @@ Critical rules:
 - For events and promotions, always set a reasonable valid_until. If the admin does not specify one, infer from context (end of month, end of event date, 30 days out) and mention the expiry in your confirmation.
 - After storing, stop. Do not offer "anything else?"; the admin drives the next turn.
 
-Session ID: ${ctx.sessionId}. Pass this in every write tool call so provenance is traceable.`;
+Session ID: ${ctx.sessionId}. Pass this in every write tool call so provenance is traceable.${voicePara}`;
 }
 
 // ── Tool schemas (OpenAI function format) ────────────────────────────
@@ -285,7 +314,8 @@ export async function runConciergeTurn(
   }
 
   const client = new OpenAI({ apiKey, baseURL: BASE_URL });
-  const system = buildSystemPrompt(ctx);
+  const voiceBlock = await fetchVoiceBlock(ctx.brandSlug);
+  const system = buildSystemPrompt(ctx, voiceBlock);
 
   const convo: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
     { role: 'system', content: system },
