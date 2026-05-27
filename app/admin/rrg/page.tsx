@@ -2178,7 +2178,9 @@ function BrandsTab() {
                         Concierge Chat →
                       </a>
                       <a
-                        href={`/admin/rrg/brands/${b.slug}/concierge-preview`}
+                        href={`/brand/${b.slug}/preview`}
+                        target="_blank"
+                        rel="noopener"
                         className="px-4 py-1.5 text-sm border border-sky-400/40 text-sky-300/90 hover:border-sky-300 hover:text-sky-200 transition-all"
                       >
                         Customer Preview →

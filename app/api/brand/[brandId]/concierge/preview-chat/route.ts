@@ -1,17 +1,15 @@
 /**
  * POST /api/brand/[brandId]/concierge/preview-chat
  *
- * Customer-facing preview of the Brand Concierge. Same memory pool the
- * Telegram bot consumes (rrg_brand_memories via rrg_brand_memory_list, plus
- * the voice:system memory block), but presented as a clean customer chat:
- * no admin tools, no "Locked in:" framing, no memory writes.
+ * Public brand-concierge preview. Same memory pool the Telegram bot consumes
+ * (rrg_brand_memories via rrg_brand_memory_list, plus the voice:system memory
+ * block), but presented as a clean customer chat: no admin tools, no
+ * "Locked in:" framing, no memory writes.
  *
- * Auth mirrors the admin chat: superadmin OR a brand admin for this brand.
- * The endpoint is private,  it's a staff testbench, not a public surface.
+ * No auth: this is a public test surface for asking the brand concierge
+ * questions in the brand's own voice.
  */
 import { NextRequest, NextResponse } from 'next/server';
-import { isAdminFromCookies } from '@/lib/rrg/auth';
-import { getBrandUser, isBrandAdmin } from '@/lib/rrg/brand-auth';
 import { db } from '@/lib/rrg/db';
 
 export const dynamic = 'force-dynamic';
@@ -32,7 +30,7 @@ function buildCustomerSystemPrompt(brandName: string, voiceBlock: string | null,
   const voicePara = voiceBlock
     ? `\n\nBrand voice for ${brandName},  internalise this, do not quote it back to the customer:\n${voiceBlock}`
     : '';
-  return `You are the ${brandName} Concierge speaking with a customer on a private staff preview surface.
+  return `You are the ${brandName} Concierge speaking with a customer on a public preview surface.
 
 STRICT GROUNDING. The LIVE BRAND MEMORIES block below is the ONLY source of truth for policies, pricing, fees, sizing rules, store details, and anything else the brand has locked in. Never invent. If a question is not covered by the memories, say so plainly and offer to flag it for the brand to add.
 
@@ -98,15 +96,6 @@ export async function POST(
   { params }: { params: Promise<{ brandId: string }> },
 ) {
   const { brandId } = await params;
-
-  // Auth: superadmin OR brand admin for this brand. Mirrors concierge/chat.
-  const superAdmin = await isAdminFromCookies();
-  if (!superAdmin) {
-    const user = await getBrandUser();
-    if (!user) return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });
-    const allowed = await isBrandAdmin(user.id, brandId);
-    if (!allowed) return NextResponse.json({ error: 'Not authorized for this brand' }, { status: 403 });
-  }
 
   const { data: brand, error: brandErr } = await db
     .from('rrg_brands')

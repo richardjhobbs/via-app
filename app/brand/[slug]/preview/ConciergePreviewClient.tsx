@@ -120,11 +120,8 @@ export default function ConciergePreviewClient({
                 {stats.memoriesCount} memories{stats.voiceBlockUsed ? ' · voice on' : ''}
               </span>
             )}
-            <a href={`/admin/rrg/brands/${brandSlug}/concierge`} className="text-xs text-neutral-600 hover:text-neutral-900 font-mono">
-              Admin chat →
-            </a>
-            <a href="/admin/rrg" className="text-xs text-neutral-600 hover:text-neutral-900 font-mono">
-              ← Admin
+            <a href={`/brand/${brandSlug}`} className="text-xs text-neutral-600 hover:text-neutral-900 font-mono">
+              ← {brandName}
             </a>
           </div>
         </header>
@@ -136,11 +133,10 @@ export default function ConciergePreviewClient({
             <div className="max-w-3xl mx-auto space-y-4">
               {messages.length === 0 && (
                 <div className="text-neutral-500 text-sm border border-dashed border-neutral-300 rounded p-4 leading-relaxed">
-                  This is a private staff preview of the {brandName} customer concierge.
-                  Ask anything a real shopper might ask,  returns, sizing, shipping, fit,
-                  store hours, whether you carry a specific brand. The reply is grounded
-                  ONLY in the locked-in brand memories; if a question is not covered,
-                  the concierge will say so.
+                  Ask the {brandName} Concierge anything a shopper might ask: returns,
+                  sizing, shipping, fit, store hours, whether they carry a specific brand.
+                  The reply is grounded ONLY in the brand's locked-in memories; if a
+                  question is not covered, the concierge will say so.
                   <div className="mt-3 text-xs font-mono text-neutral-500">Examples</div>
                   <ul className="mt-1 text-xs font-mono text-neutral-600 space-y-0.5">
                     <li>· Can I order two sizes of a jean and return the one that doesn't fit?</li>
