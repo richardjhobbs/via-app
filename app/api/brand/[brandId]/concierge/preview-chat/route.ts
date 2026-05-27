@@ -1,16 +1,22 @@
 /**
  * POST /api/brand/[brandId]/concierge/preview-chat
  *
- * Public brand-concierge preview. Same memory pool the Telegram bot consumes
- * (rrg_brand_memories via rrg_brand_memory_list, plus the voice:system memory
- * block), but presented as a clean customer chat: no admin tools, no
- * "Locked in:" framing, no memory writes.
+ * Public brand-concierge preview. Mirrors the bulk-injection pattern from
+ * lib/rrg/brand-telegram-bot.ts callBrandLLM: a single LLM call where the
+ * system prompt carries the live PRODUCTS, SIZING, and BRAND MEMORIES the
+ * customer-facing concierge needs as authoritative ground truth.
  *
  * No auth: this is a public test surface for asking the brand concierge
- * questions in the brand's own voice.
+ * questions in the brand's own voice on RRG.
  */
 import { NextRequest, NextResponse } from 'next/server';
-import { db } from '@/lib/rrg/db';
+import {
+  db,
+  getApprovedDrops,
+  getVariantsBySubmissionId,
+  getSizingByBrand,
+  type RrgBrand,
+} from '@/lib/rrg/db';
 
 export const dynamic = 'force-dynamic';
 
@@ -24,45 +30,54 @@ interface PreviewBody {
   sessionId?: string;
 }
 
-// ── Customer-facing system prompt builder ─────────────────────────────
+// ── System prompt builder ─────────────────────────────────────────────
 
 function buildCustomerSystemPrompt(
   brandName: string,
   brandSlug: string,
   voiceBlock: string | null,
+  productsBlock: string,
+  sizingBlock: string,
   memoriesBlock: string,
 ): string {
   const voicePara = voiceBlock
     ? `\n\nBrand voice for ${brandName}, internalise this, do not quote it back to the customer:\n${voiceBlock}`
     : '';
   const storefrontUrl = `https://realrealgenuine.com/brand/${brandSlug}`;
-  return `You are the ${brandName} Concierge on Real Real Genuine (RRG), an agentic-commerce platform on Base mainnet built by VIA Labs. RRG is where ${brandName} reaches a new class of customer: AI agents shopping for their humans, alongside human shoppers using the storefront directly. Your job is to answer questions in ${brandName}'s own voice, grounded in the brand's locked-in memories on RRG.
+  const sizingSection = sizingBlock
+    ? `\n\nLIVE SIZING (per category, brand authority, do NOT invent measurements):\n${sizingBlock}`
+    : '';
+  return `You are the ${brandName} Concierge on Real Real Genuine (RRG), an agentic-commerce platform on Base mainnet built by VIA Labs. RRG is where ${brandName} reaches a new class of customer: AI agents shopping for their humans, alongside human shoppers using the storefront directly. Your job is to answer questions in ${brandName}'s own voice, grounded in the live RRG context below.
 
 PLATFORM CONTEXT (always true, every brand on RRG):
 - Storefront on RRG: ${storefrontUrl}
 - Payment on RRG settles in USDC on Base mainnet (1 USDC = 1 USD); a card checkout option is also available. Prices on RRG are USD-native unless a memory says otherwise.
 - Fulfilment is the brand's own: shipping, returns physically, in-store collection. The brand's published shipping and returns policies apply to RRG orders.
-- AI agents can discover and transact via the per-brand MCP endpoint at ${storefrontUrl}/mcp. Humans use the storefront URL above.
-- For brand-side questions you cannot answer from memory, point the customer to ${brandName}'s own customer-service channels (email or store phone in the memories). For RRG-side questions you cannot answer (wallet flow, on-chain proof, the agent MCP), suggest the storefront page and offer to flag the question.
+- AI agents discover and transact via the per-brand MCP endpoint at ${storefrontUrl}/mcp. Humans use the storefront URL above.
 
-The customer in front of you might be a human or an AI agent. Either way, answer the question. Do not guess identity.
+STRICT GROUNDING. The LIVE PRODUCTS, LIVE SIZING, and LIVE BRAND MEMORIES blocks below are the ONLY source of truth for what ${brandName} sells on RRG today, the brand's policies, fees, sizing, and store details. NEVER mention a product, price, size, colour, or stock figure that is not in those live blocks. Do not enumerate from world knowledge. If a customer asks about an item, colour, or size that is not in the LIVE PRODUCTS block, say "that is not currently listed on RRG" and point them to ${storefrontUrl} or, for items in the broader brand catalogue that the brand carries off-platform, to the brand's own customer-service channels. The customer in front of you might be a human or an AI agent. Either way, answer the question. Do not guess identity.
 
-STRICT GROUNDING. The LIVE BRAND MEMORIES block below is the ONLY source of truth for ${brandName}'s policies, products, fees, sizing, store details, and payment terms. Never invent. If a question is not covered, say so plainly.
+Two-track escalation:
+- Brand-side questions you cannot answer (a stock item not on RRG, a custom request): point to ${brandName}'s own customer-service channels in the memories.
+- RRG-side questions you cannot answer (wallet flow, on-chain proof, the agent MCP details): point to ${storefrontUrl} and offer to flag the question.
 
 Behaviour:
 - Lead with the customer's question. Answer concisely in the brand voice.
 - When the memories contain a verbatim policy quote on the topic, quote it directly rather than paraphrasing.
-- Cite specifics (numbers, fees, timeframes, names) exactly as they appear in the memories, never approximate.
+- Cite specifics (numbers, fees, timeframes, names) exactly as they appear in the blocks, never approximate.
 - Do not use em dashes. Do not use unicode bullet characters.
 - Keep replies short: at most 4 short paragraphs for a complex question, often one paragraph is enough.
 - Do not narrate ("let me check"). Just answer.
 - Never offer to "store" or "remember" anything; that is the admin's job.${voicePara}
 
+LIVE PRODUCTS on RRG for ${brandName} (the COMPLETE list of what we sell here; everything else is off-platform):
+${productsBlock}${sizingSection}
+
 LIVE BRAND MEMORIES (locked in by ${brandName}; treat as authoritative):
 ${memoriesBlock || '(none)'}`;
 }
 
-// ── Memory loader (mirrors lib/rrg/brand-telegram-bot.ts getLiveMemoriesContext) ──
+// ── Context loaders (mirror lib/rrg/brand-telegram-bot.ts) ────────────
 
 async function loadMemoriesBlock(brandSlug: string): Promise<string> {
   const { data, error } = await db.rpc('rrg_brand_memory_list', {
@@ -104,6 +119,57 @@ async function loadVoiceBlock(brandSlug: string): Promise<string | null> {
   return typeof body === 'string' && body.trim().length > 0 ? body.trim() : null;
 }
 
+async function loadProductsBlock(brand: RrgBrand): Promise<string> {
+  const drops = await getApprovedDrops(brand.id);
+  if (drops.length === 0) return `No products are currently listed on RRG for ${brand.name}.`;
+
+  const lines: string[] = [];
+  for (const d of drops) {
+    const variants = await getVariantsBySubmissionId(d.id);
+    const sizes  = variants.filter(v => v.size ).map(v => `${v.size }${v.cached_stock > 0 ? '' : '(OOS)'}`);
+    const colors = Array.from(new Set(variants.map(v => v.color).filter((c): c is string => !!c)));
+    const price  = parseFloat(d.price_usdc ?? '0').toFixed(2);
+    const attrs  = (d.product_attributes ?? {}) as Record<string, unknown>;
+
+    const block: string[] = [
+      `#${d.token_id} ${d.title} - $${price} USDC`,
+      d.enhanced_description ? `  Details: ${d.enhanced_description}` : null,
+      typeof attrs.fabric_guess === 'string' ? `  Fabric: ${attrs.fabric_guess}` : null,
+      typeof attrs.fit === 'string' ? `  Fit: ${attrs.fit}` : null,
+      typeof attrs.primary_color === 'string'
+        ? `  Color: ${attrs.primary_color}${
+            Array.isArray(attrs.secondary_colors) && attrs.secondary_colors.length > 0
+              ? ` (+ ${(attrs.secondary_colors as string[]).join(', ')})`
+              : ''
+          }`
+        : null,
+      sizes.length  > 0 ? `  Sizes (OOS = out of stock): ${sizes.join(', ')}` : null,
+      colors.length > 0 ? `  Colours available: ${colors.join(', ')}` : null,
+    ].filter((l): l is string => l !== null);
+
+    lines.push(block.join('\n'));
+  }
+  return lines.join('\n\n');
+}
+
+async function loadSizingBlock(brand: RrgBrand): Promise<string> {
+  if (!brand.supports_sizing) return '';
+  const charts = await getSizingByBrand(brand.id);
+  if (!charts || charts.length === 0) return '';
+  return charts.map((c) => {
+    const head = `Category: ${c.category} (unit: ${c.unit})`;
+    const fit  = c.fit_notes ? `\n  Fit notes: ${c.fit_notes}` : '';
+    let chart = '';
+    if (Array.isArray(c.size_chart) && c.size_chart.length > 0) {
+      const rows = c.size_chart as Record<string, unknown>[];
+      const keys = Array.from(new Set(rows.flatMap((r) => Object.keys(r))));
+      chart = '\n  ' + keys.join(' | ') + '\n  ' +
+        rows.map((r) => keys.map((k) => String(r[k] ?? '')).join(' | ')).join('\n  ');
+    }
+    return `${head}${fit}${chart}`;
+  }).join('\n\n');
+}
+
 // ── Route handler ──────────────────────────────────────────────────────
 
 export async function POST(
@@ -114,9 +180,9 @@ export async function POST(
 
   const { data: brand, error: brandErr } = await db
     .from('rrg_brands')
-    .select('id, slug, name')
+    .select('*')
     .eq('id', brandId)
-    .single();
+    .single<RrgBrand>();
   if (brandErr || !brand) {
     return NextResponse.json({ error: `Brand not found: ${brandErr?.message ?? ''}` }, { status: 404 });
   }
@@ -136,15 +202,19 @@ export async function POST(
     return NextResponse.json({ error: 'Preview is not configured (missing DEEPSEEK_API_KEY).' }, { status: 503 });
   }
 
-  const [memoriesBlock, voiceBlock] = await Promise.all([
-    loadMemoriesBlock(brand.slug as string),
-    loadVoiceBlock(brand.slug as string),
+  const [memoriesBlock, voiceBlock, productsBlock, sizingBlock] = await Promise.all([
+    loadMemoriesBlock(brand.slug),
+    loadVoiceBlock(brand.slug),
+    loadProductsBlock(brand),
+    loadSizingBlock(brand),
   ]);
 
   const systemPrompt = buildCustomerSystemPrompt(
-    brand.name as string,
-    brand.slug as string,
+    brand.name,
+    brand.slug,
     voiceBlock,
+    productsBlock,
+    sizingBlock,
     memoriesBlock,
   );
 
@@ -189,6 +259,8 @@ export async function POST(
     reply: reply || '(no reply)',
     tokensUsed,
     memoriesCount: memoriesBlock ? memoriesBlock.split('\n\n').length : 0,
+    productsCount: productsBlock.startsWith('No products') ? 0 : productsBlock.split('\n\n').length,
+    sizingCharts:  sizingBlock ? sizingBlock.split('\n\n').length : 0,
     voiceBlockUsed: voiceBlock != null,
   });
 }
