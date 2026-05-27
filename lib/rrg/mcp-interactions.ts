@@ -15,9 +15,7 @@ export type McpToolName =
   | 'get_quote'
   | 'buy_product'
   | 'check_order_status'
-  | 'get_merchant_reputation'
-  | 'get_sizing_guide'
-  | 'get_brand_knowledge';
+  | 'get_merchant_reputation';
 
 export interface LogInteractionInput {
   brandId: string;

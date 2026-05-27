@@ -50,12 +50,9 @@ const TYPE_LABEL: Record<string, string> = {
 };
 
 export default function ConciergeChatClient({ brandId, brandSlug, brandName, brandHeadline, embedded = false }: Props) {
-  // h-screen (not min-h-screen) bounds the whole panel to the viewport so the
-  // inner messages list and the memories aside scroll independently, keeping
-  // the composer pinned at the bottom even when there are many memories.
   const rootClass = embedded
     ? 'h-[calc(100vh-14rem)] min-h-[520px] bg-neutral-50 text-neutral-900 flex flex-col border border-neutral-200 rounded-lg overflow-hidden'
-    : 'h-screen bg-neutral-50 text-neutral-900 flex flex-col overflow-hidden';
+    : 'min-h-screen bg-neutral-50 text-neutral-900 flex flex-col';
   const [authState, setAuthState] = useState<'checking' | 'ok' | 'denied'>('checking');
   const [deniedReason, setDeniedReason] = useState<string>('');
   const [messages, setMessages] = useState<Msg[]>([]);
@@ -64,20 +61,6 @@ export default function ConciergeChatClient({ brandId, brandSlug, brandName, bra
   const [sessionId] = useState(() => crypto.randomUUID());
   const [memories, setMemories] = useState<Memory[]>([]);
   const [memFilter, setMemFilter] = useState<'all' | string>('all');
-  // Memory view: 'compact' shows type + title + expiry only (so the composer
-  // stays in reach when there are many long memories); 'expanded' shows full
-  // body and tags. Persisted per-brand so the choice survives a reload.
-  const memViewStorageKey = `rrg.concierge.memView.${brandSlug}`;
-  const [memView, setMemView] = useState<'compact' | 'expanded'>(() => {
-    if (typeof window === 'undefined') return 'compact';
-    const stored = window.localStorage.getItem(memViewStorageKey);
-    return stored === 'expanded' ? 'expanded' : 'compact';
-  });
-  useEffect(() => {
-    if (typeof window !== 'undefined') {
-      window.localStorage.setItem(memViewStorageKey, memView);
-    }
-  }, [memView, memViewStorageKey]);
   const scrollRef = useRef<HTMLDivElement | null>(null);
 
   // ── Load memories (also acts as auth probe) ─────────────────────────
@@ -163,7 +146,7 @@ export default function ConciergeChatClient({ brandId, brandSlug, brandName, bra
 
   if (authState === 'checking') {
     return (
-      <div className={embedded ? 'h-[calc(100vh-14rem)] min-h-[520px] bg-neutral-50 text-neutral-900 flex items-center justify-center border border-neutral-200 rounded-lg' : 'h-screen bg-neutral-50 text-neutral-900 flex items-center justify-center'}>
+      <div className={embedded ? 'h-[calc(100vh-14rem)] min-h-[520px] bg-neutral-50 text-neutral-900 flex items-center justify-center border border-neutral-200 rounded-lg' : 'min-h-screen bg-neutral-50 text-neutral-900 flex items-center justify-center'}>
         <p className="font-mono text-neutral-500 text-sm">Loading...</p>
       </div>
     );
@@ -171,7 +154,7 @@ export default function ConciergeChatClient({ brandId, brandSlug, brandName, bra
 
   if (authState === 'denied') {
     return (
-      <div className={embedded ? 'h-[calc(100vh-14rem)] min-h-[520px] bg-neutral-50 text-neutral-900 flex items-center justify-center px-6 border border-neutral-200 rounded-lg' : 'h-screen bg-neutral-50 text-neutral-900 flex items-center justify-center px-6'}>
+      <div className={embedded ? 'h-[calc(100vh-14rem)] min-h-[520px] bg-neutral-50 text-neutral-900 flex items-center justify-center px-6 border border-neutral-200 rounded-lg' : 'min-h-screen bg-neutral-50 text-neutral-900 flex items-center justify-center px-6'}>
         <div className="max-w-md text-center">
           <h1 className="text-sm font-mono uppercase tracking-[0.3em] text-neutral-600 mb-3">Access denied</h1>
           <p className="text-neutral-800 mb-6">{deniedReason}</p>
@@ -189,7 +172,7 @@ export default function ConciergeChatClient({ brandId, brandSlug, brandName, bra
 
   return (
     <div className={rootClass}>
-      {/* Header,  hidden in embedded mode (the brand-admin tab bar is the header) */}
+      {/* Header — hidden in embedded mode (the brand-admin tab bar is the header) */}
       {!embedded && (
         <header className="bg-white border-b border-neutral-200 px-6 py-4 flex justify-between items-center">
           <div className="flex items-baseline gap-3">
@@ -283,33 +266,22 @@ export default function ConciergeChatClient({ brandId, brandSlug, brandName, bra
 
         {/* Memories sidebar */}
         <aside className="hidden md:flex w-96 bg-white border-l border-neutral-200 flex-col min-h-0">
-          <div className="border-b border-neutral-200 px-4 py-3 flex items-center justify-between gap-2">
+          <div className="border-b border-neutral-200 px-4 py-3 flex items-center justify-between">
             <span className="font-mono text-xs uppercase tracking-[0.2em] text-neutral-700">
               Live memories · {memories.length}
             </span>
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={() => setMemView(memView === 'compact' ? 'expanded' : 'compact')}
-                aria-pressed={memView === 'expanded'}
-                title={memView === 'compact' ? 'Show full memory bodies' : 'Show titles only'}
-                className="text-[10px] font-mono uppercase tracking-wider border border-neutral-300 text-neutral-700 hover:border-neutral-500 hover:text-neutral-900 px-2 py-1 rounded"
-              >
-                {memView === 'compact' ? 'Expand' : 'Compact'}
-              </button>
-              <select
-                value={memFilter}
-                onChange={(e) => setMemFilter(e.target.value)}
-                className="bg-white border border-neutral-300 text-xs font-mono text-neutral-900 px-2 py-1 rounded"
-              >
-                <option value="all">All</option>
-                {Object.entries(TYPE_LABEL).map(([k, v]) => (
-                  <option key={k} value={k}>{v}</option>
-                ))}
-              </select>
-            </div>
+            <select
+              value={memFilter}
+              onChange={(e) => setMemFilter(e.target.value)}
+              className="bg-white border border-neutral-300 text-xs font-mono text-neutral-900 px-2 py-1 rounded"
+            >
+              <option value="all">All</option>
+              {Object.entries(TYPE_LABEL).map(([k, v]) => (
+                <option key={k} value={k}>{v}</option>
+              ))}
+            </select>
           </div>
-          <div className="flex-1 overflow-y-auto px-4 py-3 space-y-2">
+          <div className="flex-1 overflow-y-auto px-4 py-3 space-y-3">
             {filtered.length === 0 && (
               <p className="text-neutral-500 text-xs font-mono">No memories yet.</p>
             )}
@@ -325,20 +297,16 @@ export default function ConciergeChatClient({ brandId, brandSlug, brandName, bra
                     </span>
                   )}
                 </div>
-                <div className={`text-neutral-900 font-medium ${memView === 'expanded' ? 'mb-1' : ''}`}>{m.title}</div>
-                {memView === 'expanded' && (
-                  <>
-                    <div className="text-neutral-700 leading-relaxed">{m.body}</div>
-                    {m.tags.length > 0 && (
-                      <div className="mt-2 flex flex-wrap gap-1">
-                        {m.tags.map((t) => (
-                          <span key={t} className="text-[10px] font-mono text-neutral-600 bg-white border border-neutral-200 px-1.5 py-0.5 rounded">
-                            {t}
-                          </span>
-                        ))}
-                      </div>
-                    )}
-                  </>
+                <div className="text-neutral-900 font-medium mb-1">{m.title}</div>
+                <div className="text-neutral-700 leading-relaxed">{m.body}</div>
+                {m.tags.length > 0 && (
+                  <div className="mt-2 flex flex-wrap gap-1">
+                    {m.tags.map((t) => (
+                      <span key={t} className="text-[10px] font-mono text-neutral-600 bg-white border border-neutral-200 px-1.5 py-0.5 rounded">
+                        {t}
+                      </span>
+                    ))}
+                  </div>
                 )}
               </div>
             ))}

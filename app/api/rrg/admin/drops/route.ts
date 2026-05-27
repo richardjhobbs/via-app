@@ -166,18 +166,6 @@ export async function PATCH(req: NextRequest) {
         updates.edition_size = e;
       }
 
-      const max_per_wallet = formData.get('max_per_wallet');
-      if (max_per_wallet !== null) {
-        const raw = (max_per_wallet as string).trim();
-        if (raw === '' || raw === 'null') {
-          updates.max_per_wallet = null;
-        } else {
-          const n = parseInt(raw, 10);
-          if (isNaN(n) || n < 1) return NextResponse.json({ error: 'max_per_wallet must be a positive integer or blank' }, { status: 400 });
-          updates.max_per_wallet = n;
-        }
-      }
-
       if (image instanceof File && image.size > 0) {
         imageFile = image;
       }
@@ -269,15 +257,6 @@ export async function PATCH(req: NextRequest) {
         const e = parseInt(body.edition_size, 10);
         if (isNaN(e) || e < 1) return NextResponse.json({ error: 'Invalid edition size' }, { status: 400 });
         updates.edition_size = e;
-      }
-      if (body.max_per_wallet !== undefined) {
-        if (body.max_per_wallet === null || body.max_per_wallet === '') {
-          updates.max_per_wallet = null;
-        } else {
-          const n = parseInt(body.max_per_wallet, 10);
-          if (isNaN(n) || n < 1) return NextResponse.json({ error: 'max_per_wallet must be a positive integer or null' }, { status: 400 });
-          updates.max_per_wallet = n;
-        }
       }
     }
 

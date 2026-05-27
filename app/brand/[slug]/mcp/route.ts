@@ -1,5 +1,5 @@
 /**
- * Per-brand MCP endpoint,  /brand/{slug}/mcp
+ * Per-brand MCP endpoint — /brand/{slug}/mcp
  *
  * Provides brand-scoped tools: list_products, get_product (with live Shopify
  * stock via 60s cache), get_sizing_guide, buy_product.
@@ -117,7 +117,7 @@ function createBrandServer(brand: RrgBrand, logTool: LogTool = () => {}) {
     },
     {
       instructions: [
-        `# ${brand.name},  Brand Concierge`,
+        `# ${brand.name} — Brand Concierge`,
         '',
         `Welcome to the ${brand.name} MCP endpoint on Real Real Genuine.`,
         brand.description ? `\n${brand.description}\n` : '',
@@ -125,12 +125,11 @@ function createBrandServer(brand: RrgBrand, logTool: LogTool = () => {}) {
         'checking live stock and sizing, and purchasing.',
         '',
         '## Available Tools',
-        '- `list_products`,  Browse all products from this brand',
-        '- `get_product`,  Get full details including live stock per size/variant',
-        brand.supports_sizing ? '- `get_sizing_guide`,  Size charts and fit advice' : '',
-        '- `get_quote`,  Live shipping quote for a product + size + destination',
-        '- `buy_product`,  Initiate a purchase (returns payment instructions)',
-        '- `get_brand_knowledge`,  Policies, FAQs, sizing rules, shipping terms (authoritative)',
+        '- `list_products` — Browse all products from this brand',
+        '- `get_product` — Get full details including live stock per size/variant',
+        brand.supports_sizing ? '- `get_sizing_guide` — Size charts and fit advice' : '',
+        '- `get_quote` — Live shipping quote for a product + size + destination',
+        '- `buy_product` — Initiate a purchase (returns payment instructions)',
         '',
         `Storefront: ${siteUrl}/brand/${brand.slug}`,
         brand.website_url ? `Website: ${brand.website_url}` : '',
@@ -142,7 +141,7 @@ function createBrandServer(brand: RrgBrand, logTool: LogTool = () => {}) {
 
   server.tool(
     'list_products',
-    `List all products from ${brand.name}. Returns full agent-facing payload per item,  including agentDescription (full, not truncated), styleTags, occasionFit, conditionGrade, authenticationStatus, priceUsdc/priceEur, and provenance,  so a buyer's agent can filter and reason without per-item fan-out calls. Fields populated only for listings whose vision-enrichment has run; otherwise null/empty.`,
+    `List all products from ${brand.name}. Returns full agent-facing payload per item — including agentDescription (full, not truncated), styleTags, occasionFit, conditionGrade, authenticationStatus, priceUsdc/priceEur, and provenance — so a buyer's agent can filter and reason without per-item fan-out calls. Fields populated only for listings whose vision-enrichment has run; otherwise null/empty.`,
     {},
     async () => {
       logTool('list_products');
@@ -284,7 +283,7 @@ function createBrandServer(brand: RrgBrand, logTool: LogTool = () => {}) {
   // Storefront API token (stored on rrg_brands.shopify_storefront_token_
   // encrypted, prefix "plaintext:" in dev). The flow creates an ephemeral
   // GraphQL cart with the line items + destination, reads deliveryOptions,
-  // and discards the cart,  Shopify never creates an order. See
+  // and discards the cart — Shopify never creates an order. See
   // lib/rrg/shopify-shipping.ts. Falls back to brand_data.shipping
   // flat-rate config when no token is provisioned or the API call fails.
   server.tool(
@@ -292,8 +291,8 @@ function createBrandServer(brand: RrgBrand, logTool: LogTool = () => {}) {
     `Get a live shipping quote for a ${brand.name} product from the buyer's country. Rates come from the brand's Shopify store via the Storefront API. Falls back to flat-rate config if no token is configured. Returns rates sorted cheapest-first.`,
     {
       token_id:        z.number().describe('The RRG token ID of the product'),
-      size:            z.string().optional().describe('Size,  required if the product has a size axis with multiple values'),
-      color:           z.string().optional().describe('Colourway,  required if the product has a colour axis with multiple values (e.g. "Modern Chrome", "Brushed Steel")'),
+      size:            z.string().optional().describe('Size — required if the product has a size axis with multiple values'),
+      color:           z.string().optional().describe('Colourway — required if the product has a colour axis with multiple values (e.g. "Modern Chrome", "Brushed Steel")'),
       quantity:        z.number().int().positive().default(1).describe('Units to quote for (default 1)'),
       shipping_address: z.object({
         address1:    z.string().describe('Street address line 1'),
@@ -417,7 +416,7 @@ function createBrandServer(brand: RrgBrand, logTool: LogTool = () => {}) {
 
   server.tool(
     'buy_product',
-    `Initiate a purchase for a ${brand.name} product. Returns payment instructions (USDC on Base). For AI agents,  send USDC to the returned address, then confirm at the central /mcp endpoint. Pass size and/or color to pin the variant; required for products that have those axes.`,
+    `Initiate a purchase for a ${brand.name} product. Returns payment instructions (USDC on Base). For AI agents — send USDC to the returned address, then confirm at the central /mcp endpoint. Pass size and/or color to pin the variant; required for products that have those axes.`,
     {
       token_id: z.number().describe('The RRG token ID of the product'),
       size: z.string().optional().describe('Size to purchase (e.g. S, M, L, XL). Required when the product has a size axis with multiple values.'),
@@ -479,7 +478,7 @@ function createBrandServer(brand: RrgBrand, logTool: LogTool = () => {}) {
       if (size)  variantInstructions.push(`Size selected: ${size}`);
       if (color) variantInstructions.push(`Colour selected: ${color}`);
       if (variantInstructions.length === 0) {
-        variantInstructions.push('No size/colour specified,  include in shipping notes if the product has multiple variants.');
+        variantInstructions.push('No size/colour specified — include in shipping notes if the product has multiple variants.');
       }
 
       return {
@@ -508,86 +507,10 @@ function createBrandServer(brand: RrgBrand, logTool: LogTool = () => {}) {
     },
   );
 
-  // ── get_brand_knowledge ────────────────────────────────────────────
-  //
-  // Surfaces the policy / FAQ / sizing-rules knowledge base maintained in
-  // rrg_brand_memories (written by the admin chat at
-  // /admin/rrg/brands/[slug]/concierge and seeded by the
-  // scripts/ingest-brand-knowledge.mjs crawler). External A2A consumers
-  // can answer "what's the returns window", "what's the sizing rule for
-  // jeans", etc. without going through the central chat.
-
-  server.tool(
-    'get_brand_knowledge',
-    `Look up ${brand.name}'s store policies, FAQs, sizing rules, shipping terms, and other operational knowledge. Pass a query string for fuzzy search, a tag (e.g. "policy:refund", "page:size-guide") to scope to one source, or neither to list all live policy entries. Returns the brand's authoritative entries; treat the returned text as the source of truth and never invent policy details.`,
-    {
-      query: z.string().optional().describe('Free-text query. When set, runs a fuzzy search across titles and bodies.'),
-      tag:   z.string().optional().describe('Filter by a single tag (e.g. "policy:refund", "page:size-guide").'),
-      limit: z.number().int().min(1).max(50).optional().describe('Max entries to return (default 20).'),
-    },
-    async ({ query, tag, limit }) => {
-      logTool('get_brand_knowledge');
-      const lim = limit ?? 20;
-
-      let rows: Record<string, unknown>[] = [];
-      let err: { message: string } | null = null;
-
-      if (query && query.trim().length > 0) {
-        const r = await db.rpc('rrg_brand_memory_search', {
-          p_slug:  brand.slug,
-          p_query: query.trim(),
-          p_limit: lim,
-        });
-        rows = (r.data ?? []) as Record<string, unknown>[];
-        err  = r.error;
-      } else {
-        const r = await db.rpc('rrg_brand_memory_list', {
-          p_slug:            brand.slug,
-          p_type:            tag ? null : 'policy',
-          p_tag:             tag ?? null,
-          p_include_expired: false,
-          p_limit:           lim,
-        });
-        rows = (r.data ?? []) as Record<string, unknown>[];
-        err  = r.error;
-      }
-
-      if (err) {
-        return { isError: true, content: [{ type: 'text', text: `Knowledge lookup failed: ${err.message}` }] };
-      }
-      if (rows.length === 0) {
-        return {
-          content: [{
-            type: 'text',
-            text: query
-              ? `No ${brand.name} knowledge entries match "${query}".`
-              : `No ${brand.name} knowledge entries are currently published${tag ? ` for tag "${tag}"` : ''}.`,
-          }],
-        };
-      }
-
-      const entries = rows.map((r) => ({
-        type:       r.type,
-        title:      r.title,
-        body:       r.body,
-        tags:       Array.isArray(r.tags) ? r.tags : [],
-        structured: r.structured ?? {},
-        valid_until: r.valid_until ?? null,
-      }));
-
-      return {
-        content: [{
-          type: 'text',
-          text: JSON.stringify({ brand: brand.name, count: entries.length, entries }, null, 2),
-        }],
-      };
-    },
-  );
-
   // Previously we patched every tool's execution.taskSupport to 'optional'
   // here so nanobot task-context clients wouldn't filter them out. MCP SDK
   // 1.27+ validates that taskSupport='optional' requires registerToolTask()
-  //,  the naked patch now throws at call time. Nanobot concierges on Box
+  // — the naked patch now throws at call time. Nanobot concierges on Box
   // use a local stdio MCP (see mcp-servers/brand-catalogue) rather than
   // this HTTP endpoint, so the patch isn't needed. Leaving tools at their
   // default taskSupport; revisit if a task-context client hits this route.
@@ -693,7 +616,7 @@ export async function GET(req: Request) {
     tools: [
       {
         name: 'list_products',
-        description: `Browse all ${brand.name} listings. Returns full agent-facing payload per item,  agentDescription, styleTags, occasionFit, conditionGrade, authenticationStatus, priceUsdc/priceEur,  so an agent can filter without per-item fan-out.`,
+        description: `Browse all ${brand.name} listings. Returns full agent-facing payload per item — agentDescription, styleTags, occasionFit, conditionGrade, authenticationStatus, priceUsdc/priceEur — so an agent can filter without per-item fan-out.`,
       },
       {
         name: 'get_product',
@@ -707,34 +630,30 @@ export async function GET(req: Request) {
         name: 'buy_product',
         description: `Initiate a purchase. Returns USDC payment instructions on Base.`,
       },
-      {
-        name: 'get_brand_knowledge',
-        description: `Look up ${brand.name}'s policies (returns, shipping, sizing rules, FAQ, care). Fuzzy search via query, or filter by tag. Authoritative for store policy questions.`,
-      },
     ],
     schemas: {
       product: {
         description: 'Shape returned by list_products items and get_product. Fields populated only after vision-enrichment has run; otherwise null/empty arrays.',
         fields: {
-          tokenId: 'integer,  RRG token ID, used as the listing identifier and in get_product / buy_product calls',
-          title: 'string,  concise display title',
-          brand: 'string,  the brand or maison',
-          category: 'string | null,  e.g. handbag, ring, jacket, dress, jeans',
-          priceUsdc: 'string. Price in USDC (Base mainnet)',
-          priceEur: 'number | null. Original EUR price for curated resale items',
-          conditionGrade: 'string | null. Pristine, Excellent, Very Good, Good, Fair',
-          authenticationStatus: 'string | null. Provenance/authentication signal set per brand (e.g. third-party authentication, in-house verification)',
-          styleTags: 'string[]. Short tags like minimal, structured, monogram, archival',
-          occasionFit: 'string[]. Contexts like work, evening, weekend, travel',
-          buyerIntentSignals: 'string[]. Phrases a buyer-agent might match (e.g. "investment piece", "classic silhouette")',
-          agentDescription: 'string | null. 150-200 word natural-language paragraph for buyer-agent reasoning. The hero field for intent matching.',
-          brandContext: 'string | null. What this house represents in the luxury market',
-          resaleValueContext: 'string | null. Secondary-market value notes',
-          inStock: 'boolean. Derived: true if any variant has stock OR (no variants AND remaining > 0)',
-          editionSize: 'integer. Total edition (1 for single-SKU resale items)',
-          remaining: 'integer. Units still available',
-          ecommerceUrl: 'string | null. Provenance link to the source listing',
-          rrgUrl: 'string. RRG listing page URL',
+          tokenId: 'integer — RRG token ID, used as the listing identifier and in get_product / buy_product calls',
+          title: 'string — concise display title',
+          brand: 'string — the brand or maison',
+          category: 'string | null — e.g. handbag, ring, jacket, dress, jeans',
+          priceUsdc: 'string — price in USDC (Base mainnet)',
+          priceEur: 'number | null — original EUR price for curated resale items',
+          conditionGrade: 'string | null — Pristine | Excellent | Very Good | Good | Fair',
+          authenticationStatus: 'string | null — provenance/authentication signal set per brand (e.g. third-party authentication, in-house verification)',
+          styleTags: 'string[] — short tags like minimal, structured, monogram, archival',
+          occasionFit: 'string[] — contexts like work, evening, weekend, travel',
+          buyerIntentSignals: 'string[] — phrases a buyer-agent might match (e.g. "investment piece", "classic silhouette")',
+          agentDescription: 'string | null — 150-200 word natural-language paragraph for buyer-agent reasoning. The hero field for intent matching.',
+          brandContext: 'string | null — what this house represents in the luxury market',
+          resaleValueContext: 'string | null — secondary-market value notes',
+          inStock: 'boolean — derived: true if any variant has stock OR (no variants AND remaining > 0)',
+          editionSize: 'integer — total edition (1 for single-SKU resale items)',
+          remaining: 'integer — units still available',
+          ecommerceUrl: 'string | null — provenance link to the source listing',
+          rrgUrl: 'string — RRG listing page URL',
         },
       },
     },
