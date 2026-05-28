@@ -75,13 +75,13 @@ export default function OnboardWallet() {
         <OnboardSteps current={3} />
         <p className="text-xs font-mono tracking-widest text-neutral-500 mb-3 uppercase">Step 3 of 5</p>
         <h1 className="font-serif text-4xl md:text-5xl leading-[1.1] tracking-tight mb-3">
-          Wallets.
+          Wallets
         </h1>
         <p className="text-neutral-600 mb-10 max-w-lg">
-          Two distinct wallets, two distinct roles. Your <strong>payout wallet</strong> receives the
-          97.5% USDC share of every sale. Your <strong>Sales Agent’s wallet</strong> is what the
-          agent uses to sign actions on-chain (negotiations, reputation events, x402 settlements) and
-          is what gets registered as its ERC-8004 identity.
+          Two separate wallets. Your <strong>payout wallet</strong> receives the 97.5% USDC share
+          of every sale. Your <strong>Sales Agent’s wallet</strong> is what the agent uses to sign
+          actions on-chain (negotiations and reputation events) and is what gets registered as its
+          identity. Strengthen your agent&apos;s reputation.
         </p>
 
         <form onSubmit={onSubmit} className="space-y-10 max-w-xl">
@@ -92,8 +92,15 @@ export default function OnboardWallet() {
               <span>Your payout wallet</span>
             </h2>
             <p className="text-sm text-neutral-600 mb-4">
-              Paste a Base wallet address you already control (MetaMask, Rabby, Coinbase Wallet, a
-              Safe). 97.5% of each sale lands here. Platform retains 2.5%.
+              Paste an EVM wallet address you already control (MetaMask, Rabby, Coinbase Wallet, a
+              Safe).
+              {' '}
+              <span className="block mt-2">
+                If you don&apos;t already have one there are guidelines{' '}
+                <a href="/faq/wallet" target="_blank" rel="noopener noreferrer" className="underline hover:text-neutral-900">here</a>
+                {' '}with reasons and a simple walkthrough to create one.
+              </span>
+              <span className="block mt-2">97.5% of each sale lands here. Platform retains 2.5%.</span>
             </p>
             <input
               type="text"
@@ -114,8 +121,8 @@ export default function OnboardWallet() {
               <span>Your Sales Agent’s wallet</span>
             </h2>
             <p className="text-sm text-neutral-600 mb-4">
-              Created for you. Sign in with email or Google and we provision a non-custodial EOA owned
-              by your auth identity — that wallet IS your agent.
+              Created for you. Sign in with email or Google and we provide a non-custodial wallet
+              owned by your authorised identity. That wallet is part of your agent.
             </p>
 
             {agentAddress ? (
