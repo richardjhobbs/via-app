@@ -1,11 +1,11 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { Suspense, useEffect, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { OnboardSteps } from '../OnboardSteps';
 import { readOnboardState, writeOnboardState } from '@/lib/app/onboarding-state';
 
-export default function OnboardAccount() {
+function AccountInner() {
   const router = useRouter();
   const params = useSearchParams();
   const role = (params.get('role') === 'buyer' ? 'buyer' : 'seller') as 'seller' | 'buyer';
@@ -85,5 +85,15 @@ export default function OnboardAccount() {
         </form>
       </div>
     </section>
+  );
+}
+
+// useSearchParams forces dynamic; wrap in Suspense so the page can be
+// prerendered without bailing out the whole build.
+export default function OnboardAccount() {
+  return (
+    <Suspense fallback={null}>
+      <AccountInner />
+    </Suspense>
   );
 }

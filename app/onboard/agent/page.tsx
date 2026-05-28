@@ -1,17 +1,16 @@
 'use client';
 
-import { useEffect } from 'react';
+import { Suspense, useEffect } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { OnboardSteps } from '../OnboardSteps';
 
-export default function OnboardAgent() {
+function AgentInner() {
   const router = useRouter();
   const params = useSearchParams();
   const slug = params.get('slug');
 
   useEffect(() => {
     if (!slug) { router.replace('/'); return; }
-    // Small delay so the user sees the success state before the redirect.
     const t = setTimeout(() => {
       router.replace(`/seller/${encodeURIComponent(slug)}/admin/sales-agent`);
     }, 1500);
@@ -35,5 +34,13 @@ export default function OnboardAgent() {
         <p className="text-xs font-mono tracking-widest text-neutral-500 uppercase">Loading <span className="animate-pulse">…</span></p>
       </div>
     </section>
+  );
+}
+
+export default function OnboardAgent() {
+  return (
+    <Suspense fallback={null}>
+      <AgentInner />
+    </Suspense>
   );
 }
