@@ -16,7 +16,7 @@ export default async function SellerProductsPage({
 
   const { data: seller, error } = await db
     .from('app_sellers')
-    .select('id, slug, name, kind, owner_user_id')
+    .select('id, slug, name, kind, shopify_domain, owner_user_id')
     .eq('slug', slug)
     .maybeSingle();
 
@@ -59,6 +59,7 @@ export default async function SellerProductsPage({
             sellerId={seller.id as string}
             sellerSlug={seller.slug as string}
             sellerKind={seller.kind as string}
+            shopifyDomain={(seller.shopify_domain as string | null) ?? null}
           />
         </div>
       </section>
