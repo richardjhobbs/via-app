@@ -24,16 +24,16 @@ const jetbrains = JetBrains_Mono({
   display: 'swap',
 });
 
-const SITE_URL = 'https://realrealgenuine.com';
+const SITE_URL = 'https://app.getvia.xyz';
 
 export const metadata: Metadata = {
-  title: 'Real Real Genuine',
-  description: 'A fashion-first commerce platform. Quietly agent-ready for the clients, concierges and curators who think ahead.',
+  title: 'VIA — Sales & Buying Agents',
+  description: 'Onboard your business as a VIA seller, or train a personal Buying Agent. Agentic commerce settled in USDC on Base.',
   manifest: '/manifest.webmanifest',
-  applicationName: 'RRG',
+  applicationName: 'VIA',
   appleWebApp: {
     capable: true,
-    title: 'RRG',
+    title: 'VIA',
     statusBarStyle: 'default',
   },
   icons: {
@@ -42,16 +42,16 @@ export const metadata: Metadata = {
     apple: '/icons/apple-touch-icon.png',
   },
   openGraph: {
-    title: 'Real Real Genuine',
-    description: 'A fashion-first commerce platform. Quietly agent-ready for the clients, concierges and curators who think ahead.',
+    title: 'VIA — Sales & Buying Agents',
+    description: 'Onboard your business as a VIA seller, or train a personal Buying Agent.',
     url: SITE_URL,
-    siteName: 'Real Real Genuine',
+    siteName: 'VIA',
     type: 'website',
   },
   twitter: {
     card: 'summary',
-    title: 'Real Real Genuine',
-    description: 'A fashion-first commerce platform. Quietly agent-ready.',
+    title: 'VIA — Sales & Buying Agents',
+    description: 'Onboard your business as a VIA seller, or train a personal Buying Agent.',
   },
 };
 
@@ -69,8 +69,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="en" data-theme="light">
       <head>
-        <link rel="preconnect" href="https://sanvqnvvzdkjvfmxnxur.supabase.co" crossOrigin="" />
-        <link rel="dns-prefetch" href="https://sanvqnvvzdkjvfmxnxur.supabase.co" />
+        <link rel="preconnect" href="https://gcxyoujubqclenrhhill.supabase.co" crossOrigin="" />
+        <link rel="dns-prefetch" href="https://gcxyoujubqclenrhhill.supabase.co" />
       </head>
       <body className={`${fraunces.variable} ${inter.variable} ${jetbrains.variable}`}>
         <Providers>
