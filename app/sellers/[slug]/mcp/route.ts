@@ -347,56 +347,11 @@ function createBrandServer(brand: RrgBrand, logTool: LogTool = () => {}) {
         matchVariant = matchingRows[0];
       }
 
-      // Primary path: Shopify Storefront API via ephemeral cart.
-      if (matchVariant?.shopify_variant_id && brand.shopify_domain) {
-        const { getShippingQuote } = await import('@/lib/app/shopify-shipping');
-        const quote = await getShippingQuote({
-          brand,
-          shopifyVariantId: matchVariant.shopify_variant_id,
-          quantity,
-          address: {
-            line1:      shipping_address.address1,
-            line2:      shipping_address.address2,
-            city:       shipping_address.city,
-            state:      shipping_address.province,
-            postalCode: shipping_address.zip,
-            country:    shipping_address.country,
-          },
-        });
-
-        if (quote.ok && quote.source === 'shopify_storefront' && quote.options.length > 0) {
-          const sorted = quote.options.slice().sort((a, b) => a.priceUsd - b.priceUsd);
-          return { content: [{ type: 'text', text: JSON.stringify({
-            status:   'ok',
-            source:   'shopify_storefront_live',
-            tokenId:  token_id,
-            product:  drop.title,
-            size:     matchVariant?.size  ?? 'n/a',
-            color:    matchVariant?.color ?? 'n/a',
-            quantity,
-            shipsTo:  shipping_address.country.toUpperCase(),
-            currency: quote.currency,
-            rates:    sorted.map(r => ({
-              handle:   r.handle,
-              title:    r.title,
-              priceUsd: r.priceUsd,
-            })),
-          }, null, 2) }] };
-        }
-
-        if (!quote.ok && quote.code === 'no_rates') {
-          return { content: [{ type: 'text', text: JSON.stringify({
-            status:  'no_rates',
-            reason:  'The merchant does not ship to this destination (no rates returned by Shopify).',
-            shipsTo: shipping_address.country.toUpperCase(),
-            tokenId: token_id,
-          }, null, 2) }] };
-        }
-
-        // Any other failure mode (no_token, api_error, invalid_address,
-        // fallback_zero) falls through to flat-rate below. shopify-shipping
-        // already logs the detail when it matters.
-      }
+      // Shopify Storefront live-rate path has been removed for via-app v1
+      // (lib/app/shopify-shipping was stripped with the RRG vertical). The
+      // flat-rate path below is the only quote source until task 8 ports the
+      // per-seller MCP route in full and re-adds a generic shipping-quote
+      // backend.
 
       // Fallback: flat-rate config from brand_data.shipping.
       const { getShippingConfig, computeShippingQuote } = await import('@/lib/app/shipping');

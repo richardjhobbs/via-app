@@ -17,7 +17,7 @@
  */
 
 import { db } from './db';
-import { supabaseAdmin } from './brand-auth';
+import { supabaseAdmin } from './seller-auth';
 
 const SITE_URL = (process.env.NEXT_PUBLIC_SITE_URL ?? 'https://realrealgenuine.com').replace(/\/$/, '');
 const RESEND_URL = 'https://api.resend.com/emails';
@@ -139,7 +139,7 @@ export async function activateSalesAgent(input: ActivateInput): Promise<Activati
   let userId: string | null = null;
   {
     const { data: list } = await supabaseAdmin.auth.admin.listUsers();
-    userId = list?.users?.find((u) => u.email?.toLowerCase() === email)?.id ?? null;
+    userId = list?.users?.find((u: { email?: string | null; id: string }) => u.email?.toLowerCase() === email)?.id ?? null;
   }
 
   // Current admin roster for this brand.
@@ -187,7 +187,7 @@ export async function activateSalesAgent(input: ActivateInput): Promise<Activati
     if (createErr) {
       if (createErr.message.includes('already been registered') || createErr.message.includes('already exists')) {
         const { data: list } = await supabaseAdmin.auth.admin.listUsers();
-        const existing = list?.users?.find((u) => u.email?.toLowerCase() === email);
+        const existing = list?.users?.find((u: { email?: string | null; id: string }) => u.email?.toLowerCase() === email);
         if (!existing) {
           return { status: 'failed', sellerId, email, error: 'user exists but could not be located' };
         }

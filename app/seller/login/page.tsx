@@ -2,15 +2,8 @@
 
 import { Suspense, useState, useEffect, useCallback, useRef } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import dynamic from 'next/dynamic';
 import HelpTip from '@/components/app/HelpTip';
 import { brandLogin } from '@/lib/app/help-content';
-
-// Lazy-load thirdweb Google auth component (client-only)
-const GoogleAuthEmbed = dynamic(
-  () => import('@/components/app/GoogleAuthEmbed'),
-  { ssr: false, loading: () => <div className="h-12 border border-white/10 animate-pulse" /> },
-);
 
 // ── Types ──────────────────────────────────────────────────────────────
 interface PendingBrand {
@@ -70,101 +63,6 @@ function BrandLoginInner() {
       })
       .catch(() => {});
   }, [router]);
-
-  // ── Google OAuth handler (login or register) ────────────────────────
-  const handleGoogleAuth = useCallback(async (wallet: string, authEmail: string) => {
-    if (submittedRef.current || loading) return;
-    submittedRef.current = true;
-    setErr('');
-    setLoading(true);
-
-    const effectiveWallet = (mode === 'register' && walletMode === 'own' && ownWallet.trim())
-      ? ownWallet.trim()
-      : wallet;
-
-    try {
-      if (mode === 'register') {
-        if (!sellerName.trim()) {
-          setErr('Please enter your brand name');
-          setLoading(false);
-          submittedRef.current = false;
-          return;
-        }
-
-        if (walletMode === 'own' && !ownWallet.trim()) {
-          setErr('Please enter your wallet address');
-          setLoading(false);
-          submittedRef.current = false;
-          return;
-        }
-
-        const controller = new AbortController();
-        const timeout = setTimeout(() => controller.abort(), 20000);
-        let res: Response;
-        try {
-          res = await fetch('/api/seller/auth/register', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              email: authEmail,
-              wallet: effectiveWallet,
-              sellerName: sellerName.trim(),
-              applicationText: appText.trim(),
-              oauthRegistration: true,
-            }),
-            signal: controller.signal,
-          });
-        } catch {
-          clearTimeout(timeout);
-          setErr('Registration timed out — please refresh the page and try again.');
-          setLoading(false);
-          submittedRef.current = false;
-          return;
-        }
-        clearTimeout(timeout);
-        const data = await res.json();
-
-        if (res.ok && data.brand) {
-          setPendingBrand(data.brand);
-          setMode('pending');
-        } else {
-          setErr(data.error || 'Registration failed');
-          submittedRef.current = false;
-        }
-      } else {
-        // Login mode — wallet-login
-        const res = await fetch('/api/seller/auth/wallet-login', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ wallet, email: authEmail }),
-        });
-        const data = await res.json();
-
-        if (res.ok && data.pending) {
-          // Brand exists but is pending
-          const b = data.brands?.[0];
-          if (b) {
-            setPendingBrand({ id: b.sellerId, name: b.sellerName, slug: b.sellerSlug });
-          }
-          setMode('pending');
-        } else if (res.ok && data.brands?.length > 0) {
-          router.push(`/brand/${data.brands[0].sellerSlug}/admin`);
-        } else if (res.status === 403) {
-          // No brand account found — auto-switch to register
-          submittedRef.current = false;
-          switchMode('register');
-          setErr('No account found — please register below.');
-        } else {
-          setErr(data.error || 'Login failed');
-          submittedRef.current = false;
-        }
-      }
-    } catch {
-      setErr('Something went wrong. Please try again.');
-      submittedRef.current = false;
-    }
-    setLoading(false);
-  }, [mode, walletMode, ownWallet, sellerName, appText, loading, router]);
 
   // ── Email/password registration ─────────────────────────────────────
   const handleEmailRegister = async (e: React.FormEvent) => {
@@ -355,11 +253,6 @@ function BrandLoginInner() {
             <span className="text-white/50 text-base">↓</span>
           </div>
 
-          <GoogleAuthEmbed
-            onAuthenticated={handleGoogleAuth}
-            buttonLabel="Sign in with Google"
-          />
-
           {loading && (
             <p className="text-sm font-mono text-white/50 animate-pulse">Signing in…</p>
           )}
@@ -510,15 +403,7 @@ function BrandLoginInner() {
             />
           </div>
 
-          {/* Google sign-in → auto-register */}
-          <div className="pt-2">
-            <GoogleAuthEmbed
-              onAuthenticated={handleGoogleAuth}
-              buttonLabel="Register with Google"
-            />
-          </div>
-
-          {/* Email/password alternative */}
+          {/* Email/password registration */}
           <>
           <div className="relative flex items-center gap-3">
             <div className="flex-1 border-t border-white/10" />
