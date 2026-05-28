@@ -77,18 +77,35 @@ export default async function SellerAdminPage({
             <Stat label="Status"        value={seller.active ? 'Active' : 'Inactive'} />
           </div>
 
-          <div className="border-t border-neutral-200 pt-8 mb-10">
-            <p className="text-xs font-mono tracking-widest text-neutral-500 mb-3 uppercase">Train your Sales Agent</p>
-            <p className="text-sm text-neutral-600 mb-4">
-              Brief your agent on what you sell, your policies, current promotions. It locks
-              the facts in as memories and reads them back to buying agents.
-            </p>
-            <Link
-              href={`/seller/${seller.slug}/admin/sales-agent`}
-              className="inline-block px-5 py-3 bg-neutral-900 text-neutral-50 text-xs font-mono tracking-widest uppercase hover:bg-neutral-800 transition-colors rounded-md"
-            >
-              Open training chat <span aria-hidden>&rarr;</span>
-            </Link>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 border-t border-neutral-200 pt-8 mb-10">
+            <div>
+              <p className="text-xs font-mono tracking-widest text-neutral-500 mb-3 uppercase">Train your Sales Agent</p>
+              <p className="text-sm text-neutral-600 mb-4">
+                Brief your agent on what you sell, your policies, current promotions. It locks
+                the facts in as memories and reads them back to buying agents.
+              </p>
+              <Link
+                href={`/seller/${seller.slug}/admin/sales-agent`}
+                className="inline-block px-5 py-3 bg-neutral-900 text-neutral-50 text-xs font-mono tracking-widest uppercase hover:bg-neutral-800 transition-colors rounded-md"
+              >
+                Open training chat <span aria-hidden>&rarr;</span>
+              </Link>
+            </div>
+
+            <div>
+              <p className="text-xs font-mono tracking-widest text-neutral-500 mb-3 uppercase">Manage products</p>
+              <p className="text-sm text-neutral-600 mb-4">
+                Add what you sell. Each product becomes an ERC-1155 listing on Base when you publish
+                it, and appears in <code className="font-mono text-neutral-900">list_products</code> on
+                your MCP.
+              </p>
+              <Link
+                href={`/seller/${seller.slug}/admin/products`}
+                className="inline-block px-5 py-3 bg-neutral-900 text-neutral-50 text-xs font-mono tracking-widest uppercase hover:bg-neutral-800 transition-colors rounded-md"
+              >
+                Open products <span aria-hidden>&rarr;</span>
+              </Link>
+            </div>
           </div>
 
           <div className="border-t border-neutral-200 pt-8 mb-10">
@@ -106,7 +123,7 @@ export default async function SellerAdminPage({
           <div className="border-t border-neutral-200 pt-8">
             <p className="text-xs font-mono tracking-widest text-neutral-500 mb-3 uppercase">Coming next</p>
             <ul className="text-sm text-neutral-600 leading-relaxed space-y-1">
-              <li>&middot; Products manager (Shopify sync / CSV / manual)</li>
+              <li>&middot; Shopify catalog sync (paste your store, import as drafts)</li>
               <li>&middot; Sales + USDC payout history</li>
               <li>&middot; Public seller card at {`getvia.xyz/sellers/${seller.slug}`}</li>
             </ul>
