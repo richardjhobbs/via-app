@@ -1,76 +1,12 @@
-'use client';
+import type { ReactNode } from 'react';
 
-import { useState, useEffect } from 'react';
-import { useRouter, useParams } from 'next/navigation';
-import { useActiveWallet, useDisconnect } from 'thirdweb/react';
-import { BrandCtx, type SellerContext } from './seller-context';
-
-export default function BrandAdminLayout({ children }: { children: React.ReactNode }) {
-  const router = useRouter();
-  const params = useParams();
-  const slug   = params.slug as string;
-
-  const activeWallet = useActiveWallet();
-  const { disconnect } = useDisconnect();
-
-  const [ctx,     setCtx]     = useState<SellerContext | null>(null);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    fetch('/api/seller/auth/check')
-      .then((r) => r.json())
-      .then((d) => {
-        if (!d.authenticated) {
-          router.push('/brand/login');
-          return;
-        }
-        const match = d.brands?.find(
-          (b: { sellerSlug: string }) => b.sellerSlug === slug
-        );
-        if (!match) {
-          router.push('/brand/login');
-          return;
-        }
-        setCtx({
-          sellerId:   match.sellerId,
-          sellerName: match.sellerName,
-          sellerSlug: match.sellerSlug,
-          userEmail: d.user.email,
-        });
-        setLoading(false);
-      })
-      .catch(() => router.push('/brand/login'));
-  }, [slug, router]);
-
-  const handleLogout = async () => {
-    if (activeWallet) {
-      disconnect(activeWallet);
-    }
-    await fetch('/api/seller/auth/logout', { method: 'POST' });
-    router.push('/brand/login');
-  };
-
-  if (loading || !ctx) {
-    return (
-      <p className="px-6 py-8 font-mono text-white/50 text-base">Loading…</p>
-    );
-  }
-
-  return (
-    <BrandCtx.Provider value={ctx}>
-      <div className="border-b border-white/10 px-6 py-2 flex justify-between items-center bg-white/[0.03]">
-        <span className="text-sm text-white/40 font-mono">Brand Admin</span>
-        <div className="flex items-center gap-4">
-          <span className="text-sm text-white/50 font-mono">{ctx.userEmail}</span>
-          <button
-            onClick={handleLogout}
-            className="text-sm text-white/50 hover:text-white transition-colors font-mono"
-          >
-            Logout
-          </button>
-        </div>
-      </div>
-      {children}
-    </BrandCtx.Provider>
-  );
+/**
+ * Passthrough layout — every page under /seller/[slug]/admin/ provides its
+ * own chrome and runs its own auth check via getSellerUser() / owner_user_id
+ * match. The previous RRG-fork layout did a client-side /api/seller/auth/check
+ * fetch that depended on app_seller_members (which doesn't exist in via-app's
+ * schema) and redirected to /brand/login (which doesn't exist either).
+ */
+export default function SellerAdminLayout({ children }: { children: ReactNode }) {
+  return <>{children}</>;
 }

@@ -1,703 +1,440 @@
 /**
- * Per-brand MCP endpoint,  /brand/{slug}/mcp
+ * Per-seller MCP endpoint — app.getvia.xyz/sellers/[slug]/mcp
  *
- * Provides brand-scoped tools: list_products, get_product (with live Shopify
- * stock via 60s cache), get_sizing_guide, buy_product.
+ * Buying agents discover sellers via the central getvia.xyz/mcp
+ * (list_sellers / find_seller / seller_mcp_url) and connect here for
+ * deeper interaction. Stateless per request — a fresh McpServer is
+ * built and torn down for each call, so we can run on Vercel's
+ * Edge / serverless runtime without holding session state in memory.
  *
- * This is the first step of the hybrid discovery/transaction architecture:
- * agents discover brands via the central /mcp, then connect to per-brand
- * endpoints for deeper interaction.
+ * Tools (5):
+ *   list_products    — active, on-chain-registered listings
+ *   get_product      — single listing with on-chain stock
+ *   get_seller_info  — public seller card (name, kind, MCP URL, agent IDs)
+ *   ask_sales_agent  — proxy to DeepSeek with the seller's voice memories
+ *   buy_product      — returns an x402 payment requirement; full settlement
+ *                      (operatorMint + auto-payout) is wired separately at
+ *                      /api/x402/purchase. v1 records the intent and the
+ *                      payment requirement; v1.1 closes the loop.
+ *
+ * Every call is logged to app_mcp_interactions with the parsed agent
+ * identity (ERC-8004 ID from `x-via-agent-id` header when present, IP
+ * fallback otherwise).
  */
-
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { WebStandardStreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js';
 import { z } from 'zod';
-import {
-  db,
-  getSellerBySlug,
-  getApprovedDrops,
-  getDropByTokenId,
-  getVariantsBySubmissionId,
-  getSizingByBrand,
-  getSizingByCategory,
-  getPurchaseCountsByTokenIds,
-  type RrgBrand,
-  type RrgProductVariant,
-} from '@/lib/app/db';
-import { getRRGReadOnly } from '@/lib/app/contract';
-import { toAgentProduct } from '@/lib/app/mcp-product-shape';
-import {
-  logMcpInteraction,
-  parseAgentIdentity,
-  type McpToolName,
-} from '@/lib/app/mcp-interactions';
+import { db } from '@/lib/app/db';
+import { ethers } from 'ethers';
 
 export const dynamic = 'force-dynamic';
+export const runtime = 'nodejs';
 
-// ── Shopify Storefront API stock lookup (60s in-memory cache) ────────
+const APP_BASE = (process.env.NEXT_PUBLIC_APP_BASE_URL || 'https://app.getvia.xyz').replace(/\/$/, '');
 
-interface StockEntry {
-  variantId: string;
-  available: number;
-  fetchedAt: number;
+// ── Helpers ──────────────────────────────────────────────────────────
+
+interface SellerRow {
+  id:                   string;
+  slug:                 string;
+  name:                 string;
+  kind:                 string;
+  headline:             string | null;
+  description:          string | null;
+  website_url:          string | null;
+  contact_email:        string;
+  wallet_address:       string;
+  agent_wallet_address: string | null;
+  erc8004_seller_id:    string | null;
+  erc8004_agent_id:     string | null;
+  active:               boolean;
 }
 
-const stockCache = new Map<string, StockEntry>();
-const STOCK_CACHE_TTL_MS = 60_000;
+async function loadSeller(slug: string): Promise<SellerRow | null> {
+  const { data, error } = await db
+    .from('app_sellers')
+    .select('id, slug, name, kind, headline, description, website_url, contact_email, wallet_address, agent_wallet_address, erc8004_seller_id, erc8004_agent_id, active')
+    .eq('slug', slug)
+    .maybeSingle();
+  if (error || !data || !data.active) return null;
+  return data as SellerRow;
+}
 
-/**
- * Fetch live inventory from Shopify Storefront API via products.json
- * (public endpoint, no token needed). Returns variant_id → quantity map.
- */
-async function fetchShopifyStock(shopifyDomain: string): Promise<Map<string, number>> {
-  const url = `https://${shopifyDomain}/products.json?limit=250`;
-  const res = await fetch(url, {
-    headers: { 'User-Agent': 'RRG-BrandMCP/1.0' },
-    cache: 'no-store',
-    signal: AbortSignal.timeout(10_000),
+function asJson(payload: unknown) {
+  return { content: [{ type: 'text' as const, text: JSON.stringify(payload, null, 2) }] };
+}
+
+function publicSellerInfo(s: SellerRow) {
+  return {
+    slug:             s.slug,
+    name:             s.name,
+    kind:             s.kind,
+    headline:         s.headline,
+    description:      s.description,
+    website_url:      s.website_url,
+    erc8004_seller_id: s.erc8004_seller_id,
+    erc8004_agent_id:  s.erc8004_agent_id,
+    agent_wallet:     s.agent_wallet_address,
+    mcp_url:          `${APP_BASE}/sellers/${s.slug}/mcp`,
+  };
+}
+
+async function logInteraction(
+  sellerId: string,
+  toolName: string,
+  agentIdentity: Record<string, unknown>,
+  request: unknown,
+  response: unknown,
+  statusCode: number,
+  durationMs: number,
+) {
+  // Fire-and-forget — never block the tool response on the audit write.
+  db.from('app_mcp_interactions').insert({
+    seller_id:      sellerId,
+    tool_name:      toolName,
+    agent_identity: agentIdentity,
+    request,
+    response,
+    status_code:    statusCode,
+    duration_ms:    durationMs,
+  }).then(() => {}, (err) => {
+    console.warn(`[mcp] audit log insert failed for ${toolName}:`, err);
   });
-  if (!res.ok) throw new Error(`Shopify ${res.status}`);
-  const json = await res.json();
-
-  const map = new Map<string, number>();
-  for (const product of json.products ?? []) {
-    for (const variant of product.variants ?? []) {
-      // Use inventory_quantity if present and > 0; otherwise use `available` boolean
-      const rawQty = parseInt(variant.inventory_quantity, 10);
-      const stock = (!isNaN(rawQty) && rawQty > 0) ? rawQty : (variant.available === true ? 1 : 0);
-      map.set(String(variant.id), stock);
-    }
-  }
-  return map;
 }
 
-/**
- * Get cached stock for a variant, refreshing from Shopify if stale.
- */
-async function getVariantStock(
-  shopifyDomain: string | null,
-  variant: RrgProductVariant,
-): Promise<number> {
-  if (!shopifyDomain || !variant.shopify_variant_id) return variant.cached_stock;
-
-  const cached = stockCache.get(variant.shopify_variant_id);
-  if (cached && Date.now() - cached.fetchedAt < STOCK_CACHE_TTL_MS) {
-    return cached.available;
-  }
-
-  // Refresh entire store stock (one call refreshes all variants)
-  try {
-    const freshStock = await fetchShopifyStock(shopifyDomain);
-    const now = Date.now();
-    for (const [vid, qty] of freshStock) {
-      stockCache.set(vid, { variantId: vid, available: qty, fetchedAt: now });
-    }
-    return freshStock.get(variant.shopify_variant_id) ?? variant.cached_stock;
-  } catch (e) {
-    console.error('[brand-mcp] stock fetch failed:', e);
-    return variant.cached_stock; // fallback to DB cache
-  }
+function parseAgentIdentity(req: Request): Record<string, unknown> {
+  const viaAgentId = req.headers.get('x-via-agent-id');
+  const ua         = req.headers.get('user-agent');
+  const fwd        = req.headers.get('x-forwarded-for');
+  const ip         = fwd ? fwd.split(',')[0].trim() : null;
+  return {
+    via_agent_id: viaAgentId ? Number(viaAgentId) : null,
+    user_agent:   ua,
+    ip,
+  };
 }
 
-// ── Server factory ───────────────────────────────────────────────────
+// ── Build the MCP server per-request ─────────────────────────────────
 
-/**
- * Helper injected into each tool handler: fire-and-forget log to
- * mcp_interactions. The via-brand-onboarding credit engine reads these.
- */
-type LogTool = (tool: McpToolName, opts?: { completed?: boolean }) => void;
+function createServer(seller: SellerRow, req: Request) {
+  const server = new McpServer({
+    name: `${seller.slug}-sales-agent`,
+    version: '1.0.0',
+  });
 
-function createBrandServer(brand: RrgBrand, logTool: LogTool = () => {}) {
-  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://realrealgenuine.com';
+  const identity = parseAgentIdentity(req);
 
-  const server = new McpServer(
-    {
-      name: `${brand.name} on RRG`,
-      version: '1.0.0',
-    },
-    {
-      instructions: [
-        `# ${brand.name},  Brand Concierge`,
-        '',
-        `Welcome to the ${brand.name} MCP endpoint on Real Real Genuine.`,
-        brand.description ? `\n${brand.description}\n` : '',
-        'This endpoint provides brand-scoped tools for browsing products,',
-        'checking live stock and sizing, and purchasing.',
-        '',
-        '## Available Tools',
-        '- `list_products`,  Browse all products from this brand',
-        '- `get_product`,  Get full details including live stock per size/variant',
-        brand.supports_sizing ? '- `get_sizing_guide`,  Size charts and fit advice' : '',
-        '- `get_quote`,  Live shipping quote for a product + size + destination',
-        '- `buy_product`,  Initiate a purchase (returns payment instructions)',
-        '- `get_brand_knowledge`,  Policies, FAQs, sizing rules, shipping terms (authoritative)',
-        '',
-        `Storefront: ${siteUrl}/brand/${brand.slug}`,
-        brand.website_url ? `Website: ${brand.website_url}` : '',
-      ].filter(Boolean).join('\n'),
-    },
-  );
-
-  // ── list_products ──────────────────────────────────────────────────
-
+  // ── list_products ────────────────────────────────────────────────
   server.tool(
     'list_products',
-    `List all products from ${brand.name}. Returns full agent-facing payload per item,  including agentDescription (full, not truncated), styleTags, occasionFit, conditionGrade, authenticationStatus, priceUsdc/priceEur, and provenance,  so a buyer's agent can filter and reason without per-item fan-out calls. Fields populated only for listings whose vision-enrichment has run; otherwise null/empty.`,
-    {},
-    async () => {
-      logTool('list_products');
-      const drops = await getApprovedDrops(brand.id);
-      if (drops.length === 0) {
-        return { content: [{ type: 'text', text: `No products listed for ${brand.name} yet.` }] };
-      }
+    `List ${seller.name}'s active, on-chain-registered listings. Returns each product's title, description, price (USDC), stock (when known), and the ERC-1155 tokenId on Base mainnet for buy_product follow-up.`,
+    {
+      active_only: z.boolean().optional().describe('Filter to active=true (default true)'),
+      limit:       z.number().int().min(1).max(100).optional().describe('Max products to return (default 50)'),
+    },
+    async ({ active_only, limit }) => {
+      const t0 = Date.now();
+      const max = Math.min(Math.max(limit ?? 50, 1), 100);
+      let query = db
+        .from('app_seller_products')
+        .select('id, title, description, kind, price_minor, currency, stock, url, image_url, token_id, on_chain_status, max_supply')
+        .eq('seller_id', seller.id)
+        .eq('on_chain_status', 'registered')
+        .order('created_at', { ascending: false })
+        .limit(max);
+      if (active_only !== false) query = query.eq('active', true);
 
-      const tokenIds = drops.map(d => d.token_id).filter((id): id is number => id != null);
-      const purchaseCounts = await getPurchaseCountsByTokenIds(tokenIds);
-
-      const products = await Promise.all(drops.map(async (drop) => {
-        const variants = await getVariantsBySubmissionId(drop.id);
-        const sold = purchaseCounts.get(drop.token_id!) ?? 0;
-
-        // Overlay live Shopify stock onto DB cached_stock before projection.
-        // Fresh stock for Shopify-backed brands; DB value for everything else.
-        const liveVariants = await Promise.all(
-          variants.map(async (v) => {
-            const liveStock = await getVariantStock(brand.shopify_domain, v);
-            return { ...v, cached_stock: liveStock };
-          })
-        );
-
-        // Canonical agent-product shape (shared with platform MCP). Reseller
-        // anchors surface only when the brand's merchant_type is resale.
-        const shape = toAgentProduct({ drop, brand, variants: liveVariants, sold, siteUrl });
-        const attrs = (drop.product_attributes ?? {}) as Record<string, unknown>;
-
-        return {
-          ...shape,
-          // Per-brand MCP extras preserved for existing consumers
-          brand:    shape.sellerName,
-          category: typeof attrs.category === 'string' ? attrs.category : null,
-          priceEur: typeof attrs.price_eur === 'number' ? attrs.price_eur : null,
-          inStock:  shape.variants.length > 0
-            ? shape.variants.some(v => v.inStock)
-            : (shape.remaining ?? 0) > 0,
-          availableSizes:   shape.variants.filter(v => v.inStock).map(v => v.size).filter(Boolean),
-          totalVariants:    shape.variants.length,
-          inStockVariants:  shape.variants.filter(v => v.inStock).length,
-          isPhysical:       shape.isPhysicalProduct,
-        };
+      const { data, error } = await query;
+      const products = (data ?? []).map((p) => ({
+        product_id:    p.id,
+        title:         p.title,
+        description:   p.description,
+        kind:          p.kind,
+        price_usdc:    (p.price_minor as number) / 1_000_000,
+        currency:      p.currency,
+        stock:         p.stock,
+        url:           p.url,
+        image_url:     p.image_url,
+        token_id:      p.token_id,
+        max_supply:    p.max_supply,
       }));
-
-      return {
-        content: [{ type: 'text', text: JSON.stringify({ brand: brand.name, products }, null, 2) }],
-      };
+      const out = asJson({ seller: seller.slug, count: products.length, products });
+      void logInteraction(seller.id, 'list_products', identity, { active_only, limit }, { count: products.length }, error ? 500 : 200, Date.now() - t0);
+      return out;
     },
   );
 
-  // ── get_product ────────────────────────────────────────────────────
-
+  // ── get_product ──────────────────────────────────────────────────
   server.tool(
     'get_product',
-    `Get full product details for one item. Returns flattened agent-facing fields at the top level (agentDescription, styleTags, occasionFit, conditionGrade, authenticationStatus, brandContext, resaleValueContext, buyerIntentSignals) plus the complete productAttributes JSON, plus live stock per size/color variant. Use this when you need every detail about a single item before purchasing.`,
+    `Fetch a single ${seller.name} listing by product_id.`,
     {
-      token_id: z.number().describe('The RRG token ID of the product'),
+      product_id: z.string().uuid().describe('UUID returned by list_products'),
     },
-    async ({ token_id }) => {
-      logTool('get_product');
-      const drop = await getDropByTokenId(token_id);
-      if (!drop || drop.brand_id !== brand.id) {
-        return { isError: true, content: [{ type: 'text', text: `Product #${token_id} not found for ${brand.name}` }] };
+    async ({ product_id }) => {
+      const t0 = Date.now();
+      const { data, error } = await db
+        .from('app_seller_products')
+        .select('id, title, description, kind, price_minor, currency, stock, url, image_url, token_id, on_chain_status, max_supply, metadata')
+        .eq('id', product_id)
+        .eq('seller_id', seller.id)
+        .maybeSingle();
+      if (error || !data) {
+        const r = asJson({ error: `product ${product_id} not found for ${seller.slug}` });
+        void logInteraction(seller.id, 'get_product', identity, { product_id }, { error: 'not_found' }, 404, Date.now() - t0);
+        return r;
       }
-
-      const variants = await getVariantsBySubmissionId(drop.id);
-      const counts = await getPurchaseCountsByTokenIds([token_id]);
-      const sold = counts.get(token_id) ?? 0;
-
-      // Overlay live Shopify stock onto DB cached_stock before projection.
-      const liveVariants = await Promise.all(
-        variants.map(async (v) => {
-          const liveStock = await getVariantStock(brand.shopify_domain, v);
-          return { ...v, cached_stock: liveStock };
-        })
-      );
-
-      const shape = toAgentProduct({ drop, brand, variants: liveVariants, sold, siteUrl });
-      const attrs = (drop.product_attributes ?? {}) as Record<string, unknown>;
-
-      const result = {
-        ...shape,
-        // Per-brand MCP extras: flattened category + EUR price + sized helpers
-        brand:    shape.sellerName,
-        category: typeof attrs.category === 'string' ? attrs.category : null,
-        priceEur: typeof attrs.price_eur === 'number' ? attrs.price_eur : null,
-        sold,
-        isPhysical:     shape.isPhysicalProduct,
-        sizingCategory: drop.sizing_category,
-        sizesInStock:    shape.variants.filter(v => v.inStock).map(v => v.size).filter(Boolean),
-        sizesOutOfStock: shape.variants.filter(v => !v.inStock).map(v => v.size).filter(Boolean),
-      };
-
-      return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
+      const out = asJson({
+        product_id:    data.id,
+        title:         data.title,
+        description:   data.description,
+        kind:          data.kind,
+        price_usdc:    (data.price_minor as number) / 1_000_000,
+        currency:      data.currency,
+        stock:         data.stock,
+        url:           data.url,
+        image_url:     data.image_url,
+        token_id:      data.token_id,
+        max_supply:    data.max_supply,
+        on_chain_status: data.on_chain_status,
+        metadata:      data.metadata,
+      });
+      void logInteraction(seller.id, 'get_product', identity, { product_id }, { found: true }, 200, Date.now() - t0);
+      return out;
     },
   );
 
-  // ── get_sizing_guide ───────────────────────────────────────────────
-
-  if (brand.supports_sizing) {
-    server.tool(
-      'get_sizing_guide',
-      `Get the ${brand.name} sizing guide. Returns measurement charts and fit notes per category (tops, bottoms, outerwear, etc).`,
-      {
-        category: z.string().optional().describe('Filter by category: tops, bottoms, outerwear, skirts. Omit for all categories.'),
-      },
-      async ({ category }) => {
-        // get_sizing_guide isn't in the credit-eligible tool set, but we
-        // still log it under list_products to keep the counter honest.
-        logTool('list_products');
-        let sizing;
-        if (category) {
-          const single = await getSizingByCategory(brand.id, category);
-          sizing = single ? [single] : [];
-        } else {
-          sizing = await getSizingByBrand(brand.id);
-        }
-
-        if (sizing.length === 0) {
-          return { content: [{ type: 'text', text: `No sizing guide found${category ? ` for category "${category}"` : ''}.` }] };
-        }
-
-        const result = sizing.map(s => ({
-          category: s.category,
-          unit: s.unit,
-          fitNotes: s.fit_notes,
-          sizeChart: s.size_chart,
-          sourceUrl: s.source_url,
-        }));
-
-        return { content: [{ type: 'text', text: JSON.stringify({ brand: brand.name, sizing: result }, null, 2) }] };
-      },
-    );
-  }
-
-  // ── get_quote ──────────────────────────────────────────────────────
-  // Live shipping rates from the brand's Shopify store using the public
-  // Storefront API token (stored on app_sellers.shopify_storefront_token_
-  // encrypted, prefix "plaintext:" in dev). The flow creates an ephemeral
-  // GraphQL cart with the line items + destination, reads deliveryOptions,
-  // and discards the cart,  Shopify never creates an order. See
-  // lib/app/shopify-shipping.ts. Falls back to brand_data.shipping
-  // flat-rate config when no token is provisioned or the API call fails.
+  // ── get_seller_info ──────────────────────────────────────────────
   server.tool(
-    'get_quote',
-    `Get a live shipping quote for a ${brand.name} product from the buyer's country. Rates come from the brand's Shopify store via the Storefront API. Falls back to flat-rate config if no token is configured. Returns rates sorted cheapest-first.`,
-    {
-      token_id:        z.number().describe('The RRG token ID of the product'),
-      size:            z.string().optional().describe('Size,  required if the product has a size axis with multiple values'),
-      color:           z.string().optional().describe('Colourway,  required if the product has a colour axis with multiple values (e.g. "Modern Chrome", "Brushed Steel")'),
-      quantity:        z.number().int().positive().default(1).describe('Units to quote for (default 1)'),
-      shipping_address: z.object({
-        address1:    z.string().describe('Street address line 1'),
-        address2:    z.string().optional(),
-        city:        z.string(),
-        province:    z.string().optional().describe('State / province name or code'),
-        country:     z.string().describe('ISO 3166-1 alpha-2 country code (e.g. US, GB, AU)'),
-        zip:         z.string().describe('Postal / ZIP code'),
-      }).describe('Destination address. Only country + zip + city are strictly required for rate calculation.'),
-    },
-    async ({ token_id, size, color, quantity = 1, shipping_address }) => {
-      logTool('get_quote');
-
-      const drop = await getDropByTokenId(token_id);
-      if (!drop || drop.brand_id !== brand.id) {
-        return { isError: true, content: [{ type: 'text', text: `Product #${token_id} not found for ${brand.name}` }] };
-      }
-
-      // Resolve the Shopify variant for this (size, colour) selection.
-      const variants = await getVariantsBySubmissionId(drop.id);
-      const hasSizeAxis  = variants.some(v => v.size  != null);
-      const hasColorAxis = variants.some(v => v.color != null);
-      const distinctSizes  = Array.from(new Set(variants.map(v => v.size).filter(Boolean))) as string[];
-      const distinctColors = Array.from(new Set(variants.map(v => v.color).filter(Boolean))) as string[];
-
-      let matchVariant = variants[0];
-      if (variants.length > 1) {
-        const matchingRows = variants.filter(v =>
-          (!hasSizeAxis  || !size  || v.size?.toLowerCase()  === size.toLowerCase())
-          && (!hasColorAxis || !color || v.color?.toLowerCase() === color.toLowerCase())
-        );
-
-        // Required-axis enforcement: if the product has an axis with > 1
-        // distinct value, the agent must supply that axis to get an exact
-        // shipping quote (carrier rates can vary by item weight per variant).
-        const sizeRequired  = hasSizeAxis  && distinctSizes.length  > 1 && !size;
-        const colorRequired = hasColorAxis && distinctColors.length > 1 && !color;
-        if (sizeRequired || colorRequired) {
-          const missing: string[] = [];
-          if (sizeRequired)  missing.push(`size (available: ${distinctSizes.join(', ')})`);
-          if (colorRequired) missing.push(`color (available: ${distinctColors.join(', ')})`);
-          return { isError: true, content: [{ type: 'text', text: `${drop.title} has multiple variants. Specify ${missing.join(' and ')} for an accurate shipping quote.` }] };
-        }
-
-        if (matchingRows.length === 0) {
-          const parts: string[] = [];
-          if (size)  parts.push(`size "${size}"`);
-          if (color) parts.push(`colour "${color}"`);
-          return { isError: true, content: [{ type: 'text', text: `${parts.join(' / ') || 'That variant'} is not available. Sizes: ${distinctSizes.join(', ') || 'n/a'}. Colours: ${distinctColors.join(', ') || 'n/a'}.` }] };
-        }
-        matchVariant = matchingRows[0];
-      }
-
-      // Shopify Storefront live-rate path has been removed for via-app v1
-      // (lib/app/shopify-shipping was stripped with the RRG vertical). The
-      // flat-rate path below is the only quote source until task 8 ports the
-      // per-seller MCP route in full and re-adds a generic shipping-quote
-      // backend.
-
-      // Fallback: flat-rate config from brand_data.shipping.
-      const { getShippingConfig, computeShippingQuote } = await import('@/lib/app/shipping');
-      const config = getShippingConfig(brand.brand_data);
-      const quote = computeShippingQuote(config, shipping_address.country);
-
-      return { content: [{ type: 'text', text: JSON.stringify({
-        status:  quote.status === 'flat_rate' ? 'ok' : quote.status,
-        source:  'flat_rate_config',
-        tokenId: token_id,
-        product: drop.title,
-        quote,
-      }, null, 2) }] };
+    'get_seller_info',
+    `Public information about ${seller.name} — name, kind, description, website, ERC-8004 IDs, and the agent's own wallet address.`,
+    {},
+    async () => {
+      const t0 = Date.now();
+      const out = asJson(publicSellerInfo(seller));
+      void logInteraction(seller.id, 'get_seller_info', identity, {}, { ok: true }, 200, Date.now() - t0);
+      return out;
     },
   );
 
-  // ── buy_product ────────────────────────────────────────────────────
+  // ── ask_sales_agent ──────────────────────────────────────────────
+  server.tool(
+    'ask_sales_agent',
+    `Ask ${seller.name}'s Sales Agent a question. The agent answers in the seller's voice using its locked-in memories (events, promotions, policies, stock notes).`,
+    {
+      question: z.string().min(1).max(2000).describe('Free-form buyer question'),
+    },
+    async ({ question }) => {
+      const t0 = Date.now();
+      const reply = await askSalesAgent(seller, question);
+      const out = asJson({ seller: seller.slug, question, answer: reply });
+      void logInteraction(seller.id, 'ask_sales_agent', identity, { question: question.slice(0, 200) }, { len: reply.length }, 200, Date.now() - t0);
+      return out;
+    },
+  );
 
+  // ── buy_product (v1 — returns x402 payment requirement) ─────────
   server.tool(
     'buy_product',
-    `Initiate a purchase for a ${brand.name} product. Returns payment instructions (USDC on Base). For AI agents,  send USDC to the returned address, then confirm at the central /mcp endpoint. Pass size and/or color to pin the variant; required for products that have those axes.`,
+    `Initiate a purchase of one of ${seller.name}'s listings. Returns an x402 payment requirement (USDC on Base) plus a purchase_intent_id. Pay the requirement, then POST to /api/x402/purchase with the intent ID to trigger operatorMint + 97.5/2.5 USDC payout.`,
     {
-      token_id: z.number().describe('The RRG token ID of the product'),
-      size: z.string().optional().describe('Size to purchase (e.g. S, M, L, XL). Required when the product has a size axis with multiple values.'),
-      color: z.string().optional().describe('Colourway to purchase (e.g. "Modern Chrome", "Brushed Steel"). Required when the product has a colour axis with multiple values; recorded on the order so fulfillment ships the right finish.'),
-      buyer_wallet: z.string().describe('Your 0x wallet address on Base'),
+      product_id:     z.string().uuid(),
+      qty:            z.number().int().min(1).max(1000).default(1),
+      buyer_wallet:   z.string().regex(/^0x[a-fA-F0-9]{40}$/, 'invalid Base wallet address'),
+      buyer_agent_id: z.string().optional().describe('ERC-8004 agent ID of the Buying Agent acting on the buyer\'s behalf'),
     },
-    async ({ token_id, size, color, buyer_wallet }) => {
-      logTool('buy_product');
-      const drop = await getDropByTokenId(token_id);
-      if (!drop || drop.brand_id !== brand.id) {
-        return { isError: true, content: [{ type: 'text', text: `Product #${token_id} not found for ${brand.name}` }] };
+    async ({ product_id, qty, buyer_wallet, buyer_agent_id }) => {
+      const t0 = Date.now();
+
+      const { data: product, error: prodErr } = await db
+        .from('app_seller_products')
+        .select('id, title, price_minor, currency, stock, token_id, on_chain_status, active, max_supply')
+        .eq('id', product_id)
+        .eq('seller_id', seller.id)
+        .maybeSingle();
+      if (prodErr || !product) {
+        const r = asJson({ error: `product ${product_id} not found for ${seller.slug}` });
+        void logInteraction(seller.id, 'buy_product', identity, { product_id, qty, buyer_wallet }, { error: 'not_found' }, 404, Date.now() - t0);
+        return r;
+      }
+      if (!product.active || product.on_chain_status !== 'registered') {
+        const r = asJson({ error: `product ${product_id} is not currently purchasable (status=${product.on_chain_status}, active=${product.active})` });
+        void logInteraction(seller.id, 'buy_product', identity, { product_id, qty, buyer_wallet }, { error: 'not_purchasable' }, 409, Date.now() - t0);
+        return r;
+      }
+      if (product.currency !== 'USDC') {
+        const r = asJson({ error: `non-USDC pricing not supported in v1 (got ${product.currency})` });
+        void logInteraction(seller.id, 'buy_product', identity, { product_id, qty, buyer_wallet }, { error: 'unsupported_currency' }, 400, Date.now() - t0);
+        return r;
       }
 
-      const variants     = await getVariantsBySubmissionId(drop.id);
-      const hasSizeAxis  = variants.some(v => v.size  != null);
-      const hasColorAxis = variants.some(v => v.color != null);
-      const distinctSizes  = Array.from(new Set(variants.map(v => v.size).filter(Boolean))) as string[];
-      const distinctColors = Array.from(new Set(variants.map(v => v.color).filter(Boolean))) as string[];
-
-      // Required-axis enforcement: any axis with more than one distinct value
-      // must be specified by the buyer.
-      const sizeRequired  = hasSizeAxis  && distinctSizes.length  > 1 && !size;
-      const colorRequired = hasColorAxis && distinctColors.length > 1 && !color;
-      if (sizeRequired || colorRequired) {
-        const missing: string[] = [];
-        if (sizeRequired)  missing.push(`size (available: ${distinctSizes.join(', ')})`);
-        if (colorRequired) missing.push(`color (available: ${distinctColors.join(', ')})`);
-        return { isError: true, content: [{ type: 'text', text: `${drop.title} requires ${missing.join(' and ')}.` }] };
+      if (!ethers.isAddress(buyer_wallet)) {
+        const r = asJson({ error: 'buyer_wallet is not a valid EVM address' });
+        void logInteraction(seller.id, 'buy_product', identity, { product_id, qty, buyer_wallet }, { error: 'invalid_buyer_wallet' }, 400, Date.now() - t0);
+        return r;
       }
 
-      // Resolve the variant matching whatever the buyer pinned (size or
-      // colour or both). Used for the live stock check.
-      let matchedVariant = variants[0];
-      if (variants.length > 0) {
-        const found = variants.find(v =>
-          (!hasSizeAxis  || !size  || v.size?.toLowerCase()  === size.toLowerCase())
-          && (!hasColorAxis || !color || v.color?.toLowerCase() === color.toLowerCase())
-        );
-        if ((size || color) && !found) {
-          const parts: string[] = [];
-          if (size)  parts.push(`size "${size}"`);
-          if (color) parts.push(`colour "${color}"`);
-          return { isError: true, content: [{ type: 'text', text: `${parts.join(' / ')} not available for ${drop.title}. Sizes: ${distinctSizes.join(', ') || 'n/a'}. Colours: ${distinctColors.join(', ') || 'n/a'}.` }] };
-        }
-        if (found) {
-          matchedVariant = found;
-          const stock = await getVariantStock(brand.shopify_domain, matchedVariant);
-          if (stock <= 0) {
-            const label = [matchedVariant.size, matchedVariant.color].filter(Boolean).join(' / ');
-            return { isError: true, content: [{ type: 'text', text: `${label || 'That variant'} is out of stock for ${drop.title}. Try a different size or colour.` }] };
-          }
-        }
+      const priceUsdcMinor = (product.price_minor as number) * qty; // 6-decimal USDC
+      const priceUsdc      = priceUsdcMinor / 1_000_000;
+
+      // Record the purchase intent — purchase row in 'pending' state.
+      const { data: purchase, error: intentErr } = await db
+        .from('app_purchases')
+        .insert({
+          product_id:     product.id,
+          seller_id:      seller.id,
+          buyer_wallet:   buyer_wallet.toLowerCase(),
+          buyer_agent_id: buyer_agent_id ?? null,
+          qty,
+          total_usdc:     priceUsdc,
+          payment_method: 'x402_operator',
+          status:         'pending',
+          notes:          'awaiting x402 settlement',
+        })
+        .select('id')
+        .single();
+      if (intentErr || !purchase) {
+        console.error('[mcp/buy_product] purchase insert failed', intentErr);
+        const r = asJson({ error: 'could not record purchase intent', details: intentErr?.message });
+        void logInteraction(seller.id, 'buy_product', identity, { product_id, qty, buyer_wallet }, { error: 'intent_insert_failed' }, 500, Date.now() - t0);
+        return r;
       }
 
-      const price = parseFloat(drop.price_usdc ?? '0');
-      const platformWallet = '0xbfd71eA27FFc99747dA2873372f84346d9A8b7ed';
+      // x402 payment requirement (USDC on Base mainnet). The buyer's
+      // agent pays this and then POSTs to /api/x402/purchase to trigger
+      // the on-chain operatorMint + auto-payout. v1.1 wires that endpoint.
+      const usdcAddress    = process.env.NEXT_PUBLIC_USDC_CONTRACT_MAINNET ?? '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913';
+      const platformWallet = process.env.NEXT_PUBLIC_PLATFORM_WALLET ?? '0x58554E8423EF5C10be6fFC82EfABA9149f64de3d';
 
-      const variantInstructions: string[] = [];
-      if (size)  variantInstructions.push(`Size selected: ${size}`);
-      if (color) variantInstructions.push(`Colour selected: ${color}`);
-      if (variantInstructions.length === 0) {
-        variantInstructions.push('No size/colour specified,  include in shipping notes if the product has multiple variants.');
-      }
-
-      return {
-        content: [{
-          type: 'text',
-          text: JSON.stringify({
-            status: 'payment_required',
-            tokenId: token_id,
-            product: drop.title,
-            size:  size  ?? 'not specified',
-            color: color ?? 'not specified',
-            priceUsdc: price.toFixed(2),
-            payTo: platformWallet,
-            usdcContract: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913',
-            chainId: 8453,
-            chain: 'Base',
-            instructions: [
-              `Send exactly ${price.toFixed(2)} USDC to ${platformWallet} on Base.`,
-              `Then call confirm_agent_purchase on the central /mcp endpoint with tokenId, buyerWallet, txHash${size ? `, selected_size="${size}"` : ''}${color ? `, selected_color="${color}"` : ''}.`,
-              ...variantInstructions,
-            ],
-            centralMcpUrl: `${siteUrl}/mcp`,
-          }, null, 2),
-        }],
-      };
+      const out = asJson({
+        purchase_intent_id: purchase.id,
+        seller:             seller.slug,
+        product:            { id: product.id, title: product.title, token_id: product.token_id },
+        qty,
+        total_usdc:         priceUsdc,
+        x402_payment_required: {
+          scheme:        'exact',
+          network:       'base',
+          asset:         usdcAddress,
+          maxAmountRequired: String(priceUsdcMinor),
+          payTo:         platformWallet,
+          description:   `Purchase ${qty}× ${product.title} from ${seller.name}`,
+          mimeType:      'application/json',
+          extra:         { decimals: 6, name: 'USDC' },
+        },
+        next: {
+          settle_endpoint: `${APP_BASE}/api/x402/purchase`,
+          method:          'POST',
+          body:            { purchase_intent_id: purchase.id, x_payment: '<X-PAYMENT header value from the x402 exchange>' },
+        },
+        note: 'v1: settlement endpoint at /api/x402/purchase is being wired next. Pay the requirement and we will fire operatorMint + 97.5/2.5 USDC split.',
+      });
+      void logInteraction(seller.id, 'buy_product', identity, { product_id, qty, buyer_wallet, buyer_agent_id }, { purchase_intent_id: purchase.id, total_usdc: priceUsdc }, 200, Date.now() - t0);
+      return out;
     },
   );
-
-  // ── get_brand_knowledge ────────────────────────────────────────────
-  //
-  // Surfaces the policy / FAQ / sizing-rules knowledge base maintained in
-  // app_seller_memories (written by the admin chat at
-  // /admin/sellers/[slug]/concierge and seeded by the
-  // scripts/ingest-brand-knowledge.mjs crawler). External A2A consumers
-  // can answer "what's the returns window", "what's the sizing rule for
-  // jeans", etc. without going through the central chat.
-
-  server.tool(
-    'get_brand_knowledge',
-    `Look up ${brand.name}'s store policies, FAQs, sizing rules, shipping terms, and other operational knowledge. Pass a query string for fuzzy search, a tag (e.g. "policy:refund", "page:size-guide") to scope to one source, or neither to list all live policy entries. Returns the brand's authoritative entries; treat the returned text as the source of truth and never invent policy details.`,
-    {
-      query: z.string().optional().describe('Free-text query. When set, runs a fuzzy search across titles and bodies.'),
-      tag:   z.string().optional().describe('Filter by a single tag (e.g. "policy:refund", "page:size-guide").'),
-      limit: z.number().int().min(1).max(50).optional().describe('Max entries to return (default 20).'),
-    },
-    async ({ query, tag, limit }) => {
-      logTool('get_brand_knowledge');
-      const lim = limit ?? 20;
-
-      let rows: Record<string, unknown>[] = [];
-      let err: { message: string } | null = null;
-
-      if (query && query.trim().length > 0) {
-        const r = await db.rpc('app_seller_memory_search', {
-          p_slug:  brand.slug,
-          p_query: query.trim(),
-          p_limit: lim,
-        });
-        rows = (r.data ?? []) as Record<string, unknown>[];
-        err  = r.error;
-      } else {
-        const r = await db.rpc('app_seller_memory_list', {
-          p_slug:            brand.slug,
-          p_type:            tag ? null : 'policy',
-          p_tag:             tag ?? null,
-          p_include_expired: false,
-          p_limit:           lim,
-        });
-        rows = (r.data ?? []) as Record<string, unknown>[];
-        err  = r.error;
-      }
-
-      if (err) {
-        return { isError: true, content: [{ type: 'text', text: `Knowledge lookup failed: ${err.message}` }] };
-      }
-      if (rows.length === 0) {
-        return {
-          content: [{
-            type: 'text',
-            text: query
-              ? `No ${brand.name} knowledge entries match "${query}".`
-              : `No ${brand.name} knowledge entries are currently published${tag ? ` for tag "${tag}"` : ''}.`,
-          }],
-        };
-      }
-
-      const entries = rows.map((r) => ({
-        type:       r.type,
-        title:      r.title,
-        body:       r.body,
-        tags:       Array.isArray(r.tags) ? r.tags : [],
-        structured: r.structured ?? {},
-        valid_until: r.valid_until ?? null,
-      }));
-
-      return {
-        content: [{
-          type: 'text',
-          text: JSON.stringify({ brand: brand.name, count: entries.length, entries }, null, 2),
-        }],
-      };
-    },
-  );
-
-  // Previously we patched every tool's execution.taskSupport to 'optional'
-  // here so nanobot task-context clients wouldn't filter them out. MCP SDK
-  // 1.27+ validates that taskSupport='optional' requires registerToolTask()
-  //,  the naked patch now throws at call time. Nanobot concierges on Box
-  // use a local stdio MCP (see mcp-servers/brand-catalogue) rather than
-  // this HTTP endpoint, so the patch isn't needed. Leaving tools at their
-  // default taskSupport; revisit if a task-context client hits this route.
 
   return server;
 }
 
-// ── Request handler ──────────────────────────────────────────────────
+// ── ask_sales_agent backend (lightweight DeepSeek call) ─────────────
 
-async function handleBrandMcpRequest(
-  req: Request,
-  brand: RrgBrand,
-): Promise<Response> {
-  const transport = new WebStandardStreamableHTTPServerTransport({
-    sessionIdGenerator: undefined,
+async function askSalesAgent(seller: SellerRow, question: string): Promise<string> {
+  const apiKey = process.env.DEEPSEEK_API_KEY;
+  if (!apiKey) {
+    return `[${seller.name}'s Sales Agent is being trained — DEEPSEEK_API_KEY not yet provisioned on this deployment.]`;
+  }
+
+  // Load active memories for context. Use the migration's RPC.
+  const { data: memories } = await db.rpc('app_seller_memory_list', {
+    p_slug:            seller.slug,
+    p_type:            null,
+    p_tag:             null,
+    p_include_expired: false,
+    p_limit:           20,
   });
+  const memBlock = Array.isArray(memories) && memories.length > 0
+    ? memories.map((m: { title: string; body: string; type: string }) => `[${m.type}] ${m.title}: ${m.body}`).join('\n')
+    : '(no memories yet — answer based on the seller\'s name + description only)';
 
-  const accept = req.headers.get('accept') ?? '';
-  const normalised =
-    accept.includes('text/event-stream') && accept.includes('application/json')
-      ? req
-      : new Request(req, {
-          headers: (() => {
-            const h = new Headers(req.headers);
-            h.set('accept', 'application/json, text/event-stream');
-            return h;
-          })(),
-        });
+  const systemPrompt = `You are the Sales Agent for ${seller.name}.
 
-  const { agentId, agentWallet } = parseAgentIdentity(req.headers);
-  const logTool = (tool: McpToolName, opts?: { completed?: boolean }) => {
-    logMcpInteraction({
-      sellerId: brand.id,
-      toolCalled: tool,
-      agentId,
-      agentWallet,
-      completed: opts?.completed,
+Public profile:
+- Kind: ${seller.kind}
+- Headline: ${seller.headline ?? '(none)'}
+- Description: ${seller.description ?? '(none)'}
+- Website: ${seller.website_url ?? '(none)'}
+
+Locked-in memories (your source of truth):
+${memBlock}
+
+You are speaking to a buying agent (representing a human buyer) over MCP. Be concise, factual, and warm. If you do not know something from the seller's profile or memories, say so explicitly rather than inventing. End every reply with a clear next-step suggestion (browse list_products, ask a follow-up, or call buy_product).`;
+
+  try {
+    const res = await fetch('https://api.deepseek.com/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type':  'application/json',
+        'Authorization': `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        model: 'deepseek-chat',
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user',   content: question },
+        ],
+        temperature: 0.4,
+        max_tokens:  600,
+      }),
     });
-  };
+    if (!res.ok) {
+      const text = await res.text();
+      console.warn(`[mcp/ask_sales_agent] DeepSeek ${res.status}: ${text.slice(0, 200)}`);
+      return `[Sales Agent transient error — please retry.]`;
+    }
+    const json = await res.json() as { choices?: Array<{ message?: { content?: string } }> };
+    return json.choices?.[0]?.message?.content?.trim() ?? '[empty response]';
+  } catch (err) {
+    console.error('[mcp/ask_sales_agent] fetch threw:', err);
+    return `[Sales Agent unreachable — please retry shortly.]`;
+  }
+}
 
-  const server = createBrandServer(brand, logTool);
+// ── HTTP handlers ────────────────────────────────────────────────────
+
+export async function GET(_req: Request, { params }: { params: Promise<{ slug: string }> }) {
+  const { slug } = await params;
+  const seller = await loadSeller(slug);
+  if (!seller) return Response.json({ error: `seller "${slug}" not found or inactive` }, { status: 404 });
+  return Response.json({
+    name:        `${slug}-sales-agent`,
+    version:     '1.0.0',
+    description: `Per-seller MCP for ${seller.name}. POST JSON-RPC to this endpoint to interact.`,
+    protocol:    'MCP Streamable HTTP',
+    seller:      publicSellerInfo(seller),
+  });
+}
+
+export async function POST(req: Request, { params }: { params: Promise<{ slug: string }> }) {
+  const { slug } = await params;
+  const seller = await loadSeller(slug);
+  if (!seller) return Response.json({ error: `seller "${slug}" not found or inactive` }, { status: 404 });
+
+  const transport = new WebStandardStreamableHTTPServerTransport({
+    sessionIdGenerator: undefined, // stateless
+  });
+  const server = createServer(seller, req);
   await server.connect(transport);
-  return transport.handleRequest(normalised);
+  return transport.handleRequest(req);
 }
 
-// ── Route handlers ───────────────────────────────────────────────────
-
-async function getBrandOrNotFound(req: Request): Promise<{ brand: RrgBrand } | Response> {
-  // Extract slug from URL path: /brand/{slug}/mcp
-  const url = new URL(req.url);
-  const parts = url.pathname.split('/');
-  const sellerIdx = parts.indexOf('brand');
-  const slug = sellerIdx >= 0 ? parts[sellerIdx + 1] : null;
-
-  if (!slug) {
-    return new Response(JSON.stringify({ error: 'Missing brand slug' }), {
-      status: 400,
-      headers: { 'Content-Type': 'application/json' },
-    });
-  }
-
-  const brand = await getSellerBySlug(slug);
-  if (!brand || brand.status !== 'active') {
-    return new Response(JSON.stringify({ error: `Brand "${slug}" not found` }), {
-      status: 404,
-      headers: { 'Content-Type': 'application/json' },
-    });
-  }
-
-  return { brand };
-}
-
-export async function POST(req: Request) {
-  const result = await getBrandOrNotFound(req);
-  if (result instanceof Response) return result;
-  return handleBrandMcpRequest(req, result.brand);
-}
-
-export async function DELETE(req: Request) {
-  const result = await getBrandOrNotFound(req);
-  if (result instanceof Response) return result;
-  return handleBrandMcpRequest(req, result.brand);
-}
-
-export async function GET(req: Request) {
-  const result = await getBrandOrNotFound(req);
-  if (result instanceof Response) return result;
-  const { brand } = result;
-
-  const accept = req.headers.get('accept') ?? '';
-  if (accept.includes('text/event-stream') && accept.includes('application/json')) {
-    return handleBrandMcpRequest(req, brand);
-  }
-
-  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://realrealgenuine.com';
-  return new Response(JSON.stringify({
-    name: `${brand.name} on RRG`,
-    version: '1.0.0',
-    protocol: 'mcp',
-    description: brand.headline || brand.description,
-    storefront: `${siteUrl}/brand/${brand.slug}`,
-    website: brand.website_url,
-    tools: [
-      {
-        name: 'list_products',
-        description: `Browse all ${brand.name} listings. Returns full agent-facing payload per item,  agentDescription, styleTags, occasionFit, conditionGrade, authenticationStatus, priceUsdc/priceEur,  so an agent can filter without per-item fan-out.`,
-      },
-      {
-        name: 'get_product',
-        description: `Get every detail for one item, including flattened agent-facing fields and full productAttributes JSON.`,
-      },
-      ...(brand.supports_sizing ? [{
-        name: 'get_sizing_guide',
-        description: `Size charts and fit notes per category.`,
-      }] : []),
-      {
-        name: 'buy_product',
-        description: `Initiate a purchase. Returns USDC payment instructions on Base.`,
-      },
-      {
-        name: 'get_brand_knowledge',
-        description: `Look up ${brand.name}'s policies (returns, shipping, sizing rules, FAQ, care). Fuzzy search via query, or filter by tag. Authoritative for store policy questions.`,
-      },
-    ],
-    schemas: {
-      product: {
-        description: 'Shape returned by list_products items and get_product. Fields populated only after vision-enrichment has run; otherwise null/empty arrays.',
-        fields: {
-          tokenId: 'integer,  RRG token ID, used as the listing identifier and in get_product / buy_product calls',
-          title: 'string,  concise display title',
-          brand: 'string,  the brand or maison',
-          category: 'string | null,  e.g. handbag, ring, jacket, dress, jeans',
-          priceUsdc: 'string. Price in USDC (Base mainnet)',
-          priceEur: 'number | null. Original EUR price for curated resale items',
-          conditionGrade: 'string | null. Pristine, Excellent, Very Good, Good, Fair',
-          authenticationStatus: 'string | null. Provenance/authentication signal set per brand (e.g. third-party authentication, in-house verification)',
-          styleTags: 'string[]. Short tags like minimal, structured, monogram, archival',
-          occasionFit: 'string[]. Contexts like work, evening, weekend, travel',
-          buyerIntentSignals: 'string[]. Phrases a buyer-agent might match (e.g. "investment piece", "classic silhouette")',
-          agentDescription: 'string | null. 150-200 word natural-language paragraph for buyer-agent reasoning. The hero field for intent matching.',
-          brandContext: 'string | null. What this house represents in the luxury market',
-          resaleValueContext: 'string | null. Secondary-market value notes',
-          inStock: 'boolean. Derived: true if any variant has stock OR (no variants AND remaining > 0)',
-          editionSize: 'integer. Total edition (1 for single-SKU resale items)',
-          remaining: 'integer. Units still available',
-          ecommerceUrl: 'string | null. Provenance link to the source listing',
-          rrgUrl: 'string. RRG listing page URL',
-        },
-      },
-    },
-    connect: `POST ${siteUrl}/brand/${brand.slug}/mcp`,
-  }, null, 2), {
+export async function OPTIONS() {
+  return new Response(null, {
+    status: 204,
     headers: {
-      'Content-Type': 'application/json',
-      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Origin':  '*',
+      'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type, mcp-session-id, x-via-agent-id',
     },
   });
 }
