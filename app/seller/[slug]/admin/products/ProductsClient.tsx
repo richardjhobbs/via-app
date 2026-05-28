@@ -24,7 +24,10 @@ interface Props {
   sellerId: string;
   sellerSlug: string;
   sellerKind: string;
+  catalogSource: 'shopify' | 'squarespace' | 'csv' | 'services' | null;
   shopifyDomain: string | null;
+  squarespaceShopUrl: string | null;
+  sourceCurrency: string;
 }
 
 function statusBadge(status: Product['on_chain_status'], active: boolean) {
@@ -38,7 +41,15 @@ function statusBadge(status: Product['on_chain_status'], active: boolean) {
   }
 }
 
-export function ProductsClient({ sellerId, sellerSlug, sellerKind, shopifyDomain }: Props) {
+export function ProductsClient({
+  sellerId,
+  sellerSlug,
+  sellerKind,
+  catalogSource,
+  shopifyDomain,
+  squarespaceShopUrl,
+  sourceCurrency,
+}: Props) {
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading]   = useState(true);
   const [err, setErr]           = useState('');
@@ -131,25 +142,22 @@ export function ProductsClient({ sellerId, sellerSlug, sellerKind, shopifyDomain
     }
   }
 
-  async function onSyncShopify() {
+  async function runSync(kind: 'shopify' | 'squarespace', label: string) {
     if (syncing) return;
-    if (!shopifyDomain) {
-      setErr('No Shopify domain set on this seller.');
-      return;
-    }
-    if (!confirm(`Pull catalog from ${shopifyDomain}? Existing rows with matching Shopify IDs will be updated.`)) return;
+    if (!confirm(`Pull catalog from ${label}? Prices converted to USDC at the current FX rate (${sourceCurrency} → USDC). Existing rows with matching IDs are updated.`)) return;
     setErr('');
     setInfo('');
     setSyncing(true);
     try {
-      const res = await fetch(`/api/seller/${sellerId}/products/sync-shopify`, { method: 'POST' });
+      const res = await fetch(`/api/seller/${sellerId}/products/sync-${kind}`, { method: 'POST' });
       const json = await res.json();
       if (!res.ok) {
         setErr(json.error || `Sync failed (${res.status})`);
         return;
       }
       const errs = (json.errors as string[] | undefined) ?? [];
-      setInfo(`Shopify sync: fetched ${json.fetched}, inserted ${json.synced}, updated ${json.updated}, skipped ${json.skipped}${errs.length ? `, errors ${errs.length}` : ''}.`);
+      const fxNote = json.fx?.note ? ` · FX: ${json.fx.note}` : '';
+      setInfo(`${kind} sync: fetched ${json.fetched}, inserted ${json.synced}, updated ${json.updated}, skipped ${json.skipped}${errs.length ? `, errors ${errs.length}` : ''}${fxNote}`);
       await refresh();
     } finally {
       setSyncing(false);
@@ -205,19 +213,40 @@ export function ProductsClient({ sellerId, sellerSlug, sellerKind, shopifyDomain
       )}
 
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <p className="text-xs font-mono tracking-widest text-neutral-500 uppercase">
-          {products.length} product{products.length === 1 ? '' : 's'}
-        </p>
+        <div className="flex items-center gap-3">
+          <p className="text-xs font-mono tracking-widest text-neutral-500 uppercase">
+            {products.length} product{products.length === 1 ? '' : 's'}
+          </p>
+          <span className="text-[10px] font-mono uppercase tracking-widest text-neutral-400 border border-neutral-200 rounded px-2 py-0.5">
+            {sourceCurrency} → USDC
+          </span>
+          {catalogSource && (
+            <span className="text-[10px] font-mono uppercase tracking-widest text-neutral-400 border border-neutral-200 rounded px-2 py-0.5">
+              source: {catalogSource}
+            </span>
+          )}
+        </div>
         <div className="flex flex-wrap items-center gap-2">
-          {shopifyDomain && (
+          {catalogSource === 'shopify' && shopifyDomain && (
             <button
               type="button"
-              onClick={() => void onSyncShopify()}
+              onClick={() => void runSync('shopify', shopifyDomain)}
               disabled={syncing}
               className="px-4 py-2 border border-neutral-900 text-neutral-900 text-xs font-mono tracking-widest uppercase hover:bg-neutral-900 hover:text-neutral-50 disabled:opacity-40 transition-colors rounded-md"
               title={`Sync from ${shopifyDomain}`}
             >
-              {syncing ? 'Syncing&hellip;' : `Sync Shopify (${shopifyDomain})`}
+              {syncing ? 'Syncing…' : `Sync Shopify (${shopifyDomain})`}
+            </button>
+          )}
+          {catalogSource === 'squarespace' && squarespaceShopUrl && (
+            <button
+              type="button"
+              onClick={() => void runSync('squarespace', squarespaceShopUrl)}
+              disabled={syncing}
+              className="px-4 py-2 border border-neutral-900 text-neutral-900 text-xs font-mono tracking-widest uppercase hover:bg-neutral-900 hover:text-neutral-50 disabled:opacity-40 transition-colors rounded-md"
+              title={`Sync from ${squarespaceShopUrl}`}
+            >
+              {syncing ? 'Syncing…' : 'Sync Squarespace'}
             </button>
           )}
           <button

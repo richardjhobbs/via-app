@@ -58,6 +58,20 @@ export async function POST(req: NextRequest) {
   const walletAddress      = String(body.walletAddress ?? '').trim();
   const agentWalletAddress = String(body.agentWalletAddress ?? '').trim();
 
+  // Catalog source captured in the wizard's catalog step.
+  const catalogSourceRaw   = body.catalogSource ? String(body.catalogSource).trim().toLowerCase() : null;
+  const catalogSource      = (['shopify','squarespace','csv','services'] as const).includes(catalogSourceRaw as 'shopify')
+                              ? catalogSourceRaw
+                              : null;
+  const shopifyDomain      = body.shopifyDomain
+                              ? String(body.shopifyDomain).trim().toLowerCase().replace(/^https?:\/\//, '').replace(/\/.*$/, '')
+                              : null;
+  const squarespaceShopUrl = body.squarespaceShopUrl
+                              ? String(body.squarespaceShopUrl).trim()
+                              : null;
+  const sourceCurrencyRaw  = body.sourceCurrency ? String(body.sourceCurrency).trim().toUpperCase() : 'USD';
+  const sourceCurrency     = /^[A-Z]{3}$/.test(sourceCurrencyRaw) ? sourceCurrencyRaw : 'USD';
+
   // ── Validate input ──────────────────────────────────────────────────
   if (!email || !email.includes('@'))                 return NextResponse.json({ error: 'valid email required' },          { status: 400 });
   if (!password || password.length < 8)               return NextResponse.json({ error: 'password must be 8+ characters' }, { status: 400 });
@@ -135,6 +149,10 @@ export async function POST(req: NextRequest) {
       headline,
       wallet_address:       wallet,
       agent_wallet_address: agentWallet,
+      catalog_source:        catalogSource,
+      shopify_domain:        catalogSource === 'shopify'     ? shopifyDomain      : null,
+      squarespace_shop_url:  catalogSource === 'squarespace' ? squarespaceShopUrl : null,
+      source_currency:       sourceCurrency,
       active:               true,
     })
     .select('id, slug, name, kind')
