@@ -4,6 +4,7 @@ import { db } from '@/lib/app/db';
 import { createClient } from '@supabase/supabase-js';
 import { ethers } from 'ethers';
 import { registerAgentIdentity } from '@/lib/agent/erc8004';
+import { shouldSkipErc8004, syntheticTestAgentId } from '@/lib/app/test-mode';
 
 export const dynamic = 'force-dynamic';
 
@@ -106,22 +107,29 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'failed to create buyer record' }, { status: 500 });
   }
 
-  // Fire ERC-8004 mint for the Buying Agent (non-fatal)
-  registerAgentIdentity(
-    buyer.id,
-    `${displayName} — Buying Agent`,
-    agentWallet,
-    'buying_agent',
-  )
-    .then(async ({ tokenId, txHash }) => {
-      await db.from('app_buyers')
-        .update({ erc8004_agent_id: tokenId.toString() })
-        .eq('id', buyer.id);
-      console.log(`[onboard/buyer/register] erc8004 mint ok handle=${buyer.handle} tokenId=${tokenId} tx=${txHash}`);
-    })
-    .catch((err) => {
-      console.error(`[onboard/buyer/register] erc8004 mint failed handle=${buyer.handle}:`, err);
-    });
+  // ERC-8004 registration for the Buying Agent. Same test-mode gate as
+  // the seller register endpoint — see lib/app/test-mode.ts.
+  if (shouldSkipErc8004(email)) {
+    const placeholder = syntheticTestAgentId();
+    await db.from('app_buyers').update({ erc8004_agent_id: placeholder }).eq('id', buyer.id);
+    console.log(`[onboard/buyer/register] TEST MODE — skipped ERC-8004 mint for handle=${buyer.handle}, placeholder=${placeholder}`);
+  } else {
+    registerAgentIdentity(
+      buyer.id,
+      `${displayName} — Buying Agent`,
+      agentWallet,
+      'buying_agent',
+    )
+      .then(async ({ tokenId, txHash }) => {
+        await db.from('app_buyers')
+          .update({ erc8004_agent_id: tokenId.toString() })
+          .eq('id', buyer.id);
+        console.log(`[onboard/buyer/register] erc8004 mint ok handle=${buyer.handle} tokenId=${tokenId} tx=${txHash}`);
+      })
+      .catch((err) => {
+        console.error(`[onboard/buyer/register] erc8004 mint failed handle=${buyer.handle}:`, err);
+      });
+  }
 
   const response = NextResponse.json({
     buyer: { id: buyer.id, handle: buyer.handle, display_name: buyer.display_name },

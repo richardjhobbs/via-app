@@ -4,6 +4,7 @@ import { db } from '@/lib/app/db';
 import { createClient } from '@supabase/supabase-js';
 import { ethers } from 'ethers';
 import { registerAgentIdentity } from '@/lib/agent/erc8004';
+import { shouldSkipErc8004, syntheticTestAgentId } from '@/lib/app/test-mode';
 
 export const dynamic = 'force-dynamic';
 
@@ -147,28 +148,34 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'failed to create seller record' }, { status: 500 });
   }
 
-  // ── Fire ERC-8004 registration for the Sales Agent (non-fatal) ─────
-  // Calls getvia.xyz/mcp via_register_agent which signs the on-chain
-  // register() with VIA_REGISTRAR_PRIVATE_KEY and records `agentWallet`
-  // = the supplied wallet_address. Resulting NFT is owned by the
-  // registrar wallet but the agentWallet in the registration JSON is
-  // what defines the agent's on-chain identity.
-  registerAgentIdentity(
-    seller.id,
-    `${sellerName} — Sales Agent`,
-    agentWallet,
-    'sales_agent',
-  )
-    .then(async ({ tokenId, txHash }) => {
-      await db.from('app_sellers')
-        .update({ erc8004_agent_id: tokenId.toString() })
-        .eq('id', seller.id);
-      console.log(`[onboard/register] erc8004 mint ok seller=${seller.slug} tokenId=${tokenId} tx=${txHash}`);
-    })
-    .catch((err) => {
-      console.error(`[onboard/register] erc8004 mint failed seller=${seller.slug}:`, err);
-      // Non-fatal — seller can re-trigger from the dashboard later.
-    });
+  // ── ERC-8004 registration for the Sales Agent ─────────────────────
+  // Test mode (VIA_SKIP_ERC8004=1 or +test/+e2e email alias) writes a
+  // synthetic placeholder and skips the on-chain mint to spare gas on
+  // the registrar wallet during wizard testing.
+  if (shouldSkipErc8004(email)) {
+    const placeholder = syntheticTestAgentId();
+    await db.from('app_sellers').update({ erc8004_agent_id: placeholder }).eq('id', seller.id);
+    console.log(`[onboard/register] TEST MODE — skipped ERC-8004 mint for seller=${seller.slug}, placeholder=${placeholder}`);
+  } else {
+    // Real mint — calls getvia.xyz/mcp via_register_agent which signs the
+    // on-chain register() with VIA_REGISTRAR_PRIVATE_KEY and records
+    // agentWallet = the supplied wallet_address. Non-fatal on failure.
+    registerAgentIdentity(
+      seller.id,
+      `${sellerName} — Sales Agent`,
+      agentWallet,
+      'sales_agent',
+    )
+      .then(async ({ tokenId, txHash }) => {
+        await db.from('app_sellers')
+          .update({ erc8004_agent_id: tokenId.toString() })
+          .eq('id', seller.id);
+        console.log(`[onboard/register] erc8004 mint ok seller=${seller.slug} tokenId=${tokenId} tx=${txHash}`);
+      })
+      .catch((err) => {
+        console.error(`[onboard/register] erc8004 mint failed seller=${seller.slug}:`, err);
+      });
+  }
 
   const response = NextResponse.json({
     seller: { id: seller.id, slug: seller.slug, name: seller.name, kind: seller.kind },
