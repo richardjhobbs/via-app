@@ -50,16 +50,21 @@ export function syntheticTestWallet(email: string): string {
   const enc = new TextEncoder();
   const bytes = enc.encode(email.toLowerCase().trim());
   // FNV-1a 32-bit, then rotated four times to fill 16 bytes (32 hex chars).
-  let h = 0x811c9dc5;
+  // Every intermediate value is coerced back to unsigned via `>>> 0`,
+  // otherwise `^` re-signs the int and `toString(16)` would prepend a
+  // minus sign, breaking the 0x-hex address shape.
+  let h = 0x811c9dc5 >>> 0;
   for (const b of bytes) {
     h = (h ^ b) >>> 0;
     h = Math.imul(h, 0x01000193) >>> 0;
   }
-  const out: string[] = [];
   let state = h >>> 0;
+  let out = '';
   for (let i = 0; i < 4; i++) {
-    state = (Math.imul(state ^ (state >>> 13), 0x5bd1e995) >>> 0) ^ (i + 1);
-    out.push(state.toString(16).padStart(8, '0'));
+    state = (state ^ (state >>> 13)) >>> 0;
+    state = Math.imul(state, 0x5bd1e995) >>> 0;
+    state = (state ^ (i + 1)) >>> 0;
+    out += state.toString(16).padStart(8, '0');
   }
-  return '0x00000000' + out.join('');
+  return '0x00000000' + out;
 }
