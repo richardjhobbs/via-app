@@ -1,38 +1,33 @@
 export const dynamic = 'force-static';
 
+const APP_BASE = 'https://app.getvia.xyz';
+
 const CATALOG = {
   linkset: [
     {
-      anchor: 'https://realrealgenuine.com/mcp',
+      anchor: `${APP_BASE}/mcp`,
       'service-desc': [
         {
-          href: 'https://realrealgenuine.com/.well-known/mcp/server-card.json',
+          href: `${APP_BASE}/.well-known/mcp/server-card.json`,
           type: 'application/json',
-          title: 'RRG MCP Server Card',
-        },
-      ],
-      'service-doc': [
-        {
-          href: 'https://realrealgenuine.com/api/rrg/agent-docs',
-          type: 'application/json',
-          title: 'RRG Agent Protocol Docs',
+          title: 'VIA MCP Server Card',
         },
       ],
       'service-meta': [
         {
-          href: 'https://realrealgenuine.com/.well-known/agent-card.json',
+          href: `${APP_BASE}/.well-known/agent-card.json`,
           type: 'application/json',
           title: 'A2A Agent Card',
         },
       ],
     },
     {
-      anchor: 'https://realrealgenuine.com/api/rrg/catalogue',
+      anchor: `${APP_BASE}/sellers/{slug}/mcp`,
       'service-desc': [
         {
-          href: 'https://realrealgenuine.com/api/rrg/agent-docs',
+          href: `${APP_BASE}/.well-known/mcp/server-card.json`,
           type: 'application/json',
-          title: 'RRG Catalogue API Docs',
+          title: 'Per-seller MCP — same tool surface as documented in the server card under per_seller_mcp_tools.',
         },
       ],
     },

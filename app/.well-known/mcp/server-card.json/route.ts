@@ -1,78 +1,68 @@
 export const dynamic = 'force-static';
 
+const APP_BASE = 'https://app.getvia.xyz';
+
 const SERVER_CARD = {
-  name: 'Real Real Genuine',
+  name: 'VIA',
   description:
-    'RRG platform MCP server. Browse listings, submit designs, purchase with USDC, get agent pass. ERC-8004 reputation signals on every interaction.',
+    'VIA Labs central discovery MCP. Use list_sellers / find_seller / seller_mcp_url to find a seller, then connect to that seller\'s per-seller MCP for list_products, ask_sales_agent, buy_product.',
   version: '1.0.0',
   transport: {
     type: 'streamable-http',
-    endpoint: 'https://realrealgenuine.com/mcp',
+    endpoint: `${APP_BASE}/mcp`,
   },
   authentication: {
     schemes: ['none'],
   },
   tools: [
     {
-      name: 'list_listings',
-      description: 'List available NFT listings across all brands with pricing, editions, supply.',
+      name: 'list_sellers',
+      description: 'Active VIA seller index. Optional category filter (product/service/mixed). Each result includes the per-seller MCP URL.',
     },
     {
-      name: 'get_listing',
-      description: 'Get detail for a single listing by token id.',
+      name: 'find_seller',
+      description: 'Free-text search across active sellers (name, description, headline).',
     },
     {
-      name: 'purchase_listing',
-      description: 'Purchase an NFT listing with USDC. Signs ERC-8004 reputation signal on confirmation.',
+      name: 'seller_mcp_url',
+      description: 'Resolve a slug to its per-seller MCP URL, verified against the active seller index.',
     },
     {
-      name: 'submit_design',
-      description: 'Submit original artwork to an open brand brief.',
-    },
-    {
-      name: 'list_brands',
-      description: 'List all active brands on the platform.',
-    },
-    {
-      name: 'get_brand',
-      description: 'Get detail for a single brand by slug, including open briefs.',
-    },
-    {
-      name: 'get_agent_pass',
-      description: 'Purchase an RRG Agent Pass for 0.10 USDC. Grants 5x purchase credits and Phase 2 priority.',
-    },
-    {
-      name: 'get_marketing_handbook',
-      description: 'Retrieve the RRG marketing / referral / affiliate programme handbook.',
-    },
-    {
-      name: 'join_marketing_program',
-      description: 'Join the RRG marketing programme as a human or AI agent. Wallet-based.',
+      name: 'get_via_overview',
+      description: 'Short overview of VIA Labs and the entrypoint URLs for buyers and sellers.',
     },
   ],
-  resources: [
+  per_seller_mcp_tools: [
     {
-      uri: 'https://realrealgenuine.com/api/rrg/catalogue',
-      name: 'Catalogue',
-      description: 'Agent-readable JSON catalogue of all brand-owned listings.',
-      mimeType: 'application/json',
+      name: 'list_products',
+      description: 'Active on-chain-registered ERC-1155 listings for one seller. Returns title, price (USDC), stock, tokenId.',
     },
     {
-      uri: 'https://realrealgenuine.com/api/rrg/agent-docs',
-      name: 'Agent Docs',
-      description: 'Full RRG protocol documentation for agents.',
-      mimeType: 'application/json',
+      name: 'get_product',
+      description: 'Single listing by product_id, with on-chain stock.',
+    },
+    {
+      name: 'get_seller_info',
+      description: 'Public seller card — name, kind, description, ERC-8004 IDs, agent wallet.',
+    },
+    {
+      name: 'ask_sales_agent',
+      description: 'Free-form question to the seller\'s DeepSeek-backed Sales Agent. Answers using locked-in memories.',
+    },
+    {
+      name: 'buy_product',
+      description: 'Initiate a purchase. Returns x402 payment requirement (USDC on Base) + purchase_intent_id. Settle at /api/x402/purchase.',
     },
   ],
   provider: {
     organization: 'VIA Labs',
     url: 'https://www.getvia.xyz',
   },
-  agentCard: 'https://realrealgenuine.com/.well-known/agent-card.json',
+  agentCard: `${APP_BASE}/.well-known/agent-card.json`,
   erc8004: {
-    agentId: 33313,
+    agentId: 38538,
     network: 'base',
-    profile: 'https://8004scan.io/agents/base/33313',
+    profile: 'https://8004scan.io/agents/base/38538',
   },
 };
 

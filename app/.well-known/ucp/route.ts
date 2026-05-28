@@ -1,12 +1,16 @@
 export const dynamic = 'force-static';
 
+const APP_BASE = 'https://app.getvia.xyz';
+const USDC_BASE = '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913';
+const PLATFORM_WALLET = '0x58554E8423EF5C10be6fFC82EfABA9149f64de3d';
+
 const UCP = {
   ucp: {
     profile: 'https://ucp.dev/specification/overview/',
     version: '1.0',
   },
   protocol_version: '1.0',
-  services: ['commerce', 'digital-goods', 'physical-goods', 'nft-marketplace'],
+  services: ['commerce', 'digital-goods', 'physical-goods', 'services'],
   capabilities: {
     payments: {
       methods: ['usdc-base', 'x402'],
@@ -14,36 +18,37 @@ const UCP = {
       networks: ['base-mainnet'],
     },
     catalog: {
-      discovery: 'https://realrealgenuine.com/api/rrg/catalogue',
+      discovery: `${APP_BASE}/mcp`,
       mimeTypes: ['application/json'],
     },
     fulfilment: {
       digital: true,
       physical: true,
-      shipping: 'merchant-configured',
+      services: true,
+      shipping: 'seller-configured',
     },
     provenance: {
       standard: 'erc-8004',
       network: 'base',
-      agentId: 33313,
+      agentId: 38538,
     },
   },
   endpoints: {
-    mcp: 'https://realrealgenuine.com/mcp',
-    catalogue: 'https://realrealgenuine.com/api/rrg/catalogue',
-    agent_docs: 'https://realrealgenuine.com/api/rrg/agent-docs',
-    agent_card: 'https://realrealgenuine.com/.well-known/agent-card.json',
-    mcp_server_card: 'https://realrealgenuine.com/.well-known/mcp/server-card.json',
-    api_catalog: 'https://realrealgenuine.com/.well-known/api-catalog',
+    mcp: `${APP_BASE}/mcp`,
+    per_seller_mcp: `${APP_BASE}/sellers/{slug}/mcp`,
+    agent_card: `${APP_BASE}/.well-known/agent-card.json`,
+    mcp_server_card: `${APP_BASE}/.well-known/mcp/server-card.json`,
+    api_catalog: `${APP_BASE}/.well-known/api-catalog`,
+    settle: `${APP_BASE}/api/x402/purchase`,
   },
   payment: {
     token: 'USDC',
-    contract: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913',
+    contract: USDC_BASE,
     network: 'base-mainnet',
-    recipient: '0xbfd71eA27FFc99747dA2873372f84346d9A8b7ed',
+    recipient: PLATFORM_WALLET,
   },
   provider: {
-    name: 'Real Real Genuine',
+    name: 'VIA',
     organization: 'VIA Labs',
     url: 'https://www.getvia.xyz',
   },

@@ -1,10 +1,18 @@
 export const dynamic = 'force-static';
 
+// A2A agent-card discovery for app.getvia.xyz. The card describes the
+// central VIA app surface; per-seller agents are reached via
+// list_sellers → sellers/[slug]/mcp.
+
+const APP_BASE = 'https://app.getvia.xyz';
+const USDC_BASE = '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913';
+const PLATFORM_WALLET = '0x58554E8423EF5C10be6fFC82EfABA9149f64de3d';
+
 const CARD = {
-  name: 'Real Real Genuine',
+  name: 'VIA',
   description:
-    'Agent-native design and commerce platform on Base. AI agents browse listings, submit designs to brand briefs, purchase ERC-1155 NFTs with USDC, and build on-chain reputation via ERC-8004. A product of VIA Labs.',
-  url: 'https://realrealgenuine.com/mcp',
+    'VIA Labs sales + buying agent platform. Any seller exposes a Sales Agent over MCP at app.getvia.xyz/sellers/[slug]/mcp; any buyer trains a Buying Agent that negotiates and pays in USDC on Base. Discovery + cross-seller search at app.getvia.xyz/mcp.',
+  url: `${APP_BASE}/mcp`,
   version: '1.0.0',
   preferredTransport: 'JSONRPC',
   extensions: [
@@ -12,44 +20,37 @@ const CARD = {
       uri: 'https://github.com/google-agentic-commerce/AP2',
       name: 'ap2',
       description:
-        'AP2 (Agent Payments Protocol) extension. Agent supports direct payment via x402 + USDC on Base (contract 0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913) to 0xbfd71eA27FFc99747dA2873372f84346d9A8b7ed.',
+        'AP2 (Agent Payments Protocol). Sellers settle in USDC on Base; buyers pay via x402.',
       required: false,
       params: {
         methods: ['x402', 'usdc-base'],
         networks: ['base-mainnet'],
-        recipient: '0xbfd71eA27FFc99747dA2873372f84346d9A8b7ed',
+        recipient: PLATFORM_WALLET,
       },
-    },
-    {
-      uri: 'https://a2a-protocol.org/extensions/ap2/v1',
-      name: 'ap2',
-      description: 'AP2 alternative discovery URI.',
-      required: false,
-    },
-    {
-      uri: 'https://googleapis.github.io/a2a/extensions/payments/ap2/v1',
-      name: 'ap2',
-      description: 'AP2 alternative discovery URI.',
-      required: false,
     },
     {
       uri: 'https://x402.org',
       name: 'x402',
       description:
-        'x402 HTTP payment extension. Protected routes return HTTP 402 with payment requirements; /api and /api/v1 are gated.',
+        'x402 HTTP payment extension. buy_product on a per-seller MCP returns HTTP 402 with payment requirements; settlement at /api/x402/purchase.',
       required: false,
       params: {
         networks: ['base-mainnet'],
-        recipient: '0xbfd71eA27FFc99747dA2873372f84346d9A8b7ed',
-        asset: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913',
+        recipient: PLATFORM_WALLET,
+        asset: USDC_BASE,
       },
     },
   ],
   supportedInterfaces: [
     {
       transport: 'JSONRPC',
-      url: 'https://realrealgenuine.com/mcp',
-      description: 'MCP Streamable HTTP endpoint (JSON-RPC 2.0)',
+      url: `${APP_BASE}/mcp`,
+      description: 'Central discovery MCP — list_sellers, find_seller, seller_mcp_url, get_via_overview.',
+    },
+    {
+      transport: 'JSONRPC',
+      url: `${APP_BASE}/sellers/{slug}/mcp`,
+      description: 'Per-seller MCP — list_products, get_product, get_seller_info, ask_sales_agent, buy_product. Resolve {slug} via list_sellers above.',
     },
   ],
   capabilities: {
@@ -58,34 +59,29 @@ const CARD = {
   },
   skills: [
     {
-      id: 'browse-listings',
-      name: 'Browse Listings',
-      description:
-        'List and view available NFT listings for purchase across all brands. Returns pricing, editions, supply.',
+      id: 'list-sellers',
+      name: 'List sellers',
+      description: 'Browse the active VIA seller index, optionally filtered by kind (product/service/mixed). Returns per-seller MCP URLs for follow-up.',
     },
     {
-      id: 'submit-design',
-      name: 'Submit Design',
-      description:
-        'Submit original artwork to open brand briefs. Approved designs become purchasable listings. Creators earn 35% USDC on every sale.',
+      id: 'find-seller',
+      name: 'Find seller',
+      description: 'Free-text search across active sellers by name, description, or headline.',
     },
     {
-      id: 'purchase-listing',
-      name: 'Purchase Listing',
-      description:
-        'Buy ERC-1155 NFT listings with gasless USDC on Base. Generates ERC-8004 reputation signals.',
+      id: 'list-products',
+      name: 'List products',
+      description: 'On a per-seller MCP, list active on-chain-registered ERC-1155 listings. Each row carries tokenId for buy_product follow-up.',
     },
     {
-      id: 'agent-pass',
-      name: 'Agent Pass',
-      description:
-        'Purchase an RRG Agent Pass (0.10 USDC). Includes 5x purchase credits and Phase 2 priority access.',
+      id: 'ask-sales-agent',
+      name: 'Ask Sales Agent',
+      description: 'On a per-seller MCP, ask a free-form question. The seller-trained DeepSeek agent answers using its locked-in memories (policies, stock, promotions).',
     },
     {
-      id: 'register-brand',
-      name: 'Register Brand',
-      description:
-        'Launch your own brand storefront on RRG. Create briefs, list products, receive USDC payouts.',
+      id: 'buy-product',
+      name: 'Buy product',
+      description: 'On a per-seller MCP, initiate a purchase. Returns an x402 payment requirement (USDC on Base) and a purchase_intent_id. Pay it, then POST to /api/x402/purchase to trigger operatorMint + 97.5/2.5 USDC payout.',
     },
   ],
   defaultInputModes: ['text'],
@@ -107,15 +103,15 @@ const CARD = {
       supported: true,
       profile: 'https://x402.org',
       networks: ['base-mainnet'],
-      recipient: '0xbfd71eA27FFc99747dA2873372f84346d9A8b7ed',
+      recipient: PLATFORM_WALLET,
       token: {
         symbol: 'USDC',
-        contract: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913',
+        contract: USDC_BASE,
       },
     },
-    ucp: 'https://realrealgenuine.com/.well-known/ucp',
-    acp: 'https://realrealgenuine.com/.well-known/acp.json',
-    api_catalog: 'https://realrealgenuine.com/.well-known/api-catalog',
+    ucp: `${APP_BASE}/.well-known/ucp`,
+    acp: `${APP_BASE}/.well-known/acp.json`,
+    api_catalog: `${APP_BASE}/.well-known/api-catalog`,
   },
   paymentMethods: ['x402', 'ap2', 'usdc-base'],
 };
