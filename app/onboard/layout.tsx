@@ -34,34 +34,5 @@ export default function OnboardLayout({ children }: { children: ReactNode }) {
   );
 }
 
-/**
- * Shared step indicator used by every wizard step page. `current` is 1-indexed.
- * Kept in the layout file so all steps import a single source of truth for the
- * step labels.
- */
-export function OnboardSteps({ current }: { current: 1 | 2 | 3 | 4 | 5 }) {
-  const steps = ['Account', 'Business', 'Wallet', 'Catalog', 'Sales Agent'] as const;
-  return (
-    <ol className="flex items-center gap-2 mb-10 text-xs font-mono tracking-widest uppercase">
-      {steps.map((label, i) => {
-        const n = i + 1;
-        const done    = n < current;
-        const active  = n === current;
-        return (
-          <li key={label} className="flex items-center gap-2">
-            <span
-              className={
-                active ? 'text-neutral-900'
-                  : done  ? 'text-neutral-500'
-                          : 'text-neutral-300'
-              }
-            >
-              {String(n).padStart(2, '0')} · {label}
-            </span>
-            {n < steps.length && <span className="text-neutral-300">/</span>}
-          </li>
-        );
-      })}
-    </ol>
-  );
-}
+// OnboardSteps moved to ./OnboardSteps.tsx — Next.js disallows importing
+// named exports from layout.tsx into 'use client' files.

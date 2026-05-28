@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { OnboardSteps } from '../layout';
+import { OnboardSteps } from '../OnboardSteps';
 import { readOnboardState, writeOnboardState } from '@/lib/app/onboarding-state';
 
 const ADDR_RE = /^0x[a-fA-F0-9]{40}$/;

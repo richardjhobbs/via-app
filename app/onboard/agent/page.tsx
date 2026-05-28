@@ -2,7 +2,7 @@
 
 import { useEffect } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { OnboardSteps } from '../layout';
+import { OnboardSteps } from '../OnboardSteps';
 
 export default function OnboardAgent() {
   const router = useRouter();

@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { OnboardSteps } from '../layout';
+import { OnboardSteps } from '../OnboardSteps';
 import { readOnboardState, writeOnboardState } from '@/lib/app/onboarding-state';
 
 export default function OnboardAccount() {

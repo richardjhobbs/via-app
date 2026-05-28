@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { OnboardSteps } from '../layout';
+import { OnboardSteps } from '../OnboardSteps';
 import { readOnboardState, writeOnboardState, slugifyName } from '@/lib/app/onboarding-state';
 
 export default function OnboardBusiness() {
