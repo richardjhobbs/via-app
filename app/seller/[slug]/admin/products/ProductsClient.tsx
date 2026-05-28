@@ -12,7 +12,6 @@ interface Product {
   stock: number | null;
   max_supply: number | null;
   url: string | null;
-  image_url: string | null;
   active: boolean;
   token_id: number | null;
   on_chain_status: 'draft' | 'registered' | 'paused' | 'sold_out';
@@ -56,13 +55,10 @@ export function ProductsClient({ sellerId, sellerSlug, sellerKind, shopifyDomain
   const [stock, setStock]       = useState('');
   const [maxSupply, setMaxSupply] = useState('');
   const [url, setUrl]           = useState('');
-  const [imageUrl, setImageUrl] = useState('');
-  const [imageFile, setImageFile] = useState<File | null>(null);
 
   // Per-row + global action state
   const [publishingId, setPublishingId]   = useState<string | null>(null);
   const [deletingId,   setDeletingId]     = useState<string | null>(null);
-  const [uploadingId,  setUploadingId]    = useState<string | null>(null);
   const [syncing,      setSyncing]        = useState(false);
 
   async function refresh() {
@@ -95,23 +91,6 @@ export function ProductsClient({ sellerId, sellerSlug, sellerKind, shopifyDomain
     setStock('');
     setMaxSupply('');
     setUrl('');
-    setImageUrl('');
-    setImageFile(null);
-  }
-
-  async function uploadImageForProduct(productId: string, file: File): Promise<string | null> {
-    const fd = new FormData();
-    fd.append('file', file);
-    const res = await fetch(`/api/seller/${sellerId}/products/${productId}/image`, {
-      method: 'POST',
-      body: fd,
-    });
-    const json = await res.json();
-    if (!res.ok) {
-      setErr(json.error || `Image upload failed (${res.status})`);
-      return null;
-    }
-    return json.image_url ?? null;
   }
 
   async function onCreate(e: React.FormEvent) {
@@ -133,7 +112,6 @@ export function ProductsClient({ sellerId, sellerSlug, sellerKind, shopifyDomain
         stock:       stock      === '' ? null : Number(stock),
         max_supply:  maxSupply  === '' ? null : Number(maxSupply),
         url:         url.trim()         || null,
-        image_url:   imageUrl.trim()    || null,
       };
       const res = await fetch(`/api/seller/${sellerId}/products`, {
         method: 'POST',
@@ -145,27 +123,11 @@ export function ProductsClient({ sellerId, sellerSlug, sellerKind, shopifyDomain
         setErr(json.error || `Create failed (${res.status})`);
         return;
       }
-      // If the seller picked a file, upload it now that we have a productId.
-      if (imageFile && json.product?.id) {
-        await uploadImageForProduct(json.product.id as string, imageFile);
-      }
       resetForm();
       setAdding(false);
       await refresh();
     } finally {
       setBusy(false);
-    }
-  }
-
-  async function onRowUploadImage(p: Product, file: File) {
-    if (uploadingId) return;
-    setErr('');
-    setUploadingId(p.id);
-    try {
-      const newUrl = await uploadImageForProduct(p.id, file);
-      if (newUrl) await refresh();
-    } finally {
-      setUploadingId(null);
     }
   }
 
@@ -335,30 +297,6 @@ export function ProductsClient({ sellerId, sellerSlug, sellerKind, shopifyDomain
             />
           </label>
 
-          <div className="md:col-span-2">
-            <span className="text-xs font-mono tracking-widest uppercase text-neutral-500 block mb-1">Image (optional)</span>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              <input
-                type="url" placeholder="Paste an image URL"
-                value={imageUrl} onChange={(e) => { setImageUrl(e.target.value); if (e.target.value) setImageFile(null); }}
-                disabled={!!imageFile}
-                className="w-full border border-neutral-300 rounded-md px-3 py-2 text-sm font-mono outline-none focus:border-neutral-900 disabled:bg-neutral-100 disabled:text-neutral-400"
-              />
-              <label className="flex items-center gap-2 border border-dashed border-neutral-300 rounded-md px-3 py-2 text-sm cursor-pointer hover:border-neutral-900">
-                <input
-                  type="file" accept="image/jpeg,image/png,image/webp,image/gif"
-                  onChange={(e) => { const f = e.target.files?.[0] ?? null; setImageFile(f); if (f) setImageUrl(''); }}
-                  className="hidden"
-                />
-                <span className="text-xs font-mono uppercase tracking-widest text-neutral-700">
-                  {imageFile ? `Selected: ${imageFile.name}` : 'or upload a file (max 5MB)'}
-                </span>
-              </label>
-            </div>
-            <p className="text-[10px] font-mono text-neutral-400 mt-1">
-              Uploaded files land in the public app-product-images bucket and the URL is saved automatically after Save.
-            </p>
-          </div>
 
           <div className="md:col-span-2 flex justify-end">
             <button
@@ -383,7 +321,6 @@ export function ProductsClient({ sellerId, sellerSlug, sellerKind, shopifyDomain
           <table className="w-full text-sm">
             <thead className="bg-neutral-50 text-xs font-mono uppercase tracking-widest text-neutral-500">
               <tr>
-                <th className="text-left px-4 py-3 w-14">Image</th>
                 <th className="text-left px-4 py-3">Title</th>
                 <th className="text-left px-4 py-3">Kind</th>
                 <th className="text-right px-4 py-3">Price (USDC)</th>
@@ -395,14 +332,6 @@ export function ProductsClient({ sellerId, sellerSlug, sellerKind, shopifyDomain
             <tbody className="divide-y divide-neutral-200">
               {products.map((p) => (
                 <tr key={p.id} className={p.active ? '' : 'opacity-50'}>
-                  <td className="px-4 py-3">
-                    {p.image_url ? (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img src={p.image_url} alt="" className="w-10 h-10 object-cover rounded border border-neutral-200" />
-                    ) : (
-                      <div className="w-10 h-10 bg-neutral-100 border border-dashed border-neutral-300 rounded" />
-                    )}
-                  </td>
                   <td className="px-4 py-3">
                     <div className="font-medium text-neutral-900">{p.title}</div>
                     {p.token_id != null && (
@@ -420,16 +349,6 @@ export function ProductsClient({ sellerId, sellerSlug, sellerKind, shopifyDomain
                   </td>
                   <td className="px-4 py-3">{statusBadge(p.on_chain_status, p.active)}</td>
                   <td className="px-4 py-3 text-right whitespace-nowrap">
-                    {p.active && (
-                      <label className="inline-block mr-3 cursor-pointer text-[10px] font-mono uppercase tracking-widest text-neutral-500 hover:text-neutral-900">
-                        <input
-                          type="file" accept="image/jpeg,image/png,image/webp,image/gif" className="hidden"
-                          onChange={(e) => { const f = e.target.files?.[0]; if (f) void onRowUploadImage(p, f); e.currentTarget.value = ''; }}
-                          disabled={uploadingId === p.id}
-                        />
-                        {uploadingId === p.id ? 'Uploading…' : (p.image_url ? 'Replace image' : 'Upload image')}
-                      </label>
-                    )}
                     {p.active && p.on_chain_status === 'draft' && (
                       <button
                         type="button"

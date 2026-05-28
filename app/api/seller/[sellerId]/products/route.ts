@@ -20,7 +20,7 @@ export async function GET(
 
   const { data, error } = await db
     .from('app_seller_products')
-    .select('id, external_id, kind, title, description, price_minor, currency, stock, url, image_url, metadata, active, token_id, max_supply, on_chain_status, on_chain_tx_hash, created_at, updated_at')
+    .select('id, external_id, kind, title, description, price_minor, currency, stock, url, metadata, active, token_id, max_supply, on_chain_status, on_chain_tx_hash, created_at, updated_at')
     .eq('seller_id', sellerId)
     .order('created_at', { ascending: false })
     .limit(200);
@@ -37,7 +37,6 @@ interface CreateBody {
   stock?: number | null;
   max_supply?: number | null;   // null = unlimited (1e9 sentinel applied at publish)
   url?: string | null;
-  image_url?: string | null;
 }
 
 /**
@@ -85,11 +84,10 @@ export async function POST(
       stock:        body.stock        ?? null,
       max_supply:   body.max_supply   ?? null,
       url:          body.url          ?? null,
-      image_url:    body.image_url    ?? null,
       metadata:     {},
       active:       true,
     })
-    .select('id, kind, title, description, price_minor, currency, stock, max_supply, url, image_url, active, on_chain_status, created_at')
+    .select('id, kind, title, description, price_minor, currency, stock, max_supply, url, active, on_chain_status, created_at')
     .single();
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });

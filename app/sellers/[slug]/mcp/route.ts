@@ -137,7 +137,7 @@ function createServer(seller: SellerRow, req: Request) {
       const max = Math.min(Math.max(limit ?? 50, 1), 100);
       let query = db
         .from('app_seller_products')
-        .select('id, title, description, kind, price_minor, currency, stock, url, image_url, token_id, on_chain_status, max_supply')
+        .select('id, title, description, kind, price_minor, currency, stock, url, token_id, on_chain_status, max_supply')
         .eq('seller_id', seller.id)
         .eq('on_chain_status', 'registered')
         .order('created_at', { ascending: false })
@@ -154,7 +154,6 @@ function createServer(seller: SellerRow, req: Request) {
         currency:      p.currency,
         stock:         p.stock,
         url:           p.url,
-        image_url:     p.image_url,
         token_id:      p.token_id,
         max_supply:    p.max_supply,
       }));
@@ -175,7 +174,7 @@ function createServer(seller: SellerRow, req: Request) {
       const t0 = Date.now();
       const { data, error } = await db
         .from('app_seller_products')
-        .select('id, title, description, kind, price_minor, currency, stock, url, image_url, token_id, on_chain_status, max_supply, metadata')
+        .select('id, title, description, kind, price_minor, currency, stock, url, token_id, on_chain_status, max_supply, metadata')
         .eq('id', product_id)
         .eq('seller_id', seller.id)
         .maybeSingle();
@@ -193,7 +192,6 @@ function createServer(seller: SellerRow, req: Request) {
         currency:      data.currency,
         stock:         data.stock,
         url:           data.url,
-        image_url:     data.image_url,
         token_id:      data.token_id,
         max_supply:    data.max_supply,
         on_chain_status: data.on_chain_status,

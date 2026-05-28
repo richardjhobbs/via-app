@@ -23,15 +23,15 @@ interface SyncResult {
  * (on_chain_status = 'draft') so the seller still explicitly publishes
  * each one on-chain.
  *
- * Mapping:
+ * Mapping (VIA is data-only — images are intentionally not synced):
  *   external_id   = shopify product.id (stringified)
  *   kind          = 'physical' (Shopify catalog is overwhelmingly physical)
  *   title         = shopify product.title
  *   description   = stripHtml(shopify product.body_html), trimmed to 4000
  *   price_minor   = round(first_variant.price * 1_000_000)
  *   stock         = sum of available variants; null if no variants
- *   url           = "https://${domain}/products/${handle}"
- *   image_url     = first image src
+ *   url           = "https://${domain}/products/${handle}" (buying agents
+ *                   follow this if they need the seller's own rendering)
  *   metadata      = { shopify_handle, vendor, product_type, tags, variant_count }
  *   active        = true if at least one variant is available
  */
@@ -89,7 +89,6 @@ export async function POST(
       const anyAvailable = p.variants.some((v) => v.available);
       const description = stripHtml(p.body_html).slice(0, 4000) || null;
       const url = `https://${domain}/products/${p.handle}`;
-      const imageUrl = p.images?.[0]?.src ?? null;
       const metadata = {
         shopify_handle: p.handle,
         vendor: p.vendor ?? null,
@@ -113,7 +112,6 @@ export async function POST(
           title:       p.title,
           description,
           url,
-          image_url:   imageUrl,
           stock:       totalStock,
           metadata,
           updated_at:  new Date().toISOString(),
@@ -144,7 +142,6 @@ export async function POST(
             currency:    'USDC',
             stock:       totalStock,
             url,
-            image_url:   imageUrl,
             metadata,
             active:      anyAvailable,
           });

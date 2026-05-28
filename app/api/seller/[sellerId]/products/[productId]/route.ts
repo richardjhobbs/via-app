@@ -11,7 +11,6 @@ interface UpdateBody {
   stock?: number | null;
   max_supply?: number | null;
   url?: string | null;
-  image_url?: string | null;
 }
 
 /**
@@ -58,7 +57,6 @@ export async function PUT(
   if (body.description !== undefined) update.description = body.description;
   if (body.stock !== undefined)       update.stock       = body.stock;
   if (body.url !== undefined)         update.url         = body.url;
-  if (body.image_url !== undefined)   update.image_url   = body.image_url;
 
   if (body.price_usdc !== undefined) {
     if (isRegistered) {
@@ -81,7 +79,7 @@ export async function PUT(
     .update(update)
     .eq('id', productId)
     .eq('seller_id', sellerId)
-    .select('id, kind, title, description, price_minor, currency, stock, max_supply, url, image_url, active, on_chain_status, on_chain_tx_hash, token_id, created_at, updated_at')
+    .select('id, kind, title, description, price_minor, currency, stock, max_supply, url, active, on_chain_status, on_chain_tx_hash, token_id, created_at, updated_at')
     .single();
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
