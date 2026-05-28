@@ -18,8 +18,10 @@ import { stripHtml } from '../shopify/products-json';
 import { priceToUsdcMinor, type UsdcRate } from './fx';
 import { db } from './db';
 
+export type CatalogSource = 'shopify' | 'squarespace' | 'csv';
+
 export interface SyncResult {
-  source:   'shopify' | 'squarespace';
+  source:   CatalogSource;
   fetched:  number;
   synced:   number;
   updated:  number;
@@ -30,19 +32,23 @@ export interface SyncResult {
 
 export interface MapperOptions {
   sellerId:        string;
-  source:          'shopify' | 'squarespace';
+  source:          CatalogSource;
   /** Used to construct `url` for the seller's storefront product page. */
   productUrlFor:   (product: ShopifyProduct) => string | null;
   /** Source for the Shopify product.id namespace prefix in external_id. */
   externalIdPrefix?: string;
   /**
-   * Per-variant stock summation. Public Shopify /products.json only
-   * exposes `available: boolean` per variant, so the best we can do is
-   * count available variants. Squarespace exposes qtyInStock so the
-   * caller can pass an accurate summator. Returns the row's stock or
-   * null for unlimited.
+   * Per-row stock count. Returns the row's stock or null for unlimited.
+   * Implementations vary by source — Shopify counts available variants,
+   * Squarespace sums qtyInStock, CSV passes the per-row stock cell.
    */
   totalStockFor:   (product: ShopifyProduct) => number | null;
+  /**
+   * Optional per-row kind override. CSV ingestion supplies a kind
+   * column (physical/digital/service); Shopify + Squarespace pin to
+   * 'physical' by default.
+   */
+  kindFor?:        (product: ShopifyProduct) => 'physical' | 'digital' | 'service';
   /** Source for the FX rate applied to native prices. */
   fx:              UsdcRate;
 }
@@ -98,6 +104,8 @@ export async function importCatalog(
         .eq('external_id', externalId)
         .maybeSingle();
 
+      const kind = opts.kindFor?.(p) ?? 'physical';
+
       if (existing) {
         const updates: Record<string, unknown> = {
           title:       p.title,
@@ -110,6 +118,7 @@ export async function importCatalog(
         // Price is immutable post-registration; only update drafts.
         if (existing.on_chain_status === 'draft') {
           updates.price_minor = priceMinor;
+          updates.kind = kind;
         }
         const { error } = await db
           .from('app_seller_products')
@@ -123,7 +132,7 @@ export async function importCatalog(
           .insert({
             seller_id:   opts.sellerId,
             external_id: externalId,
-            kind:        'physical',
+            kind,
             title:       p.title,
             description,
             price_minor: priceMinor,

@@ -72,6 +72,11 @@ export function ProductsClient({
   const [deletingId,   setDeletingId]     = useState<string | null>(null);
   const [syncing,      setSyncing]        = useState(false);
 
+  // CSV upload state
+  const [csvFile,    setCsvFile]      = useState<File | null>(null);
+  const [csvBusy,    setCsvBusy]      = useState(false);
+  const [csvErrors,  setCsvErrors]    = useState<{ row: string; field?: string; message: string }[] | null>(null);
+
   // ── Catalogue source connection — live editable so existing sellers
   //    (incl. arc-lights) can connect or switch their store source after
   //    onboarding. Locally mirrors what the server passed in, then PATCHes
@@ -187,6 +192,39 @@ export function ProductsClient({
       await refresh();
     } finally {
       setBusy(false);
+    }
+  }
+
+  async function uploadCsv() {
+    if (csvBusy || !csvFile) return;
+    setErr('');
+    setInfo('');
+    setCsvErrors(null);
+    setCsvBusy(true);
+    try {
+      const fd = new FormData();
+      fd.append('file', csvFile);
+      const res = await fetch(`/api/seller/${sellerId}/products/sync-csv`, {
+        method: 'POST',
+        body: fd,
+      });
+      const json = await res.json();
+      if (res.status === 422) {
+        setCsvErrors(json.errors ?? []);
+        setErr(`Upload rejected: ${json.errors?.length ?? 0} validation issue${json.errors?.length === 1 ? '' : 's'} (see below).`);
+        return;
+      }
+      if (!res.ok) {
+        setErr(json.error || `Upload failed (${res.status})`);
+        return;
+      }
+      const errs = (json.errors as string[] | undefined) ?? [];
+      const fxNote = json.fx?.note ? ` · FX: ${json.fx.note}` : '';
+      setInfo(`CSV ${json.filename ?? ''}: parsed ${json.rowsParsed}, inserted ${json.synced}, updated ${json.updated}, skipped ${json.skipped}${errs.length ? `, errors ${errs.length}` : ''}${fxNote}`);
+      setCsvFile(null);
+      await refresh();
+    } finally {
+      setCsvBusy(false);
     }
   }
 
@@ -422,6 +460,71 @@ export function ProductsClient({
           </form>
         )}
       </div>
+
+      {/* ── CSV upload panel (visible when catalog_source = 'csv') ───── */}
+      {src === 'csv' && (
+        <div className="bg-white border border-neutral-200 rounded-lg p-5">
+          <div className="flex items-start justify-between gap-3 mb-4">
+            <div>
+              <p className="text-xs font-mono tracking-widest uppercase text-neutral-500 mb-1">Spreadsheet upload</p>
+              <p className="text-sm text-neutral-700">
+                Upload your catalogue as CSV or XLSX. Download the template, fill it in, then come
+                back and upload. Re-uploading a row with the same <code className="font-mono text-xs">external_id</code> updates it in place.
+              </p>
+            </div>
+            <a
+              href="/templates/via-products.csv"
+              download
+              className="text-[10px] font-mono uppercase tracking-widest text-neutral-900 hover:underline whitespace-nowrap"
+            >
+              Download template ↓
+            </a>
+          </div>
+
+          <label className="block text-xs font-mono uppercase tracking-widest text-neutral-500 mb-2">
+            Choose a file (.csv, .xlsx, .xls — max 5 MB)
+          </label>
+          <input
+            type="file"
+            accept=".csv,.xlsx,.xls"
+            onChange={(e) => { setCsvFile(e.target.files?.[0] ?? null); setCsvErrors(null); }}
+            disabled={csvBusy}
+            className="block w-full text-sm border border-neutral-300 rounded-md p-2 bg-white file:mr-3 file:border-0 file:bg-neutral-100 file:px-3 file:py-1.5 file:text-xs file:font-mono file:uppercase file:tracking-widest"
+          />
+
+          <div className="flex items-center justify-between mt-3">
+            <span className="text-[10px] font-mono uppercase tracking-widest text-neutral-400">
+              {csvFile ? csvFile.name : 'No file selected'}
+              {' · '}
+              prices in <span className="text-neutral-600">{cur}</span> &rarr; converted to USDC at upload
+            </span>
+            <button
+              type="button"
+              onClick={() => void uploadCsv()}
+              disabled={!csvFile || csvBusy}
+              className="px-4 py-2 bg-neutral-900 text-neutral-50 text-xs font-mono tracking-widest uppercase hover:bg-neutral-800 disabled:opacity-40 transition-colors rounded-md"
+            >
+              {csvBusy ? 'Uploading…' : 'Upload'}
+            </button>
+          </div>
+
+          {csvErrors && csvErrors.length > 0 && (
+            <div className="mt-4 border border-rose-200 bg-rose-50 text-rose-900 rounded-md p-3 text-xs">
+              <p className="font-medium mb-2">
+                {csvErrors.length} issue{csvErrors.length === 1 ? '' : 's'} to fix before this CSV can be accepted:
+              </p>
+              <ul className="space-y-1 list-disc pl-4">
+                {csvErrors.slice(0, 15).map((e, i) => (
+                  <li key={i}>{e.message}</li>
+                ))}
+                {csvErrors.length > 15 && (
+                  <li className="italic opacity-70">…and {csvErrors.length - 15} more.</li>
+                )}
+              </ul>
+            </div>
+          )}
+        </div>
+      )}
 
       {adding && (
         <form onSubmit={onCreate} className="bg-white border border-neutral-200 rounded-lg p-5 grid grid-cols-1 md:grid-cols-2 gap-4">

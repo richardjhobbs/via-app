@@ -26,6 +26,7 @@
     "mppx": "^0.4.9",
     "next": "16.1.6",
     "openai": "^4.104.0",
+    "papaparse": "^5.5.3",
     "pinata": "^2.5.5",
     "react": "19.2.3",
     "react-dom": "19.2.3",
@@ -36,12 +37,14 @@
     "sharp": "^0.34.5",
     "thirdweb": "^5.119.1",
     "viem": "^2.47.0",
-    "wagmi": "^3.5.0"
+    "wagmi": "^3.5.0",
+    "xlsx": "^0.18.5"
   },
   "devDependencies": {
     "@nomicfoundation/hardhat-toolbox": "^6.1.2",
     "@tailwindcss/postcss": "^4.0.17",
     "@types/node": "^20",
+    "@types/papaparse": "^5.5.2",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "eslint": "^9",
