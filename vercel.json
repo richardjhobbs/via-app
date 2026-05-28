@@ -1,16 +1,4 @@
 {
-  "crons": [
-    {
-      "path": "/api/rrg/admin/marketing/auto-scan",
-      "schedule": "0 8 * * *"
-    },
-    {
-      "path": "/api/rrg/admin/agent-notifications/scan",
-      "schedule": "0 2 * * *"
-    },
-    {
-      "path": "/api/rrg/admin/credits/settle",
-      "schedule": "0 3 * * *"
-    }
-  ]
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "framework": "nextjs"
 }
