@@ -10,17 +10,19 @@
 export type OnboardRole = 'seller' | 'buyer';
 
 export interface SellerOnboardState {
-  role:           'seller';
-  email?:         string;
-  password?:      string;       // held only until the register endpoint completes; never reused
-  sellerName?:    string;
-  slug?:          string;
-  kind?:          'product' | 'service' | 'mixed';
-  description?:   string;
-  websiteUrl?:    string;
-  walletAddress?: string;
-  catalogSource?: 'shopify' | 'csv' | 'services';
-  shopifyDomain?: string;
+  role:                 'seller';
+  email?:               string;
+  password?:            string;       // held only until the register endpoint completes; never reused
+  sellerName?:          string;
+  slug?:                string;
+  kind?:                'product' | 'service' | 'mixed';
+  description?:         string;
+  websiteUrl?:          string;
+  // Two distinct wallets — see app/onboard/wallet/page.tsx for the UX split.
+  walletAddress?:       string;       // seller's payout wallet (pasted EOA; receives USDC)
+  agentWalletAddress?:  string;       // Sales Agent's own EOA, provisioned via thirdweb inAppWallet
+  catalogSource?:       'shopify' | 'csv' | 'services';
+  shopifyDomain?:       string;
 }
 
 export interface BuyerOnboardState {

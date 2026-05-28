@@ -2,15 +2,31 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { ConnectEmbed, useActiveAccount, useDisconnect, useActiveWallet } from 'thirdweb/react';
+import { inAppWallet } from 'thirdweb/wallets';
+import { thirdwebClient } from '@/lib/app/thirdwebClient';
 import { OnboardSteps } from '../OnboardSteps';
 import { readOnboardState, writeOnboardState } from '@/lib/app/onboarding-state';
 
 const ADDR_RE = /^0x[a-fA-F0-9]{40}$/;
 
+// Same in-app wallet config the rest of the app uses (lib/agent/types.ts
+// pattern, also see components/agent/StepRegistration.tsx). Restricting to
+// email + google keeps the agent-wallet onboarding short.
+const wallets = [inAppWallet({ auth: { options: ['google', 'email'] } })];
+
 export default function OnboardWallet() {
   const router = useRouter();
-  const [address, setAddress] = useState('');
+
+  // ── Payout wallet (pasted EOA — the seller's existing wallet) ──────
+  const [payout,  setPayout]  = useState('');
   const [err,     setErr]     = useState('');
+
+  // ── Agent wallet (provisioned via thirdweb inAppWallet) ───────────
+  const account     = useActiveAccount();
+  const activeWallet = useActiveWallet();
+  const { disconnect } = useDisconnect();
+  const agentAddress = account?.address ?? '';
 
   useEffect(() => {
     const s = readOnboardState();
@@ -18,17 +34,38 @@ export default function OnboardWallet() {
       router.replace('/onboard?role=seller');
       return;
     }
-    if (s.walletAddress) setAddress(s.walletAddress);
+    if (s.walletAddress)      setPayout(s.walletAddress);
+    // agentWalletAddress is determined by the active thirdweb account, not
+    // restored from localStorage — if the user disconnected, they need to
+    // re-auth to provision again.
   }, [router]);
+
+  // Persist the agent wallet to localStorage whenever the connected
+  // account changes so the next step has it without a server round-trip.
+  useEffect(() => {
+    if (agentAddress) writeOnboardState({ role: 'seller', agentWalletAddress: agentAddress });
+  }, [agentAddress]);
 
   function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     setErr('');
-    if (!ADDR_RE.test(address.trim())) {
-      setErr('Enter a valid Base wallet address (0x… 42 chars).');
+    if (!ADDR_RE.test(payout.trim())) {
+      setErr('Payout wallet must be a valid Base address (0x… 42 chars).');
       return;
     }
-    writeOnboardState({ role: 'seller', walletAddress: address.trim() });
+    if (!ADDR_RE.test(agentAddress)) {
+      setErr('Sign in with email or Google to provision your Sales Agent’s wallet before continuing.');
+      return;
+    }
+    if (payout.trim().toLowerCase() === agentAddress.toLowerCase()) {
+      setErr('Payout wallet and agent wallet must be different. The agent wallet is created for you below — paste your own existing wallet for payouts above.');
+      return;
+    }
+    writeOnboardState({
+      role: 'seller',
+      walletAddress:      payout.trim(),
+      agentWalletAddress: agentAddress,
+    });
     router.push('/onboard/catalog');
   }
 
@@ -38,31 +75,72 @@ export default function OnboardWallet() {
         <OnboardSteps current={3} />
         <p className="text-xs font-mono tracking-widest text-neutral-500 mb-3 uppercase">Step 3 of 5</p>
         <h1 className="font-serif text-4xl md:text-5xl leading-[1.1] tracking-tight mb-3">
-          Where should payouts land?
+          Wallets.
         </h1>
         <p className="text-neutral-600 mb-10 max-w-lg">
-          A Base wallet address you control. When a buying agent purchases from you,
-          USDC settles into the VIA platform wallet on-chain and we send 97.5% to this
-          address. The platform retains 2.5%.
+          Two distinct wallets, two distinct roles. Your <strong>payout wallet</strong> receives the
+          97.5% USDC share of every sale. Your <strong>Sales Agent’s wallet</strong> is what the
+          agent uses to sign actions on-chain (negotiations, reputation events, x402 settlements) and
+          is what gets registered as its ERC-8004 identity.
         </p>
 
-        <form onSubmit={onSubmit} className="space-y-5 max-w-xl">
-          <label className="block">
-            <span className="text-xs font-mono tracking-widest text-neutral-500 uppercase block mb-2">Base wallet address</span>
+        <form onSubmit={onSubmit} className="space-y-10 max-w-xl">
+          {/* ── Section A — payout wallet ──────────────────────── */}
+          <div>
+            <h2 className="text-xs font-mono tracking-widest text-neutral-500 uppercase block mb-3 flex items-center gap-3">
+              <span className="text-neutral-400">A</span>
+              <span>Your payout wallet</span>
+            </h2>
+            <p className="text-sm text-neutral-600 mb-4">
+              Paste a Base wallet address you already control (MetaMask, Rabby, Coinbase Wallet, a
+              Safe). 97.5% of each sale lands here. Platform retains 2.5%.
+            </p>
             <input
               type="text"
               required
               spellCheck={false}
               autoComplete="off"
-              value={address}
-              onChange={(e) => setAddress(e.target.value)}
-              placeholder="0x…"
+              value={payout}
+              onChange={(e) => setPayout(e.target.value)}
+              placeholder="0x… (42 chars)"
               className="w-full bg-white border border-neutral-300 px-4 py-3 text-base font-mono outline-none focus:border-neutral-900 transition-colors rounded-md"
             />
-            <span className="text-xs text-neutral-500 mt-2 block">
-              Use any EVM-compatible wallet (MetaMask, Rabby, Coinbase Wallet, a Safe…). It must accept USDC on Base.
-            </span>
-          </label>
+          </div>
+
+          {/* ── Section B — agent wallet (thirdweb in-app) ────── */}
+          <div>
+            <h2 className="text-xs font-mono tracking-widest text-neutral-500 uppercase block mb-3 flex items-center gap-3">
+              <span className="text-neutral-400">B</span>
+              <span>Your Sales Agent’s wallet</span>
+            </h2>
+            <p className="text-sm text-neutral-600 mb-4">
+              Created for you. Sign in with email or Google and we provision a non-custodial EOA owned
+              by your auth identity — that wallet IS your agent.
+            </p>
+
+            {agentAddress ? (
+              <div className="p-4 border border-neutral-900 bg-neutral-50 rounded-md">
+                <div className="text-xs font-mono tracking-widest text-neutral-500 uppercase mb-2">Provisioned</div>
+                <div className="font-mono text-sm break-all text-neutral-900 mb-3">{agentAddress}</div>
+                <button
+                  type="button"
+                  onClick={() => { if (activeWallet) disconnect(activeWallet); }}
+                  className="text-xs font-mono tracking-widest uppercase text-neutral-500 hover:text-neutral-900"
+                >
+                  Use a different account
+                </button>
+              </div>
+            ) : (
+              <div className="border border-neutral-300 rounded-md p-4">
+                <ConnectEmbed
+                  client={thirdwebClient}
+                  wallets={wallets}
+                  showAllWallets={false}
+                  showThirdwebBranding={false}
+                />
+              </div>
+            )}
+          </div>
 
           {err && <p className="text-sm text-red-600">{err}</p>}
 

@@ -20,7 +20,7 @@ export default function OnboardCatalog() {
 
   useEffect(() => {
     const s = readOnboardState();
-    if (!s || s.role !== 'seller' || !s.email || !s.sellerName || !s.walletAddress) {
+    if (!s || s.role !== 'seller' || !s.email || !s.sellerName || !s.walletAddress || !s.agentWalletAddress) {
       router.replace('/onboard?role=seller');
       return;
     }
@@ -50,14 +50,15 @@ export default function OnboardCatalog() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          email:         state.email,
-          password:      state.password,
-          sellerName:    state.sellerName,
-          slug:          state.slug,
-          kind:          state.kind,
-          description:   state.description,
-          websiteUrl:    state.websiteUrl,
-          walletAddress: state.walletAddress,
+          email:              state.email,
+          password:           state.password,
+          sellerName:         state.sellerName,
+          slug:               state.slug,
+          kind:               state.kind,
+          description:        state.description,
+          websiteUrl:         state.websiteUrl,
+          walletAddress:      state.walletAddress,
+          agentWalletAddress: state.agentWalletAddress,
         }),
       });
       const data = await res.json();

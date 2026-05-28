@@ -3,6 +3,7 @@ import { setBrandAuthCookies, supabaseAdmin } from '@/lib/app/seller-auth';
 import { db } from '@/lib/app/db';
 import { createClient } from '@supabase/supabase-js';
 import { ethers } from 'ethers';
+import { registerAgentIdentity } from '@/lib/agent/erc8004';
 
 export const dynamic = 'force-dynamic';
 
@@ -16,52 +17,58 @@ const supabase = createClient(
  *
  * Body:
  *   {
- *     email:        string,
- *     password:     string,
- *     sellerName:   string,
- *     slug:         string,       // pre-validated client-side, normalised here too
- *     kind:         'product' | 'service' | 'mixed',
- *     description?: string,
- *     headline?:    string,
- *     websiteUrl?:  string,
- *     walletAddress: string,      // checksummed Base address; payouts land here
+ *     email:              string,
+ *     password:           string,
+ *     sellerName:         string,
+ *     slug:               string,    // pre-validated client-side, normalised here too
+ *     kind:               'product' | 'service' | 'mixed',
+ *     description?:       string,
+ *     headline?:          string,
+ *     websiteUrl?:        string,
+ *     walletAddress:      string,    // seller's payout wallet (USDC lands here)
+ *     agentWalletAddress: string,    // Sales Agent's own EOA (thirdweb in-app wallet)
  *   }
  *
  * What it does:
  *   1. Creates an auto-confirmed Supabase Auth user with the supplied
- *      password (so the wizard can proceed without an email round-trip).
- *      Falls back to updating an existing user's password if email reused.
- *   2. Signs the user in to get a session and sets sb-access-token /
- *      sb-refresh-token cookies.
- *   3. Inserts app_sellers with active=true and the wizard's data.
- *   4. Returns { seller: { id, slug, name } } so the wizard can redirect.
- *
- * Out of scope (separate endpoint or follow-up commit):
- *   - ERC-8004 minting for the seller entity + Sales Agent. The new seller
- *     can trigger it from the dashboard, and onboarding-step 4 calls
- *     /api/seller/identity/mint after this returns 200.
+ *      password and signs them in (sb-access-token / sb-refresh-token cookies).
+ *   2. Inserts app_sellers (active=true) with BOTH wallets distinguished:
+ *      wallet_address       = payout target,
+ *      agent_wallet_address = Sales Agent's own EOA.
+ *   3. Fires ERC-8004 registration via getvia.xyz/mcp `via_register_agent`,
+ *      passing the AGENT's wallet (not the payout wallet). On success,
+ *      records erc8004_agent_id on the row. Failure is non-fatal — the
+ *      seller is created and can re-trigger from the dashboard.
+ *   4. Returns { seller } so the wizard can redirect to the Sales Agent
+ *      chat surface.
  */
 export async function POST(req: NextRequest) {
   let body: Record<string, unknown>;
   try { body = await req.json(); } catch { return NextResponse.json({ error: 'invalid JSON body' }, { status: 400 }); }
 
-  const email         = String(body.email ?? '').trim().toLowerCase();
-  const password      = String(body.password ?? '');
-  const sellerName    = String(body.sellerName ?? '').trim();
-  const slugInput     = String(body.slug ?? '').trim().toLowerCase();
-  const kind          = String(body.kind ?? '');
-  const description   = body.description  ? String(body.description).trim()  : null;
-  const headline      = body.headline     ? String(body.headline).trim()     : null;
-  const websiteUrl    = body.websiteUrl   ? String(body.websiteUrl).trim()   : null;
-  const walletAddress = String(body.walletAddress ?? '').trim();
+  const email              = String(body.email ?? '').trim().toLowerCase();
+  const password           = String(body.password ?? '');
+  const sellerName         = String(body.sellerName ?? '').trim();
+  const slugInput          = String(body.slug ?? '').trim().toLowerCase();
+  const kind               = String(body.kind ?? '');
+  const description        = body.description  ? String(body.description).trim()  : null;
+  const headline           = body.headline     ? String(body.headline).trim()     : null;
+  const websiteUrl         = body.websiteUrl   ? String(body.websiteUrl).trim()   : null;
+  const walletAddress      = String(body.walletAddress ?? '').trim();
+  const agentWalletAddress = String(body.agentWalletAddress ?? '').trim();
 
   // ── Validate input ──────────────────────────────────────────────────
   if (!email || !email.includes('@'))                 return NextResponse.json({ error: 'valid email required' },          { status: 400 });
   if (!password || password.length < 8)               return NextResponse.json({ error: 'password must be 8+ characters' }, { status: 400 });
   if (!sellerName)                                    return NextResponse.json({ error: 'business name required' },         { status: 400 });
   if (!['product','service','mixed'].includes(kind))  return NextResponse.json({ error: "kind must be 'product', 'service', or 'mixed'" }, { status: 400 });
-  if (!ethers.isAddress(walletAddress))               return NextResponse.json({ error: 'invalid Base wallet address' },    { status: 400 });
-  const wallet = walletAddress.toLowerCase();
+  if (!ethers.isAddress(walletAddress))               return NextResponse.json({ error: 'invalid payout wallet address' },  { status: 400 });
+  if (!ethers.isAddress(agentWalletAddress))          return NextResponse.json({ error: 'invalid agent wallet address — provision the Sales Agent wallet in step 3' }, { status: 400 });
+  if (walletAddress.toLowerCase() === agentWalletAddress.toLowerCase()) {
+    return NextResponse.json({ error: 'payout wallet and agent wallet must be different EOAs' }, { status: 400 });
+  }
+  const wallet      = walletAddress.toLowerCase();
+  const agentWallet = agentWalletAddress.toLowerCase();
 
   // Normalise slug: alphanumerics + hyphens, max 60 chars.
   const slug = (slugInput || sellerName)
@@ -86,12 +93,10 @@ export async function POST(req: NextRequest) {
     email,
     password,
     email_confirm: true,
-    user_metadata: { source: 'via_app_onboard', wallet_address: wallet },
+    user_metadata: { source: 'via_app_onboard', wallet_address: wallet, agent_wallet_address: agentWallet },
   });
 
   if (createErr) {
-    // User already exists — verify they don't already own a seller, then
-    // reset password to the one supplied so the session sign-in works.
     const { data: list } = await supabaseAdmin.auth.admin.listUsers({ page: 1, perPage: 500 });
     const found = list?.users?.find((u: { email?: string | null; id: string }) => u.email?.toLowerCase() === email);
     if (!found) return NextResponse.json({ error: 'could not create or find user account' }, { status: 500 });
@@ -120,15 +125,16 @@ export async function POST(req: NextRequest) {
     .from('app_sellers')
     .insert({
       slug,
-      name:          sellerName,
+      name:                 sellerName,
       kind,
-      contact_email: email,
-      owner_user_id: userId,
-      website_url:   websiteUrl,
+      contact_email:        email,
+      owner_user_id:        userId,
+      website_url:          websiteUrl,
       description,
       headline,
-      wallet_address: wallet,
-      active:         true,
+      wallet_address:       wallet,
+      agent_wallet_address: agentWallet,
+      active:               true,
     })
     .select('id, slug, name, kind')
     .single();
@@ -140,6 +146,29 @@ export async function POST(req: NextRequest) {
     }
     return NextResponse.json({ error: 'failed to create seller record' }, { status: 500 });
   }
+
+  // ── Fire ERC-8004 registration for the Sales Agent (non-fatal) ─────
+  // Calls getvia.xyz/mcp via_register_agent which signs the on-chain
+  // register() with VIA_REGISTRAR_PRIVATE_KEY and records `agentWallet`
+  // = the supplied wallet_address. Resulting NFT is owned by the
+  // registrar wallet but the agentWallet in the registration JSON is
+  // what defines the agent's on-chain identity.
+  registerAgentIdentity(
+    seller.id,
+    `${sellerName} — Sales Agent`,
+    agentWallet,
+    'sales_agent',
+  )
+    .then(async ({ tokenId, txHash }) => {
+      await db.from('app_sellers')
+        .update({ erc8004_agent_id: tokenId.toString() })
+        .eq('id', seller.id);
+      console.log(`[onboard/register] erc8004 mint ok seller=${seller.slug} tokenId=${tokenId} tx=${txHash}`);
+    })
+    .catch((err) => {
+      console.error(`[onboard/register] erc8004 mint failed seller=${seller.slug}:`, err);
+      // Non-fatal — seller can re-trigger from the dashboard later.
+    });
 
   const response = NextResponse.json({
     seller: { id: seller.id, slug: seller.slug, name: seller.name, kind: seller.kind },
