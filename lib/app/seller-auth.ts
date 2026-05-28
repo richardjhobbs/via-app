@@ -105,40 +105,38 @@ export async function getSellerUser(): Promise<SellerUser | null> {
 }
 
 /**
- * Get all brands a user is a member of.
+ * All sellers owned by a user. via-app uses a 1:1 owner per seller row
+ * (app_sellers.owner_user_id) — there is no separate members table like
+ * RRG's app_seller_members. Role is always 'admin' for the owner.
  */
 export async function getUserBrands(userId: string): Promise<SellerMembership[]> {
   const { data, error } = await db
-    .from('app_seller_members')
-    .select(`
-      role,
-      brand:app_sellers!inner(id, name, slug)
-    `)
-    .eq('user_id', userId);
+    .from('app_sellers')
+    .select('id, name, slug')
+    .eq('owner_user_id', userId)
+    .eq('active', true);
 
   if (error || !data) return [];
 
-  return data.map((row: Record<string, unknown>) => {
-    const brand = row.brand as Record<string, unknown>;
-    return {
-      sellerId:   brand.id as string,
-      sellerName: brand.name as string,
-      sellerSlug: brand.slug as string,
-      role:      row.role as SellerRole,
-    };
-  });
+  return data.map((row) => ({
+    sellerId:   row.id as string,
+    sellerName: row.name as string,
+    sellerSlug: row.slug as string,
+    role:       'admin' as SellerRole,
+  }));
 }
 
 /**
- * Check if a user is an admin for a specific brand.
+ * True iff the user is the owner of this seller row. Name kept as
+ * `isBrandAdmin` to avoid call-site churn across the auth + API routes
+ * during the brand→seller rename. Semantically: "owns the row".
  */
 export async function isBrandAdmin(userId: string, sellerId: string): Promise<boolean> {
   const { data } = await db
-    .from('app_seller_members')
+    .from('app_sellers')
     .select('id')
-    .eq('user_id', userId)
-    .eq('brand_id', sellerId)
-    .eq('role', 'admin')
+    .eq('id', sellerId)
+    .eq('owner_user_id', userId)
     .maybeSingle();
 
   return !!data;

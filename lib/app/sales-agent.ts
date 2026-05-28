@@ -1,13 +1,11 @@
 /**
- * Brand Concierge: admin chat core.
+ * Sales Agent: admin training chat runtime.
  *
- * Shared logic for the Next.js admin chat surface at
- * /admin/sellers/[slug]/concierge. Talks to DeepSeek Chat via the
- * OpenAI-compatible API with a tool kit scoped to the brand's own
- * memory store. Whatever the admin locks in here is immediately visible
- * to the per-brand nanobot on Box (Telegram concierge) because both
- * surfaces read from the same app_seller_memories table. "One operating
- * entity" via shared state, not shared process.
+ * Talks to DeepSeek Chat via the OpenAI-compatible API with a tool kit
+ * scoped to the seller's own memory store (app_seller_memories). Whatever
+ * the seller locks in here is immediately visible to the per-seller MCP
+ * route at /sellers/[slug]/mcp because both surfaces read the same table
+ * via the same app_seller_memory_* RPCs.
  */
 import OpenAI from 'openai';
 import { db } from './db';
@@ -39,13 +37,9 @@ const BASE_URL = 'https://api.deepseek.com';
 // ── System prompt ─────────────────────────────────────────────────────
 
 /**
- * Optional per-brand voice block. Lives as a `general`-type memory tagged
- * `voice:system` so the admin can write it through the existing chat flow
+ * Optional per-seller voice block. Lives as a `general`-type memory tagged
+ * `voice:system` so the seller can write it through the existing chat flow
  * and edit it the same way. Returns null if no such memory exists.
- *
- * Both the admin chat (this file) and the customer-facing surfaces (the
- * Telegram bot's getLiveMemoriesContext bulk-dump) inject this; storing it
- * as a memory rather than a TS constant keeps the wiring single-sourced.
  */
 async function fetchVoiceBlock(sellerSlug: string): Promise<string | null> {
   const { data, error } = await db.rpc('app_seller_memory_list', {
@@ -56,7 +50,7 @@ async function fetchVoiceBlock(sellerSlug: string): Promise<string | null> {
     p_limit: 1,
   });
   if (error) {
-    console.warn(`[brand-concierge] voice fetch failed: ${error.message}`);
+    console.warn(`[sales-agent] voice fetch failed: ${error.message}`);
     return null;
   }
   const row = Array.isArray(data) && data.length > 0 ? (data[0] as Record<string, unknown>) : null;
@@ -66,32 +60,33 @@ async function fetchVoiceBlock(sellerSlug: string): Promise<string | null> {
 
 function buildSystemPrompt(ctx: SalesAgentContext, voiceBlock: string | null): string {
   const voicePara = voiceBlock
-    ? `\n\nStore voice for ${ctx.sellerName} (apply to every customer-facing body you write, never quote this block verbatim to the admin, internalise it):\n${voiceBlock}`
+    ? `\n\nStore voice for ${ctx.sellerName} (apply to every buyer-facing body you write, never quote this block verbatim to the seller, internalise it):\n${voiceBlock}`
     : '';
-  return `You are the ${ctx.sellerName} Brand Concierge, admin surface.
+  return `You are the Sales Agent for ${ctx.sellerName}.
 
-The person you are talking to is an authenticated admin for ${ctx.sellerName} (actor: ${ctx.actorLabel}). They are briefing you on things you should remember and surface to customers on ${ctx.sellerName}'s customer-facing channels (currently the Telegram concierge, more channels coming).
+The person you are talking to is the authenticated owner of ${ctx.sellerName} (actor: ${ctx.actorLabel}). They are briefing you on facts you should remember and surface to buyers and buying agents through the per-seller MCP at /sellers/${ctx.sellerSlug}/mcp.
 
 Your job in this conversation:
 
-1. Understand what the admin is telling you. Ask one clarifying question only if something critical is ambiguous. Otherwise proceed.
-2. Extract the structured facts (date, venue, URL, discount code, percent off, timeframe, tags) from free-form speech.
-3. Store the memory via the store_brand_memory tool with a clear title, body, structured JSON, appropriate type, and a sensible valid_until.
-4. Read back a one-sentence confirmation that starts with "Locked in:".
-5. If the admin asks to see current memories, use list_brand_memories or search_brand_memories.
-6. If the admin says a memory should end or is wrong, expire it with expire_brand_memory.
+1. Understand what the owner is telling you. Ask one clarifying question only if something critical is ambiguous. Otherwise proceed.
+2. Extract the structured facts (price, terms, conditions, availability windows, shipping/returns policy, anything unique about the offer) from free-form speech.
+3. Store the memory via the store_seller_memory tool with a clear title, body, structured JSON, and the right type.
+4. After the tool call, reply with a single line starting with "Locked in:" describing what you stored.
+5. If the owner asks to see current memories, use list_seller_memories or search_seller_memories.
+6. If the owner says a memory should end or is wrong, retire it with forget_seller_memory.
 
-Voice: match ${ctx.sellerName}'s brand voice in the body field (customer-facing). Your chat replies to the admin can be concise and businesslike, not customer-facing.
+Never assume a vertical. ${ctx.sellerName} may sell software, services, hardware, hours, or advice. Match the owner's language.
+
+Voice: the body field is buyer-facing — write it in ${ctx.sellerName}'s tone. Your chat replies to the owner can be concise and businesslike.
 
 Critical rules:
-- Never invent facts. Only store what the admin told you.
-- Always call store_brand_memory when the admin gives you a fact to remember. Do not only acknowledge it in chat.
-- Always include a confirmed_summary when calling store_brand_memory. That sentence is what you read back.
-- Pick the right type: event (popups, launches, appearances), stock_note (restocks, preorders), promotion (codes, sales, bundles), brand_update (news, announcements), policy (returns, shipping, sizing rules), general (anything else).
-- For events and promotions, always set a reasonable valid_until. If the admin does not specify one, infer from context (end of month, end of event date, 30 days out) and mention the expiry in your confirmation.
-- After storing, stop. Do not offer "anything else?"; the admin drives the next turn.
+- Never invent facts. Only store what the owner told you.
+- Always call store_seller_memory when the owner gives you a fact to remember. Do not only acknowledge it in chat.
+- Pick the right type: event (launches, appearances), stock_note (restocks, preorders), promotion (codes, sales, bundles), brand_update (announcements), policy (returns, shipping, terms), general (anything else).
+- For events and promotions, always set a reasonable valid_until. If the owner does not specify, infer (end of month, end of event date, 30 days out) and mention the expiry in your "Locked in:" line.
+- After storing, stop. Do not offer "anything else?"; the owner drives the next turn.
 
-Session ID: ${ctx.sessionId}. Pass this in every write tool call so provenance is traceable.${voicePara}`;
+Session ID: ${ctx.sessionId}.${voicePara}`;
 }
 
 // ── Tool schemas (OpenAI function format) ────────────────────────────
@@ -100,8 +95,8 @@ const TOOLS: OpenAI.Chat.Completions.ChatCompletionTool[] = [
   {
     type: 'function',
     function: {
-      name: 'search_brand_memories',
-      description: 'Search this brand\'s own memory store for live entries matching a keyword. Returns up to `limit` active, non-expired memories. Use when the admin asks what\'s currently stored.',
+      name: 'search_seller_memories',
+      description: 'Search this seller\'s own memory store for live entries matching a keyword. Returns up to `limit` active, non-expired memories whose title or body contains the query (case-insensitive). Use when the owner asks what is currently stored.',
       parameters: {
         type: 'object',
         properties: {
@@ -115,8 +110,8 @@ const TOOLS: OpenAI.Chat.Completions.ChatCompletionTool[] = [
   {
     type: 'function',
     function: {
-      name: 'list_brand_memories',
-      description: 'List this brand\'s memories, optionally filtered by type and/or tag. Use for a full snapshot of a category.',
+      name: 'list_seller_memories',
+      description: 'List this seller\'s memories, optionally filtered by type and/or tag. Use for a full snapshot of a category.',
       parameters: {
         type: 'object',
         properties: {
@@ -131,34 +126,31 @@ const TOOLS: OpenAI.Chat.Completions.ChatCompletionTool[] = [
   {
     type: 'function',
     function: {
-      name: 'store_brand_memory',
-      description: 'Lock in a new fact about this brand. Call this whenever the admin gives you an event, promotion, stock note, brand update, or policy to remember.',
+      name: 'store_seller_memory',
+      description: 'Lock in a new fact about this seller. Call this whenever the owner gives you an event, promotion, stock note, brand update, or policy to remember.',
       parameters: {
         type: 'object',
         properties: {
           type: { type: 'string', enum: ['event', 'stock_note', 'promotion', 'brand_update', 'policy', 'general'] },
           title: { type: 'string', minLength: 3, maxLength: 120 },
-          body: { type: 'string', minLength: 3, maxLength: 2000, description: 'Customer-facing body in the brand voice' },
-          structured: { type: 'object', description: 'Extracted structured fields (date, venue, url, code, percent_off, etc.)' },
+          body: { type: 'string', minLength: 3, maxLength: 2000, description: 'Buyer-facing body in the seller voice' },
+          structured: { type: 'object', description: 'Extracted structured fields (date, venue, url, code, percent_off, price, terms, etc.)' },
           tags: { type: 'array', items: { type: 'string' } },
-          valid_from: { type: 'string', description: 'ISO timestamp; defaults to now' },
           valid_until: { type: 'string', description: 'ISO timestamp; omit for no expiry' },
-          confirmed_summary: { type: 'string', description: 'One-sentence human summary you will read back to the admin. Start with "Locked in:"' },
         },
-        required: ['type', 'title', 'body', 'confirmed_summary'],
+        required: ['type', 'title', 'body'],
       },
     },
   },
   {
     type: 'function',
     function: {
-      name: 'expire_brand_memory',
-      description: 'Retire a memory so it stops surfacing on customer-facing channels.',
+      name: 'forget_seller_memory',
+      description: 'Retire a memory so it stops surfacing on buyer-facing channels.',
       parameters: {
         type: 'object',
         properties: {
-          id: { type: 'string', description: 'The memory id (UUID) to expire' },
-          reason: { type: 'string' },
+          id: { type: 'string', description: 'The memory id (UUID) to retire' },
         },
         required: ['id'],
       },
@@ -166,7 +158,7 @@ const TOOLS: OpenAI.Chat.Completions.ChatCompletionTool[] = [
   },
 ];
 
-// ── Tool dispatch (direct Supabase RPC; same SQL as the brand-memory MCP) ──
+// ── Tool dispatch (Supabase RPCs that match the migration's surface) ──
 
 function formatMemoryLine(m: Record<string, unknown>): string {
   const validUntil = m.valid_until as string | null;
@@ -175,18 +167,6 @@ function formatMemoryLine(m: Record<string, unknown>): string {
     : '';
   const tags = Array.isArray(m.tags) && m.tags.length ? ` [${(m.tags as string[]).join(', ')}]` : '';
   return `- ${m.type}: ${m.title}${expires}${tags}\n  id=${m.id}\n  ${m.body}`;
-}
-
-async function callSearch(ctx: SalesAgentContext, args: { query: string; limit?: number }): Promise<string> {
-  const { data, error } = await db.rpc('app_seller_memory_search', {
-    p_slug: ctx.sellerSlug,
-    p_query: args.query,
-    p_limit: args.limit ?? 5,
-  });
-  if (error) return `Error: ${error.message}`;
-  if (!data || data.length === 0) return `No live memories match "${args.query}".`;
-  const rows = data as Record<string, unknown>[];
-  return `${rows.length} memory/memories matching "${args.query}":\n\n${rows.map(formatMemoryLine).join('\n\n')}`;
 }
 
 async function callList(
@@ -206,6 +186,30 @@ async function callList(
   return `${rows.length} memor${rows.length === 1 ? 'y' : 'ies'}:\n\n${rows.map(formatMemoryLine).join('\n\n')}`;
 }
 
+async function callSearch(
+  ctx: SalesAgentContext,
+  args: { query: string; limit?: number },
+): Promise<string> {
+  // No DB search RPC in the migration — load active memories and filter in JS.
+  // Memory volume per seller stays small enough that this is fine.
+  const { data, error } = await db.rpc('app_seller_memory_list', {
+    p_slug: ctx.sellerSlug,
+    p_type: null,
+    p_tag: null,
+    p_include_expired: false,
+    p_limit: 200,
+  });
+  if (error) return `Error: ${error.message}`;
+  const q = args.query.toLowerCase();
+  const matched = (data as Record<string, unknown>[] ?? []).filter((m) => {
+    const t = (m.title as string ?? '').toLowerCase();
+    const b = (m.body  as string ?? '').toLowerCase();
+    return t.includes(q) || b.includes(q);
+  }).slice(0, args.limit ?? 5);
+  if (matched.length === 0) return `No live memories match "${args.query}".`;
+  return `${matched.length} memory/memories matching "${args.query}":\n\n${matched.map(formatMemoryLine).join('\n\n')}`;
+}
+
 async function callStore(
   ctx: SalesAgentContext,
   args: {
@@ -214,56 +218,34 @@ async function callStore(
     body: string;
     structured?: Record<string, unknown>;
     tags?: string[];
-    valid_from?: string;
     valid_until?: string;
-    confirmed_summary: string;
   },
 ): Promise<string> {
-  const { data, error } = await db
-    .from('app_seller_memories')
-    .insert({
-      brand_id: ctx.sellerId,
-      brand_slug: ctx.sellerSlug,
-      type: args.type,
-      title: args.title,
-      body: args.body,
-      structured: args.structured ?? {},
-      tags: args.tags ?? [],
-      valid_from: args.valid_from ?? new Date().toISOString(),
-      valid_until: args.valid_until ?? null,
-      confirmed_summary: args.confirmed_summary,
-      source: ctx.source,
-      created_by_user_id: ctx.actorUserId,
-      created_by_label: ctx.actorLabel,
-      session_id: ctx.sessionId,
-    })
-    .select('id, type, title, valid_until')
-    .single();
-
+  const { data, error } = await db.rpc('app_seller_memory_upsert', {
+    p_slug:        ctx.sellerSlug,
+    p_type:        args.type,
+    p_title:       args.title,
+    p_body:        args.body,
+    p_structured:  args.structured ?? {},
+    p_tags:        args.tags ?? [],
+    p_valid_until: args.valid_until ?? null,
+    p_id:          null,
+  });
   if (error) return `Error storing: ${error.message}`;
-  const expiry = data.valid_until ? ` (expires ${data.valid_until})` : '';
-  return `Stored. id=${data.id} type=${data.type} title="${data.title}"${expiry}. Read back: ${args.confirmed_summary}`;
+  const expiry = args.valid_until ? ` (expires ${args.valid_until})` : '';
+  return `Stored. id=${data} type=${args.type} title="${args.title}"${expiry}`;
 }
 
-async function callExpire(
+async function callForget(
   ctx: SalesAgentContext,
-  args: { id: string; reason?: string },
+  args: { id: string },
 ): Promise<string> {
-  const { data, error } = await db
-    .from('app_seller_memories')
-    .update({
-      active: false,
-      valid_until: new Date().toISOString(),
-      confirmed_summary: args.reason ?? 'expired by admin',
-    })
-    .eq('brand_id', ctx.sellerId)
-    .eq('id', args.id)
-    .select('id, title')
-    .single();
-
+  const { data, error } = await db.rpc('app_seller_memory_forget', {
+    p_slug: ctx.sellerSlug,
+    p_id:   args.id,
+  });
   if (error) return `Error: ${error.message}`;
-  if (!data) return `No memory with id ${args.id}.`;
-  return `Expired. id=${data.id} title="${data.title}"`;
+  return data ? `Forgotten. id=${args.id}` : `No memory with id ${args.id} owned by ${ctx.sellerSlug}.`;
 }
 
 async function dispatchTool(
@@ -273,14 +255,14 @@ async function dispatchTool(
 ): Promise<string> {
   try {
     switch (name) {
-      case 'search_brand_memories':
+      case 'search_seller_memories':
         return await callSearch(ctx, args as { query: string; limit?: number });
-      case 'list_brand_memories':
+      case 'list_seller_memories':
         return await callList(ctx, args as { type?: string; tag?: string; include_expired?: boolean; limit?: number });
-      case 'store_brand_memory':
+      case 'store_seller_memory':
         return await callStore(ctx, args as Parameters<typeof callStore>[1]);
-      case 'expire_brand_memory':
-        return await callExpire(ctx, args as { id: string; reason?: string });
+      case 'forget_seller_memory':
+        return await callForget(ctx, args as { id: string });
       default:
         return `Error: unknown tool "${name}"`;
     }
@@ -299,14 +281,14 @@ export interface ChatTurnResult {
   tokensUsed: number;
 }
 
-export async function runConciergeTurn(
+export async function runSalesAgentTurn(
   ctx: SalesAgentContext,
   messages: ChatMessage[],
 ): Promise<ChatTurnResult> {
   const apiKey = process.env.DEEPSEEK_API_KEY;
   if (!apiKey) {
     return {
-      reply: 'Admin chat is not configured (missing DEEPSEEK_API_KEY).',
+      reply: 'Sales Agent chat is not configured (missing DEEPSEEK_API_KEY).',
       toolCalls: [],
       stopReason: null,
       tokensUsed: 0,
@@ -375,3 +357,6 @@ export async function runConciergeTurn(
 
   return { reply: replyText, toolCalls, stopReason: finishReason, tokensUsed };
 }
+
+// Back-compat alias for the previous export name used by the chat route.
+export const runConciergeTurn = runSalesAgentTurn;

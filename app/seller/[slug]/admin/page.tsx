@@ -78,6 +78,20 @@ export default async function SellerAdminPage({
           </div>
 
           <div className="border-t border-neutral-200 pt-8 mb-10">
+            <p className="text-xs font-mono tracking-widest text-neutral-500 mb-3 uppercase">Train your Sales Agent</p>
+            <p className="text-sm text-neutral-600 mb-4">
+              Brief your agent on what you sell, your policies, current promotions. It locks
+              the facts in as memories and reads them back to buying agents.
+            </p>
+            <Link
+              href={`/seller/${seller.slug}/admin/sales-agent`}
+              className="inline-block px-5 py-3 bg-neutral-900 text-neutral-50 text-xs font-mono tracking-widest uppercase hover:bg-neutral-800 transition-colors rounded-md"
+            >
+              Open training chat <span aria-hidden>&rarr;</span>
+            </Link>
+          </div>
+
+          <div className="border-t border-neutral-200 pt-8 mb-10">
             <p className="text-xs font-mono tracking-widest text-neutral-500 mb-3 uppercase">Your agent endpoint</p>
             <p className="text-sm text-neutral-600 mb-3">
               Buying agents discover you via the central MCP at{' '}
@@ -92,10 +106,9 @@ export default async function SellerAdminPage({
           <div className="border-t border-neutral-200 pt-8">
             <p className="text-xs font-mono tracking-widest text-neutral-500 mb-3 uppercase">Coming next</p>
             <ul className="text-sm text-neutral-600 leading-relaxed space-y-1">
-              <li>· Sales Agent training chat (DeepSeek + memory store)</li>
-              <li>· Products manager (Shopify sync / CSV / manual)</li>
-              <li>· Sales + USDC payout history</li>
-              <li>· Public seller card at {`getvia.xyz/sellers/${seller.slug}`}</li>
+              <li>&middot; Products manager (Shopify sync / CSV / manual)</li>
+              <li>&middot; Sales + USDC payout history</li>
+              <li>&middot; Public seller card at {`getvia.xyz/sellers/${seller.slug}`}</li>
             </ul>
           </div>
 

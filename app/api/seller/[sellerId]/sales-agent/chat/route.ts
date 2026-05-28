@@ -1,12 +1,13 @@
 /**
- * POST /api/seller/[sellerId]/concierge/chat
+ * POST /api/seller/[sellerId]/sales-agent/chat
  *
- * Admin chat surface for the Brand Concierge. Accessible by:
- *   - super-admin via admin_token cookie (ADMIN_SECRET)
- *   - brand admin via Supabase session + app_seller_members membership
+ * Sales Agent training chat. Accessible by:
+ *   - super-admin via admin_token cookie (ADMIN_SECRET), OR
+ *   - the seller's owner (app_sellers.owner_user_id === auth.users.id)
  *
- * Writes land in app_seller_memories, which the per-brand nanobot on Box
- * reads via the same-name tools. Admin and Telegram see the same memory.
+ * Writes land in app_seller_memories via app_seller_memory_upsert RPC.
+ * The per-seller MCP route at /sellers/[slug]/mcp reads the same store
+ * via app_seller_memory_list when ask_sales_agent is invoked.
  */
 import { NextRequest, NextResponse } from 'next/server';
 import { isAdminFromCookies } from '@/lib/app/auth';
