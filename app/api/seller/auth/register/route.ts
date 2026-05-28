@@ -3,7 +3,6 @@ import { setBrandAuthCookies, supabaseAdmin } from '@/lib/app/seller-auth';
 import { db } from '@/lib/app/db';
 import { createClient } from '@supabase/supabase-js';
 import { ethers } from 'ethers';
-import { randomBytes } from 'crypto';
 
 export const dynamic = 'force-dynamic';
 
@@ -13,180 +12,139 @@ const supabase = createClient(
 );
 
 /**
- * POST /api/seller/auth/register — brand self-registration (application)
+ * POST /api/seller/auth/register — self-serve seller onboarding commit.
  *
- * Body: { email, wallet, sellerName, applicationText, oauthRegistration: true }
+ * Body:
+ *   {
+ *     email:        string,
+ *     password:     string,
+ *     sellerName:   string,
+ *     slug:         string,       // pre-validated client-side, normalised here too
+ *     kind:         'product' | 'service' | 'mixed',
+ *     description?: string,
+ *     headline?:    string,
+ *     websiteUrl?:  string,
+ *     walletAddress: string,      // checksummed Base address; payouts land here
+ *   }
  *
- * Creates a Supabase Auth user, an app_sellers record (status: 'pending'),
- * and an app_seller_members record. The brand is NOT active until a
- * super-admin approves it via /api/rrg/admin/brands/approve.
+ * What it does:
+ *   1. Creates an auto-confirmed Supabase Auth user with the supplied
+ *      password (so the wizard can proceed without an email round-trip).
+ *      Falls back to updating an existing user's password if email reused.
+ *   2. Signs the user in to get a session and sets sb-access-token /
+ *      sb-refresh-token cookies.
+ *   3. Inserts app_sellers with active=true and the wizard's data.
+ *   4. Returns { seller: { id, slug, name } } so the wizard can redirect.
+ *
+ * Out of scope (separate endpoint or follow-up commit):
+ *   - ERC-8004 minting for the seller entity + Sales Agent. The new seller
+ *     can trigger it from the dashboard, and onboarding-step 4 calls
+ *     /api/seller/identity/mint after this returns 200.
  */
 export async function POST(req: NextRequest) {
-  try {
-    const { email, wallet, sellerName, applicationText, oauthRegistration } = await req.json();
+  let body: Record<string, unknown>;
+  try { body = await req.json(); } catch { return NextResponse.json({ error: 'invalid JSON body' }, { status: 400 }); }
 
-    const isOAuth = oauthRegistration === true;
+  const email         = String(body.email ?? '').trim().toLowerCase();
+  const password      = String(body.password ?? '');
+  const sellerName    = String(body.sellerName ?? '').trim();
+  const slugInput     = String(body.slug ?? '').trim().toLowerCase();
+  const kind          = String(body.kind ?? '');
+  const description   = body.description  ? String(body.description).trim()  : null;
+  const headline      = body.headline     ? String(body.headline).trim()     : null;
+  const websiteUrl    = body.websiteUrl   ? String(body.websiteUrl).trim()   : null;
+  const walletAddress = String(body.walletAddress ?? '').trim();
 
-    if (!email || !wallet || !sellerName?.trim()) {
-      return NextResponse.json(
-        { error: 'Email, wallet address, and brand name are required' },
-        { status: 400 },
-      );
-    }
+  // ── Validate input ──────────────────────────────────────────────────
+  if (!email || !email.includes('@'))                 return NextResponse.json({ error: 'valid email required' },          { status: 400 });
+  if (!password || password.length < 8)               return NextResponse.json({ error: 'password must be 8+ characters' }, { status: 400 });
+  if (!sellerName)                                    return NextResponse.json({ error: 'business name required' },         { status: 400 });
+  if (!['product','service','mixed'].includes(kind))  return NextResponse.json({ error: "kind must be 'product', 'service', or 'mixed'" }, { status: 400 });
+  if (!ethers.isAddress(walletAddress))               return NextResponse.json({ error: 'invalid Base wallet address' },    { status: 400 });
+  const wallet = walletAddress.toLowerCase();
 
-    // Validate wallet address
-    if (!ethers.isAddress(wallet)) {
-      return NextResponse.json({ error: 'Invalid wallet address' }, { status: 400 });
-    }
+  // Normalise slug: alphanumerics + hyphens, max 60 chars.
+  const slug = (slugInput || sellerName)
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-|-$/g, '')
+    .slice(0, 60);
+  if (!slug) return NextResponse.json({ error: 'business name must contain alphanumeric characters' }, { status: 400 });
 
-    const walletLower = wallet.toLowerCase();
-
-    // Generate a slug from brand name
-    const slug = sellerName
-      .trim()
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, '-')
-      .replace(/^-|-$/g, '')
-      .slice(0, 60);
-
-    if (!slug) {
-      return NextResponse.json({ error: 'Brand name must contain alphanumeric characters' }, { status: 400 });
-    }
-
-    // Check if slug already exists
-    const { data: existingBrand } = await db
-      .from('app_sellers')
-      .select('id')
-      .eq('slug', slug)
-      .maybeSingle();
-
-    if (existingBrand) {
-      return NextResponse.json(
-        { error: 'A brand with a similar name already exists. Please choose a different name.' },
-        { status: 409 },
-      );
-    }
-
-    // ── Create or find Supabase Auth user ──────────────────────────────
-    const effectivePassword = isOAuth
-      ? randomBytes(32).toString('base64url')
-      : randomBytes(32).toString('base64url'); // always random — brands use OAuth
-
-    let userId: string;
-    let accessToken: string;
-    let refreshToken: string;
-
-    const { data: adminUser, error: adminErr } = await supabaseAdmin.auth.admin.createUser({
-      email,
-      password: effectivePassword,
-      email_confirm: true,
-      user_metadata: { brand_wallet: walletLower },
-    });
-
-    if (adminErr) {
-      // User may already exist (e.g. registered as creator)
-      const { data: { users } } = await supabaseAdmin.auth.admin.listUsers({ page: 1, perPage: 500 });
-      const existingUser = users?.find((u) => u.email === email);
-      if (!existingUser) {
-        return NextResponse.json(
-          { error: 'Could not create account. Please try again.' },
-          { status: 409 },
-        );
-      }
-      userId = existingUser.id;
-
-      // Check if they already have a brand membership
-      const { data: existingMember } = await db
-        .from('app_seller_members')
-        .select('id')
-        .eq('user_id', userId)
-        .maybeSingle();
-
-      if (existingMember) {
-        return NextResponse.json(
-          { error: 'A brand account already exists for this email. Please use Login instead.' },
-          { status: 409 },
-        );
-      }
-
-      // Generate session tokens
-      const tempPassword = randomBytes(32).toString('base64url');
-      await supabaseAdmin.auth.admin.updateUserById(existingUser.id, { password: tempPassword });
-      const { data: signIn, error: signInErr } = await supabase.auth.signInWithPassword({
-        email,
-        password: tempPassword,
-      });
-      if (signInErr || !signIn.session) {
-        return NextResponse.json({ error: 'Account exists but session creation failed' }, { status: 500 });
-      }
-      accessToken  = signIn.session.access_token;
-      refreshToken = signIn.session.refresh_token;
-    } else {
-      userId = adminUser.user.id;
-      const { data: signIn, error: signInErr } = await supabase.auth.signInWithPassword({
-        email,
-        password: effectivePassword,
-      });
-      if (signInErr || !signIn.session) {
-        return NextResponse.json({ error: 'Account created but sign-in failed' }, { status: 500 });
-      }
-      accessToken  = signIn.session.access_token;
-      refreshToken = signIn.session.refresh_token;
-    }
-
-    // ── Create brand record (pending) ──────────────────────────────────
-    const { data: brand, error: brandErr } = await db
-      .from('app_sellers')
-      .insert({
-        name:             sellerName.trim(),
-        slug,
-        contact_email:    email,
-        wallet_address:   walletLower,
-        status:           'pending',
-        application_text: applicationText?.trim() || null,
-        created_by:       userId,
-      })
-      .select('id, name, slug, status')
-      .single();
-
-    if (brandErr) {
-      console.error('[brand/register] brand insert failed:', brandErr);
-      if (brandErr.code === '23505') {
-        return NextResponse.json({ error: 'Brand name or slug already taken' }, { status: 409 });
-      }
-      return NextResponse.json({ error: 'Failed to create brand record' }, { status: 500 });
-    }
-
-    // ── Create brand membership ────────────────────────────────────────
-    const { error: memberErr } = await db
-      .from('app_seller_members')
-      .insert({
-        brand_id: brand.id,
-        user_id:  userId,
-        role:     'admin',
-      });
-
-    if (memberErr) {
-      console.error('[brand/register] member insert failed:', memberErr);
-      return NextResponse.json({ error: 'Failed to create brand membership' }, { status: 500 });
-    }
-
-    const response = NextResponse.json({
-      user: { id: userId, email },
-      brand: {
-        id:     brand.id,
-        name:   brand.name,
-        slug:   brand.slug,
-        status: brand.status,
-      },
-      pending: true,
-      message: 'Your brand application has been submitted and is pending review.',
-    });
-
-    setBrandAuthCookies(response, accessToken, refreshToken);
-    return response;
-  } catch (err) {
-    console.error('[/api/seller/auth/register]', err);
-    return NextResponse.json({ error: 'Registration failed' }, { status: 500 });
+  // ── Slug uniqueness check ──────────────────────────────────────────
+  const { data: existing } = await db.from('app_sellers').select('id').eq('slug', slug).maybeSingle();
+  if (existing) {
+    return NextResponse.json({ error: `slug "${slug}" already taken — please choose a different business name` }, { status: 409 });
   }
+
+  // ── Create or recover the Supabase auth user ────────────────────────
+  let userId: string;
+  let accessToken: string;
+  let refreshToken: string;
+
+  const { data: created, error: createErr } = await supabaseAdmin.auth.admin.createUser({
+    email,
+    password,
+    email_confirm: true,
+    user_metadata: { source: 'via_app_onboard', wallet_address: wallet },
+  });
+
+  if (createErr) {
+    // User already exists — verify they don't already own a seller, then
+    // reset password to the one supplied so the session sign-in works.
+    const { data: list } = await supabaseAdmin.auth.admin.listUsers({ page: 1, perPage: 500 });
+    const found = list?.users?.find((u: { email?: string | null; id: string }) => u.email?.toLowerCase() === email);
+    if (!found) return NextResponse.json({ error: 'could not create or find user account' }, { status: 500 });
+
+    const { data: priorSeller } = await db.from('app_sellers').select('slug').eq('owner_user_id', found.id).maybeSingle();
+    if (priorSeller) {
+      return NextResponse.json({ error: `this email already owns "${priorSeller.slug}" — sign in instead` }, { status: 409 });
+    }
+    await supabaseAdmin.auth.admin.updateUserById(found.id, { password });
+    userId = found.id;
+  } else {
+    userId = created.user.id;
+  }
+
+  // Sign in to mint a session.
+  const { data: signIn, error: signInErr } = await supabase.auth.signInWithPassword({ email, password });
+  if (signInErr || !signIn.session) {
+    console.error('[onboard/register] signIn failed', signInErr);
+    return NextResponse.json({ error: 'account created but sign-in failed; please use Login' }, { status: 500 });
+  }
+  accessToken  = signIn.session.access_token;
+  refreshToken = signIn.session.refresh_token;
+
+  // ── Insert seller row ───────────────────────────────────────────────
+  const { data: seller, error: sellerErr } = await db
+    .from('app_sellers')
+    .insert({
+      slug,
+      name:          sellerName,
+      kind,
+      contact_email: email,
+      owner_user_id: userId,
+      website_url:   websiteUrl,
+      description,
+      headline,
+      wallet_address: wallet,
+      active:         true,
+    })
+    .select('id, slug, name, kind')
+    .single();
+
+  if (sellerErr || !seller) {
+    console.error('[onboard/register] app_sellers insert failed', sellerErr);
+    if (sellerErr?.code === '23505') {
+      return NextResponse.json({ error: 'slug taken (race) — pick a different name' }, { status: 409 });
+    }
+    return NextResponse.json({ error: 'failed to create seller record' }, { status: 500 });
+  }
+
+  const response = NextResponse.json({
+    seller: { id: seller.id, slug: seller.slug, name: seller.name, kind: seller.kind },
+    redirect_to: `/seller/${seller.slug}/admin/sales-agent`,
+  });
+  setBrandAuthCookies(response, accessToken, refreshToken);
+  return response;
 }
