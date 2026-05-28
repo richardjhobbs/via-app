@@ -1,6 +1,6 @@
 import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
-import { db } from '@/lib/rrg/db';
+import { db } from '@/lib/app/db';
 import type { Agent } from './types';
 
 const AGENT_SESSION_COOKIE = 'via_agent_session';

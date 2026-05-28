@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Cross-matches rrg_purchases against on-chain transfer history (Blockscout V2) for every wallet
+// Cross-matches app_purchases against on-chain transfer history (Blockscout V2) for every wallet
 // in the register. Produces a single comprehensive markdown report at
 // docs/wallet-matching-{TODAY}.md so Colin can pre-populate Zoho.
 //
@@ -13,7 +13,7 @@ const PURCHASES_PATH = process.argv[2] || null;
 const USDC = '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913';
 const TODAY = new Date().toISOString().slice(0, 10);
 
-// Wallets we pull on-chain history for. Any tx_hash referenced by rrg_purchases on `network='base'`
+// Wallets we pull on-chain history for. Any tx_hash referenced by app_purchases on `network='base'`
 // should appear on at least one of these wallets' history.
 const WATCHED = [
   { label: 'PLATFORM_WALLET',           addr: '0xbfd71eA27FFc99747dA2873372f84346d9A8b7ed' },
@@ -75,10 +75,10 @@ if (PURCHASES_PATH) {
     return [l.slice(0, i).trim(), l.slice(i + 1).trim()];
   }));
   const sb = createClient(env.NEXT_PUBLIC_SUPABASE_URL, env.SUPABASE_SERVICE_ROLE_KEY || env.SUPABASE_SERVICE_KEY);
-  console.error('Querying rrg_purchases live from Supabase...');
+  console.error('Querying app_purchases live from Supabase...');
   const { data, error } = await sb
-    .from('rrg_purchases')
-    .select('id, created_at, tx_hash, payout_tx_hashes, amount_usdc, split_creator_usdc, split_brand_usdc, split_platform_usdc, split_model, brand_pct_applied, payment_method, network, buyer_wallet, token_id, brand_id, rrg_brands(name, slug)')
+    .from('app_purchases')
+    .select('id, created_at, tx_hash, payout_tx_hashes, amount_usdc, split_creator_usdc, split_brand_usdc, split_platform_usdc, split_model, brand_pct_applied, payment_method, network, buyer_wallet, token_id, brand_id, app_sellers(name, slug)')
     .order('created_at', { ascending: false });
   if (error) throw error;
   purchasesDoc = {
@@ -99,8 +99,8 @@ if (PURCHASES_PATH) {
       network: r.network,
       buyer_wallet: r.buyer_wallet,
       token_id: r.token_id,
-      brand_name: r.rrg_brands?.name || null,
-      slug: r.rrg_brands?.slug || null,
+      brand_name: r.app_sellers?.name || null,
+      slug: r.app_sellers?.slug || null,
     })),
   };
   console.error(`  loaded ${purchasesDoc.rows.length} rows`);
@@ -125,7 +125,7 @@ for (let i = 0; i < WATCHED.length; i += 4) {
 }
 
 // The wallet-level pull caps at 30 pages and gets crowded with phishing tokens for older history.
-// To match every purchase reliably, we also do a per-tx lookup for any rrg_purchases.tx_hash
+// To match every purchase reliably, we also do a per-tx lookup for any app_purchases.tx_hash
 // (and payout leg) that the wallet pull didn't catch. This is the authoritative match.
 console.error(`Verifying every purchase tx hash on BOTH Base mainnet and Base Sepolia...`);
 async function lookupTxOnChain(hash, chainHost) {
@@ -229,7 +229,7 @@ for (const m of realMainnet) {
   });
 }
 
-// Find on-chain mainnet tx that don't correspond to any rrg_purchases row (or its payout legs).
+// Find on-chain mainnet tx that don't correspond to any app_purchases row (or its payout legs).
 const purchaseHashes = new Set();
 for (const p of purchases) {
   if (p.tx_hash) purchaseHashes.add(p.tx_hash.toLowerCase());
@@ -255,7 +255,7 @@ const orphanGross = orphan.reduce((a, m) => a + Number(m.purchase.amount_usdc), 
 // Build markdown.
 let md = `# Wallet Matching Report: Pre-classified Ledger for Colin\n\n`;
 md += `Generated ${TODAY}. Source: ${PURCHASES_PATH ? `\`${PURCHASES_PATH}\` (snapshot ${purchasesDoc.snapshotDate})` : 'live Supabase query'}, ${purchases.length} purchase rows. Every \`tx_hash\` and payout-leg hash was verified against BOTH Base mainnet (https://base.blockscout.com) and Base Sepolia (https://base-sepolia.blockscout.com) to determine its actual chain.\n\n`;
-md += `**Note on data quality.** The Sepolia testnet rows were removed from \`rrg_purchases\` on 2026-05-10 (testnet has no accounting value). The \`network\` column for remaining rows was backfilled to match the verified chain. Going forward, the column should be reliable. Orphan rows (tx not found on either chain) are listed in section 5 for manual review.\n\n`;
+md += `**Note on data quality.** The Sepolia testnet rows were removed from \`app_purchases\` on 2026-05-10 (testnet has no accounting value). The \`network\` column for remaining rows was backfilled to match the verified chain. Going forward, the column should be reliable. Orphan rows (tx not found on either chain) are listed in section 5 for manual review.\n\n`;
 
 md += `## 1. Summary by verified chain\n\n`;
 md += `| Category | Rows | Gross USDC | Action |\n`;
@@ -326,7 +326,7 @@ if (orphan.length === 0) {
 }
 
 md += `\n## 6. Unaccounted on-chain USDC tx (need Richard's classification)\n\n`;
-md += `These USDC transfers hit a watched wallet on Base mainnet but do NOT correspond to any \`rrg_purchases.tx_hash\` or \`payout_tx_hashes\` value. They are top-ups, manual sends, gas rebates, agent micropayments, refunds, or other off-platform activity. Each needs a one-line classification before booking.\n\n`;
+md += `These USDC transfers hit a watched wallet on Base mainnet but do NOT correspond to any \`app_purchases.tx_hash\` or \`payout_tx_hashes\` value. They are top-ups, manual sends, gas rebates, agent micropayments, refunds, or other off-platform activity. Each needs a one-line classification before booking.\n\n`;
 md += `| Date | Wallet | Direction | USDC | Counterparty | Tx |\n|------|--------|-----------|-----:|--------------|----|\n`;
 const sorted = unaccountedTxs.slice().sort((a, b) => (b.events[0]?.ts || '').localeCompare(a.events[0]?.ts || ''));
 for (const u of sorted) {
@@ -340,7 +340,7 @@ md += `\n## 7. Counterparty key\n\n`;
 md += `Identities for addresses that recur in the ledger. Treat unknown addresses as external and do not auto-classify them.\n\n`;
 md += `| Address | Identity | Source |\n|---------|----------|--------|\n`;
 md += `| \`0xbfd71eA27FFc99747dA2873372f84346d9A8b7ed\` | RRG / PLATFORM_WALLET | docs/wallets.md section 1 |\n`;
-md += `| \`0x369d04f08f245454926ac96a0164a634fd94660b\` | DEPLOYER (gas signer; also test buyer on 4 mainnet purchases) | docs/wallets.md section 1 + rrg_purchases |\n`;
+md += `| \`0x369d04f08f245454926ac96a0164a634fd94660b\` | DEPLOYER (gas signer; also test buyer on 4 mainnet purchases) | docs/wallets.md section 1 + app_purchases |\n`;
 md += `| \`0xe653804032A2d51Cc031795afC601B9b1fd2c375\` | DrHobbs personal | docs/wallets.md section 1 + 2 |\n`;
 md += `| \`0x58554E8423EF5C10be6fFC82EfABA9149f64de3d\` | VIA Team Wallet | docs/wallets.md section 1 |\n`;
 md += `| \`0x61e01997e6a0C692656e94955c67CB3ebcAb8f19\` | East Coast Cassettes pre-handoff | docs/wallets.md section 2 |\n`;
@@ -357,11 +357,11 @@ md += `| \`0x699e234a877ba075e1f16abb63f895a8a2250388\` | The Year Of... brand w
 md += `| \`0xe7ed24a6a66170070c725451c003917da83871da\` | Unknown Union brand wallet | docs/wallets.md section 3 |\n`;
 md += `| \`0x734a25fB869ab6415b78bbe9a39f1f99dab349E7\` | Shared holding wallet | docs/wallets.md section 4 |\n`;
 md += `| \`0x891c13aa323378637404efd971553a3a6df5aaf1\` | Nolo handoff intermediary | docs/wallets.md section 5 |\n`;
-md += `| \`0x0e0ef55048fb7b68b06dec7a6413b086a7ec029a\` | Original RRG creator (token 13); also a buyer on 1 mainnet purchase | docs/wallets.md section 5 + rrg_purchases |\n`;
+md += `| \`0x0e0ef55048fb7b68b06dec7a6413b086a7ec029a\` | Original RRG creator (token 13); also a buyer on 1 mainnet purchase | docs/wallets.md section 5 + app_purchases |\n`;
 md += `| \`0xf2e7289889ea5ecc557439a134906f77a1d64b3e\` | Artemist original creator (token 44) | docs/wallets.md section 5 |\n`;
-md += `| \`0xf7bba988b1e9f28dcb293ed564b57f965ae1ec2b\` | RRG submission original creator (tokens 12, 19); also a buyer on 1 mainnet purchase | docs/wallets.md section 5 + rrg_purchases |\n`;
+md += `| \`0xf7bba988b1e9f28dcb293ed564b57f965ae1ec2b\` | RRG submission original creator (tokens 12, 19); also a buyer on 1 mainnet purchase | docs/wallets.md section 5 + app_purchases |\n`;
 md += `| \`0x9f783931cedc82c538028fb9be5289a38bc395df\` | EOA, holdings exclusively RRG ERC-1155 NFTs across 3 contract versions (live + 2 deprecated). No ETH balance, no other on-chain activity, no ENS / Basename. Pattern matches a sponsored / gasless mint flow (Privy, Coinbase Smart Wallet w/ paymaster, or RRG's own gasless onramp). Originally appeared as buyer for token 17 on 2026-03-08; that row was on Sepolia and deleted in the 2026-05-10 cleanup. **Recommended Zoho:** "External buyer (anonymous EOA, RRG-only history)" if it ever reappears as a mainnet buyer. Confidence: high it's an EOA, low on real-world identity. | Blockscout V2 verified, see [agent investigation](#) |\n`;
-md += `| \`0x25B22971892B7314c36EC6DCfB5537500d50Ea35\` | Sepolia test buyer (1 row, 2026-03-16) on a row deleted in the 2026-05-10 cleanup. Treat as external test counterparty if it reappears | rrg_purchases (Sepolia, since deleted) |\n`;
+md += `| \`0x25B22971892B7314c36EC6DCfB5537500d50Ea35\` | Sepolia test buyer (1 row, 2026-03-16) on a row deleted in the 2026-05-10 cleanup. Treat as external test counterparty if it reappears | app_purchases (Sepolia, since deleted) |\n`;
 md += `| \`0xe3478b0BB1A5084567C319096437924948Be1964\` | **MetaMask: Gas Station Swap** (publicly tagged on Etherscan). MetaMask's swap-fee collection EOA, used to skim the ~0.875% MetaMask swap fee from in-app swaps. On-chain profile: 432K+ token transfers received, ~20 tx sent, 47 ETH on Base, ~$3.7M multichain. Confidence: HIGH (Etherscan public name tag is explicit and the activity profile matches a fee-sweeper). The 0.00-0.01 USDC line items in DFW history are MetaMask swap fees, paired in the same tx with the actual swap output. **Recommended Zoho:** "Infrastructure / wallet-provider swap fees (MetaMask)", same category as gas / network fees. Reconcile each fee leg to its parent swap tx, not as standalone vendor payments. | Etherscan public tag + Blockscout activity profile |\n`;
 
 md += `\n## 8. Process for Colin going forward\n\n`;

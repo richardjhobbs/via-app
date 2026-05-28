@@ -38,11 +38,11 @@ npm run dev
 
 ## Architecture in one paragraph
 
-Next.js App Router. `app/api/rrg/*` is the platform API surface. `app/api/brand/[brandId]/*` is brand-side admin. `app/api/agent/*` is the consumer-agent API. `app/mcp/route.ts` is the platform MCP endpoint (`realrealgenuine.com/mcp`); per-brand MCPs live at `app/brand/[slug]/mcp/route.ts`. `lib/rrg/*` is the platform business logic (`splits.ts`, `auto-payout.ts`, `marketing-outreach.ts`, `marketing-discovery.ts`, `erc8004.ts`, etc.); `lib/agent/*` is the consumer-agent runtime (`brain.ts`, `core-prompt.ts`, `credits.ts`, `via-tools-spec.ts`). Production runs as `rrg-app` PM2 process on port 3001, reverse-proxied by nginx.
+Next.js App Router. `app/api/rrg/*` is the platform API surface. `app/api/seller/[sellerId]/*` is brand-side admin. `app/api/agent/*` is the consumer-agent API. `app/mcp/route.ts` is the platform MCP endpoint (`realrealgenuine.com/mcp`); per-brand MCPs live at `app/brand/[slug]/mcp/route.ts`. `lib/app/*` is the platform business logic (`splits.ts`, `auto-payout.ts`, `marketing-outreach.ts`, `marketing-discovery.ts`, `erc8004.ts`, etc.); `lib/agent/*` is the consumer-agent runtime (`brain.ts`, `core-prompt.ts`, `credits.ts`, `via-tools-spec.ts`). Production runs as `rrg-app` PM2 process on port 3001, reverse-proxied by nginx.
 
 ## Things to NEVER touch without thinking twice
 
-- `lib/rrg/splits.ts` and `lib/rrg/auto-payout.ts` — the on-chain payment routing. Wrong changes mean real USDC loss. See [via_payment_primitive_lessons.md](../../.claude/projects/C--Users-Richard-Documents-rrg/memory/via_payment_primitive_lessons.md) for the seven design lessons from the registerDrop bug.
+- `lib/app/splits.ts` and `lib/app/auto-payout.ts` — the on-chain payment routing. Wrong changes mean real USDC loss. See [via_payment_primitive_lessons.md](../../.claude/projects/C--Users-Richard-Documents-rrg/memory/via_payment_primitive_lessons.md) for the seven design lessons from the registerDrop bug.
 - `contracts/RRG.sol` — the deployed ERC-1155 contract. Address `0x9F07621f73E7CAaF2040C35833D5350F666b7177` on Base mainnet. Migrations are post-mortems waiting to happen.
 - `.env.local` on VPS — `pm2 restart` does NOT pick up env changes. Use the full sequence in [vps_deployment.md](../../.claude/projects/C--Users-Richard-Documents-rrg/memory/vps_deployment.md).
 

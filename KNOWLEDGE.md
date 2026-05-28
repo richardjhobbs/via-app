@@ -468,7 +468,7 @@ No signing required — agent sends USDC directly to DrHobbs wallet:
 | ipfs_cid | text | Set after first purchase (Pinata) |
 | ipfs_url | text | IPFS gateway URL |
 
-### rrg_purchases
+### app_purchases
 | Column | Type | Notes |
 |---|---|---|
 | id | uuid | PK |

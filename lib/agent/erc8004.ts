@@ -1,6 +1,6 @@
 /**
  * ERC-8004 Trustless Agents — Identity & Reputation Registry integration.
- * Adapted from rrg/lib/rrg/erc8004.ts
+ * Adapted from rrg/lib/app/erc8004.ts
  *
  * Identity Registry:  0x8004A169FB4a3325136EB29fA0ceB6D2e539a432
  * Reputation Registry: 0x8004BAa17C55a88189AE136b182e5fdA19dE9b63

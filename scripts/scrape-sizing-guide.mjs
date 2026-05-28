@@ -124,31 +124,31 @@ const db = createClient(SUPABASE_URL, SUPABASE_KEY, { auth: { persistSession: fa
 
 // ── CLI ──────────────────────────────────────────────────────────────
 const args = process.argv.slice(2);
-const brandSlug = (() => {
+const sellerSlug = (() => {
   const i = args.indexOf('--brand');
   return i >= 0 ? args[i + 1] : null;
 })();
 const DRY_RUN = args.includes('--dry-run');
 
-if (!brandSlug || !SIZING_CONFIGS[brandSlug]) {
+if (!sellerSlug || !SIZING_CONFIGS[sellerSlug]) {
   console.error(`Usage: node scripts/scrape-sizing-guide.mjs --brand <slug>`);
   console.error(`Available: ${Object.keys(SIZING_CONFIGS).join(', ')}`);
   process.exit(1);
 }
 
-const cfg = SIZING_CONFIGS[brandSlug];
+const cfg = SIZING_CONFIGS[sellerSlug];
 
 // ── Main ─────────────────────────────────────────────────────────────
 (async () => {
   // Look up brand
   const { data: brand } = await db
-    .from('rrg_brands')
+    .from('app_sellers')
     .select('id, slug, name')
-    .eq('slug', brandSlug)
+    .eq('slug', sellerSlug)
     .single();
 
   if (!brand) {
-    console.error(`Brand "${brandSlug}" not found in rrg_brands. Run brand-mirror.mjs --seed-only first.`);
+    console.error(`Brand "${sellerSlug}" not found in app_sellers. Run brand-mirror.mjs --seed-only first.`);
     process.exit(1);
   }
 

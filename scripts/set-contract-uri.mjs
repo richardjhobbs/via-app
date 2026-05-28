@@ -10,7 +10,7 @@ const ABI = ['function setContractURI(string calldata newURI) external'];
 const provider = new ethers.JsonRpcProvider(process.env.NEXT_PUBLIC_BASE_RPC_URL);
 const signer = new ethers.Wallet(process.env.DEPLOYER_PRIVATE_KEY, provider);
 const contract = new ethers.Contract(
-  process.env.NEXT_PUBLIC_RRG_CONTRACT_ADDRESS,
+  process.env.NEXT_PUBLIC_VIA_CONTRACT_ADDRESS,
   ABI,
   signer
 );

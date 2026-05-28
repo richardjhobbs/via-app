@@ -1,6 +1,6 @@
 # Wallet Register
 
-Source of truth for accounting. All addresses are on Base mainnet (chain ID 8453) unless otherwise stated. Values pulled from Supabase (`rrg_brands`, `rrg_submissions`) on 2026-05-09 and from canonical memory files (`wallet_separation.md`, `via_labs_structure.md`).
+Source of truth for accounting. All addresses are on Base mainnet (chain ID 8453) unless otherwise stated. Values pulled from Supabase (`app_sellers`, `rrg_submissions`) on 2026-05-09 and from canonical memory files (`wallet_separation.md`, `via_labs_structure.md`).
 
 This file is the input for Agent Colin (admin) to build a chart of accounts and bookkeeping ledger. When a wallet is added, removed, or handed off to a brand owner, update this file and Colin's snapshot job.
 
@@ -10,7 +10,7 @@ These are the wallets that get topped up for operations. Treat as company-contro
 
 | Role | ERC-8004 ID | Address | Notes |
 |------|------|---------|-------|
-| RRG / PLATFORM_WALLET | 33313 | `0xbfd71eA27FFc99747dA2873372f84346d9A8b7ed` | Platform agent. Receives on-chain 70% (or 97.5% for brand-owned drops) at sale. All RRG outreach, x402 receipts, marketing-oracle disbursements. Also the wallet referenced by `process.env.NEXT_PUBLIC_PLATFORM_WALLET` runtime fallback in `lib/rrg/splits.ts`, `lib/rrg/sendUsdc.ts`, `lib/rrg/mpp.ts`. |
+| RRG / PLATFORM_WALLET | 33313 | `0xbfd71eA27FFc99747dA2873372f84346d9A8b7ed` | Platform agent. Receives on-chain 70% (or 97.5% for brand-owned drops) at sale. All RRG outreach, x402 receipts, marketing-oracle disbursements. Also the wallet referenced by `process.env.NEXT_PUBLIC_PLATFORM_WALLET` runtime fallback in `lib/app/splits.ts`, `lib/app/sendUsdc.ts`, `lib/app/mpp.ts`. |
 | DEPLOYER | 26244 | `0x369d04f08f245454926ac96a0164a634fd94660b` | Gas-only signer. Pays gas for `operatorMint` and ERC-8004 `submitFeedback`. Should hold ETH on Base only, no USDC. Cost centre. |
 | VIA Team Wallet | (owns #38538) | `0x58554E8423EF5C10be6fFC82EfABA9149f64de3d` | VIA Labs corporate. Owns staff and company NFTs. Owner of VIA Labs agent #38538 (getvia.xyz). x402 corporate wallet. Also the on-chain creator of two Digital Fashion Week tokens (42, 43). |
 | DrHobbs (personal) | 17666 | `0xe653804032A2d51Cc031795afC601B9b1fd2c375` | Richard's personal agent. Knowledge marketplace, x402, fashion-tech experiments. NOT used for RRG platform flows. Also flagged as a personal-pre-handoff wallet (see section 2) and historic on-chain creator of several test tokens. |
@@ -28,7 +28,7 @@ Owned by Richard. Used as the brand `wallet_address` while a brand is in pre-han
 
 ## 3. Brand-owned wallets (handed off, brand controls funds)
 
-Inbound USDC to these is the brand's cash. Platform sees only the 2.5% commission, paid via `lib/rrg/auto-payout.ts` before the brand transfer.
+Inbound USDC to these is the brand's cash. Platform sees only the 2.5% commission, paid via `lib/app/auto-payout.ts` before the brand transfer.
 
 | Brand | Slug | Wallet | DB status | Token range | Token count |
 |-------|------|--------|-----------|-------------|-------------|
@@ -139,18 +139,18 @@ Deprecated RRG contract addresses (no current live drops, but historic txs may r
 
 ## 8. Operational note: keeping this file fresh
 
-Authoritative live source for brand wallets is the `wallet_address` column in `rrg_brands`. For token-level attribution it is `creator_wallet` in `rrg_submissions`. Recommended Colin job (daily):
+Authoritative live source for brand wallets is the `wallet_address` column in `app_sellers`. For token-level attribution it is `creator_wallet` in `rrg_submissions`. Recommended Colin job (daily):
 
 ```sql
 -- Brand wallets
 SELECT id, name, slug, wallet_address, status, onboarding_status, tier, contact_email
-FROM rrg_brands
+FROM app_sellers
 ORDER BY created_at;
 
 -- Token creators
 SELECT s.creator_wallet, b.name, b.slug, COUNT(*) AS tokens, MIN(s.token_id) AS min_t, MAX(s.token_id) AS max_t
 FROM rrg_submissions s
-LEFT JOIN rrg_brands b ON s.brand_id = b.id
+LEFT JOIN app_sellers b ON s.brand_id = b.id
 WHERE s.creator_wallet IS NOT NULL AND s.token_id IS NOT NULL
 GROUP BY s.creator_wallet, b.name, b.slug
 ORDER BY s.creator_wallet, b.name;
@@ -161,13 +161,13 @@ A daily diff against the prior snapshot will catch:
 - Handoffs (brand wallet changes from holding wallet to brand-owned).
 - New tokens minted (extends token ranges).
 
-`.env.example` line 14 currently shows `NEXT_PUBLIC_PLATFORM_WALLET=0xe653804032A2d51Cc031795afC601B9b1fd2c375` (the DrHobbs address). Production env on the VPS uses the RRG wallet, and the runtime fallback in `lib/rrg/splits.ts` and elsewhere is also the RRG wallet, so live behaviour is correct. The example file is misleading and should be corrected in a follow-up.
+`.env.example` line 14 currently shows `NEXT_PUBLIC_PLATFORM_WALLET=0xe653804032A2d51Cc031795afC601B9b1fd2c375` (the DrHobbs address). Production env on the VPS uses the RRG wallet, and the runtime fallback in `lib/app/splits.ts` and elsewhere is also the RRG wallet, so live behaviour is correct. The example file is misleading and should be corrected in a follow-up.
 
 ## 9. Where to find transfer data for reconciliation
 
 Three sources, in order of preference:
 
-### 9.1 Internal: `rrg_purchases` table (Supabase)
+### 9.1 Internal: `app_purchases` table (Supabase)
 
 The platform's own ledger of sales. Authoritative for any RRG-mediated purchase. Project ID `sanvqnvvzdkjvfmxnxur`. Columns useful to Colin:
 
@@ -178,7 +178,7 @@ The platform's own ledger of sales. Authoritative for any RRG-mediated purchase.
 | `payout_tx_hashes` | Comma-separated tx hashes for the off-chain auto-payout to brand and platform shares |
 | `amount_usdc` | Gross USDC received from buyer |
 | `split_creator_usdc`, `split_brand_usdc`, `split_platform_usdc` | The three legs of the split |
-| `split_model` | `brand_product_flat`, `brand_product_tiered`, etc. Drives which split rule fires |
+| `split_model` | `brand_product_flat`, `seller_product_tiered`, etc. Drives which split rule fires |
 | `brand_pct_applied` | The actual percentage paid to the brand (default 97.5% for brand-owned) |
 | `buyer_wallet`, `buyer_email`, `buyer_type` | Counterparty for AR / customer subledger |
 | `network` | `base` for almost all current sales |
@@ -193,7 +193,7 @@ SELECT created_at::date AS d,
        SUM(split_brand_usdc) AS to_brand,
        SUM(split_platform_usdc) AS to_platform,
        SUM(split_creator_usdc) AS to_creator
-FROM rrg_purchases
+FROM app_purchases
 WHERE network = 'base'
   AND created_at >= '2026-02-01'
 GROUP BY 1 ORDER BY 1;
@@ -224,14 +224,14 @@ Reconciliation script in this repo: [`scripts/reconcile-wallets.mjs`](../scripts
 
 ### 9.4 Reconciliation cadence (suggested)
 
-- **Daily.** Pull the last 24h from Blockscout for the four core operating wallets (PLATFORM, DEPLOYER, holding, DrHobbs) and the four personal pre-handoff wallets. Diff against `rrg_purchases` `tx_hash` and `payout_tx_hashes` for the same period. Flag any tx not in `rrg_purchases` for manual classification.
+- **Daily.** Pull the last 24h from Blockscout for the four core operating wallets (PLATFORM, DEPLOYER, holding, DrHobbs) and the four personal pre-handoff wallets. Diff against `app_purchases` `tx_hash` and `payout_tx_hashes` for the same period. Flag any tx not in `app_purchases` for manual classification.
 - **Weekly.** Re-pull the 90-day window for the personal wallets (the four in section 2) and update the markdown report. Compare against the prior week's snapshot to catch any stale balances.
 - **Monthly.** Reconcile end-of-month balances on every wallet against the Zoho asset accounts. Discrepancy threshold: 0.01 USDC.
 - **At handoff.** When a brand is handed off, run the reconciliation script for both the old (holding or personal) wallet and the new brand-owned wallet over the full pre-handoff window. The token-range mismatches in section 3 of this doc are pre-existing as of 2026-05-09.
 
 ### 9.5 Pre-matched purchase ledger
 
-The reconciliation script in 9.2 covers the wallet-level on-chain history. To pre-match each `rrg_purchases` row against the on-chain tx (so daily booking is data-entry, not detective work), run the companion script:
+The reconciliation script in 9.2 covers the wallet-level on-chain history. To pre-match each `app_purchases` row against the on-chain tx (so daily booking is data-entry, not detective work), run the companion script:
 
 `node scripts/match-purchases.mjs` queries Supabase live (no JSON snapshot needed), verifies every tx_hash on both Base mainnet and Base Sepolia, and writes `docs/wallet-matching-{TODAY}.md`. Each purchase is categorised as: real mainnet (book), mislabelled (DO NOT BOOK), correctly-labelled Sepolia (DO NOT BOOK), or orphan (investigate). Section 2 of the report is the verified mainnet ledger. Section 6 is the unaccounted on-chain tx that need Richard's classification. Section 7 is the counterparty key.
 
@@ -241,12 +241,12 @@ First snapshot: [`wallet-matching-2026-05-10.md`](wallet-matching-2026-05-10.md)
 
 On 2026-05-10, [`scripts/fix-purchases-network.mjs`](../scripts/fix-purchases-network.mjs) was run with `--apply` to:
 
-- Verify every `rrg_purchases.tx_hash` against both Base mainnet and Base Sepolia via Blockscout.
+- Verify every `app_purchases.tx_hash` against both Base mainnet and Base Sepolia via Blockscout.
 - Update the `network` column for 13 rows mislabelled as `base-sepolia` but verified on mainnet (real April-May Clooudie / Frey / Nolo / Unknown Union sales).
 - Update the `network` column for 22 rows mislabelled as `base` but verified on Sepolia (intermediate step before delete).
 - DELETE 22 verified-Sepolia rows (testnet, no accounting value).
 
-After cleanup: 28 rows remain in `rrg_purchases`, all `network='base'`. Of those, 17 are verified on Base mainnet (book as revenue) and 11 are orphan rows whose tx is not found on either chain (March 10-13 cluster, gross 8.00 USDC, untouched pending Richard's review).
+After cleanup: 28 rows remain in `app_purchases`, all `network='base'`. Of those, 17 are verified on Base mainnet (book as revenue) and 11 are orphan rows whose tx is not found on either chain (March 10-13 cluster, gross 8.00 USDC, untouched pending Richard's review).
 
 Going forward, the `network` column should be reliable. Re-run the fix script after any re-deployment of the platform from a Sepolia-configured environment, and any time orphans need to be re-checked (Blockscout indexing can change).
 

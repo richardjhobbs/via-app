@@ -242,7 +242,7 @@ async function fetchFxToUsd(currency) {
   console.log(`Config saved:  ${cfgPath}`);
   console.log();
   console.log(`Operator reminder (show to user):`);
-  console.log(`  Add brand logo and main image in /admin/rrg Brands tab.`);
+  console.log(`  Add brand logo and main image in /admin Brands tab.`);
   console.log();
   console.log(`Claude must now do these without asking permission (single-instruction rule):`);
   console.log(`  1. Enhance every hidden product in this batch and flip hidden=false. Two tiers:`);

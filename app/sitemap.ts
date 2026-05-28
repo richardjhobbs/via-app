@@ -1,5 +1,5 @@
 import type { MetadataRoute } from 'next';
-import { db } from '@/lib/rrg/db';
+import { db } from '@/lib/app/db';
 
 export const revalidate = 3600;
 
@@ -20,7 +20,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   ];
 
   const { data: brands } = await db
-    .from('rrg_brands')
+    .from('app_sellers')
     .select('slug, updated_at')
     .eq('status', 'active');
 

@@ -29,7 +29,7 @@ const envVars = [
   { key: 'NEXT_PUBLIC_BASE_SEPOLIA_RPC_URL',      value: 'https://sepolia.base.org',                                  envs: ALL_ENVS },
   { key: 'NEXT_PUBLIC_USDC_CONTRACT_MAINNET',     value: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913',               envs: ALL_ENVS },
   { key: 'NEXT_PUBLIC_USDC_CONTRACT_TESTNET',     value: '0x036CbD53842c5426634e7929541eC2318f3dCF7e',               envs: ALL_ENVS },
-  { key: 'NEXT_PUBLIC_RRG_CONTRACT_ADDRESS',      value: '0x573fad302Be48df7D3A39B381e5E5e794619e174',               envs: ALL_ENVS },
+  { key: 'NEXT_PUBLIC_VIA_CONTRACT_ADDRESS',      value: '0x573fad302Be48df7D3A39B381e5E5e794619e174',               envs: ALL_ENVS },
   { key: 'NEXT_PUBLIC_CHAIN_ID',                  value: '84532',                                                     envs: ALL_ENVS },
   { key: 'NEXT_PUBLIC_PLATFORM_WALLET',           value: '0xe653804032A2d51Cc031795afC601B9b1fd2c375',               envs: ALL_ENVS },
   { key: 'NEXT_PUBLIC_SUPABASE_URL',              value: 'https://sanvqnvvzdkjvfmxnxur.supabase.co',                 envs: ALL_ENVS },

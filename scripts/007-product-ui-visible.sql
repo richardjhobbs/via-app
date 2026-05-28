@@ -12,7 +12,7 @@
 --   two predicates.
 --
 -- Default true so the migration is a no-op visually. Curation is opt-in:
--- admins flip the surplus rows to ui_visible=false from /admin/rrg or via
+-- admins flip the surplus rows to ui_visible=false from /admin or via
 -- a bulk SQL pass.
 --
 -- Idempotent — safe to re-run.
@@ -36,7 +36,7 @@ COMMIT;
 -- Run this *after* the migration if you want to immediately limit each
 -- brand to its 20 newest approved listings on the storefront, while
 -- leaving the full catalogue visible to MCP. Edit MAX_PER_BRAND to taste,
--- or skip and curate per-product from /admin/rrg.
+-- or skip and curate per-product from /admin.
 --
 -- WITH ranked AS (
 --   SELECT id,

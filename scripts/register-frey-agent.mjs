@@ -56,7 +56,7 @@ console.log();
 
 // Step 0: verify Frey brand row + that the wallet matches
 const { data: brand, error: e1 } = await db
-  .from('rrg_brands')
+  .from('app_sellers')
   .select('id, slug, name, wallet_address')
   .eq('slug', 'frey-tailored')
   .single();
@@ -103,7 +103,7 @@ const agentUri = JSON.stringify({
   capabilities: ['browse', 'size', 'stock', 'purchase'],
   categories: ['tailoring', 'womenswear', 'jackets', 'trousers', 'skirts', 'dresses', 'knitwear', 'silk'],
   platform: 'RRG',
-  brandSlug: 'frey-tailored',
+  sellerSlug: 'frey-tailored',
 });
 
 console.log(`[step 2] register(agentURI) on ${IDENTITY_REGISTRY}`);

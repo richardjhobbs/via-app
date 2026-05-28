@@ -42,7 +42,7 @@ const requireEnv = (k) => {
 const SUPABASE_URL    = requireEnv('NEXT_PUBLIC_SUPABASE_URL');
 const SUPABASE_KEY    = requireEnv('SUPABASE_SERVICE_KEY');
 const RPC_URL         = requireEnv('NEXT_PUBLIC_BASE_RPC_URL');
-const RRG_ADDR        = requireEnv('NEXT_PUBLIC_RRG_CONTRACT_ADDRESS');
+const RRG_ADDR        = requireEnv('NEXT_PUBLIC_VIA_CONTRACT_ADDRESS');
 const PLATFORM_WALLET = requireEnv('NEXT_PUBLIC_PLATFORM_WALLET').toLowerCase();
 
 const args = process.argv.slice(2);
@@ -93,13 +93,13 @@ async function getDropOnChain(tokenId) {
 
   let q = db
     .from('rrg_submissions')
-    .select('token_id, title, brand_id, price_usdc, edition_size, rrg_brands!inner(slug, wallet_address, status)')
+    .select('token_id, title, brand_id, price_usdc, edition_size, app_sellers!inner(slug, wallet_address, status)')
     .eq('is_brand_product', true)
     .eq('network', 'base')
     .eq('status', 'approved')
     .not('token_id', 'is', null)
     .order('token_id');
-  if (FILTER_BRAND) q = q.eq('rrg_brands.slug', FILTER_BRAND);
+  if (FILTER_BRAND) q = q.eq('app_sellers.slug', FILTER_BRAND);
 
   const { data: rows, error } = await q;
   if (error) { console.error(error); process.exit(1); }
@@ -130,7 +130,7 @@ async function getDropOnChain(tokenId) {
 
     for (let j = 0; j < batch.length; j++) {
       const r = batch[j];
-      const slug    = r.rrg_brands.slug;
+      const slug    = r.app_sellers.slug;
       const tokenId = r.token_id;
       if (!results.by_brand[slug]) results.by_brand[slug] = { total: 0, correct: 0, wrong: 0, unregistered: 0, paused: 0 };
       results.by_brand[slug].total++;
@@ -159,7 +159,7 @@ async function getDropOnChain(tokenId) {
           token_id:    tokenId,
           title:       r.title,
           brand_slug:  slug,
-          brand_wallet: r.rrg_brands.wallet_address,
+          brand_wallet: r.app_sellers.wallet_address,
           on_chain_creator: drop.creator,
           price_usdc: r.price_usdc,
           edition:    r.edition_size,

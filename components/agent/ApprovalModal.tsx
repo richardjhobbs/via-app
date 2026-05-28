@@ -18,7 +18,7 @@ import { prepareContractCall, sendTransaction, getContract } from 'thirdweb';
 import { base } from 'thirdweb/chains';
 import { useActiveAccount, ConnectEmbed, lightTheme } from 'thirdweb/react';
 import { inAppWallet, createWallet } from 'thirdweb/wallets';
-import { thirdwebClient } from '@/lib/rrg/thirdwebClient';
+import { thirdwebClient } from '@/lib/app/thirdwebClient';
 import { Button } from '@/components/ui/Button';
 
 const USDC_ADDRESS =

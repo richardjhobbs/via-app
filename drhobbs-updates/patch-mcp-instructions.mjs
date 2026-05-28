@@ -126,7 +126,7 @@ Optional: website_url, social_links.\`,
         ...(social_links ? { social_links: JSON.parse(social_links) } : {}),
       };
 
-      const resp = await fetch(\`\${CONFIG.rrgApiUrl}/api/brand/register\`, {
+      const resp = await fetch(\`\${CONFIG.rrgApiUrl}/api/seller/register\`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
@@ -166,7 +166,7 @@ Optional: website_url, social_links.\`,
   const oldToolsList = `{ name: "confirm_rrg_purchase",     description: "⭐ Confirm on-chain payment and claim your RRG NFT" },`;
   const newToolsList = `{ name: "confirm_rrg_purchase",     description: "⭐ Confirm on-chain payment and claim your RRG NFT" },
       { name: "register_rrg_brand",      description: "⭐ Register your own brand on Real Real Genuine — launch your storefront" },
-      { name: "list_rrg_brands",         description: "⭐ List all active brands on the platform" },`;
+      { name: "list_app_sellers",         description: "⭐ List all active brands on the platform" },`;
 
   code = code.replace(oldToolsList, newToolsList);
 
@@ -199,7 +199,7 @@ async function patchRrgInfo() {
           get_current_brief:    '\u2b50 Get the current open design brief \u2014 start here before submitting.',
           submit_rrg_design:    '\u2b50 Submit a design (image_path / image_url / image_base64 / image_chunks / ipfs_cid).',
           list_rrg_drops:       '\u2b50 List all active RRG NFT drops available for purchase.',
-          list_rrg_brands:      '\u2b50 List all active brands on the platform.',
+          list_app_sellers:      '\u2b50 List all active brands on the platform.',
           register_rrg_brand:   '\u2b50 Register your own brand \u2014 launch your storefront, create briefs, list products.',
           buy_rrg_drop:         'Get payment instructions to purchase a specific drop.',
           confirm_rrg_purchase: 'Confirm USDC payment and receive download link for purchased artwork.',

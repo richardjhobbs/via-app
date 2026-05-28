@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Backfills rrg_purchases.network based on verified-on-chain reality, then optionally deletes
+// Backfills app_purchases.network based on verified-on-chain reality, then optionally deletes
 // the Sepolia rows (testnet, no accounting value).
 //
 // Usage:
@@ -34,11 +34,11 @@ const sb = createClient(SUPABASE_URL, SUPABASE_KEY);
 console.error(`Mode: ${APPLY ? 'APPLY (will UPDATE and DELETE)' : 'DRY RUN (no writes)'}`);
 
 const { data: rows, error } = await sb
-  .from('rrg_purchases')
+  .from('app_purchases')
   .select('id, created_at, tx_hash, network, amount_usdc, buyer_wallet, token_id')
   .order('created_at', { ascending: false });
 if (error) throw error;
-console.error(`Loaded ${rows.length} rows from rrg_purchases.`);
+console.error(`Loaded ${rows.length} rows from app_purchases.`);
 
 async function fetchJson(url) {
   const r = await fetch(url);
@@ -108,7 +108,7 @@ console.error(`\n=== Applying ===`);
 
 if (toUpdateToBase.length > 0) {
   for (const r of toUpdateToBase) {
-    const { error: e } = await sb.from('rrg_purchases').update({ network: 'base' }).eq('id', r.id);
+    const { error: e } = await sb.from('app_purchases').update({ network: 'base' }).eq('id', r.id);
     if (e) console.error(`  UPDATE failed for ${r.id}: ${e.message}`);
   }
   console.error(`  updated ${toUpdateToBase.length} rows to network='base'`);
@@ -116,7 +116,7 @@ if (toUpdateToBase.length > 0) {
 
 if (toUpdateToSepolia.length > 0) {
   for (const r of toUpdateToSepolia) {
-    const { error: e } = await sb.from('rrg_purchases').update({ network: 'base-sepolia' }).eq('id', r.id);
+    const { error: e } = await sb.from('app_purchases').update({ network: 'base-sepolia' }).eq('id', r.id);
     if (e) console.error(`  UPDATE failed for ${r.id}: ${e.message}`);
   }
   console.error(`  updated ${toUpdateToSepolia.length} rows to network='base-sepolia'`);
@@ -124,7 +124,7 @@ if (toUpdateToSepolia.length > 0) {
 
 if (toDelete.length > 0) {
   for (const r of toDelete) {
-    const { error: e } = await sb.from('rrg_purchases').delete().eq('id', r.id);
+    const { error: e } = await sb.from('app_purchases').delete().eq('id', r.id);
     if (e) console.error(`  DELETE failed for ${r.id}: ${e.message}`);
   }
   console.error(`  deleted ${toDelete.length} Sepolia rows`);

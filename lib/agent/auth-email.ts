@@ -23,7 +23,7 @@
  */
 
 import crypto from 'crypto';
-import { db } from '@/lib/rrg/db';
+import { db } from '@/lib/app/db';
 
 const TOKEN_BYTES = 32;
 const TOKEN_TTL_MS = 15 * 60 * 1000;

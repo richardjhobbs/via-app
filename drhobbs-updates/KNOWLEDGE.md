@@ -381,7 +381,7 @@ const files = await fetch(
 | network | text | 'base' |
 | brief_id | uuid | FK → rrg_briefs (nullable) |
 
-### rrg_purchases
+### app_purchases
 | Column | Type | Notes |
 |---|---|---|
 | id | uuid | PK |
@@ -427,7 +427,7 @@ Sent via **Resend** from `deliver@richard-hobbs.com`:
 
 ## 10. Admin
 
-Admin panel at `/admin/rrg` (password protected via `ADMIN_SECRET`).
+Admin panel at `/admin` (password protected via `ADMIN_SECRET`).
 
 Functions:
 - View pending submissions

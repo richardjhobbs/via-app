@@ -5,7 +5,7 @@
  *
  * Crawls policy/page URLs on the brand's public site (Shopify pattern by
  * default), strips chrome to body text, sends each page to Claude Sonnet
- * 4.5 for structured extraction, and writes the result to rrg_brand_memories
+ * 4.5 for structured extraction, and writes the result to app_seller_memories
  * with source='import'. Re-runs are idempotent: prior memories with the same
  * structured.source_url get expired (active=false, valid_until=now()) before
  * the new ones land, so a brand's policies can be re-pulled cleanly.
@@ -209,8 +209,8 @@ Rules:
 - If the page is purely chrome (nav, "search results", a redirect), return { "entries": [] }.
 - Do not include sizing TABLES verbatim if they are large; capture the rules ("measure across the chest 2cm below the armpit") and reference the source URL.`;
 
-async function extractEntries({ url, slug, title, text, brandName, brandSlug }) {
-  const userPrompt = `Brand: ${brandName} (slug: ${brandSlug})
+async function extractEntries({ url, slug, title, text, sellerName, sellerSlug }) {
+  const userPrompt = `Brand: ${sellerName} (slug: ${sellerSlug})
 Source URL: ${url}
 Source slug: ${slug}
 Page <title>: ${title ?? '(none)'}
@@ -251,11 +251,11 @@ Return JSON only. Do not wrap in markdown.`;
 
 // ── DB writes ────────────────────────────────────────────────────────
 
-async function expirePriorForUrl(brandId, sourceUrl) {
+async function expirePriorForUrl(sellerId, sourceUrl) {
   const { data, error } = await db
-    .from('rrg_brand_memories')
+    .from('app_seller_memories')
     .update({ active: false, valid_until: new Date().toISOString() })
-    .eq('brand_id', brandId)
+    .eq('brand_id', sellerId)
     .eq('source', 'import')
     .eq('active', true)
     .filter('structured->>source_url', 'eq', sourceUrl)
@@ -291,7 +291,7 @@ async function insertEntry(brand, entry, sourceUrl) {
     session_id:         `ingest-${Date.now()}`,
   };
   const { data, error } = await db
-    .from('rrg_brand_memories')
+    .from('app_seller_memories')
     .insert(row)
     .select('id')
     .single();
@@ -306,7 +306,7 @@ async function insertEntry(brand, entry, sourceUrl) {
 
 async function getBrand() {
   const { data, error } = await db
-    .from('rrg_brands')
+    .from('app_sellers')
     .select('id, slug, name, website_url, shopify_domain')
     .eq('slug', BRAND_SLUG)
     .single();
@@ -406,8 +406,8 @@ function originFor(brand) {
     const slug = path.split('/').pop() || path;
     const { entries, tokensIn, tokensOut } = await extractEntries({
       url, slug, title, text,
-      brandName: brand.name,
-      brandSlug: brand.slug,
+      sellerName: brand.name,
+      sellerSlug: brand.slug,
     });
     totalIn += tokensIn; totalOut += tokensOut;
     console.log(`  → ${entries.length} entries (${tokensIn}/${tokensOut} tokens)`);

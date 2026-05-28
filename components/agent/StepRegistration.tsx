@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import { ConnectEmbed, lightTheme, useActiveAccount, useProfiles } from 'thirdweb/react';
 import { base } from 'thirdweb/chains';
 import { inAppWallet, createWallet } from 'thirdweb/wallets';
-import { thirdwebClient } from '@/lib/rrg/thirdwebClient';
+import { thirdwebClient } from '@/lib/app/thirdwebClient';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { TIER_DISPLAY } from '@/lib/agent/types';

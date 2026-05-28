@@ -57,8 +57,8 @@ export interface ShippingRateResult {
 
 const API_VERSION = process.env.SHOPIFY_API_VERSION || '2025-10';
 
-export function getBrandShopifyConfig(brandSlug: string): { token: string; domain: string } | null {
-  const key = brandSlug.toUpperCase().replace(/[^A-Z0-9]/g, '_');
+export function getBrandShopifyConfig(sellerSlug: string): { token: string; domain: string } | null {
+  const key = sellerSlug.toUpperCase().replace(/[^A-Z0-9]/g, '_');
   const token  = process.env[`SHOPIFY_${key}_STOREFRONT_TOKEN`];
   const domain = process.env[`SHOPIFY_${key}_DOMAIN`];
   if (!token || !domain) return null;
@@ -100,13 +100,13 @@ async function gql<T = unknown>(
  * on `rrg_submissions.shopify_variant_gid` during the import.
  */
 export async function resolveShippingRates(
-  brandSlug: string,
+  sellerSlug: string,
   variantGid: string,
   quantity: number,
   address: ShippingAddress,
 ): Promise<ShippingRateResult> {
-  const cfg = getBrandShopifyConfig(brandSlug);
-  if (!cfg) throw new Error(`No Shopify config for brand ${brandSlug}`);
+  const cfg = getBrandShopifyConfig(sellerSlug);
+  if (!cfg) throw new Error(`No Shopify config for brand ${sellerSlug}`);
 
   const mutation = `
     mutation RrgCartCreate($input: CartInput!) {
@@ -198,10 +198,10 @@ export async function resolveShippingRates(
  * never have to re-resolve it per-checkout.
  */
 export async function fetchFirstVariantGid(
-  brandSlug: string,
+  sellerSlug: string,
   productHandle: string,
 ): Promise<string | null> {
-  const cfg = getBrandShopifyConfig(brandSlug);
+  const cfg = getBrandShopifyConfig(sellerSlug);
   if (!cfg) return null;
 
   const q = `query($handle: String!) {

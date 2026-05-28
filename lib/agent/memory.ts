@@ -6,7 +6,7 @@
  * Periodically, individual memories get consolidated into a refined profile.
  */
 
-import { db } from '@/lib/rrg/db';
+import { db } from '@/lib/app/db';
 import type { LlmProvider } from './types';
 
 export interface AgentMemory {

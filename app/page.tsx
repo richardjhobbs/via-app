@@ -5,11 +5,11 @@ import {
   getBrandsForDirectory,
   getOpenBriefs,
   getAllActiveBrands,
-} from '@/lib/rrg/db';
-import { getSignedUrlsBatch } from '@/lib/rrg/storage';
-import RRGHeader from '@/components/rrg/RRGHeader';
-import RRGFooter from '@/components/rrg/RRGFooter';
-import ShopWithAI from '@/components/rrg/ShopWithAI';
+} from '@/lib/app/db';
+import { getSignedUrlsBatch } from '@/lib/app/storage';
+import RRGHeader from '@/components/app/RRGHeader';
+import RRGFooter from '@/components/app/RRGFooter';
+import ShopWithAI from '@/components/app/ShopWithAI';
 
 export const dynamic = 'force-dynamic';
 
@@ -114,7 +114,7 @@ export default async function Landing() {
       id: d.id,
       tokenId: d.token_id,
       title: d.title,
-      brandName: brand?.name ?? 'Independent',
+      sellerName: brand?.name ?? 'Independent',
       price: d.price_usdc ? `$${Number(d.price_usdc).toFixed(0)}` : 'On request',
       imageUrl: imageUrl ?? FALLBACK_BRAND_IMAGES[i % FALLBACK_BRAND_IMAGES.length],
       soldOut,
@@ -152,10 +152,10 @@ export default async function Landing() {
   const gridBrands = brandsForS01.slice(1, 11);
   const tallBrand = gridBrands[2]; // 3rd grid slot becomes tall feature
 
-  function brandCardImage(brandId: string, bannerPath: string | null, fallbackIdx: number): string {
+  function brandCardImage(sellerId: string, bannerPath: string | null, fallbackIdx: number): string {
     // Prefer latest product image (reliable aspect), fall back to banner, then static.
     return (
-      brandImage.get(brandId) ??
+      brandImage.get(sellerId) ??
       (bannerPath ? urlMap.get(bannerPath) ?? null : null) ??
       FALLBACK_BRAND_IMAGES[fallbackIdx % FALLBACK_BRAND_IMAGES.length]
     );
@@ -348,9 +348,9 @@ export default async function Landing() {
               <div className="finding-img" style={{ backgroundImage: `url('${lookbookItems[0]?.imageUrl ?? FALLBACK_HERO}')` }}></div>
               <div className="finding-body">
                 <div className="name">{lookbookItems[0]?.title ?? 'A considered piece'}</div>
-                <div className="meta">{lookbookItems[0]?.brandName ?? 'Maison'}, {lookbookItems[0]?.soldOut ? 'last one' : 'available'}</div>
+                <div className="meta">{lookbookItems[0]?.sellerName ?? 'Maison'}, {lookbookItems[0]?.soldOut ? 'last one' : 'available'}</div>
               </div>
-              <div className="finding-price">{lookbookItems[0]?.price ?? '$206'}<span className="sub">{lookbookItems[0]?.brandName ?? 'Maison'}</span></div>
+              <div className="finding-price">{lookbookItems[0]?.price ?? '$206'}<span className="sub">{lookbookItems[0]?.sellerName ?? 'Maison'}</span></div>
             </div>
 
             <div className="protocol-line">
@@ -382,7 +382,7 @@ export default async function Landing() {
               <Link key={item.id} className="look-item" href={href}>
                 <img className="look-image" src={item.imageUrl} alt={item.title} />
                 <h4 className="look-name">{item.title}</h4>
-                <p className="look-brand">{item.brandName}</p>
+                <p className="look-brand">{item.sellerName}</p>
                 <div className="look-meta">
                   <span className="price">{item.price}</span>
                   <span>{item.soldOut ? 'Sold out' : 'Available'}</span>

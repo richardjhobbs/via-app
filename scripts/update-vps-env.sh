@@ -1,7 +1,7 @@
 #!/bin/bash
 # update-vps-env.sh — Safely update a SINGLE env var on VPS without overwriting others.
 # Usage: ./scripts/update-vps-env.sh KEY VALUE
-# Example: ./scripts/update-vps-env.sh NEXT_PUBLIC_RRG_CONTRACT_ADDRESS 0x1234...
+# Example: ./scripts/update-vps-env.sh NEXT_PUBLIC_VIA_CONTRACT_ADDRESS 0x1234...
 #
 # NEVER use: scp .env.local agent@VPS:.env.local  ← destroys VPS-only secrets
 

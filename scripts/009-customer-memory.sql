@@ -2,15 +2,15 @@
 --
 -- Per-(brand, customer) persistent memory for Brand Concierges.
 --
--- Why: the customer-facing concierge (lib/rrg/brand-telegram-bot.ts and the
+-- Why: the customer-facing concierge (lib/app/brand-telegram-bot.ts and the
 -- future Hermes concierge) is currently stateless. It cannot answer "who is
 -- this, what did they ask before, what have they bought". The brand's OWN
--- knowledge already has a home (rrg_brand_memories, written via the admin
+-- knowledge already has a home (app_seller_memories, written via the admin
 -- concierge chat). Customer knowledge has no home. This migration adds it.
 --
 -- Design: rrg_customer_memory stores only the COMMUNICATIONS ledger (every
 -- inbound enquiry / outbound reply / funnel event the concierge handles),
--- which exists nowhere today. Transactions (rrg_purchases), MCP interaction
+-- which exists nowhere today. Transactions (app_purchases), MCP interaction
 -- events (mcp_interactions) and the trust aggregate (rrg_brand_agent_trust)
 -- are NOT duplicated; rrg_customer_get composes them at read time. One
 -- customer can be reached by wallet, ERC-8004 / VIA agent id, or Telegram
@@ -25,7 +25,7 @@ CREATE TABLE IF NOT EXISTS rrg_customer_memory (
   created_at timestamptz NOT NULL DEFAULT now(),
   occurred_at timestamptz NOT NULL DEFAULT now(),
 
-  brand_id uuid NOT NULL REFERENCES rrg_brands(id) ON DELETE CASCADE,
+  brand_id uuid NOT NULL REFERENCES app_sellers(id) ON DELETE CASCADE,
   brand_slug text NOT NULL,
 
   -- Identity handles. At least one of wallet_address / erc8004_agent_id /
@@ -60,13 +60,13 @@ CREATE INDEX IF NOT EXISTS idx_cust_mem_brand_slug_time
   ON rrg_customer_memory (brand_slug, occurred_at DESC);
 
 COMMENT ON TABLE rrg_customer_memory IS
-  'Per-(brand, customer) communications ledger for Brand Concierges. Written by the concierge (Hermes/MCP) on every inbound enquiry and outbound reply and on inbound-funnel events. Transactions and MCP interaction events are NOT stored here; rrg_customer_get composes them from rrg_purchases / mcp_interactions / rrg_brand_agent_trust at read time. Customer reachable by wallet, erc8004/VIA agent id, or telegram user id.';
+  'Per-(brand, customer) communications ledger for Brand Concierges. Written by the concierge (Hermes/MCP) on every inbound enquiry and outbound reply and on inbound-funnel events. Transactions and MCP interaction events are NOT stored here; rrg_customer_get composes them from app_purchases / mcp_interactions / rrg_brand_agent_trust at read time. Customer reachable by wallet, erc8004/VIA agent id, or telegram user id.';
 
 ALTER TABLE rrg_customer_memory ENABLE ROW LEVEL SECURITY;
--- No permissive policy: same pattern as rrg_brand_memories. Access is via the
+-- No permissive policy: same pattern as app_seller_memories. Access is via the
 -- service-key client (bypasses RLS) and the SECURITY DEFINER / STABLE RPCs
 -- below. service_role bypasses RLS; the read RPCs are granted broadly like
--- brand_product_counts and rrg_brand_memory_search.
+-- brand_product_counts and app_seller_memory_search.
 
 -- ── Write: log one communication ─────────────────────────────────────
 
@@ -94,7 +94,7 @@ DECLARE
   v_ref text;
   v_id uuid;
 BEGIN
-  SELECT id INTO v_brand_id FROM rrg_brands WHERE slug = p_brand_slug;
+  SELECT id INTO v_brand_id FROM app_sellers WHERE slug = p_brand_slug;
   IF v_brand_id IS NULL THEN
     RAISE EXCEPTION 'unknown brand slug: %', p_brand_slug;
   END IF;
@@ -127,7 +127,7 @@ $$;
 -- ── Read: full who/what/when for one customer ────────────────────────
 --
 -- Composes identity (agent_agents) + trust aggregate (rrg_brand_agent_trust)
--- + transactions (rrg_purchases) + interaction events (mcp_interactions) +
+-- + transactions (app_purchases) + interaction events (mcp_interactions) +
 -- the communications ledger (rrg_customer_memory) into one JSON object.
 -- Pass any subset of wallet / erc8004 / telegram_user_id.
 
@@ -149,7 +149,7 @@ DECLARE
   v_lim int := greatest(1, least(p_limit, 200));
   v_result jsonb;
 BEGIN
-  SELECT id INTO v_brand_id FROM rrg_brands WHERE slug = p_slug;
+  SELECT id INTO v_brand_id FROM app_sellers WHERE slug = p_slug;
   IF v_brand_id IS NULL THEN
     RETURN jsonb_build_object('ok', false, 'error', 'unknown brand slug');
   END IF;
@@ -182,7 +182,7 @@ BEGIN
         SELECT p.created_at, p.token_id, s.title AS product, p.amount_usdc,
                p.tx_hash, p.selected_size, p.selected_color,
                p.shipping_country, p.mint_status
-        FROM rrg_purchases p
+        FROM app_purchases p
         LEFT JOIN rrg_submissions s
           ON s.token_id = p.token_id AND s.brand_id = p.brand_id
         WHERE p.brand_id = v_brand_id
@@ -270,7 +270,7 @@ AS $$
   LIMIT greatest(1, least(p_limit, 50));
 $$;
 
--- ── Grants (mirror brand_product_counts / rrg_brand_memory_search) ────
+-- ── Grants (mirror brand_product_counts / app_seller_memory_search) ────
 
 GRANT EXECUTE ON FUNCTION rrg_customer_memory_log(text,text,text,text,text,text,jsonb,text,bigint,bigint,text,timestamptz) TO service_role;
 GRANT EXECUTE ON FUNCTION rrg_customer_get(text,text,bigint,bigint,integer) TO anon, authenticated, service_role;

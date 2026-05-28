@@ -5,10 +5,10 @@
  *
  * Scrapes logo + banner candidates from <host>'s homepage, picks best,
  * crops with sharp (logo → 512² PNG, banner → 1600×640 JPEG), uploads to
- * supabase storage at brands/{brandId}/logo.png + banner.jpeg using the
- * service role key, and updates rrg_brands.logo_path / banner_path.
+ * supabase storage at brands/{sellerId}/logo.png + banner.jpeg using the
+ * service role key, and updates app_sellers.logo_path / banner_path.
  *
- * End state is identical to PATCH /api/rrg/admin/brands/[brandId] with
+ * End state is identical to PATCH /api/rrg/admin/brands/[sellerId] with
  * multipart, just without the admin-cookie hop.
  */
 import { createClient } from '@supabase/supabase-js';
@@ -66,7 +66,7 @@ function stripShopifySize(url) {
   console.log(`──── fetch-brand-images: ${SLUG} (${HOST}) ────`);
 
   // Look up brand id
-  const { data: brand, error: be } = await db.from('rrg_brands').select('id,slug,name').eq('slug', SLUG).single();
+  const { data: brand, error: be } = await db.from('app_sellers').select('id,slug,name').eq('slug', SLUG).single();
   if (be || !brand) throw new Error(`No brand row for slug=${SLUG}: ${be?.message || 'not found'}`);
   console.log(`brand_id: ${brand.id}`);
 
@@ -219,8 +219,8 @@ function stripShopifySize(url) {
     console.log('Uploaded banner→', path);
   }
   if (Object.keys(updates).length) {
-    const { error } = await db.from('rrg_brands').update(updates).eq('id', brand.id);
+    const { error } = await db.from('app_sellers').update(updates).eq('id', brand.id);
     if (error) throw new Error('db update: '+error.message);
-    console.log('rrg_brands updated:', Object.keys(updates).join(','));
+    console.log('app_sellers updated:', Object.keys(updates).join(','));
   }
 })().catch(e => { console.error('FATAL:', e); process.exit(1); });

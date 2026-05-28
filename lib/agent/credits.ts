@@ -9,7 +9,7 @@
  * but the balance is denominated in USD.
  */
 
-import { db } from '@/lib/rrg/db';
+import { db } from '@/lib/app/db';
 
 // ── Platform margin ─────────────────────────────────────────────────
 

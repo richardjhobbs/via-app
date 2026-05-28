@@ -25,7 +25,7 @@ const usdc = new ethers.Contract(USDC_ADDRESS, ERC20_ABI, signer);
 
 // Get failed distributions
 const { data: failed } = await db
-  .from('rrg_distributions')
+  .from('app_distributions')
   .select('id, purchase_id, brand_wallet, creator_wallet, creator_usdc, brand_usdc')
   .eq('status', 'failed')
   .order('created_at', { ascending: true });
@@ -68,13 +68,13 @@ for (const dist of failed) {
     }
 
     const notes = txHashes.join(' | ') || 'No transfers needed';
-    await db.from('rrg_distributions').update({ status: 'completed', notes }).eq('id', dist.id);
-    await db.from('rrg_purchases').update({ payout_tx_hashes: notes }).eq('id', dist.purchase_id);
+    await db.from('app_distributions').update({ status: 'completed', notes }).eq('id', dist.id);
+    await db.from('app_purchases').update({ payout_tx_hashes: notes }).eq('id', dist.purchase_id);
     console.log(`  ✓ Completed: ${notes}`);
 
   } catch (err) {
     console.error(`  ✗ Failed:`, err.message);
-    await db.from('rrg_distributions')
+    await db.from('app_distributions')
       .update({ notes: `Retry failed: ${String(err).slice(0, 500)}` })
       .eq('id', dist.id);
   }

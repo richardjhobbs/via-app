@@ -30,7 +30,7 @@ function generateCode() {
 
 const PURCHASE_ID    = '9cd0e29a-024a-4276-9157-ef2398616347';
 const TEMPLATE_ID    = '449248d0-7dda-442e-a83b-b9d0c5bcb057';
-const SUBMISSION_ID  = await db.from('rrg_purchases').select('submission_id').eq('id', PURCHASE_ID).single().then(r => r.data?.submission_id);
+const SUBMISSION_ID  = await db.from('app_purchases').select('submission_id').eq('id', PURCHASE_ID).single().then(r => r.data?.submission_id);
 const BRAND_ID       = 'f1531f2a-a909-4d86-b01b-3896cc7984cd';
 const BUYER_WALLET   = '0xc12ecf02448e0e56dad9c0d5473553b80d030d75';
 

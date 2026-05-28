@@ -7,7 +7,7 @@
 -- ── Layer 1: brand context on outreach ──────────────────────────────────────
 
 ALTER TABLE mkt_outreach
-  ADD COLUMN IF NOT EXISTS brand_id      UUID REFERENCES rrg_brands(id) ON DELETE SET NULL,
+  ADD COLUMN IF NOT EXISTS brand_id      UUID REFERENCES app_sellers(id) ON DELETE SET NULL,
   ADD COLUMN IF NOT EXISTS product_refs  JSONB NOT NULL DEFAULT '[]'::jsonb,
   ADD COLUMN IF NOT EXISTS campaign_id   UUID; -- FK added in Layer 3 once mkt_campaigns exists
 
@@ -31,7 +31,7 @@ ALTER TABLE mkt_outreach
 
 CREATE TABLE IF NOT EXISTS mkt_candidate_brand_affinity (
   candidate_id     UUID NOT NULL REFERENCES mkt_candidates(id) ON DELETE CASCADE,
-  brand_id         UUID NOT NULL REFERENCES rrg_brands(id) ON DELETE CASCADE,
+  brand_id         UUID NOT NULL REFERENCES app_sellers(id) ON DELETE CASCADE,
   score            INTEGER NOT NULL DEFAULT 0 CHECK (score BETWEEN 0 AND 100),
   signals          JSONB NOT NULL DEFAULT '{}'::jsonb,
   last_computed_at TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -47,7 +47,7 @@ CREATE TABLE IF NOT EXISTS mkt_campaigns (
   id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   created_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
-  brand_id         UUID NOT NULL REFERENCES rrg_brands(id) ON DELETE CASCADE,
+  brand_id         UUID NOT NULL REFERENCES app_sellers(id) ON DELETE CASCADE,
   created_by       UUID REFERENCES mkt_agents(id),
 
   kind             TEXT NOT NULL
@@ -91,7 +91,7 @@ END $$;
 -- ── Layer 4: per-brand attribution on conversions ───────────────────────────
 
 ALTER TABLE mkt_conversions
-  ADD COLUMN IF NOT EXISTS brand_id UUID REFERENCES rrg_brands(id) ON DELETE SET NULL;
+  ADD COLUMN IF NOT EXISTS brand_id UUID REFERENCES app_sellers(id) ON DELETE SET NULL;
 
 CREATE INDEX IF NOT EXISTS idx_mkt_conversions_brand ON mkt_conversions(brand_id);
 

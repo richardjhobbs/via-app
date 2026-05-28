@@ -118,7 +118,7 @@ descriptions):
 | `app/api/route.ts` | payTo, recipient, resource URL, service description |
 | `app/api/v1/route.ts` | Imports `./route` GET — no changes |
 | `middleware.ts` | `MARKDOWN_PAGES` keys + content, matcher paths |
-| `components/rrg/WebMCPTools.tsx` | Tool definitions matching VIA's site surface |
+| `components/app/WebMCPTools.tsx` | Tool definitions matching VIA's site surface |
 | `app/providers.tsx` | Import + render `<WebMCPTools />` inside existing provider tree |
 
 ## 5. Critical gotchas

@@ -38,7 +38,7 @@
  *     bundling is purely email-layer.
  */
 
-import { db } from '@/lib/rrg/db';
+import { db } from '@/lib/app/db';
 import type { AgentMemory } from './memory';
 import {
   sendOwnerDailyDigest,
@@ -332,7 +332,7 @@ function snippetFor(text: string, maxLen = 110): string {
 async function llmListingMatchesRequest(
   userMessage: string,
   listingTitle: string,
-  brandName: string | null,
+  sellerName: string | null,
 ): Promise<{ matches: boolean; reason: string; tokensUsed: number }> {
   if (!process.env.DEEPSEEK_API_KEY) {
     return { matches: true, reason: 'llm-skipped (no key)', tokensUsed: 0 };
@@ -344,7 +344,7 @@ async function llmListingMatchesRequest(
       baseURL: 'https://api.deepseek.com',
     });
 
-    const product = brandName ? `${brandName} - ${listingTitle}` : listingTitle;
+    const product = sellerName ? `${sellerName} - ${listingTitle}` : listingTitle;
     const system =
       'You decide whether a single product directly answers a user\'s past request. ' +
       'Be strict. The product must satisfy ALL specifics the user stated: colour, ' +
@@ -435,27 +435,27 @@ function findChatAnchor(text: string, ctx: ConversationContext): ChatAnchor | nu
 function composeReason(opts: {
   itemKind: 'listing' | 'brand';
   itemLabel: string;
-  brandName: string | null;
+  sellerName: string | null;
   anchor: ChatAnchor | null;
   lovedBrand: boolean;
   profileHits: Map<string, string[]>;
 }): string {
-  const { itemKind, itemLabel, brandName, anchor, lovedBrand, profileHits } = opts;
+  const { itemKind, itemLabel, sellerName, anchor, lovedBrand, profileHits } = opts;
 
   if (anchor && anchor.fromWatchTerm) {
-    return `You asked me on ${formatDate(anchor.created_at)} to keep an eye out for "${anchor.snippet}". ${itemKind === 'brand' ? `${itemLabel} is now on RRG and fits.` : `${itemLabel}${brandName ? ` from ${brandName}` : ''} is now listed and fits.`}`;
+    return `You asked me on ${formatDate(anchor.created_at)} to keep an eye out for "${anchor.snippet}". ${itemKind === 'brand' ? `${itemLabel} is now on RRG and fits.` : `${itemLabel}${sellerName ? ` from ${sellerName}` : ''} is now listed and fits.`}`;
   }
   if (anchor) {
-    return `On ${formatDate(anchor.created_at)} you said "${anchor.snippet}". ${itemKind === 'brand' ? `${itemLabel} is now on RRG and lines up with that.` : `${itemLabel}${brandName ? ` from ${brandName}` : ''} is now listed and lines up with that.`}`;
+    return `On ${formatDate(anchor.created_at)} you said "${anchor.snippet}". ${itemKind === 'brand' ? `${itemLabel} is now on RRG and lines up with that.` : `${itemLabel}${sellerName ? ` from ${sellerName}` : ''} is now listed and lines up with that.`}`;
   }
-  if (lovedBrand && brandName) {
+  if (lovedBrand && sellerName) {
     return itemKind === 'brand'
       ? `${itemLabel} is on your brand list and just joined RRG.`
-      : `${brandName} is on your brand list. New listing: ${itemLabel}.`;
+      : `${sellerName} is on your brand list. New listing: ${itemLabel}.`;
   }
   return itemKind === 'brand'
     ? `${itemLabel} joined RRG and lines up with your ${summariseSignals(profileHits)}.`
-    : `${itemLabel}${brandName ? ` from ${brandName}` : ''} lines up with your ${summariseSignals(profileHits)}.`;
+    : `${itemLabel}${sellerName ? ` from ${sellerName}` : ''} lines up with your ${summariseSignals(profileHits)}.`;
 }
 
 /**
@@ -475,7 +475,7 @@ interface BucketAgentEntry {
   listings: Array<{
     tokenId: number;
     title: string;
-    brandName: string | null;
+    sellerName: string | null;
     priceUsdc: number | null;
     reason: string;
   }>;
@@ -548,9 +548,9 @@ export async function runDropMatchScan(opts: ScanOpts = {}): Promise<ScanResult>
 
   let drops: DropRow[] = [];
   if (!dropsErr && rawDrops && rawDrops.length > 0) {
-    const brandIds = Array.from(new Set(rawDrops.map(d => d.brand_id).filter((b): b is string => !!b)));
-    const { data: brandRows } = brandIds.length > 0
-      ? await db.from('rrg_brands').select('id, slug, name').in('id', brandIds)
+    const sellerIds = Array.from(new Set(rawDrops.map(d => d.brand_id).filter((b): b is string => !!b)));
+    const { data: brandRows } = sellerIds.length > 0
+      ? await db.from('app_sellers').select('id, slug, name').in('id', sellerIds)
       : { data: [] };
     const brandMap = new Map<string, { slug: string; name: string }>(
       (brandRows ?? []).map(b => [b.id as string, { slug: b.slug as string, name: b.name as string }]),
@@ -572,7 +572,7 @@ export async function runDropMatchScan(opts: ScanOpts = {}): Promise<ScanResult>
 
   // ── Pre-load: newly activated brands ──────────────────────────────
   const { data: rawBrands } = await db
-    .from('rrg_brands')
+    .from('app_sellers')
     .select('id, slug, name, created_at, brand_data')
     .eq('status', 'active')
     .gte('created_at', since);
@@ -657,7 +657,7 @@ export async function runDropMatchScan(opts: ScanOpts = {}): Promise<ScanResult>
       const reason = composeReason({
         itemKind: 'brand',
         itemLabel: b.name,
-        brandName: b.name,
+        sellerName: b.name,
         anchor,
         lovedBrand: isLoved,
         profileHits: scored.hits,
@@ -758,7 +758,7 @@ export async function runDropMatchScan(opts: ScanOpts = {}): Promise<ScanResult>
       const reason = composeReason({
         itemKind: 'listing',
         itemLabel: titleQuoted,
-        brandName: d.brand_name,
+        sellerName: d.brand_name,
         anchor,
         lovedBrand: isLovedBrand,
         profileHits: scored.hits,
@@ -798,7 +798,7 @@ export async function runDropMatchScan(opts: ScanOpts = {}): Promise<ScanResult>
         entry.listings.push({
           tokenId: d.token_id,
           title: d.title,
-          brandName: d.brand_name,
+          sellerName: d.brand_name,
           priceUsdc: d.price_usdc,
           reason,
         });
@@ -839,7 +839,7 @@ async function sendOwnerDigests(
     }
 
     // Flatten + dedup across agents.
-    const brandMap = new Map<string, DigestBrand & { brandId: string }>();
+    const brandMap = new Map<string, DigestBrand & { sellerId: string }>();
     const listingMap = new Map<number, DigestListing>();
     const matchedAgentIds = new Set<string>();
     const matchedAgentNames = new Set<string>();
@@ -853,7 +853,7 @@ async function sendOwnerDigests(
           }
         } else {
           brandMap.set(b.id, {
-            brandId: b.id,
+            sellerId: b.id,
             name: b.name,
             url: `${SITE_URL}/brand/${b.slug}`,
             matchedAgentNames: [entry.agentName],
@@ -869,7 +869,7 @@ async function sendOwnerDigests(
         } else {
           listingMap.set(l.tokenId, {
             title: l.title,
-            brandName: l.brandName,
+            sellerName: l.sellerName,
             url: `${SITE_URL}/rrg/drop/${l.tokenId}`,
             priceUsdc: l.priceUsdc,
             reason: l.reason,
@@ -907,7 +907,7 @@ async function sendOwnerDigests(
     }
 
     const payload: DigestPayload = {
-      brands: Array.from(brandMap.values()).map(({ brandId: _drop, ...rest }) => rest),
+      brands: Array.from(brandMap.values()).map(({ sellerId: _drop, ...rest }) => rest),
       listings: Array.from(listingMap.values()),
     };
 

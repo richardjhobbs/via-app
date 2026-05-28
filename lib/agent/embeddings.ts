@@ -115,13 +115,13 @@ export async function embedBatch(inputs: string[]): Promise<EmbedResult[]> {
  * raw token volume.
  */
 export function composeProductEmbeddingInput(p: {
-  brandName: string | null;
+  sellerName: string | null;
   title: string;
   description: string | null;
   enhancedDescription: string | null;
 }): string {
   const parts: string[] = [];
-  if (p.brandName) parts.push(p.brandName);
+  if (p.sellerName) parts.push(p.sellerName);
   if (p.title) parts.push(p.title);
   const body = (p.enhancedDescription ?? p.description ?? '').trim();
   if (body) parts.push(body.slice(0, 2000));

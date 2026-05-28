@@ -34,4 +34,4 @@ await contract.waitForDeployment();
 const address = await contract.getAddress();
 console.log('\n✅ RRG deployed to:', address);
 console.log('Update in .env.local and Vercel:');
-console.log('  NEXT_PUBLIC_RRG_CONTRACT_ADDRESS=' + address);
+console.log('  NEXT_PUBLIC_VIA_CONTRACT_ADDRESS=' + address);

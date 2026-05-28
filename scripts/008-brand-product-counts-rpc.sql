@@ -1,6 +1,6 @@
 -- scripts/008-brand-product-counts-rpc.sql
 --
--- Server-side aggregation for the brand directory (lib/rrg/db.ts:getBrandsForDirectory).
+-- Server-side aggregation for the brand directory (lib/app/db.ts:getBrandsForDirectory).
 --
 -- Why: getBrandsForDirectory previously fetched every approved + non-hidden
 -- rrg_submissions row to count them in JS. Once the catalogue passed 1000

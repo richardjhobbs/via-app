@@ -3,7 +3,7 @@
  *
  * Generic remediation for brand-owned drops registered on-chain with the
  * WRONG creator (anything other than PLATFORM_WALLET). Per
- * lib/rrg/splits.ts:160 brand-product drops MUST be registered with
+ * lib/app/splits.ts:160 brand-product drops MUST be registered with
  * creator = PLATFORM_WALLET so the contract sends 100% to the platform
  * and auto-payout.ts settles the brand's negotiated share off-chain.
  *
@@ -41,7 +41,7 @@
  * Requires .env.local with:
  *   NEXT_PUBLIC_SUPABASE_URL, SUPABASE_SERVICE_KEY
  *   DEPLOYER_PRIVATE_KEY, NEXT_PUBLIC_BASE_RPC_URL,
- *   NEXT_PUBLIC_RRG_CONTRACT_ADDRESS, NEXT_PUBLIC_PLATFORM_WALLET
+ *   NEXT_PUBLIC_VIA_CONTRACT_ADDRESS, NEXT_PUBLIC_PLATFORM_WALLET
  */
 
 import { ethers } from 'ethers';
@@ -71,7 +71,7 @@ const SUPABASE_URL    = requireEnv('NEXT_PUBLIC_SUPABASE_URL');
 const SUPABASE_KEY    = requireEnv('SUPABASE_SERVICE_KEY');
 const RPC_URL         = requireEnv('NEXT_PUBLIC_BASE_RPC_URL');
 const DEPLOYER_PK     = requireEnv('DEPLOYER_PRIVATE_KEY');
-const RRG_ADDR        = requireEnv('NEXT_PUBLIC_RRG_CONTRACT_ADDRESS');
+const RRG_ADDR        = requireEnv('NEXT_PUBLIC_VIA_CONTRACT_ADDRESS');
 const PLATFORM_WALLET = requireEnv('NEXT_PUBLIC_PLATFORM_WALLET');
 
 // ── Args ────────────────────────────────────────────────────────────
@@ -221,7 +221,7 @@ console.log();
 const allTokenIds = audit.affected_drops.filter(d => !d._skip).map(d => d.token_id);
 const { data: rows, error: rowsErr } = await db
   .from('rrg_submissions')
-  .select('id, token_id, title, price_usdc, edition_size, brand_id, rrg_brands!inner(slug)')
+  .select('id, token_id, title, price_usdc, edition_size, brand_id, app_sellers!inner(slug)')
   .in('token_id', allTokenIds);
 if (rowsErr) { console.error('DB read failed:', rowsErr); process.exit(1); }
 const rowByToken = Object.fromEntries(rows.map(r => [r.token_id, r]));

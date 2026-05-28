@@ -10,7 +10,7 @@ import { evaluateRules, calculateBidAmount } from './rules';
 import { evaluateWithLlm, buildEvalPrompt } from './llm';
 import { hasCredits, deductCredits } from './credits';
 import { getUsdcBalance } from './contract';
-import { db } from '@/lib/rrg/db';
+import { db } from '@/lib/app/db';
 
 export interface EvalResult {
   decision: EvalDecision;
@@ -41,7 +41,7 @@ async function getActiveBidTotal(agentId: string): Promise<number> {
 export async function evaluateDrop(
   agent: Agent,
   drop: DropListing,
-  brandName?: string
+  sellerName?: string
 ): Promise<EvalResult> {
   const walletBalance = await getUsdcBalance(agent.wallet_address);
   const activeBidTotal = await getActiveBidTotal(agent.id);
@@ -78,7 +78,7 @@ export async function evaluateDrop(
         : '',
       `Quantity: ${drop.quantity} units`,
       `Fulfilment: ${drop.fulfilment_model}`,
-      brandName ? `Brand: ${brandName}` : '',
+      sellerName ? `Brand: ${sellerName}` : '',
     ]
       .filter(Boolean)
       .join('\n');
@@ -114,7 +114,7 @@ export async function evaluateDrop(
   }
 
   // Basic agent (or Pro without credits) → rules engine
-  const ruleResult = evaluateRules(agent.parsed_rules, drop, brandName);
+  const ruleResult = evaluateRules(agent.parsed_rules, drop, sellerName);
 
   if (!ruleResult.pass) {
     return {

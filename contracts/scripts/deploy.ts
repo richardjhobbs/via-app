@@ -31,7 +31,7 @@ async function main() {
   console.log('✅ RRG deployed to:', address);
   console.log('');
   console.log('Add to .env.local:');
-  console.log(`NEXT_PUBLIC_RRG_CONTRACT_ADDRESS=${address}`);
+  console.log(`NEXT_PUBLIC_VIA_CONTRACT_ADDRESS=${address}`);
   console.log('');
 
   if (isTestnet) {

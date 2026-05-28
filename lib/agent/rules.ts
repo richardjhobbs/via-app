@@ -89,7 +89,7 @@ export interface RuleResult {
 export function evaluateRules(
   rules: AgentRules,
   drop: DropListing,
-  brandName?: string
+  sellerName?: string
 ): RuleResult {
   const matched: string[] = [];
   const failed: string[] = [];
@@ -127,8 +127,8 @@ export function evaluateRules(
   }
 
   // Brand whitelist
-  if (rules.brandWhitelist.length > 0 && brandName) {
-    if (rules.brandWhitelist.some((b) => brandName.toLowerCase().includes(b))) {
+  if (rules.brandWhitelist.length > 0 && sellerName) {
+    if (rules.brandWhitelist.some((b) => sellerName.toLowerCase().includes(b))) {
       matched.push('Brand whitelist match');
     } else {
       failed.push('Brand not in whitelist');
@@ -136,9 +136,9 @@ export function evaluateRules(
   }
 
   // Brand blacklist
-  if (rules.brandBlacklist.length > 0 && brandName) {
-    if (rules.brandBlacklist.some((b) => brandName.toLowerCase().includes(b))) {
-      failed.push(`Blacklisted brand: ${brandName}`);
+  if (rules.brandBlacklist.length > 0 && sellerName) {
+    if (rules.brandBlacklist.some((b) => sellerName.toLowerCase().includes(b))) {
+      failed.push(`Blacklisted brand: ${sellerName}`);
     }
   }
 

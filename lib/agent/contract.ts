@@ -1,6 +1,6 @@
 /**
  * Base mainnet provider, platform signer, and USDC contract helpers.
- * Adapted from rrg/lib/rrg/contract.ts
+ * Adapted from rrg/lib/app/contract.ts
  */
 
 import { ethers } from 'ethers';

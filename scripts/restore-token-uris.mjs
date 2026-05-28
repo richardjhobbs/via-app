@@ -10,7 +10,7 @@ import { config } from 'dotenv';
 config({ path: '.env.local', quiet: true });
 
 const RPC_URL         = process.env.NEXT_PUBLIC_BASE_RPC_URL || 'https://mainnet.base.org';
-const CONTRACT_ADDR   = process.env.NEXT_PUBLIC_RRG_CONTRACT_ADDRESS;
+const CONTRACT_ADDR   = process.env.NEXT_PUBLIC_VIA_CONTRACT_ADDRESS;
 const DEPLOYER_KEY    = process.env.DEPLOYER_PRIVATE_KEY;
 const SUPABASE_URL    = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const SUPABASE_KEY    = process.env.SUPABASE_SERVICE_KEY;

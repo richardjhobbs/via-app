@@ -10,7 +10,7 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
 // Config
 const RPC_URL          = process.env.NEXT_PUBLIC_BASE_RPC_URL || 'https://mainnet.base.org';
-const CONTRACT_ADDRESS = process.env.NEXT_PUBLIC_RRG_CONTRACT_ADDRESS;
+const CONTRACT_ADDRESS = process.env.NEXT_PUBLIC_VIA_CONTRACT_ADDRESS;
 const DEPLOYER_KEY     = process.env.DEPLOYER_PRIVATE_KEY;
 const CHAIN_ID         = process.env.NEXT_PUBLIC_CHAIN_ID;
 const SUPABASE_URL     = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -120,7 +120,7 @@ async function main() {
   // ── Step 2: Re-mint purchases ────────────────────────────────────────
   console.log('=== Step 2: Re-mint Purchases ===');
   const { data: purchases } = await db
-    .from('rrg_purchases')
+    .from('app_purchases')
     .select('token_id, buyer_wallet')
     .eq('network', NETWORK)
     .order('token_id', { ascending: true });

@@ -28,7 +28,7 @@ const { data: submission } = await db
 if (!submission) { console.error('Drop not found'); process.exit(1); }
 
 const { data: purchases } = await db
-  .from('rrg_purchases')
+  .from('app_purchases')
   .select('id', { count: 'exact', head: true })
   .eq('token_id', TOKEN_ID);
 

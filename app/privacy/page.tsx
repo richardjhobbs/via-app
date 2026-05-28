@@ -1,6 +1,6 @@
 import type { Metadata } from 'next';
-import RRGHeader from '@/components/rrg/RRGHeader';
-import RRGFooter from '@/components/rrg/RRGFooter';
+import RRGHeader from '@/components/app/RRGHeader';
+import RRGFooter from '@/components/app/RRGFooter';
 
 export const metadata: Metadata = {
   title: 'Privacy Policy, Real Real Genuine',

@@ -9,7 +9,7 @@
  *   3. From the new wallet, call `register(agentURI)` on the ERC-8004
  *      Identity Registry (0x8004A169…) → mints an agent token owned by
  *      the new wallet. Token ID parsed from the Transfer event.
- *   4. Update rrg_brands.wallet_address to the new wallet
+ *   4. Update app_sellers.wallet_address to the new wallet
  *   5. Write the new PK + agent_id to tmp/<slug>-credentials-<ts>.json
  *      (gitignored) so you can paste it into .env.local + Vercel
  *
@@ -27,7 +27,7 @@ import { createClient } from '@supabase/supabase-js';
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'fs';
 import { resolve } from 'path';
 
-// ── Brand context (must match a row in rrg_brands) ───────────────────
+// ── Brand context (must match a row in app_sellers) ───────────────────
 const BRANDS = {
   'passport-adv': {
     name:        'PassportADV',
@@ -118,7 +118,7 @@ const DRY_RUN    = args.includes('--dry-run');
 
 if (!BRAND_SLUG) {
   console.error(`Usage: node scripts/register-brand-agent.mjs --brand <slug>`);
-  console.error(`Slug must exist in rrg_brands. Hardcoded BRANDS map (${Object.keys(BRANDS).join(', ')}) is now optional;`);
+  console.error(`Slug must exist in app_sellers. Hardcoded BRANDS map (${Object.keys(BRANDS).join(', ')}) is now optional;`);
   console.error(`any other slug derives its CFG from the DB row at runtime.`);
   process.exit(1);
 }
@@ -136,11 +136,11 @@ const deployer = new ethers.Wallet(DEPLOYER_PK, provider);
 (async () => {
   // Step 0: verify the brand row exists
   const { data: brand } = await db
-    .from('rrg_brands')
+    .from('app_sellers')
     .select('id, slug, name, description, website_url, wallet_address, status, brand_data')
     .eq('slug', BRAND_SLUG)
     .single();
-  if (!brand) { console.error(`FATAL: brand "${BRAND_SLUG}" not found in rrg_brands`); process.exit(1); }
+  if (!brand) { console.error(`FATAL: brand "${BRAND_SLUG}" not found in app_sellers`); process.exit(1); }
 
   // Resolve CFG: prefer the hardcoded BRANDS entry (richer prose +
   // category list curated by hand), else synthesize from the DB row
@@ -160,10 +160,10 @@ const deployer = new ethers.Wallet(DEPLOYER_PK, provider);
   console.log();
 
   // Step 1: generate fresh EOA
-  const brandWallet = ethers.Wallet.createRandom().connect(provider);
+  const sellerWallet = ethers.Wallet.createRandom().connect(provider);
   console.log(`[step 1] generated fresh EOA:`);
-  console.log(`         address:     ${brandWallet.address}`);
-  console.log(`         private_key: ${brandWallet.privateKey.slice(0,6)}…${brandWallet.privateKey.slice(-4)}  (saved to credentials file)`);
+  console.log(`         address:     ${sellerWallet.address}`);
+  console.log(`         private_key: ${sellerWallet.privateKey.slice(0,6)}…${sellerWallet.privateKey.slice(-4)}  (saved to credentials file)`);
   console.log();
 
   // Step 2: fund from DEPLOYER
@@ -176,7 +176,7 @@ const deployer = new ethers.Wallet(DEPLOYER_PK, provider);
   }
 
   if (!DRY_RUN) {
-    const tx1 = await deployer.sendTransaction({ to: brandWallet.address, value: fundWei });
+    const tx1 = await deployer.sendTransaction({ to: sellerWallet.address, value: fundWei });
     console.log(`         tx ${tx1.hash} — waiting for confirmation…`);
     const r1 = await tx1.wait(1);
     console.log(`         mined in block ${r1.blockNumber}, gas used: ${r1.gasUsed}`);
@@ -189,7 +189,7 @@ const deployer = new ethers.Wallet(DEPLOYER_PK, provider);
   const agentUri = JSON.stringify({
     name: `${CFG.name} Concierge`,
     description: CFG.description,
-    agentWallet: brandWallet.address.toLowerCase(),
+    agentWallet: sellerWallet.address.toLowerCase(),
     endpoint: CFG.mcpEndpoint,
     storefront: CFG.storefront,
     website: CFG.website,
@@ -197,7 +197,7 @@ const deployer = new ethers.Wallet(DEPLOYER_PK, provider);
     capabilities: ['browse', 'size', 'stock', 'purchase'],
     categories: CFG.categories,
     platform: 'RRG',
-    brandSlug: BRAND_SLUG,
+    sellerSlug: BRAND_SLUG,
   });
   console.log(`[step 3] register(agentURI) on ${IDENTITY_REGISTRY}`);
   console.log(`         agentURI: ${agentUri}`);
@@ -205,7 +205,7 @@ const deployer = new ethers.Wallet(DEPLOYER_PK, provider);
   let agentId = null;
   let registerTxHash = null;
   if (!DRY_RUN) {
-    const identity = new ethers.Contract(IDENTITY_REGISTRY, IDENTITY_ABI, brandWallet);
+    const identity = new ethers.Contract(IDENTITY_REGISTRY, IDENTITY_ABI, sellerWallet);
     const tx2 = await identity.register(agentUri);
     console.log(`         tx ${tx2.hash} — waiting…`);
     const r2 = await tx2.wait(1);
@@ -214,20 +214,20 @@ const deployer = new ethers.Wallet(DEPLOYER_PK, provider);
     if (transfer && transfer.topics[3]) {
       agentId = BigInt(transfer.topics[3]).toString();
     } else {
-      const tid = await identity.tokenOfOwnerByIndex(brandWallet.address, 0);
+      const tid = await identity.tokenOfOwnerByIndex(sellerWallet.address, 0);
       agentId = tid.toString();
     }
-    console.log(`         ✓ minted agent ID: ${agentId}  (owner: ${brandWallet.address})`);
+    console.log(`         ✓ minted agent ID: ${agentId}  (owner: ${sellerWallet.address})`);
   } else {
     console.log('         DRY: skipped');
   }
   console.log();
 
-  // Step 4: update rrg_brands.wallet_address
-  console.log(`[step 4] update rrg_brands.wallet_address → ${brandWallet.address}`);
+  // Step 4: update app_sellers.wallet_address
+  console.log(`[step 4] update app_sellers.wallet_address → ${sellerWallet.address}`);
   if (!DRY_RUN) {
-    const { error } = await db.from('rrg_brands')
-      .update({ wallet_address: brandWallet.address.toLowerCase() })
+    const { error } = await db.from('app_sellers')
+      .update({ wallet_address: sellerWallet.address.toLowerCase() })
       .eq('id', brand.id);
     if (error) { console.error(`         ERR: ${error.message}`); process.exit(1); }
     console.log(`         ✓ updated`);
@@ -243,10 +243,10 @@ const deployer = new ethers.Wallet(DEPLOYER_PK, provider);
   const creds = {
     brand_slug: BRAND_SLUG,
     brand_name: CFG.name,
-    wallet_address: brandWallet.address,
-    wallet_private_key: brandWallet.privateKey,
-    wallet_mnemonic: brandWallet.mnemonic?.phrase ?? null,
-    wallet_derivation_path: brandWallet.path ?? null,
+    wallet_address: sellerWallet.address,
+    wallet_private_key: sellerWallet.privateKey,
+    wallet_mnemonic: sellerWallet.mnemonic?.phrase ?? null,
+    wallet_derivation_path: sellerWallet.path ?? null,
     erc8004_agent_id: agentId,
     erc8004_register_tx: registerTxHash,
     mcp_endpoint: CFG.mcpEndpoint,
@@ -259,11 +259,11 @@ const deployer = new ethers.Wallet(DEPLOYER_PK, provider);
 
   console.log(`──── Done ────`);
   console.log(`Brand:          ${CFG.name}`);
-  console.log(`Wallet:         ${brandWallet.address}`);
+  console.log(`Wallet:         ${sellerWallet.address}`);
   console.log(`Agent ID:       ${agentId ?? '(dry-run)'}`);
   console.log(`Register tx:    ${registerTxHash ?? '(dry-run)'}`);
   console.log(`Credentials:    ${credPath}`);
   console.log();
   console.log(`Next: add to .env.local (local + VPS + Vercel):`);
-  console.log(`  PASSPORT_ADV_WALLET_PRIVATE_KEY=${brandWallet.privateKey}`);
+  console.log(`  PASSPORT_ADV_WALLET_PRIVATE_KEY=${sellerWallet.privateKey}`);
 })().catch(e => { console.error('FATAL:', e); process.exit(1); });

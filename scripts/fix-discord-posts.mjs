@@ -44,7 +44,7 @@ import { createClient } from '@supabase/supabase-js';
 const db = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL, process.env.SUPABASE_SERVICE_KEY);
 
 const { data: sub } = await db.from('rrg_submissions').select('*').eq('token_id', TOKEN_ID).single();
-const { count } = await db.from('rrg_purchases').select('id', { count: 'exact', head: true }).eq('token_id', TOKEN_ID);
+const { count } = await db.from('app_purchases').select('id', { count: 'exact', head: true }).eq('token_id', TOKEN_ID);
 const remaining = Math.max(0, (sub.edition_size || 10) - (count || 1));
 
 // Get image

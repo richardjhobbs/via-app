@@ -3,7 +3,7 @@
  * scripts/regen-wallets-md.mjs
  *
  * Regenerate docs/wallets.md from Supabase. Standalone Node script — does
- * not boot Next.js. Mirror of lib/rrg/wallets-doc.ts. Keep them in sync.
+ * not boot Next.js. Mirror of lib/app/wallets-doc.ts. Keep them in sync.
  *
  * Usage:
  *   node scripts/regen-wallets-md.mjs
@@ -39,7 +39,7 @@ if (!SUPABASE_URL || !SUPABASE_KEY) {
 
 const db = createClient(SUPABASE_URL, SUPABASE_KEY, { auth: { persistSession: false } });
 
-// ── Constants (mirror of lib/rrg/wallets-doc.ts) ────────────────────────
+// ── Constants (mirror of lib/app/wallets-doc.ts) ────────────────────────
 
 const HOLDING_WALLET = '0x734a25fb869ab6415b78bbe9a39f1f99dab349e7';
 
@@ -76,12 +76,12 @@ const tokenRange = (min, max) => (min === max ? `${min}` : `${min}-${max}`);
 const statusCell = (b) => `${b.status ?? 'unknown'} / ${b.onboarding_status ?? 'unknown'}`;
 const summariseStats = (s) => (!s || s.count === 0 ? 'n/a' : tokenRange(s.min, s.max));
 
-// ── Static template (mirror of lib/rrg/wallets-doc.ts) ──────────────────
+// ── Static template (mirror of lib/app/wallets-doc.ts) ──────────────────
 
 function section1_header(today) {
   return `# Wallet Register
 
-Source of truth for accounting. All addresses are on Base mainnet (chain ID 8453) unless otherwise stated. Values pulled from Supabase (\`rrg_brands\`, \`rrg_submissions\`) on ${today} and from canonical memory files (\`wallet_separation.md\`, \`via_labs_structure.md\`).
+Source of truth for accounting. All addresses are on Base mainnet (chain ID 8453) unless otherwise stated. Values pulled from Supabase (\`app_sellers\`, \`rrg_submissions\`) on ${today} and from canonical memory files (\`wallet_separation.md\`, \`via_labs_structure.md\`).
 
 This file is the input for Agent Colin (admin) to build a chart of accounts and bookkeeping ledger. When a wallet is added, removed, or handed off to a brand owner, update this file and Colin's snapshot job.
 
@@ -91,7 +91,7 @@ These are the wallets that get topped up for operations. Treat as company-contro
 
 | Role | ERC-8004 ID | Address | Notes |
 |------|------|---------|-------|
-| RRG / PLATFORM_WALLET | 33313 | \`0xbfd71eA27FFc99747dA2873372f84346d9A8b7ed\` | Platform agent. Receives on-chain 70% (or 97.5% for brand-owned drops) at sale. All RRG outreach, x402 receipts, marketing-oracle disbursements. Also the wallet referenced by \`process.env.NEXT_PUBLIC_PLATFORM_WALLET\` runtime fallback in \`lib/rrg/splits.ts\`, \`lib/rrg/sendUsdc.ts\`, \`lib/rrg/mpp.ts\`. |
+| RRG / PLATFORM_WALLET | 33313 | \`0xbfd71eA27FFc99747dA2873372f84346d9A8b7ed\` | Platform agent. Receives on-chain 70% (or 97.5% for brand-owned drops) at sale. All RRG outreach, x402 receipts, marketing-oracle disbursements. Also the wallet referenced by \`process.env.NEXT_PUBLIC_PLATFORM_WALLET\` runtime fallback in \`lib/app/splits.ts\`, \`lib/app/sendUsdc.ts\`, \`lib/app/mpp.ts\`. |
 | DEPLOYER | 26244 | \`0x369d04f08f245454926ac96a0164a634fd94660b\` | Gas-only signer. Pays gas for \`operatorMint\` and ERC-8004 \`submitFeedback\`. Should hold ETH on Base only, no USDC. Cost centre. |
 | VIA Team Wallet | (owns #38538) | \`0x58554E8423EF5C10be6fFC82EfABA9149f64de3d\` | VIA Labs corporate. Owns staff and company NFTs. Owner of VIA Labs agent #38538 (getvia.xyz). x402 corporate wallet. Also the on-chain creator of two Digital Fashion Week tokens (42, 43). |
 | DrHobbs (personal) | 17666 | \`0xe653804032A2d51Cc031795afC601B9b1fd2c375\` | Richard's personal agent. Knowledge marketplace, x402, fashion-tech experiments. NOT used for RRG platform flows. Also flagged as a personal-pre-handoff wallet (see section 2) and historic on-chain creator of several test tokens. |
@@ -127,15 +127,15 @@ Deprecated RRG contract addresses (no current live drops, but historic txs may r
 
 ## 8. Operational note: keeping this file fresh
 
-Authoritative live source for brand wallets is the \`wallet_address\` column in \`rrg_brands\`. For token-level attribution it is \`creator_wallet\` in \`rrg_submissions\`. This file is regenerated automatically by \`lib/rrg/wallets-doc.ts\` whenever a brand is marked live via \`POST /api/rrg/admin/onboarding-complete\`. Manual rebuild: \`node scripts/regen-wallets-md.mjs\`.
+Authoritative live source for brand wallets is the \`wallet_address\` column in \`app_sellers\`. For token-level attribution it is \`creator_wallet\` in \`rrg_submissions\`. This file is regenerated automatically by \`lib/app/wallets-doc.ts\` whenever a brand is marked live via \`POST /api/rrg/admin/onboarding-complete\`. Manual rebuild: \`node scripts/regen-wallets-md.mjs\`.
 
-\`.env.example\` line 14 currently shows \`NEXT_PUBLIC_PLATFORM_WALLET=0xe653804032A2d51Cc031795afC601B9b1fd2c375\` (the DrHobbs address). Production env on the VPS uses the RRG wallet, and the runtime fallback in \`lib/rrg/splits.ts\` and elsewhere is also the RRG wallet, so live behaviour is correct. The example file is misleading and should be corrected in a follow-up.
+\`.env.example\` line 14 currently shows \`NEXT_PUBLIC_PLATFORM_WALLET=0xe653804032A2d51Cc031795afC601B9b1fd2c375\` (the DrHobbs address). Production env on the VPS uses the RRG wallet, and the runtime fallback in \`lib/app/splits.ts\` and elsewhere is also the RRG wallet, so live behaviour is correct. The example file is misleading and should be corrected in a follow-up.
 
 ## 9. Where to find transfer data for reconciliation
 
 Three sources, in order of preference:
 
-### 9.1 Internal: \`rrg_purchases\` table (Supabase)
+### 9.1 Internal: \`app_purchases\` table (Supabase)
 
 The platform's own ledger of sales. Authoritative for any RRG-mediated purchase. Project ID \`sanvqnvvzdkjvfmxnxur\`. Columns useful to Colin: \`tx_hash\`, \`payout_tx_hashes\`, \`amount_usdc\`, \`split_creator_usdc\`, \`split_brand_usdc\`, \`split_platform_usdc\`, \`split_model\`, \`brand_pct_applied\`, \`buyer_wallet\`, \`buyer_email\`, \`buyer_type\`, \`network\`, \`payment_method\`.
 
@@ -190,7 +190,7 @@ function renderSection3(brands, stats) {
   const lines = [
     '## 3. Brand-owned wallets (handed off, brand controls funds)',
     '',
-    "Inbound USDC to these is the brand's cash. Platform sees only the 2.5% commission, paid via `lib/rrg/auto-payout.ts` before the brand transfer.",
+    "Inbound USDC to these is the brand's cash. Platform sees only the 2.5% commission, paid via `lib/app/auto-payout.ts` before the brand transfer.",
     '',
     '| Brand | Slug | Wallet | DB status | ERC-8004 ID | Token range | Token count |',
     '|-------|------|--------|-----------|-------------|-------------|-------------|',
@@ -206,8 +206,8 @@ function renderSection3(brands, stats) {
   for (const b of owned) {
     const s = stats.get(b.id);
     if (!s) continue;
-    const brandWallet = lc(b.wallet_address);
-    const otherCreators = [...s.creators.entries()].filter(([addr]) => addr !== brandWallet);
+    const sellerWallet = lc(b.wallet_address);
+    const otherCreators = [...s.creators.entries()].filter(([addr]) => addr !== sellerWallet);
     if (otherCreators.length === 0) continue;
     const summary = otherCreators.map(([addr, count]) => `\`${addr}\` (${count} token${count === 1 ? '' : 's'})`).join(', ');
     mismatchLines.push(`- ${b.name}: ${summary}`);
@@ -286,10 +286,10 @@ function renderSection5(brands, allCreators) {
 
 async function fetchBrandsAndSubmissions() {
   const { data: brandsRaw, error: bErr } = await db
-    .from('rrg_brands')
+    .from('app_sellers')
     .select('id, name, slug, wallet_address, status, onboarding_status, contact_email, erc8004_agent_id')
     .order('name', { ascending: true });
-  if (bErr) throw new Error(`rrg_brands fetch failed: ${bErr.message}`);
+  if (bErr) throw new Error(`app_sellers fetch failed: ${bErr.message}`);
   const brands = brandsRaw ?? [];
 
   const submissions = [];

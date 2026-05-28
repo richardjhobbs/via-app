@@ -13,33 +13,33 @@ import { WebStandardStreamableHTTPServerTransport } from '@modelcontextprotocol/
 import { z } from 'zod';
 import {
   db, getApprovedDrops, getCurrentBrief, getDropByTokenId,
-  getAllActiveBrands, getBrandBySlug, getBrandById, getOpenBriefs,
+  getAllActiveBrands, getSellerBySlug, getBrandById, getOpenBriefs,
   getBrandSalesStats, getVariantsBySubmissionId, RRG_BRAND_ID,
   type RrgSubmission,
-} from '@/lib/rrg/db';
-import { resolveEffectivePrice } from '@/lib/rrg/pricing';
-import { toAgentProduct } from '@/lib/rrg/mcp-product-shape';
+} from '@/lib/app/db';
+import { resolveEffectivePrice } from '@/lib/app/pricing';
+import { toAgentProduct } from '@/lib/app/mcp-product-shape';
 import {
   getActiveTemplatesByBrand, getVoucherByCode, redeemVoucher,
   formatVoucherForDisplay, type VoucherTemplate,
-} from '@/lib/rrg/vouchers';
-import { getAgentStanding } from '@/lib/rrg/agent-trust';
-import { uploadSubmissionFile, jpegStoragePath, getSignedUrl } from '@/lib/rrg/storage';
-import { buildPermitPayload, splitSignature } from '@/lib/rrg/permit';
-import { getRRGContract, getRRGReadOnly, toUsdc6dp } from '@/lib/rrg/contract';
-import { calculateSplit, computeSplit } from '@/lib/rrg/splits';
-import { insertDistributionAndPay } from '@/lib/rrg/auto-payout';
-import { fireSubmitAttribution, fireBrandAttribution } from '@/lib/rrg/marketing-attribution';
-import { fireMemoryAdd, searchMemory, getAgentMemories } from '@/lib/rrg/mem0';
+} from '@/lib/app/vouchers';
+import { getAgentStanding } from '@/lib/app/agent-trust';
+import { uploadSubmissionFile, jpegStoragePath, getSignedUrl } from '@/lib/app/storage';
+import { buildPermitPayload, splitSignature } from '@/lib/app/permit';
+import { getRRGContract, getRRGReadOnly, toUsdc6dp } from '@/lib/app/contract';
+import { calculateSplit, computeSplit } from '@/lib/app/splits';
+import { insertDistributionAndPay } from '@/lib/app/auto-payout';
+import { fireSubmitAttribution, fireBrandAttribution } from '@/lib/app/marketing-attribution';
+import { fireMemoryAdd, searchMemory, getAgentMemories } from '@/lib/app/mem0';
 import {
   getMarketingAgentByWallet,
   getCommissionsByAgent,
   getPendingCommissionTotal,
   upsertCandidate,
-} from '@/lib/rrg/marketing-db';
+} from '@/lib/app/marketing-db';
 import { randomUUID, randomBytes, createHash } from 'crypto';
 import { ethers } from 'ethers';
-import { autopostGeneric } from '@/lib/rrg/autopost';
+import { autopostGeneric } from '@/lib/app/autopost';
 
 export const dynamic = 'force-dynamic';
 
@@ -358,13 +358,13 @@ function createRRGServer() {
         return { isError: true, content: [{ type: 'text', text: 'Query must contain at least one token of 2+ characters.' }] };
       }
 
-      let brandId: string | undefined;
+      let sellerId: string | undefined;
       if (brand_slug) {
-        const b = await getBrandBySlug(brand_slug);
+        const b = await getSellerBySlug(brand_slug);
         if (!b) {
           return { isError: true, content: [{ type: 'text', text: `Brand "${brand_slug}" not found. Call list_brands to see available brands.` }] };
         }
-        brandId = b.id;
+        sellerId = b.id;
       }
 
       // Primary path: Postgres FTS via search_products_fts RPC (GIN index,
@@ -380,7 +380,7 @@ function createRRGServer() {
       try {
         const { data: ftsRows, error: ftsErr } = await db.rpc('search_products_fts', {
           q:            query,
-          brand_filter: brandId ?? null,
+          brand_filter: sellerId ?? null,
           net_filter:   'base',
           result_limit: Math.min(50, maxResults * 3), // extra room for size filter
         });
@@ -420,7 +420,7 @@ function createRRGServer() {
         }
         searchMethod = 'in_memory';
 
-        const drops = await getApprovedDrops(brandId);
+        const drops = await getApprovedDrops(sellerId);
         // Score each drop by token matches across title / description /
         // enhanced_description / product_attributes. Title matches weighted
         // heavier than description matches. Retail SKU exact matches get a
@@ -460,7 +460,7 @@ function createRRGServer() {
             type: 'text',
             text: JSON.stringify({
               query,
-              brandSlug:    brand_slug ?? null,
+              sellerSlug:    brand_slug ?? null,
               searchMethod,
               totalMatches: 0,
               message:      `No matches for "${query}"${brand_slug ? ` within brand "${brand_slug}"` : ''}. Try broader tokens (brand name alone, a SKU/style-code fragment, or a single descriptive keyword), or alternate naming (resale items often list under multiple naming clusters — brand code / collab name / designer name / era / colorway). Call list_brands to see available brands, or list_drops to browse the catalogue.`,
@@ -522,7 +522,7 @@ function createRRGServer() {
         return {
           tokenId:        shape.tokenId,
           title:          shape.title,
-          brandName:      shape.brandName,
+          sellerName:      shape.sellerName,
           merchantType:   shape.merchantType,
           assetType:      shape.assetType,
           ...(shape.authenticationStatus ? { authenticationStatus: shape.authenticationStatus } : {}),
@@ -567,7 +567,7 @@ function createRRGServer() {
           type: 'text',
           text: JSON.stringify({
             query,
-            brandSlug:    brand_slug ?? null,
+            sellerSlug:    brand_slug ?? null,
             sizeFilter,
             ...(autoSize && !size ? { sizeAutoExtracted: autoSize, note: `Size "${autoSize}" auto-extracted from query. Pass 'size' explicitly next time to be unambiguous.` } : {}),
             searchMethod,
@@ -592,22 +592,22 @@ function createRRGServer() {
       brand_slug: z.string().optional().describe('Optional brand slug to filter listings by a specific brand'),
     },
     async ({ brand_slug }) => {
-      let brandId: string | undefined;
+      let sellerId: string | undefined;
       if (brand_slug) {
-        const brand = await getBrandBySlug(brand_slug);
+        const brand = await getSellerBySlug(brand_slug);
         if (!brand) {
           return { isError: true, content: [{ type: 'text', text: `Brand "${brand_slug}" not found` }] };
         }
-        brandId = brand.id;
+        sellerId = brand.id;
       }
-      const drops = await getApprovedDrops(brandId);
+      const drops = await getApprovedDrops(sellerId);
 
       // Look up per-brand split overrides for any brands referenced in this list
       const distinctBrandIds = Array.from(new Set(drops.map(d => d.brand_id).filter((b): b is string => !!b)));
       const overrideByBrandId = new Map<string, number | null>();
       if (distinctBrandIds.length > 0) {
         const { data: brandRows } = await db
-          .from('rrg_brands')
+          .from('app_sellers')
           .select('id, brand_pct_override')
           .in('id', distinctBrandIds);
         for (const b of brandRows ?? []) {
@@ -626,7 +626,7 @@ function createRRGServer() {
       // co-created / non-brand drops where chain registration is required.
       const enriched = await Promise.all(
         drops.map(async (drop) => {
-          const isBrandProduct = drop.is_brand_product ?? false;
+          const isSellerProduct = drop.is_brand_product ?? false;
 
           // Fetch variants first — for brand products (Shopify mirrors) the
           // authoritative stock source is variant cached_stock, not the
@@ -635,7 +635,7 @@ function createRRGServer() {
           const variantRows = await getVariantsBySubmissionId(drop.id);
 
           let remaining: number | null = null;
-          if (drop.token_id && !isBrandProduct) {
+          if (drop.token_id && !isSellerProduct) {
             try {
               const contract = getRRGReadOnly();
               const data = await contract.getDrop(drop.token_id);
@@ -663,10 +663,10 @@ function createRRGServer() {
             revenueSplit = {
               model:        'fixed_co_created',
               creatorPct:   35,
-              brandPct:     35,
+              sellerPct:     35,
               platformPct:  30,
               creatorUsdc:  splitData.creator,
-              brandUsdc:    splitData.brand,
+              sellerUsdc:    splitData.brand,
               platformUsdc: splitData.platform,
             };
           }
@@ -684,8 +684,8 @@ function createRRGServer() {
             title:         shape.title,
             description:   shape.description,
             agentDescription: shape.agentDescription,
-            brandName:     shape.brandName,
-            brandId:       drop.brand_id ?? RRG_BRAND_ID,
+            sellerName:     shape.sellerName,
+            sellerId:       drop.brand_id ?? RRG_BRAND_ID,
             merchantType:  shape.merchantType,
             assetType:     shape.assetType,
             // Legitimacy anchors (null for direct_brand — kept in the shape
@@ -744,7 +744,7 @@ function createRRGServer() {
       brand_slug: z.string().describe('The brand slug (e.g. "unknown-union", "clooudie")'),
     },
     async ({ brand_slug }) => {
-      const brand = await getBrandBySlug(brand_slug);
+      const brand = await getSellerBySlug(brand_slug);
       if (!brand || brand.status !== 'active') {
         return { isError: true, content: [{ type: 'text', text: `Brand "${brand_slug}" not found or inactive` }] };
       }
@@ -784,15 +784,15 @@ function createRRGServer() {
       brand_slug: z.string().optional().describe('Optional brand slug to get that brand\'s current brief instead of the default RRG brief'),
     },
     async ({ brand_slug }) => {
-      let brandId: string | undefined;
+      let sellerId: string | undefined;
       if (brand_slug) {
-        const brand = await getBrandBySlug(brand_slug);
+        const brand = await getSellerBySlug(brand_slug);
         if (!brand) {
           return { isError: true, content: [{ type: 'text', text: `Brand "${brand_slug}" not found` }] };
         }
-        brandId = brand.id;
+        sellerId = brand.id;
       }
-      const brief = await getCurrentBrief(brandId);
+      const brief = await getCurrentBrief(sellerId);
       if (!brief) {
         return {
           content: [{ type: 'text', text: brand_slug ? `No active brief for brand "${brand_slug}".` : 'No active design brief at this time.' }],
@@ -807,7 +807,7 @@ function createRRGServer() {
             description: brief.description,
             startsAt:    brief.starts_at,
             endsAt:      brief.ends_at,
-            brandId:     brief.brand_id ?? RRG_BRAND_ID,
+            sellerId:     brief.brand_id ?? RRG_BRAND_ID,
           }, null, 2),
         }],
       };
@@ -1054,7 +1054,7 @@ function createRRGServer() {
       // Mem0 memory (fire-and-forget)
       fireMemoryAdd(creator_wallet.trim().toLowerCase(), [
         { role: 'assistant', content: `Submitted design "${title.trim()}" to RRG. Submission ID: ${data.id}. Status: pending review.` },
-      ], { action: 'submit', submissionId: data.id, brandId: resolvedBrandId || '' });
+      ], { action: 'submit', submissionId: data.id, sellerId: resolvedBrandId || '' });
 
       return {
         content: [{
@@ -1256,7 +1256,7 @@ function createRRGServer() {
       const downloadExpiry = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
 
       const { data: purchase, error: dbError } = await db
-        .from('rrg_purchases')
+        .from('app_purchases')
         .insert({
           submission_id:       drop.id,
           token_id:            tokenId,
@@ -1289,23 +1289,23 @@ function createRRGServer() {
       if (dbError) throw dbError;
 
       // Record distribution + auto-payout (non-fatal)
-      let brandPctOverride: number | null = null;
+      let sellerPctOverride: number | null = null;
       try {
-        const brandId = drop.brand_id ?? RRG_BRAND_ID;
-        const brand   = brandId !== RRG_BRAND_ID ? await getBrandById(brandId) : null;
-        brandPctOverride = brand?.brand_pct_override ?? null;
+        const sellerId = drop.brand_id ?? RRG_BRAND_ID;
+        const brand   = sellerId !== RRG_BRAND_ID ? await getBrandById(sellerId) : null;
+        sellerPctOverride = brand?.brand_pct_override ?? null;
         const split   = calculateSplit({
           totalUsdc:        effectivePrice,
-          brandId,
+          sellerId,
           creatorWallet:    drop.creator_wallet,
-          brandWallet:      brand?.wallet_address ?? null,
-          isBrandProduct:   drop.is_brand_product ?? false,
+          sellerWallet:      brand?.wallet_address ?? null,
+          isSellerProduct:   drop.is_brand_product ?? false,
           isLegacy:         false,
-          brandPctOverride,
+          sellerPctOverride,
         });
         await insertDistributionAndPay({
           purchaseId: purchase.id,
-          brandId,
+          sellerId,
           split,
           tokenId,
           // NOTE: this MCP path calls mintWithPermit (line 1239 above) — same code
@@ -1331,10 +1331,10 @@ function createRRGServer() {
         purchaseRevenueSplit = {
           model:        'fixed_co_created',
           creatorPct:   35,
-          brandPct:     35,
+          sellerPct:     35,
           platformPct:  30,
           creatorUsdc:  purchaseSplit.creator,
-          brandUsdc:    purchaseSplit.brand,
+          sellerUsdc:    purchaseSplit.brand,
           platformUsdc: purchaseSplit.platform,
         };
       }
@@ -1366,7 +1366,7 @@ function createRRGServer() {
     },
     async ({ buyerWallet, tokenId }) => {
       const { data: purchase } = await db
-        .from('rrg_purchases')
+        .from('app_purchases')
         .select('*')
         .eq('buyer_wallet', buyerWallet.toLowerCase())
         .eq('token_id', tokenId)
@@ -1456,16 +1456,16 @@ function createRRGServer() {
       brand_slug: z.string().optional().describe('Optional brand slug to filter briefs by a specific brand'),
     },
     async ({ brand_slug }) => {
-      let brandId: string | undefined;
+      let sellerId: string | undefined;
       if (brand_slug) {
-        const brand = await getBrandBySlug(brand_slug);
+        const brand = await getSellerBySlug(brand_slug);
         if (!brand) {
           return { isError: true, content: [{ type: 'text', text: `Brand "${brand_slug}" not found` }] };
         }
-        brandId = brand.id;
+        sellerId = brand.id;
       }
 
-      const allBriefs = await getOpenBriefs(brandId);
+      const allBriefs = await getOpenBriefs(sellerId);
 
       // Only return active + current briefs
       const briefs = allBriefs.filter((b) => b.is_current && b.status === 'active');
@@ -1484,9 +1484,9 @@ function createRRGServer() {
             description:      b.description,
             startsAt:         b.starts_at,
             endsAt:           b.ends_at,
-            brandName:        brand?.name ?? 'RRG',
+            sellerName:        brand?.name ?? 'RRG',
             brandDescription: brand?.description ?? null,
-            brandId:          b.brand_id ?? RRG_BRAND_ID,
+            sellerId:          b.brand_id ?? RRG_BRAND_ID,
           };
         })
       );
@@ -1505,7 +1505,7 @@ function createRRGServer() {
       brand_slug: z.string().describe('Brand slug (e.g. "rrg", "my-brand")'),
     },
     async ({ brand_slug }) => {
-      const brand = await getBrandBySlug(brand_slug);
+      const brand = await getSellerBySlug(brand_slug);
       if (!brand) {
         return { isError: true, content: [{ type: 'text', text: `Brand "${brand_slug}" not found` }] };
       }
@@ -1592,7 +1592,7 @@ function createRRGServer() {
 
       // Check slug uniqueness
       const { data: existingSlug } = await db
-        .from('rrg_brands')
+        .from('app_sellers')
         .select('id')
         .eq('slug', slug)
         .maybeSingle();
@@ -1602,7 +1602,7 @@ function createRRGServer() {
 
       // Rate limit: one pending brand per wallet
       const { data: pendingBrand } = await db
-        .from('rrg_brands')
+        .from('app_sellers')
         .select('id, name')
         .eq('wallet_address', walletLower)
         .eq('status', 'pending')
@@ -1616,7 +1616,7 @@ function createRRGServer() {
 
       // Insert brand
       const { data: brand, error } = await db
-        .from('rrg_brands')
+        .from('app_sellers')
         .insert({
           name,
           slug,
@@ -1644,7 +1644,7 @@ function createRRGServer() {
       // Mem0 memory (fire-and-forget)
       fireMemoryAdd(walletLower, [
         { role: 'assistant', content: `Registered brand "${name}" on RRG. Slug: ${brand.slug}. Status: pending approval.` },
-      ], { action: 'register_brand', brandId: brand.id, slug: brand.slug });
+      ], { action: 'register_brand', sellerId: brand.id, slug: brand.slug });
 
       return {
         content: [{
@@ -1652,7 +1652,7 @@ function createRRGServer() {
           text: JSON.stringify({
             status:  'pending',
             message: `Brand "${name}" registered successfully! Your brand is pending admin approval. Please check back within 24 hours for approval status. Once approved, it will appear on the RRG platform and you can start creating briefs and listing products.`,
-            brandId: brand.id,
+            sellerId: brand.id,
             slug:    brand.slug,
             storefront: `https://realrealgenuine.com/brand/${brand.slug}`,
           }, null, 2),
@@ -1710,8 +1710,8 @@ function createRRGServer() {
       }
 
       // Brand info
-      const brandId = drop.brand_id ?? RRG_BRAND_ID;
-      const brand   = await getBrandById(brandId);
+      const sellerId = drop.brand_id ?? RRG_BRAND_ID;
+      const brand   = await getBrandById(sellerId);
 
       // Variants + per-size price overrides. For sized products (Stadium Goods,
       // Frey Tailored, etc.) different sizes can carry different prices. Agents
@@ -1720,7 +1720,7 @@ function createRRGServer() {
       const rawVariants = await getVariantsBySubmissionId(drop.id);
 
       // Canonical agent-facing shape — shared with the per-brand MCP via
-      // lib/rrg/mcp-product-shape.ts. Merchant mode (direct_brand /
+      // lib/app/mcp-product-shape.ts. Merchant mode (direct_brand /
       // reseller_authenticated / curated_consignment) controls whether
       // authentication anchors + resale-value context are included.
       const agentProduct = toAgentProduct({ drop, brand, variants: rawVariants });
@@ -1769,7 +1769,7 @@ function createRRGServer() {
       let brands: { id: string; name: string; slug: string }[];
 
       if (brand_slug) {
-        const brand = await getBrandBySlug(brand_slug);
+        const brand = await getSellerBySlug(brand_slug);
         if (!brand) {
           return { isError: true, content: [{ type: 'text', text: `Brand "${brand_slug}" not found` }] };
         }
@@ -1780,8 +1780,8 @@ function createRRGServer() {
       }
 
       const allOffers: Array<{
-        brandName: string;
-        brandSlug: string;
+        sellerName: string;
+        sellerSlug: string;
         templateId: string;
         title: string;
         description: string | null;
@@ -1796,8 +1796,8 @@ function createRRGServer() {
         const templates = await getActiveTemplatesByBrand(brand.id);
         for (const t of templates) {
           allOffers.push({
-            brandName:   brand.name,
-            brandSlug:   brand.slug,
+            sellerName:   brand.name,
+            sellerSlug:   brand.slug,
             templateId:  t.id,
             title:       t.title,
             description: t.description,
@@ -1856,8 +1856,8 @@ function createRRGServer() {
         standing.brands.map(async (b) => {
           const brand = await getBrandById(b.brand_id);
           return {
-            brandName:        brand?.name ?? 'Unknown',
-            brandId:          b.brand_id,
+            sellerName:        brand?.name ?? 'Unknown',
+            sellerId:          b.brand_id,
             trustLevel:       b.trust_level,
             transactionCount: b.transaction_count,
             totalSpendUsdc:   b.total_spend_usdc,
@@ -1895,7 +1895,7 @@ function createRRGServer() {
       agent_wallet: z.string().regex(/^0x[0-9a-fA-F]{40}$/).describe('Your agent wallet address on Base'),
     },
     async ({ agent_wallet }) => {
-      const { verifyWallet } = await import('@/lib/rrg/worldid');
+      const { verifyWallet } = await import('@/lib/app/worldid');
       const result = await verifyWallet(agent_wallet, 'mcp');
 
       if (!result) {
@@ -2357,7 +2357,7 @@ function createRRGServer() {
       } catch {
         // Fall back to DB count
         const { count } = await db
-          .from('rrg_purchases')
+          .from('app_purchases')
           .select('id', { count: 'exact', head: true })
           .eq('token_id', AGENT_PASS_TOKEN_ID);
         remaining = AGENT_PASS_MAX_SUPPLY - (count ?? 0);
@@ -2369,7 +2369,7 @@ function createRRGServer() {
 
       // Check per-wallet limit
       const { count: walletCount } = await db
-        .from('rrg_purchases')
+        .from('app_purchases')
         .select('id', { count: 'exact', head: true })
         .eq('token_id', AGENT_PASS_TOKEN_ID)
         .eq('buyer_wallet', buyerWallet.toLowerCase());
@@ -2571,7 +2571,7 @@ function createRRGServer() {
 
       // Pull Supabase data: purchases + submissions
       const [purchaseResult, submissionResult, memories] = await Promise.all([
-        db.from('rrg_purchases')
+        db.from('app_purchases')
           .select('token_id, price_usdc, created_at, brand_id')
           .eq('buyer_wallet', wallet)
           .order('created_at', { ascending: false })
@@ -3002,7 +3002,7 @@ export async function GET(req: Request) {
     let brands: { slug: string; name: string; storefront: string; catalogue: string }[] = [];
     try {
       const { data } = await db
-        .from('rrg_brands')
+        .from('app_sellers')
         .select('slug, name')
         .eq('status', 'active')
         .order('created_at', { ascending: false })

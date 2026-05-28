@@ -17,22 +17,22 @@
  *   token"; a 32-hex string). Not a private/shpat_ token, not an Admin token.
  *
  * What it does:
- *   1. Verifies the brand row exists in rrg_brands.
- *   2. Updates rrg_brands.contact_email and (if provided)
+ *   1. Verifies the brand row exists in app_sellers.
+ *   2. Updates app_sellers.contact_email and (if provided)
  *      shopify_storefront_token_encrypted + shopify_domain.
  *   3. Spawns scripts/register-brand-agent.mjs --brand <slug> to:
  *        a. generate a fresh EOA owned by the brand
  *        b. fund it from DEPLOYER (~0.00005 ETH)
  *        c. register on ERC-8004 Identity Registry (Base mainnet)
- *        d. update rrg_brands.wallet_address to the new wallet
+ *        d. update app_sellers.wallet_address to the new wallet
  *        e. write credentials JSON to tmp/<slug>-credentials-<ts>.json
  *      Skip with --skip-wallet (e.g. re-runs).
  *   4. Spawns scripts/create-membership-listings.mjs --brand <slug> --hidden
  *      to mint a test membership badge that stays hidden=true until you
- *      manually unhide it in /admin/rrg Drops tab. Skip with --skip-badge.
+ *      manually unhide it in /admin Drops tab. Skip with --skip-badge.
  *   5. Prints a summary with the new wallet, agent ID, badge token ID,
  *      and the manual TG-bot setup instructions (still required because
- *      BRAND_BOTS in lib/rrg/brand-telegram-bot.ts is hardcoded today).
+ *      BRAND_BOTS in lib/app/brand-telegram-bot.ts is hardcoded today).
  *
  * What it does NOT do (operator + Claude do these in-session):
  *   - Telegram bot setup. BotFather is manual on Telegram's side. The
@@ -44,7 +44,7 @@
  *   - Encrypt the Shopify token before writing. The column is named
  *     shopify_storefront_token_encrypted but no encryption layer exists in
  *     the repo yet, so this script stores the token wrapped as
- *     "plaintext:<token>". lib/rrg/shopify-shipping.ts only reads tokens
+ *     "plaintext:<token>". lib/app/shopify-shipping.ts only reads tokens
  *     with that prefix; a raw token yields source: fallback_zero (no rates).
  *     The credential is the brand's PUBLIC Storefront access token (a 32-hex
  *     string from Shopify Admin > Sales channels > Headless > Storefront API
@@ -121,12 +121,12 @@ function findLatestCredentialsFile(slug) {
 
   // 1. Verify brand exists
   const { data: brand, error: brandErr } = await db
-    .from('rrg_brands')
+    .from('app_sellers')
     .select('id, slug, name, status, wallet_address, contact_email, shopify_domain')
     .eq('slug', SLUG)
     .maybeSingle();
-  if (brandErr) { console.error(`FATAL: rrg_brands lookup error: ${brandErr.message}`); process.exit(1); }
-  if (!brand) { console.error(`FATAL: brand "${SLUG}" not found in rrg_brands. Run onboard-brand.mjs first.`); process.exit(1); }
+  if (brandErr) { console.error(`FATAL: app_sellers lookup error: ${brandErr.message}`); process.exit(1); }
+  if (!brand) { console.error(`FATAL: brand "${SLUG}" not found in app_sellers. Run onboard-brand.mjs first.`); process.exit(1); }
   console.log(`[db] found brand id=${brand.id} status=${brand.status}`);
   console.log(`[db] current wallet:  ${brand.wallet_address}`);
   console.log(`[db] current email:   ${brand.contact_email}`);
@@ -148,8 +148,8 @@ function findLatestCredentialsFile(slug) {
   if (Object.keys(updates).length > 0) {
     console.log(`[db] applying updates: ${Object.keys(updates).join(', ')}`);
     if (!DRY_RUN) {
-      const { error } = await db.from('rrg_brands').update(updates).eq('id', brand.id);
-      if (error) { console.error(`FATAL: rrg_brands update failed: ${error.message}`); process.exit(1); }
+      const { error } = await db.from('app_sellers').update(updates).eq('id', brand.id);
+      if (error) { console.error(`FATAL: app_sellers update failed: ${error.message}`); process.exit(1); }
       console.log(`[db] updated`);
     } else {
       console.log(`[db] DRY: skipped`);
@@ -193,7 +193,7 @@ function findLatestCredentialsFile(slug) {
     console.log();
   }
 
-  // 4.5 Activate the Brand Concierge (auth user + rrg_brand_members admin
+  // 4.5 Activate the Brand Concierge (auth user + app_seller_members admin
   //     + welcome email). Idempotent, skips if an admin already exists.
   console.log(`──── Spawning activate-brand-concierge ────`);
   {
@@ -217,7 +217,7 @@ function findLatestCredentialsFile(slug) {
   console.log(`Brand:          ${brand.name} (${SLUG})`);
   console.log(`Storefront:     https://realrealgenuine.com/brand/${SLUG}`);
   console.log(`Brand admin:    https://realrealgenuine.com/brand/${SLUG}/admin`);
-  console.log(`Concierge:      owner login + welcome email auto-activated. Hermes runtime is queued (rrg_brands.hermes_concierge_status='pending').`);
+  console.log(`Concierge:      owner login + welcome email auto-activated. Hermes runtime is queued (app_sellers.hermes_concierge_status='pending').`);
   console.log(`                Drain the queue from your desktop:  pwsh -File via-agent-wiki/scripts/process-pending-concierges.ps1`);
   console.log(`                (Requires $env:RRG_ADMIN_SECRET and $env:CONCIERGE_KEY_SECRET in that shell; SSH access to the Box.)`);
   if (creds) {
@@ -237,12 +237,12 @@ function findLatestCredentialsFile(slug) {
   } else {
     console.log(`  1. Add new wallet PK env var to .env.local + Vercel + VPS (see credentials JSON).`);
   }
-  console.log(`  2. (Optional, only if a TG bot is wanted) store env var, add to BRAND_BOTS in lib/rrg/brand-telegram-bot.ts,`);
-  console.log(`     call https://api.telegram.org/bot<TOKEN>/setWebhook?url=https://realrealgenuine.com/api/brand/telegram-webhook?brand=${SLUG}`);
+  console.log(`  2. (Optional, only if a TG bot is wanted) store env var, add to BRAND_BOTS in lib/app/brand-telegram-bot.ts,`);
+  console.log(`     call https://api.telegram.org/bot<TOKEN>/setWebhook?url=https://realrealgenuine.com/api/seller/telegram-webhook?brand=${SLUG}`);
   console.log(`  3. Create the Notion Onboarding page for ${SLUG} by duplicating "Brand Welcome Guide: Template"`);
   console.log(`     (34ddbc7b67f2811cb869e07b84e0e03a) under parent 34ddbc7b67f2809786a8d6ecf8e24f9c ("Brand Onboarding Guidelines").`);
   console.log(`     Replace <your-slug> throughout with ${SLUG}, fill in the wallet address, and set the Concierge bot handle.`);
   console.log(`  4. Reply with BOTH Notion page URLs (Stage 1 Integration + Stage 2 Onboarding) so the user can forward them to the brand.`);
-  console.log(`  5. Verify the test badge in /admin/rrg Drops tab. Unhide for trial purchase, then re-hide.`);
+  console.log(`  5. Verify the test badge in /admin Drops tab. Unhide for trial purchase, then re-hide.`);
   console.log(`  Do NOT pause to ask "shall I create this?" The script printing this block is the instruction.`);
 })().catch(e => { console.error('FATAL:', e); process.exit(1); });

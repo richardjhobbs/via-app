@@ -1,6 +1,6 @@
 /**
  * Email notifications via Resend.
- * Adapted from rrg/lib/rrg/email.ts
+ * Adapted from rrg/lib/app/email.ts
  */
 
 import { Resend } from 'resend';
@@ -182,11 +182,11 @@ export async function sendBidLost(
 export async function sendNewListingMatch(
   email: string,
   agentName: string,
-  match: { brandName: string | null; title: string; url: string; priceUsdc: number | null; reason: string },
+  match: { sellerName: string | null; title: string; url: string; priceUsdc: number | null; reason: string },
 ) {
   const price = match.priceUsdc != null ? `$${match.priceUsdc.toFixed(2)} USDC` : '';
-  const subject = match.brandName
-    ? `${match.brandName} matches your profile: ${match.title}`
+  const subject = match.sellerName
+    ? `${match.sellerName} matches your profile: ${match.title}`
     : `New on RRG, matches your profile: ${match.title}`;
 
   await send({
@@ -194,7 +194,7 @@ export async function sendNewListingMatch(
     subject,
     html: `
       <div style="font-family: sans-serif; color: #ededed; background: #0a0a0a; padding: 32px;">
-        <h2 style="color: #fff; margin:0 0 12px;">${match.brandName ? `${match.brandName} &middot; ` : ''}${match.title}</h2>
+        <h2 style="color: #fff; margin:0 0 12px;">${match.sellerName ? `${match.sellerName} &middot; ` : ''}${match.title}</h2>
         <p style="color:#bbb; margin:0 0 14px;">${match.reason}</p>
         ${price ? `<div style="color:#bbb; margin:0 0 18px;">${price}</div>` : ''}
         <a href="${match.url}" style="display:inline-block; background:#fff; color:#000; padding:12px 24px; border-radius:6px; text-decoration:none; font-weight:600;">View on RRG</a>
@@ -210,14 +210,14 @@ export async function sendNewListingMatch(
 export async function sendNewBrandMatch(
   email: string,
   agentName: string,
-  match: { brandName: string; brandUrl: string; reason: string },
+  match: { sellerName: string; brandUrl: string; reason: string },
 ) {
   await send({
     to: email,
-    subject: `${match.brandName} joined RRG and matches your profile`,
+    subject: `${match.sellerName} joined RRG and matches your profile`,
     html: `
       <div style="font-family: sans-serif; color: #ededed; background: #0a0a0a; padding: 32px;">
-        <h2 style="color: #fff; margin:0 0 12px;">${match.brandName} on RRG</h2>
+        <h2 style="color: #fff; margin:0 0 12px;">${match.sellerName} on RRG</h2>
         <p style="color:#bbb; margin:0 0 18px;">${match.reason}</p>
         <a href="${match.brandUrl}" style="display:inline-block; background:#fff; color:#000; padding:12px 24px; border-radius:6px; text-decoration:none; font-weight:600;">See the brand</a>
         <p style="color:#666; font-size:12px; margin-top:28px;">${agentName} only emails when a new brand genuinely fits your profile. Quiet days stay quiet.</p>
@@ -236,7 +236,7 @@ export interface DigestBrand {
 
 export interface DigestListing {
   title: string;
-  brandName: string | null;
+  sellerName: string | null;
   url: string;
   priceUsdc: number | null;
   reason: string;
@@ -288,7 +288,7 @@ function digestHtml(p: DigestPayload): string {
             : '';
           return `
           <div class="row">
-            <h3 class="row-title">${l.brandName ? `${escHtml(l.brandName)} &middot; ` : ''}${escHtml(l.title)}</h3>
+            <h3 class="row-title">${l.sellerName ? `${escHtml(l.sellerName)} &middot; ` : ''}${escHtml(l.title)}</h3>
             <p class="row-body">${escHtml(l.reason)}</p>
             ${price ? `<p class="row-meta">${price}</p>` : ''}
             ${matched ? `<p class="row-meta">${matched}</p>` : ''}

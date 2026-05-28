@@ -45,7 +45,7 @@ const SITE_URL = 'https://realrealgenuine.com';
 const dropUrl = `${SITE_URL}/rrg/drop/${TOKEN_ID}`;
 
 const { data: sub } = await db.from('rrg_submissions').select('*').eq('token_id', TOKEN_ID).single();
-const { count } = await db.from('rrg_purchases').select('id', { count: 'exact', head: true }).eq('token_id', TOKEN_ID);
+const { count } = await db.from('app_purchases').select('id', { count: 'exact', head: true }).eq('token_id', TOKEN_ID);
 const remaining = Math.max(0, (sub.edition_size || 10) - (count || 1));
 
 // Get image

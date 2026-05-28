@@ -16,7 +16,7 @@ const db = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL, process.env.SUPABA
 const { data: sub } = await db.from('rrg_submissions').select('*').eq('token_id', TOKEN_ID).single();
 if (!sub) { console.log('No drop'); process.exit(1); }
 
-const { count } = await db.from('rrg_purchases').select('id', { count: 'exact', head: true }).eq('token_id', TOKEN_ID);
+const { count } = await db.from('app_purchases').select('id', { count: 'exact', head: true }).eq('token_id', TOKEN_ID);
 const remaining = Math.max(0, (sub.edition_size || 10) - (count || 1));
 const dropUrl = `https://realrealgenuine.com/rrg/drop/${TOKEN_ID}`;
 

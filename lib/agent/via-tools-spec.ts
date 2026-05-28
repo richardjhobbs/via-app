@@ -23,7 +23,7 @@ import {
   getCurrentNetwork,
   getNonActiveBrandIds,
   getAllActiveBrands,
-} from '@/lib/rrg/db';
+} from '@/lib/app/db';
 
 const SITE_URL = (process.env.NEXT_PUBLIC_SITE_URL ?? 'https://realrealgenuine.com').replace(/\/$/, '');
 
@@ -234,7 +234,7 @@ function brandUrl(slug: string | null): string | null {
 }
 
 // Process-level brand lookup. getAllActiveBrands() is already wrapped in
-// unstable_cache by lib/rrg/db, so this just keeps a Promise to share across
+// unstable_cache by lib/app/db, so this just keeps a Promise to share across
 // concurrent tool calls in one request.
 async function brandLookup(): Promise<Map<string, { name: string; slug: string }>> {
   const brands = await getAllActiveBrands();
@@ -507,11 +507,11 @@ async function via_list_brands() {
   // products (e.g. "Caramel Swirl ... cold-brewed decaf" => coffee brand)
   // when the brand name alone is opaque ("Nolo", "Clooudie"). One LATERAL
   // query, ~10 ms total, ~250 bytes per brand on the wire.
-  const brandIds = Array.from(counts.keys());
+  const sellerIds = Array.from(counts.keys());
   const sampleByBrand = new Map<string, { title: string; snippet: string }>();
-  if (brandIds.length > 0) {
+  if (sellerIds.length > 0) {
     const { data: samples } = await db.rpc('agent_brand_samples', {
-      brand_ids: brandIds,
+      brand_ids: sellerIds,
     });
     for (const row of (samples ?? []) as unknown as Array<{
       brand_id: string; sample_title: string | null; sample_snippet: string | null;
@@ -525,10 +525,10 @@ async function via_list_brands() {
   }
 
   const listed = Array.from(counts.entries())
-    .map(([brandId, drop_count]) => {
-      const b = brands.get(brandId);
+    .map(([sellerId, drop_count]) => {
+      const b = brands.get(sellerId);
       if (!b) return null;
-      const sample = sampleByBrand.get(brandId);
+      const sample = sampleByBrand.get(sellerId);
       return {
         brand_name: b.name,
         brand_slug: b.slug,
@@ -566,10 +566,10 @@ async function via_get_brand(args: { slug: string }) {
   if (!entry) {
     return { found: false, message: `No brand with slug "${slug}" on the VIA network. Call via_list_brands to see available slugs.` };
   }
-  const [brandId, brand] = entry;
+  const [sellerId, brand] = entry;
 
   const { data, error } = await baseDropsQuery(SUMMARY_COLUMNS, suspendedIds)
-    .eq('brand_id', brandId)
+    .eq('brand_id', sellerId)
     .order('approved_at', { ascending: false })
     .limit(20);
 

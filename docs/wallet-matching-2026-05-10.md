@@ -2,7 +2,7 @@
 
 Generated 2026-05-10. Source: live Supabase query, 28 purchase rows. Every `tx_hash` and payout-leg hash was verified against BOTH Base mainnet (https://base.blockscout.com) and Base Sepolia (https://base-sepolia.blockscout.com) to determine its actual chain.
 
-**Note on data quality.** The Sepolia testnet rows were removed from `rrg_purchases` on 2026-05-10 (testnet has no accounting value). The `network` column for remaining rows was backfilled to match the verified chain. Going forward, the column should be reliable. Orphan rows (tx not found on either chain) are listed in section 5 for manual review.
+**Note on data quality.** The Sepolia testnet rows were removed from `app_purchases` on 2026-05-10 (testnet has no accounting value). The `network` column for remaining rows was backfilled to match the verified chain. Going forward, the column should be reliable. Orphan rows (tx not found on either chain) are listed in section 5 for manual review.
 
 ## 1. Summary by verified chain
 
@@ -73,7 +73,7 @@ These 11 rows reference `tx_hash` values that don't exist on Base mainnet OR Bas
 
 ## 6. Unaccounted on-chain USDC tx (need Richard's classification)
 
-These USDC transfers hit a watched wallet on Base mainnet but do NOT correspond to any `rrg_purchases.tx_hash` or `payout_tx_hashes` value. They are top-ups, manual sends, gas rebates, agent micropayments, refunds, or other off-platform activity. Each needs a one-line classification before booking.
+These USDC transfers hit a watched wallet on Base mainnet but do NOT correspond to any `app_purchases.tx_hash` or `payout_tx_hashes` value. They are top-ups, manual sends, gas rebates, agent micropayments, refunds, or other off-platform activity. Each needs a one-line classification before booking.
 
 | Date | Wallet | Direction | USDC | Counterparty | Tx |
 |------|--------|-----------|-----:|--------------|----|
@@ -120,7 +120,7 @@ Identities for addresses that recur in the ledger. Treat unknown addresses as ex
 | Address | Identity | Source |
 |---------|----------|--------|
 | `0xbfd71eA27FFc99747dA2873372f84346d9A8b7ed` | RRG / PLATFORM_WALLET | docs/wallets.md section 1 |
-| `0x369d04f08f245454926ac96a0164a634fd94660b` | DEPLOYER (gas signer; also test buyer on 4 mainnet purchases) | docs/wallets.md section 1 + rrg_purchases |
+| `0x369d04f08f245454926ac96a0164a634fd94660b` | DEPLOYER (gas signer; also test buyer on 4 mainnet purchases) | docs/wallets.md section 1 + app_purchases |
 | `0xe653804032A2d51Cc031795afC601B9b1fd2c375` | DrHobbs personal | docs/wallets.md section 1 + 2 |
 | `0x58554E8423EF5C10be6fFC82EfABA9149f64de3d` | VIA Team Wallet | docs/wallets.md section 1 |
 | `0x61e01997e6a0C692656e94955c67CB3ebcAb8f19` | East Coast Cassettes pre-handoff | docs/wallets.md section 2 |
@@ -137,11 +137,11 @@ Identities for addresses that recur in the ledger. Treat unknown addresses as ex
 | `0xe7ed24a6a66170070c725451c003917da83871da` | Unknown Union brand wallet | docs/wallets.md section 3 |
 | `0x734a25fB869ab6415b78bbe9a39f1f99dab349E7` | Shared holding wallet | docs/wallets.md section 4 |
 | `0x891c13aa323378637404efd971553a3a6df5aaf1` | Nolo handoff intermediary | docs/wallets.md section 5 |
-| `0x0e0ef55048fb7b68b06dec7a6413b086a7ec029a` | Original RRG creator (token 13); also a buyer on 1 mainnet purchase | docs/wallets.md section 5 + rrg_purchases |
+| `0x0e0ef55048fb7b68b06dec7a6413b086a7ec029a` | Original RRG creator (token 13); also a buyer on 1 mainnet purchase | docs/wallets.md section 5 + app_purchases |
 | `0xf2e7289889ea5ecc557439a134906f77a1d64b3e` | Artemist original creator (token 44) | docs/wallets.md section 5 |
-| `0xf7bba988b1e9f28dcb293ed564b57f965ae1ec2b` | RRG submission original creator (tokens 12, 19); also a buyer on 1 mainnet purchase | docs/wallets.md section 5 + rrg_purchases |
+| `0xf7bba988b1e9f28dcb293ed564b57f965ae1ec2b` | RRG submission original creator (tokens 12, 19); also a buyer on 1 mainnet purchase | docs/wallets.md section 5 + app_purchases |
 | `0x9f783931cedc82c538028fb9be5289a38bc395df` | EOA, holdings exclusively RRG ERC-1155 NFTs across 3 contract versions (live + 2 deprecated). No ETH balance, no other on-chain activity, no ENS / Basename. Pattern matches a sponsored / gasless mint flow (Privy, Coinbase Smart Wallet w/ paymaster, or RRG's own gasless onramp). Originally appeared as buyer for token 17 on 2026-03-08; that row was on Sepolia and deleted in the 2026-05-10 cleanup. **Recommended Zoho:** "External buyer (anonymous EOA, RRG-only history)" if it ever reappears as a mainnet buyer. Confidence: high it's an EOA, low on real-world identity. | Blockscout V2 verified, see [agent investigation](#) |
-| `0x25B22971892B7314c36EC6DCfB5537500d50Ea35` | Sepolia test buyer (1 row, 2026-03-16) on a row deleted in the 2026-05-10 cleanup. Treat as external test counterparty if it reappears | rrg_purchases (Sepolia, since deleted) |
+| `0x25B22971892B7314c36EC6DCfB5537500d50Ea35` | Sepolia test buyer (1 row, 2026-03-16) on a row deleted in the 2026-05-10 cleanup. Treat as external test counterparty if it reappears | app_purchases (Sepolia, since deleted) |
 | `0xe3478b0BB1A5084567C319096437924948Be1964` | **MetaMask: Gas Station Swap** (publicly tagged on Etherscan). MetaMask's swap-fee collection EOA, used to skim the ~0.875% MetaMask swap fee from in-app swaps. On-chain profile: 432K+ token transfers received, ~20 tx sent, 47 ETH on Base, ~$3.7M multichain. Confidence: HIGH (Etherscan public name tag is explicit and the activity profile matches a fee-sweeper). The 0.00-0.01 USDC line items in DFW history are MetaMask swap fees, paired in the same tx with the actual swap output. **Recommended Zoho:** "Infrastructure / wallet-provider swap fees (MetaMask)", same category as gas / network fees. Reconcile each fee leg to its parent swap tx, not as standalone vendor payments. | Etherscan public tag + Blockscout activity profile |
 
 ## 8. Process for Colin going forward

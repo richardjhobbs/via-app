@@ -55,7 +55,7 @@ CREATE TABLE IF NOT EXISTS rrg_referral_commissions (
   created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
 
   partner_id      UUID NOT NULL REFERENCES rrg_referral_partners(id),
-  purchase_id     UUID NOT NULL REFERENCES rrg_purchases(id),
+  purchase_id     UUID NOT NULL REFERENCES app_purchases(id),
 
   -- Amounts
   revenue_usdc    NUMERIC(12,6) NOT NULL,     -- platform share that triggered this
@@ -73,11 +73,11 @@ CREATE TABLE IF NOT EXISTS rrg_referral_commissions (
 CREATE INDEX IF NOT EXISTS idx_referral_commissions_partner ON rrg_referral_commissions(partner_id);
 CREATE INDEX IF NOT EXISTS idx_referral_commissions_status ON rrg_referral_commissions(status);
 
--- ── 4. Add referral columns to rrg_purchases ───────────────────────────────
+-- ── 4. Add referral columns to app_purchases ───────────────────────────────
 
-ALTER TABLE rrg_purchases ADD COLUMN IF NOT EXISTS referral_partner_id UUID REFERENCES rrg_referral_partners(id);
-ALTER TABLE rrg_purchases ADD COLUMN IF NOT EXISTS referral_code TEXT;
+ALTER TABLE app_purchases ADD COLUMN IF NOT EXISTS referral_partner_id UUID REFERENCES rrg_referral_partners(id);
+ALTER TABLE app_purchases ADD COLUMN IF NOT EXISTS referral_code TEXT;
 
 -- ============================================================================
--- Done. Next: lib/rrg/referral.ts for TypeScript helpers.
+-- Done. Next: lib/app/referral.ts for TypeScript helpers.
 -- ============================================================================

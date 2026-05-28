@@ -192,7 +192,7 @@ async function ensureBrand(brandConfig) {
 
   // Upload logo + banner if local paths supplied and brand row needs them
   const { data: existing } = await db
-    .from('rrg_brands')
+    .from('app_sellers')
     .select('*')
     .eq('slug', brandConfig.slug)
     .maybeSingle();
@@ -261,7 +261,7 @@ async function ensureBrand(brandConfig) {
           ? { brand_pct_override: brandConfig.brand_pct_override }
           : {}),
       };
-      const { error } = await db.from('rrg_brands').update(update).eq('id', existing.id);
+      const { error } = await db.from('app_sellers').update(update).eq('id', existing.id);
       if (error) throw new Error(`brand update: ${error.message}`);
     }
     return { ...existing, logo_path: logoPath, banner_path: bannerPath };
@@ -298,7 +298,7 @@ async function ensureBrand(brandConfig) {
     return null;
   }
 
-  const { data, error } = await db.from('rrg_brands').insert(insert).select().single();
+  const { data, error } = await db.from('app_sellers').insert(insert).select().single();
   if (error) throw new Error(`brand insert: ${error.message}`);
   console.log(`[seed] created brand id=${data.id}`);
   return data;
@@ -437,7 +437,7 @@ async function insertProduct(brand, item, enrichResult, imageBuffers) {
   const { error } = await db.from('rrg_submissions').insert(insertRow);
   if (error) throw new Error(`submission insert: ${error.message}`);
 
-  await db.from('rrg_brands')
+  await db.from('app_sellers')
     .update({ self_listings_used: (brand.self_listings_used ?? 0) + 1 })
     .eq('id', brand.id);
   brand.self_listings_used = (brand.self_listings_used ?? 0) + 1;

@@ -93,7 +93,7 @@ async function main() {
     console.log(`\n✅ Agent registered!`);
     console.log(`   Agent ID: ${agentId}`);
     console.log(`   Profile:  https://8004scan.io/agents/base/${agentId}`);
-    console.log(`\n   Update lib/rrg/erc8004.ts:`);
+    console.log(`\n   Update lib/app/erc8004.ts:`);
     console.log(`   export const RRG_AGENT_ID = ${agentId}n;`);
   } else {
     console.log('\n⚠️  Could not parse agent ID from receipt. Check Basescan:');

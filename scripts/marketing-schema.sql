@@ -202,5 +202,5 @@ VALUES (
 ON CONFLICT (wallet_address) DO NOTHING;
 
 -- ============================================================================
--- Done. Next: lib/rrg/marketing-db.ts for TypeScript types + query helpers.
+-- Done. Next: lib/app/marketing-db.ts for TypeScript types + query helpers.
 -- ============================================================================

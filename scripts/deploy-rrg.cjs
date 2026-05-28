@@ -18,7 +18,7 @@ async function main() {
 
   const address = await rrg.getAddress();
   console.log('RRG deployed to:', address);
-  console.log('Update NEXT_PUBLIC_RRG_CONTRACT_ADDRESS =', address);
+  console.log('Update NEXT_PUBLIC_VIA_CONTRACT_ADDRESS =', address);
 }
 
 main().catch((err) => {

@@ -51,7 +51,7 @@ const db = createClient(SUPABASE_URL, SUPABASE_KEY, { auth: { persistSession: fa
 console.log(`──── Shuffle heroes: ${BRAND_SLUG} ${DRY_RUN ? '(DRY RUN)' : ''} ────`);
 
 const { data: brand, error: bErr } = await db
-  .from('rrg_brands').select('id, name').eq('slug', BRAND_SLUG).single();
+  .from('app_sellers').select('id, name').eq('slug', BRAND_SLUG).single();
 if (bErr || !brand) { console.error('FATAL: brand not found:', BRAND_SLUG); process.exit(1); }
 
 const { data: drops, error: dErr } = await db
