@@ -26,22 +26,23 @@ export default function OnboardBusiness() {
     if (s.websiteUrl)    setWebsiteUrl(s.websiteUrl);
   }, [router]);
 
-  // Auto-derive slug from name until user edits it directly.
-  useEffect(() => {
-    if (!touchedSlug) setSlug(slugifyName(name));
-  }, [name, touchedSlug]);
+  // Slug is computed on render, not via useEffect, so there is no race
+  // between the localStorage-restore effect and the auto-derive effect.
+  // If the user has not edited the slug directly (touchedSlug=false),
+  // it tracks slugifyName(name) live as they type the business name.
+  const effectiveSlug = touchedSlug ? slug : slugifyName(name);
 
   function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     setErr('');
     if (!name.trim())           { setErr('Business name is required.'); return; }
-    if (!slug)                  { setErr('Slug must contain at least one alphanumeric character.'); return; }
+    if (!effectiveSlug)         { setErr('Slug must contain at least one alphanumeric character.'); return; }
     if (websiteUrl && !/^https?:\/\//.test(websiteUrl)) { setErr('Website URL must start with http(s)://'); return; }
 
     writeOnboardState({
       role: 'seller',
       sellerName: name.trim(),
-      slug,
+      slug:        effectiveSlug,
       kind,
       description: description.trim() || undefined,
       websiteUrl:  websiteUrl.trim()  || undefined,
@@ -77,7 +78,7 @@ export default function OnboardBusiness() {
             <div className="flex items-center gap-2">
               <span className="text-sm text-neutral-500 font-mono">app.getvia.xyz/seller/</span>
               <input
-                type="text" required value={slug}
+                type="text" required value={effectiveSlug}
                 onChange={(e) => { setSlug(slugifyName(e.target.value)); setTouchedSlug(true); }}
                 className="flex-1 bg-white border border-neutral-300 px-4 py-3 text-base font-mono outline-none focus:border-neutral-900 transition-colors rounded-md"
               />

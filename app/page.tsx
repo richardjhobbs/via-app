@@ -4,14 +4,14 @@ import Link from 'next/link';
 export const dynamic = 'force-static';
 
 export const metadata = {
-  title: 'VIA — Sales & Buying Agents',
+  title: 'VIA · Sales & Buying Agents',
   description: 'Onboard your business as a VIA seller, or train a personal Buying Agent. Agentic commerce settled in USDC on Base.',
 };
 
 export default function HomePage() {
   return (
     <main className="min-h-screen bg-neutral-50 text-neutral-900 flex flex-col">
-      {/* Dark header band — VIA logo (white PNG) sits on neutral-900 like getvia.xyz. */}
+      {/* Dark header band: VIA logo (white PNG) sits on neutral-900 like getvia.xyz. */}
       <header className="bg-neutral-900 text-neutral-100">
         <div className="max-w-5xl mx-auto px-6 py-5 flex items-center justify-between">
           <Link href="/" aria-label="VIA home" className="inline-flex items-center">

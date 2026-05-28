@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react';
 
 /**
- * Passthrough layout — every page under /seller/[slug]/admin/ provides its
+ * Passthrough layout. Every page under /seller/[slug]/admin/ provides its
  * own chrome and runs its own auth check via getSellerUser() / owner_user_id
  * match. The previous RRG-fork layout did a client-side /api/seller/auth/check
  * fetch that depended on app_seller_members (which doesn't exist in via-app's

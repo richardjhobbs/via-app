@@ -98,7 +98,7 @@ function BrandLoginInner() {
       });
     } catch {
       clearTimeout(timeout);
-      setErr('Registration timed out — please refresh and try again.');
+      setErr('Registration timed out, please refresh and try again.');
       setLoading(false);
       submittedRef.current = false;
       return;
@@ -239,7 +239,7 @@ function BrandLoginInner() {
       {/* ── LOGIN MODE ── */}
       {mode === 'login' && (
         <div className="space-y-4">
-          {/* Register CTA — most prominent, first in view */}
+          {/* Register CTA: most prominent, first in view */}
           <button
             type="button"
             onClick={() => switchMode('register')}
@@ -259,7 +259,7 @@ function BrandLoginInner() {
 
           {err && <p className="text-amber-400 text-sm font-mono">{err}</p>}
 
-          {/* Legacy email/password — hidden by default */}
+          {/* Legacy email/password (hidden by default) */}
           {showLegacy ? (
             <form onSubmit={handleLegacyLogin} className="space-y-3 pt-2 border-t border-white/10">
               <div>
@@ -365,7 +365,7 @@ function BrandLoginInner() {
             />
           </div>
 
-          {/* Wallet Address — always required for brands */}
+          {/* Wallet Address: always required for brands */}
           <div>
               <label className="text-sm font-mono text-white/60 block mb-1">Wallet Address <HelpTip {...brandLogin.walletChoice} /></label>
               <input

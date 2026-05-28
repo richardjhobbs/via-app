@@ -18,7 +18,7 @@ const wallets = [inAppWallet({ auth: { options: ['google', 'email'] } })];
 export default function OnboardWallet() {
   const router = useRouter();
 
-  // ── Payout wallet (pasted EOA — the seller's existing wallet) ──────
+  // ── Payout wallet (pasted EOA, the seller's existing wallet) ──────
   const [payout,  setPayout]  = useState('');
   const [err,     setErr]     = useState('');
 
@@ -36,7 +36,7 @@ export default function OnboardWallet() {
     }
     if (s.walletAddress)      setPayout(s.walletAddress);
     // agentWalletAddress is determined by the active thirdweb account, not
-    // restored from localStorage — if the user disconnected, they need to
+    // restored from localStorage. If the user disconnected, they need to
     // re-auth to provision again.
   }, [router]);
 
@@ -58,7 +58,7 @@ export default function OnboardWallet() {
       return;
     }
     if (payout.trim().toLowerCase() === agentAddress.toLowerCase()) {
-      setErr('Payout wallet and agent wallet must be different. The agent wallet is created for you below — paste your own existing wallet for payouts above.');
+      setErr('Payout wallet and agent wallet must be different. The agent wallet is created for you below, paste your own existing wallet for payouts above.');
       return;
     }
     writeOnboardState({
@@ -78,14 +78,14 @@ export default function OnboardWallet() {
           Wallets
         </h1>
         <p className="text-neutral-600 mb-10 max-w-lg">
-          Two separate wallets. Your <strong>payout wallet</strong> receives the 97.5% USDC share
-          of every sale. Your <strong>Sales Agent’s wallet</strong> is what the agent uses to sign
-          actions on-chain (negotiations and reputation events) and is what gets registered as its
-          identity. Strengthen your agent&apos;s reputation.
+          You have two separate wallets. Your <strong>payout one</strong> receives the 97.5% USDC
+          share of every sale. Your <strong>Sales Agent&apos;s wallet</strong> is what the agent
+          uses to sign actions on-chain (negotiations and reputation events) and is what gets
+          registered as its identity, it strengthens your agent&apos;s reputation.
         </p>
 
         <form onSubmit={onSubmit} className="space-y-10 max-w-xl">
-          {/* ── Section A — payout wallet ──────────────────────── */}
+          {/* Section A: payout wallet */}
           <div>
             <h2 className="text-xs font-mono tracking-widest text-neutral-500 uppercase block mb-3 flex items-center gap-3">
               <span className="text-neutral-400">A</span>
@@ -114,7 +114,7 @@ export default function OnboardWallet() {
             />
           </div>
 
-          {/* ── Section B — agent wallet (thirdweb in-app) ────── */}
+          {/* Section B: agent wallet (thirdweb in-app) */}
           <div>
             <h2 className="text-xs font-mono tracking-widest text-neutral-500 uppercase block mb-3 flex items-center gap-3">
               <span className="text-neutral-400">B</span>

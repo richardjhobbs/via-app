@@ -8,7 +8,7 @@ export const dynamic = 'force-dynamic';
 
 /**
  * Buying Agent dashboard. Reached after the buyer wizard succeeds or from
- * /buyer/login. Mirrors the seller dashboard but inverted — the buyer
+ * /buyer/login. Mirrors the seller dashboard but inverted: the buyer
  * trains their own agent, not pitches one.
  */
 export default async function BuyerAdminPage({
@@ -53,15 +53,15 @@ export default async function BuyerAdminPage({
             {buyer.display_name}
           </h1>
           <p className="text-neutral-600 mb-10 max-w-xl">
-            Your Buying Agent is provisioned. Train it to know your taste, budget, and limits — it
-            will represent you when seller agents negotiate. The training chat surface ships next.
+            Your Buying Agent is provisioned. Train it to know your taste, budget, and limits, and
+            it will represent you when seller agents negotiate. The training chat surface ships next.
           </p>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-10">
             <Stat label="Handle"           value={buyer.handle as string} mono />
             <Stat label="Visibility"       value={buyer.public ? 'Public (agents can negotiate)' : 'Private'} />
             <Stat label="Funding wallet"   value={buyer.wallet_address as string} mono />
-            <Stat label="Agent wallet"     value={(buyer.agent_wallet_address as string | null) ?? '— (not provisioned)'} mono />
+            <Stat label="Agent wallet"     value={(buyer.agent_wallet_address as string | null) ?? '(not provisioned)'} mono />
             <Stat label="ERC-8004 agent ID" value={(buyer.erc8004_agent_id as string | null) ?? 'minting…'} mono />
             <Stat label="Delegation caps"  value={JSON.stringify(buyer.delegation_caps ?? {})} mono />
           </div>

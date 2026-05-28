@@ -70,9 +70,9 @@ export default async function SellerAdminPage({
             <Stat label="Slug"          value={seller.slug as string} mono />
             <Stat label="Kind"          value={seller.kind as string} />
             <Stat label="Contact"       value={seller.contact_email as string} mono />
-            <Stat label="Website"       value={(seller.website_url as string | null) ?? '—'} mono />
+            <Stat label="Website"       value={(seller.website_url as string | null) ?? '(none)'} mono />
             <Stat label="Payout wallet" value={seller.wallet_address as string} mono />
-            <Stat label="Agent wallet"  value={(seller.agent_wallet_address as string | null) ?? '— (not provisioned)'} mono />
+            <Stat label="Agent wallet"  value={(seller.agent_wallet_address as string | null) ?? '(not provisioned)'} mono />
             <Stat label="ERC-8004 agent ID" value={(seller.erc8004_agent_id as string | null) ?? 'minting…'} mono />
             <Stat label="Status"        value={seller.active ? 'Active' : 'Inactive'} />
           </div>

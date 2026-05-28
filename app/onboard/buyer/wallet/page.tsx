@@ -77,7 +77,7 @@ export default function BuyerWallet() {
               <span className="text-neutral-400">A</span><span>Your funding wallet</span>
             </h2>
             <p className="text-sm text-neutral-600 mb-4">
-              Paste a Base wallet address you already control. Your agent never holds your funds — it
+              Paste a Base wallet address you already control. Your agent never holds your funds; it
               requests x402 payment that comes from this wallet.
             </p>
             <input
@@ -93,8 +93,8 @@ export default function BuyerWallet() {
               <span className="text-neutral-400">B</span><span>Your Buying Agent’s wallet</span>
             </h2>
             <p className="text-sm text-neutral-600 mb-4">
-              Created for you. Sign in with email or Google — we provision a non-custodial EOA bound
-              to your auth identity. That wallet IS your agent on-chain.
+              Created for you. Sign in with email or Google and we provide a non-custodial wallet
+              owned by your authorised identity. That wallet is part of your agent.
             </p>
 
             {agentAddress ? (

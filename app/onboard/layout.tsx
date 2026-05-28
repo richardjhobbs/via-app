@@ -3,7 +3,7 @@ import Image from 'next/image';
 import Link from 'next/link';
 
 export const metadata = {
-  title: 'Onboard — VIA',
+  title: 'Onboard · VIA',
 };
 
 export default function OnboardLayout({ children }: { children: ReactNode }) {
@@ -34,5 +34,5 @@ export default function OnboardLayout({ children }: { children: ReactNode }) {
   );
 }
 
-// OnboardSteps moved to ./OnboardSteps.tsx — Next.js disallows importing
+// OnboardSteps moved to ./OnboardSteps.tsx. Next.js disallows importing
 // named exports from layout.tsx into 'use client' files.

@@ -68,7 +68,7 @@ export default function OnboardCatalog() {
       clearOnboardState();
       router.push(`/onboard/agent?slug=${encodeURIComponent(data.seller.slug)}`);
     } catch (ex) {
-      setErr(ex instanceof Error ? ex.message : 'network error — please retry');
+      setErr(ex instanceof Error ? ex.message : 'network error, please retry');
       setBusy(false);
     }
   }

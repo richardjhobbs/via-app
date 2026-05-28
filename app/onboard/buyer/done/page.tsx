@@ -42,7 +42,7 @@ export default function BuyerDone() {
         clearOnboardState();
         router.replace(`/buyer/${encodeURIComponent(data.buyer.handle)}/admin`);
       } catch (ex) {
-        if (!cancelled) setErr(ex instanceof Error ? ex.message : 'network error — please retry');
+        if (!cancelled) setErr(ex instanceof Error ? ex.message : 'network error, please retry');
       }
     })();
     return () => { cancelled = true; };
