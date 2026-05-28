@@ -7,19 +7,24 @@ import { inAppWallet } from 'thirdweb/wallets';
 import { thirdwebClient } from '@/lib/app/thirdwebClient';
 import { OnboardStepsBuyer } from '../../OnboardStepsBuyer';
 import { readOnboardState, writeOnboardState } from '@/lib/app/onboarding-state';
+import { isTestEmail, syntheticTestWallet } from '@/lib/app/test-mode';
 
 const ADDR_RE = /^0x[a-fA-F0-9]{40}$/;
 const wallets = [inAppWallet({ auth: { options: ['google', 'email'] } })];
 
 export default function BuyerWallet() {
   const router = useRouter();
+  const [email,   setEmail]   = useState('');
   const [funding, setFunding] = useState('');
   const [err,     setErr]     = useState('');
 
   const account      = useActiveAccount();
   const activeWallet = useActiveWallet();
   const { disconnect } = useDisconnect();
-  const agentAddress = account?.address ?? '';
+
+  const testMode         = isTestEmail(email);
+  const testAgentAddress = testMode ? syntheticTestWallet(email) : '';
+  const agentAddress     = testMode ? testAgentAddress : (account?.address ?? '');
 
   useEffect(() => {
     const s = readOnboardState();
@@ -27,6 +32,7 @@ export default function BuyerWallet() {
       router.replace('/onboard?role=buyer');
       return;
     }
+    setEmail(s.email);
     if (s.walletAddress) setFunding(s.walletAddress);
   }, [router]);
 
@@ -42,7 +48,9 @@ export default function BuyerWallet() {
       return;
     }
     if (!ADDR_RE.test(agentAddress)) {
-      setErr('Sign in with email or Google to provision your Buying Agent’s wallet.');
+      setErr(testMode
+        ? 'Test wallet failed to derive — please reload.'
+        : 'Sign in with email or Google to provision your Buying Agent’s wallet.');
       return;
     }
     if (funding.trim().toLowerCase() === agentAddress.toLowerCase()) {
@@ -97,10 +105,21 @@ export default function BuyerWallet() {
               owned by your authorised identity. That wallet is part of your agent.
             </p>
 
-            {agentAddress ? (
+            {testMode ? (
+              <div className="p-4 border border-amber-700 bg-amber-50 rounded-md">
+                <div className="text-xs font-mono tracking-widest text-amber-800 uppercase mb-2">Test mode</div>
+                <div className="font-mono text-sm break-all text-neutral-900 mb-2">{testAgentAddress}</div>
+                <p className="text-xs text-neutral-700">
+                  Your email alias contains +test or +e2e, so we are skipping the thirdweb
+                  sign-in and using a deterministic stub wallet for this onboarding run. No
+                  OTP, no real on-chain identity. Reuse the same alias to land on the same
+                  stub wallet again.
+                </p>
+              </div>
+            ) : account?.address ? (
               <div className="p-4 border border-neutral-900 bg-neutral-50 rounded-md">
                 <div className="text-xs font-mono tracking-widest text-neutral-500 uppercase mb-2">Provisioned</div>
-                <div className="font-mono text-sm break-all text-neutral-900 mb-3">{agentAddress}</div>
+                <div className="font-mono text-sm break-all text-neutral-900 mb-3">{account.address}</div>
                 <button
                   type="button"
                   onClick={() => { if (activeWallet) disconnect(activeWallet); }}

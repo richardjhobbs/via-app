@@ -7,6 +7,7 @@ import { inAppWallet } from 'thirdweb/wallets';
 import { thirdwebClient } from '@/lib/app/thirdwebClient';
 import { OnboardSteps } from '../OnboardSteps';
 import { readOnboardState, writeOnboardState } from '@/lib/app/onboarding-state';
+import { isTestEmail, syntheticTestWallet } from '@/lib/app/test-mode';
 
 const ADDR_RE = /^0x[a-fA-F0-9]{40}$/;
 
@@ -19,14 +20,20 @@ export default function OnboardWallet() {
   const router = useRouter();
 
   // ── Payout wallet (pasted EOA, the seller's existing wallet) ──────
+  const [email,   setEmail]   = useState('');
   const [payout,  setPayout]  = useState('');
   const [err,     setErr]     = useState('');
 
-  // ── Agent wallet (provisioned via thirdweb inAppWallet) ───────────
-  const account     = useActiveAccount();
+  // ── Agent wallet (provisioned via thirdweb inAppWallet, OR a
+  //    deterministic stub when the user signed up with a +test/+e2e
+  //    email alias) ───────────────────────────────────────────────
+  const account      = useActiveAccount();
   const activeWallet = useActiveWallet();
   const { disconnect } = useDisconnect();
-  const agentAddress = account?.address ?? '';
+
+  const testMode         = isTestEmail(email);
+  const testAgentAddress = testMode ? syntheticTestWallet(email) : '';
+  const agentAddress     = testMode ? testAgentAddress : (account?.address ?? '');
 
   useEffect(() => {
     const s = readOnboardState();
@@ -34,10 +41,11 @@ export default function OnboardWallet() {
       router.replace('/onboard?role=seller');
       return;
     }
-    if (s.walletAddress)      setPayout(s.walletAddress);
-    // agentWalletAddress is determined by the active thirdweb account, not
-    // restored from localStorage. If the user disconnected, they need to
-    // re-auth to provision again.
+    setEmail(s.email);
+    if (s.walletAddress) setPayout(s.walletAddress);
+    // Real agent address comes from the active thirdweb account; test-mode
+    // agent address is derived from the email. Neither is restored from
+    // localStorage directly.
   }, [router]);
 
   // Persist the agent wallet to localStorage whenever the connected
@@ -54,7 +62,9 @@ export default function OnboardWallet() {
       return;
     }
     if (!ADDR_RE.test(agentAddress)) {
-      setErr('Sign in with email or Google to provision your Sales Agent’s wallet before continuing.');
+      setErr(testMode
+        ? 'Test wallet failed to derive — please reload.'
+        : 'Sign in with email or Google to provision your Sales Agent’s wallet before continuing.');
       return;
     }
     if (payout.trim().toLowerCase() === agentAddress.toLowerCase()) {
@@ -125,10 +135,21 @@ export default function OnboardWallet() {
               owned by your authorised identity. That wallet is part of your agent.
             </p>
 
-            {agentAddress ? (
+            {testMode ? (
+              <div className="p-4 border border-amber-700 bg-amber-50 rounded-md">
+                <div className="text-xs font-mono tracking-widest text-amber-800 uppercase mb-2">Test mode</div>
+                <div className="font-mono text-sm break-all text-neutral-900 mb-2">{testAgentAddress}</div>
+                <p className="text-xs text-neutral-700">
+                  Your email alias contains +test or +e2e, so we are skipping the thirdweb
+                  sign-in and using a deterministic stub wallet for this onboarding run. No
+                  OTP, no real on-chain identity. Reuse the same alias to land on the same
+                  stub wallet again.
+                </p>
+              </div>
+            ) : account?.address ? (
               <div className="p-4 border border-neutral-900 bg-neutral-50 rounded-md">
                 <div className="text-xs font-mono tracking-widest text-neutral-500 uppercase mb-2">Provisioned</div>
-                <div className="font-mono text-sm break-all text-neutral-900 mb-3">{agentAddress}</div>
+                <div className="font-mono text-sm break-all text-neutral-900 mb-3">{account.address}</div>
                 <button
                   type="button"
                   onClick={() => { if (activeWallet) disconnect(activeWallet); }}
