@@ -72,6 +72,54 @@ export function ProductsClient({
   const [deletingId,   setDeletingId]     = useState<string | null>(null);
   const [syncing,      setSyncing]        = useState(false);
 
+  // ── Catalogue source connection — live editable so existing sellers
+  //    (incl. arc-lights) can connect or switch their store source after
+  //    onboarding. Locally mirrors what the server passed in, then PATCHes
+  //    /settings on save and updates state from the server response.
+  const [src,  setSrc]                = useState<'shopify' | 'squarespace' | 'csv' | 'services' | null>(catalogSource);
+  const [shop, setShop]               = useState(shopifyDomain ?? '');
+  const [sqs,  setSqs]                = useState(squarespaceShopUrl ?? '');
+  const [cur,  setCur]                = useState(sourceCurrency);
+  const [editingSrc, setEditingSrc]   = useState(false);
+  const [savingSrc,  setSavingSrc]    = useState(false);
+
+  const hasSource = src === 'shopify' || src === 'squarespace';
+
+  async function saveSourceSettings(e: React.FormEvent) {
+    e.preventDefault();
+    setErr('');
+    setInfo('');
+    setSavingSrc(true);
+    try {
+      const payload: Record<string, unknown> = {
+        catalog_source:  src,
+        source_currency: cur,
+      };
+      if (src === 'shopify')     payload.shopify_domain       = shop.trim() || null;
+      if (src === 'squarespace') payload.squarespace_shop_url = sqs.trim()  || null;
+      const res = await fetch(`/api/seller/${sellerId}/settings`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      const json = await res.json();
+      if (!res.ok) {
+        setErr(json.error || `Settings save failed (${res.status})`);
+        return;
+      }
+      // Mirror the server's authoritative values back into local state.
+      const s = json.seller;
+      setSrc(s.catalog_source as typeof src);
+      setShop(s.shopify_domain ?? '');
+      setSqs(s.squarespace_shop_url ?? '');
+      setCur(s.source_currency ?? 'USD');
+      setEditingSrc(false);
+      setInfo('Catalogue source saved.');
+    } finally {
+      setSavingSrc(false);
+    }
+  }
+
   async function refresh() {
     setErr('');
     try {
@@ -144,7 +192,7 @@ export function ProductsClient({
 
   async function runSync(kind: 'shopify' | 'squarespace', label: string) {
     if (syncing) return;
-    if (!confirm(`Pull catalog from ${label}? Prices converted to USDC at the current FX rate (${sourceCurrency} → USDC). Existing rows with matching IDs are updated.`)) return;
+    if (!confirm(`Pull catalog from ${label}? Prices converted to USDC at the current FX rate (${cur} → USDC). Existing rows with matching IDs are updated.`)) return;
     setErr('');
     setInfo('');
     setSyncing(true);
@@ -218,33 +266,33 @@ export function ProductsClient({
             {products.length} product{products.length === 1 ? '' : 's'}
           </p>
           <span className="text-[10px] font-mono uppercase tracking-widest text-neutral-400 border border-neutral-200 rounded px-2 py-0.5">
-            {sourceCurrency} → USDC
+            {cur} → USDC
           </span>
-          {catalogSource && (
+          {src && (
             <span className="text-[10px] font-mono uppercase tracking-widest text-neutral-400 border border-neutral-200 rounded px-2 py-0.5">
-              source: {catalogSource}
+              source: {src}
             </span>
           )}
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          {catalogSource === 'shopify' && shopifyDomain && (
+          {src === 'shopify' && shop && (
             <button
               type="button"
-              onClick={() => void runSync('shopify', shopifyDomain)}
+              onClick={() => void runSync('shopify', shop)}
               disabled={syncing}
               className="px-4 py-2 border border-neutral-900 text-neutral-900 text-xs font-mono tracking-widest uppercase hover:bg-neutral-900 hover:text-neutral-50 disabled:opacity-40 transition-colors rounded-md"
-              title={`Sync from ${shopifyDomain}`}
+              title={`Sync from ${shop}`}
             >
-              {syncing ? 'Syncing…' : `Sync Shopify (${shopifyDomain})`}
+              {syncing ? 'Syncing…' : `Sync Shopify (${shop})`}
             </button>
           )}
-          {catalogSource === 'squarespace' && squarespaceShopUrl && (
+          {src === 'squarespace' && sqs && (
             <button
               type="button"
-              onClick={() => void runSync('squarespace', squarespaceShopUrl)}
+              onClick={() => void runSync('squarespace', sqs)}
               disabled={syncing}
               className="px-4 py-2 border border-neutral-900 text-neutral-900 text-xs font-mono tracking-widest uppercase hover:bg-neutral-900 hover:text-neutral-50 disabled:opacity-40 transition-colors rounded-md"
-              title={`Sync from ${squarespaceShopUrl}`}
+              title={`Sync from ${sqs}`}
             >
               {syncing ? 'Syncing…' : 'Sync Squarespace'}
             </button>
@@ -257,6 +305,122 @@ export function ProductsClient({
             {adding ? 'Close' : '+ Add product'}
           </button>
         </div>
+      </div>
+
+      {/* ── Catalogue-source connection panel ───────────────────────── */}
+      <div className="bg-white border border-neutral-200 rounded-lg p-5">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <p className="text-xs font-mono tracking-widest uppercase text-neutral-500 mb-1">Storefront connection</p>
+            {hasSource ? (
+              <p className="text-sm text-neutral-700">
+                Connected to <strong className="text-neutral-900">{src}</strong>
+                {src === 'shopify'     && shop && <> · <code className="font-mono text-xs">{shop}</code></>}
+                {src === 'squarespace' && sqs  && <> · <code className="font-mono text-xs">{sqs}</code></>}
+                {' · '}prices in <span className="font-mono text-xs">{cur}</span> converted to USDC at sync time.
+              </p>
+            ) : (
+              <p className="text-sm text-neutral-700">
+                No store connected. Connect Shopify or Squarespace to pull your catalogue and resync any time.
+                Sellers without a store can keep adding products manually below.
+              </p>
+            )}
+          </div>
+          {!editingSrc && (
+            <button
+              type="button"
+              onClick={() => setEditingSrc(true)}
+              className="text-[10px] font-mono uppercase tracking-widest text-neutral-900 hover:underline whitespace-nowrap"
+            >
+              {hasSource ? 'Change' : 'Connect a store →'}
+            </button>
+          )}
+        </div>
+
+        {editingSrc && (
+          <form onSubmit={saveSourceSettings} className="mt-5 grid grid-cols-1 md:grid-cols-2 gap-4">
+            <label className="md:col-span-2">
+              <span className="text-xs font-mono tracking-widest uppercase text-neutral-500 block mb-1">Source</span>
+              <select
+                value={src ?? ''}
+                onChange={(e) => setSrc((e.target.value || null) as typeof src)}
+                className="w-full border border-neutral-300 rounded-md px-3 py-2 text-sm bg-white outline-none focus:border-neutral-900"
+              >
+                <option value="">None (manual products only)</option>
+                <option value="shopify">Shopify</option>
+                <option value="squarespace">Squarespace</option>
+                <option value="csv">CSV (placeholder)</option>
+                <option value="services">Services (no catalog import)</option>
+              </select>
+            </label>
+
+            {src === 'shopify' && (
+              <label className="md:col-span-2">
+                <span className="text-xs font-mono tracking-widest uppercase text-neutral-500 block mb-1">Shopify domain</span>
+                <input
+                  type="text" required value={shop} onChange={(e) => setShop(e.target.value)}
+                  placeholder="your-store.myshopify.com or shop.your-brand.com"
+                  spellCheck={false} autoComplete="off"
+                  className="w-full border border-neutral-300 rounded-md px-3 py-2 text-sm font-mono outline-none focus:border-neutral-900"
+                />
+                <p className="text-[10px] font-mono text-neutral-400 mt-1">
+                  Public /products.json is fetched. Works on any store that hasn&apos;t disabled the JSON view.
+                </p>
+              </label>
+            )}
+
+            {src === 'squarespace' && (
+              <label className="md:col-span-2">
+                <span className="text-xs font-mono tracking-widest uppercase text-neutral-500 block mb-1">Squarespace shop URL</span>
+                <input
+                  type="url" required value={sqs} onChange={(e) => setSqs(e.target.value)}
+                  placeholder="https://www.your-site.com/shop"
+                  spellCheck={false} autoComplete="off"
+                  className="w-full border border-neutral-300 rounded-md px-3 py-2 text-sm font-mono outline-none focus:border-neutral-900"
+                />
+                <p className="text-[10px] font-mono text-neutral-400 mt-1">
+                  Paste the full URL to the shop page (the one ending in /shop or /shop-1).
+                </p>
+              </label>
+            )}
+
+            <label>
+              <span className="text-xs font-mono tracking-widest uppercase text-neutral-500 block mb-1">Storefront currency</span>
+              <select
+                value={cur} onChange={(e) => setCur(e.target.value)}
+                className="w-full border border-neutral-300 rounded-md px-3 py-2 text-sm bg-white outline-none focus:border-neutral-900"
+              >
+                {['USD','GBP','EUR','HKD','SGD','AUD','CAD','JPY','CNY','INR','CHF','SEK','NOK','DKK','NZD','BRL','MXN','ZAR','AED'].map((c) => (
+                  <option key={c} value={c}>{c}</option>
+                ))}
+              </select>
+              <p className="text-[10px] font-mono text-neutral-400 mt-1">
+                Prices on your storefront. Converted to USDC via frankfurter.app + 3% spread at each sync.
+              </p>
+            </label>
+
+            <div className="md:col-span-2 flex justify-end gap-3 pt-2">
+              <button
+                type="button"
+                onClick={() => {
+                  // Reset back to server-state values
+                  setSrc(catalogSource); setShop(shopifyDomain ?? ''); setSqs(squarespaceShopUrl ?? ''); setCur(sourceCurrency);
+                  setEditingSrc(false);
+                }}
+                disabled={savingSrc}
+                className="px-4 py-2 text-xs font-mono tracking-widest uppercase text-neutral-500 hover:text-neutral-900 disabled:opacity-40"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit" disabled={savingSrc}
+                className="px-5 py-2 bg-neutral-900 text-neutral-50 text-xs font-mono tracking-widest uppercase hover:bg-neutral-800 disabled:opacity-40 transition-colors rounded-md"
+              >
+                {savingSrc ? 'Saving…' : 'Save'}
+              </button>
+            </div>
+          </form>
+        )}
       </div>
 
       {adding && (
