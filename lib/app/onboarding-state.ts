@@ -26,11 +26,13 @@ export interface SellerOnboardState {
 }
 
 export interface BuyerOnboardState {
-  role:           'buyer';
-  email?:         string;
-  password?:      string;
-  handle?:        string;
-  walletAddress?: string;
+  role:                'buyer';
+  email?:              string;
+  password?:           string;
+  handle?:             string;
+  displayName?:        string;
+  walletAddress?:      string;       // buyer's funding wallet (where USDC sits for x402 payments)
+  agentWalletAddress?: string;       // Buying Agent's own EOA, provisioned via thirdweb inAppWallet
 }
 
 export type OnboardState = SellerOnboardState | BuyerOnboardState;

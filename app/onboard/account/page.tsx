@@ -28,7 +28,7 @@ function AccountInner() {
     if (password.length < 8)                          { setErr('Password must be 8+ characters.'); return; }
 
     writeOnboardState({ role, email: trimmed, password });
-    if (role === 'buyer') router.push('/buyer/coming-soon');
+    if (role === 'buyer') router.push('/onboard/buyer/handle');
     else                  router.push('/onboard/business');
   }
 
