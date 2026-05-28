@@ -19,7 +19,7 @@ const supabaseAuth = createClient(
 // ── Supabase admin client (uses service key for admin user management) ──
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL ?? 'https://placeholder.supabase.co',
-  process.env.SUPABASE_SERVICE_KEY ?? 'placeholder-key',
+  process.env.SUPABASE_SERVICE_ROLE_KEY ?? 'placeholder-key',
   { auth: { autoRefreshToken: false, persistSession: false } }
 );
 

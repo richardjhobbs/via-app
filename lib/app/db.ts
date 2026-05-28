@@ -10,10 +10,10 @@ import { unstable_cache } from 'next/cache';
 // standalone output. Log once at module load so the PM2 log shows the
 // misconfiguration instead of a quiet empty store.
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL;
-const SUPABASE_KEY = process.env.SUPABASE_SERVICE_KEY;
+const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 if (!SUPABASE_URL || !SUPABASE_KEY) {
   console.error(
-    '[rrg/db] missing Supabase env at module load , NEXT_PUBLIC_SUPABASE_URL=%s SUPABASE_SERVICE_KEY=%s. Every query will fail and public surfaces (landing brand grid, /rrg, /brand) will render empty.',
+    '[rrg/db] missing Supabase env at module load , NEXT_PUBLIC_SUPABASE_URL=%s SUPABASE_SERVICE_ROLE_KEY=%s. Every query will fail and public surfaces (landing brand grid, /rrg, /brand) will render empty.',
     SUPABASE_URL ? 'set' : 'MISSING',
     SUPABASE_KEY ? 'set' : 'MISSING',
   );
