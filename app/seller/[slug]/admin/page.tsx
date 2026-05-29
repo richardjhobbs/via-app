@@ -104,8 +104,8 @@ export default async function SellerAdminPage({
             <div>
               <p className="text-xs font-mono tracking-widest text-neutral-500 mb-3 uppercase">Manage products</p>
               <p className="text-sm text-neutral-600 mb-4">
-                Add what you sell, sync from Shopify / Squarespace, or upload a CSV. Publish each
-                product on-chain to make it appear in <code className="font-mono text-neutral-900">list_products</code>.
+                Add what you sell. Each product becomes discoverable by AI agents and with a
+                blockchain record when you publish it. Immediately visible on the VIA MCP server.
               </p>
               <Link
                 href={`/seller/${seller.slug}/admin/products`}

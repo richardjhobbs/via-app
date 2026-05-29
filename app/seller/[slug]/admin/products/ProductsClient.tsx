@@ -77,6 +77,10 @@ export function ProductsClient({
   const [csvBusy,    setCsvBusy]      = useState(false);
   const [csvErrors,  setCsvErrors]    = useState<{ row: string; field?: string; message: string }[] | null>(null);
 
+  // Bulk publish state
+  const [bulkBusy,     setBulkBusy]     = useState(false);
+  const [bulkProgress, setBulkProgress] = useState<{ done: number; total: number; succeeded: number; failed: number }>({ done: 0, total: 0, succeeded: 0, failed: 0 });
+
   // ── Catalogue source connection — live editable so existing sellers
   //    (incl. arc-lights) can connect or switch their store source after
   //    onboarding. Locally mirrors what the server passed in, then PATCHes
@@ -192,6 +196,47 @@ export function ProductsClient({
       await refresh();
     } finally {
       setBusy(false);
+    }
+  }
+
+  async function bulkPublish() {
+    if (bulkBusy) return;
+    const drafts = products.filter((p) => p.active && p.on_chain_status === 'draft');
+    if (drafts.length === 0) return;
+    if (!confirm(`Publish all ${drafts.length} draft product${drafts.length === 1 ? '' : 's'}? Each one is registered on-chain (Base) and immediately becomes visible to buying agents calling list_products on this seller's MCP.`)) return;
+    setErr('');
+    setInfo('');
+    setBulkBusy(true);
+    setBulkProgress({ done: 0, total: drafts.length, succeeded: 0, failed: 0 });
+    let succeeded = 0;
+    let failed = 0;
+    const failures: { title: string; reason: string }[] = [];
+    // Sequential to keep server pressure low and to give the
+    // app_next_token_id RPC a clean monotonic order.
+    for (let i = 0; i < drafts.length; i++) {
+      const p = drafts[i];
+      try {
+        const res = await fetch(`/api/seller/${sellerId}/products/${p.id}/publish`, { method: 'POST' });
+        const json = await res.json();
+        if (res.ok) {
+          succeeded++;
+        } else {
+          failed++;
+          failures.push({ title: p.title, reason: json.error ?? `HTTP ${res.status}` });
+        }
+      } catch (e) {
+        failed++;
+        failures.push({ title: p.title, reason: e instanceof Error ? e.message : 'network error' });
+      }
+      setBulkProgress({ done: i + 1, total: drafts.length, succeeded, failed });
+    }
+    setBulkBusy(false);
+    await refresh();
+    if (failed === 0) {
+      setInfo(`Published ${succeeded} product${succeeded === 1 ? '' : 's'}. They are now live on the per-seller MCP.`);
+    } else {
+      const top = failures.slice(0, 3).map((f) => `• ${f.title}: ${f.reason}`).join('\n');
+      setErr(`Published ${succeeded}, ${failed} failed:\n${top}${failures.length > 3 ? `\n…and ${failures.length - 3} more.` : ''}`);
     }
   }
 
@@ -359,8 +404,9 @@ export function ProductsClient({
               </p>
             ) : (
               <p className="text-sm text-neutral-700">
-                No store connected. Connect Shopify or Squarespace to pull your catalogue and resync any time.
-                Sellers without a store can keep adding products manually below.
+                No store connected. Connect Shopify or Squarespace to pull your catalogue and resync any
+                time. Sellers without a store or a different provider can upload their products and
+                inventory at this stage and then add new products manually below.
               </p>
             )}
           </div>
@@ -613,6 +659,35 @@ export function ProductsClient({
           on-chain and make it discoverable.
         </p>
       ) : (
+        <>
+          {/* ── Publish explainer + bulk publish strip ──────────────── */}
+          {(() => {
+            const draftCount = products.filter((p) => p.active && p.on_chain_status === 'draft').length;
+            return (
+              <div className="flex flex-wrap items-center justify-between gap-3 bg-amber-50 border border-amber-200 rounded-md px-4 py-3">
+                <p className="text-sm text-amber-900">
+                  <strong>Publish your products to make them visible to buying agents.</strong>{' '}
+                  {draftCount > 0
+                    ? `${draftCount} draft${draftCount === 1 ? '' : 's'} waiting. Each publish writes an on-chain record on Base.`
+                    : 'All active products are already published. Buying agents see them via list_products on your MCP.'}
+                </p>
+                {draftCount > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => void bulkPublish()}
+                    disabled={bulkBusy}
+                    className="px-4 py-2 bg-amber-900 text-amber-50 text-xs font-mono tracking-widest uppercase hover:bg-amber-800 disabled:opacity-40 transition-colors rounded-md whitespace-nowrap"
+                    title={`Publish all ${draftCount} drafts on-chain`}
+                  >
+                    {bulkBusy
+                      ? `Publishing ${bulkProgress.done}/${bulkProgress.total}…`
+                      : `Bulk publish (${draftCount})`}
+                  </button>
+                )}
+              </div>
+            );
+          })()}
+
         <div className="bg-white border border-neutral-200 rounded-lg overflow-hidden">
           <table className="w-full text-sm">
             <thead className="bg-neutral-50 text-xs font-mono uppercase tracking-widest text-neutral-500">
@@ -671,6 +746,7 @@ export function ProductsClient({
             </tbody>
           </table>
         </div>
+        </>
       )}
 
       <p className="text-[10px] font-mono text-neutral-400 leading-relaxed">

@@ -43,8 +43,8 @@ function AccountInner() {
           Create your account.
         </h1>
         <p className="text-neutral-600 mb-10 max-w-lg">
-          Email + password. We use this to sign you in and to surface payouts, conversations,
-          and on-chain receipts.
+          We use this to sign you in so you can update your store, see payouts, converse with
+          your agent, and check receipts.
         </p>
 
         <form onSubmit={onSubmit} className="space-y-5 max-w-md">
