@@ -4,6 +4,7 @@ import Image from 'next/image';
 import { db } from '@/lib/app/db';
 import { getSellerUser } from '@/lib/app/seller-auth';
 import { getShippingConfig, isShippingReady } from '@/lib/app/shipping';
+import { NotificationBell } from '@/components/app/NotificationBell';
 
 export const dynamic = 'force-dynamic';
 
@@ -66,11 +67,14 @@ export default async function SellerAdminPage({
           <Link href="/" aria-label="VIA home" className="inline-flex items-center">
             <Image src="/vialogowhite.png" alt="VIA" width={72} height={28} priority className="h-7 w-auto" />
           </Link>
-          <form action="/api/seller/auth/logout" method="post">
-            <button className="text-xs font-mono tracking-widest uppercase text-neutral-400 hover:text-neutral-100 transition-colors">
-              Sign out
-            </button>
-          </form>
+          <div className="flex items-center gap-4">
+            <NotificationBell />
+            <form action="/api/seller/auth/logout" method="post">
+              <button className="text-xs font-mono tracking-widest uppercase text-neutral-400 hover:text-neutral-100 transition-colors">
+                Sign out
+              </button>
+            </form>
+          </div>
         </div>
       </header>
 

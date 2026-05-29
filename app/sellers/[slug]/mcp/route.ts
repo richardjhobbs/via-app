@@ -27,6 +27,7 @@ import { z } from 'zod';
 import { db } from '@/lib/app/db';
 import { ethers } from 'ethers';
 import { getShippingConfig, computeShippingQuote, type ShippingConfig } from '@/lib/app/shipping';
+import { insertNotification } from '@/lib/app/notifications';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -50,12 +51,13 @@ interface SellerRow {
   erc8004_agent_id:     string | null;
   active:               boolean;
   shipping:             unknown; // raw jsonb; pass through getShippingConfig() before use
+  owner_user_id:        string;  // auth.users.id of the seller account, used for notifications
 }
 
 async function loadSeller(slug: string): Promise<SellerRow | null> {
   const { data, error } = await db
     .from('app_sellers')
-    .select('id, slug, name, kind, headline, description, website_url, contact_email, wallet_address, agent_wallet_address, erc8004_seller_id, erc8004_agent_id, active, shipping')
+    .select('id, slug, name, kind, headline, description, website_url, contact_email, wallet_address, agent_wallet_address, erc8004_seller_id, erc8004_agent_id, active, shipping, owner_user_id')
     .eq('slug', slug)
     .maybeSingle();
   if (error || !data || !data.active) return null;
@@ -229,6 +231,14 @@ function createServer(seller: SellerRow, req: Request) {
       const reply = await askSalesAgent(seller, question);
       const out = asJson({ seller: seller.slug, question, answer: reply });
       void logInteraction(seller.id, 'ask_sales_agent', identity, { question: question.slice(0, 200) }, { len: reply.length }, 200, Date.now() - t0);
+      void insertNotification({
+        ownerUserId: seller.owner_user_id,
+        kind:        'enquiry',
+        title:       'New enquiry from a buying agent',
+        body:        question.slice(0, 240),
+        link:        `/seller/${seller.slug}/admin/sales-agent`,
+        metadata:    { tool_name: 'ask_sales_agent', agent_identity: identity, seller_id: seller.id },
+      });
       return out;
     },
   );
@@ -246,6 +256,14 @@ function createServer(seller: SellerRow, req: Request) {
       const quote = computeShippingQuote(config, buyer_country);
       const out = asJson({ seller: seller.slug, buyer_country: buyer_country.toUpperCase(), quote });
       void logInteraction(seller.id, 'get_shipping_quote', identity, { buyer_country }, { status: quote.status }, 200, Date.now() - t0);
+      void insertNotification({
+        ownerUserId: seller.owner_user_id,
+        kind:        'enquiry',
+        title:       'Buying agent priced shipping',
+        body:        `Quote requested for ${buyer_country.toUpperCase()} (status: ${quote.status})`,
+        link:        `/seller/${seller.slug}/admin/shipping`,
+        metadata:    { tool_name: 'get_shipping_quote', agent_identity: identity, buyer_country: buyer_country.toUpperCase(), quote_status: quote.status, seller_id: seller.id },
+      });
       return out;
     },
   );
@@ -381,6 +399,26 @@ function createServer(seller: SellerRow, req: Request) {
         note: 'v1: settlement endpoint at /api/x402/purchase is being wired next. Pay the requirement and we will fire operatorMint + 97.5/2.5 USDC split.',
       });
       void logInteraction(seller.id, 'buy_product', identity, { product_id, qty, buyer_wallet, buyer_agent_id, buyer_country }, { purchase_intent_id: purchase.id, total_usdc: totalUsdc, shipping_usdc: shippingUsd, shipping_status: shippingQuote?.status }, 200, Date.now() - t0);
+      void insertNotification({
+        ownerUserId: seller.owner_user_id,
+        kind:        'sale',
+        title:       `Purchase intent on ${product.title}`,
+        body:        `${qty}× ${product.title} pending x402 settlement, total ${totalUsdc.toFixed(2)} USDC`,
+        link:        `/seller/${seller.slug}/admin/sales`,
+        metadata:    {
+          tool_name:          'buy_product',
+          agent_identity:     identity,
+          purchase_intent_id: purchase.id,
+          product_id:         product.id,
+          qty,
+          total_usdc:         totalUsdc,
+          shipping_usdc:      shippingUsd,
+          buyer_wallet,
+          buyer_agent_id:     buyer_agent_id ?? null,
+          buyer_country:      buyer_country ?? null,
+          seller_id:          seller.id,
+        },
+      });
       return out;
     },
   );

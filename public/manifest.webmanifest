@@ -1,15 +1,21 @@
 {
-  "name": "Real Real Genuine",
-  "short_name": "RRG",
-  "description": "A fashion-first commerce platform. Quietly agent-ready for the clients, concierges and curators who think ahead.",
+  "name": "VIA",
+  "short_name": "VIA",
+  "description": "Sales + Buying Agents on the agentic web. Onboard a seller, train a Buying Agent, settle in USDC.",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
   "orientation": "portrait",
   "background_color": "#faf7f2",
-  "theme_color": "#faf7f2",
-  "categories": ["shopping", "lifestyle"],
+  "theme_color": "#171717",
+  "categories": ["business", "productivity"],
   "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
     {
       "src": "/icons/icon-192.png",
       "sizes": "192x192",

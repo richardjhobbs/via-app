@@ -1,20 +1,21 @@
-// RRG service worker. Hand-rolled, no library.
+// VIA service worker. Hand-rolled, no library.
 //
 // Responsibilities:
 //  - Cache the installable shell so the PWA opens in airplane mode without
 //    crashing.
 //  - Cache /_next/static/* and /icons/* aggressively (immutable hashed assets).
-//  - Pass everything dynamic (API, MCP, .well-known, brands proxy, server
-//    actions) straight through to the network.
+//  - Pass everything dynamic (API, MCP, .well-known, /admin, /seller, /buyer)
+//    straight through to the network.
 //
 // Bump CACHE_VERSION on any change to invalidate stale caches.
 
-const CACHE_VERSION = 'rrg-v1';
-const STATIC_CACHE = `${CACHE_VERSION}-static`;
+const CACHE_VERSION = 'via-v1';
+const STATIC_CACHE  = `${CACHE_VERSION}-static`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 
 const PRECACHE_URLS = [
   '/manifest.webmanifest',
+  '/favicon.svg',
   '/icons/icon-192.png',
   '/icons/icon-384.png',
   '/icons/icon-512.png',
@@ -24,7 +25,9 @@ const PRECACHE_URLS = [
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
-    caches.open(STATIC_CACHE).then((cache) => cache.addAll(PRECACHE_URLS)).then(() => self.skipWaiting())
+    caches.open(STATIC_CACHE)
+      .then((cache) => cache.addAll(PRECACHE_URLS))
+      .then(() => self.skipWaiting())
   );
 });
 
@@ -43,10 +46,15 @@ self.addEventListener('activate', (event) => {
 function shouldBypass(url) {
   if (url.origin !== self.location.origin) return true;
   const p = url.pathname;
-  if (p.startsWith('/api/')) return true;
-  if (p.startsWith('/mcp')) return true;
+  if (p.startsWith('/api/'))         return true;
+  if (p.startsWith('/mcp'))          return true;
+  if (p.startsWith('/sellers/'))     return true; // per-seller MCP + public card
+  if (p.startsWith('/buyers/'))      return true; // per-buyer MCP (Stage 2)
+  if (p.startsWith('/admin'))        return true;
+  if (p.startsWith('/seller/'))      return true;
+  if (p.startsWith('/buyer/'))       return true;
+  if (p.startsWith('/onboard'))      return true;
   if (p.startsWith('/.well-known/')) return true;
-  if (p.startsWith('/brands')) return true; // proxied to a different origin
   return false;
 }
 
@@ -79,7 +87,7 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // Network-first with cache fallback for navigation/HTML.
+  // Network-first with cache fallback for navigation / HTML.
   if (req.mode === 'navigate' || (req.headers.get('accept') || '').includes('text/html')) {
     event.respondWith(
       fetch(req)
@@ -90,7 +98,7 @@ self.addEventListener('fetch', (event) => {
           }
           return res;
         })
-        .catch(() => caches.match(req).then((hit) => hit || caches.match('/rrg')))
+        .catch(() => caches.match(req).then((hit) => hit || caches.match('/')))
     );
   }
 });
