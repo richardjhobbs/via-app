@@ -70,6 +70,7 @@ export async function GET(
     .from('app_purchases')
     .select(`
       id,
+      order_ref,
       product_id,
       buyer_wallet,
       buyer_agent_id,

@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
 
 type PurchaseStatus = 'pending' | 'paid' | 'minted' | 'paid_out' | 'failed';
@@ -22,6 +23,7 @@ interface Product {
 
 interface Purchase {
   id:              string;
+  order_ref:       string;
   product_id:      string;
   buyer_wallet:    string;
   buyer_agent_id:  string | null;
@@ -95,7 +97,7 @@ function StatusBadge({ s }: { s: PurchaseStatus }) {
   );
 }
 
-export function SalesClient({ sellerId, payoutWallet }: Props) {
+export function SalesClient({ sellerId, sellerSlug, payoutWallet }: Props) {
   const [stats,     setStats]     = useState<Stats | null>(null);
   const [rows,      setRows]      = useState<Purchase[]>([]);
   const [loading,   setLoading]   = useState(true);
@@ -223,6 +225,7 @@ export function SalesClient({ sellerId, payoutWallet }: Props) {
           <table className="w-full text-sm">
             <thead className="bg-neutral-50 text-xs font-mono uppercase tracking-widest text-neutral-500">
               <tr>
+                <th className="text-left px-4 py-3">Order</th>
                 <th className="text-left px-4 py-3">When</th>
                 <th className="text-left px-4 py-3">Product</th>
                 <th className="text-left px-4 py-3">Buyer</th>
@@ -237,7 +240,15 @@ export function SalesClient({ sellerId, payoutWallet }: Props) {
               {rows.map((r) => {
                 const distro = r.distribution && r.distribution.length > 0 ? r.distribution[0] : null;
                 return (
-                  <tr key={r.id}>
+                  <tr key={r.id} className="hover:bg-neutral-50">
+                    <td className="px-4 py-3 font-mono text-xs">
+                      <Link
+                        href={`/seller/${sellerSlug}/admin/orders/${r.order_ref}`}
+                        className="text-neutral-900 underline hover:no-underline"
+                      >
+                        {r.order_ref}
+                      </Link>
+                    </td>
                     <td className="px-4 py-3 text-neutral-700 font-mono text-xs whitespace-nowrap">{fmtDate(r.created_at)}</td>
                     <td className="px-4 py-3">
                       <div className="font-medium text-neutral-900">{r.product?.title ?? '(deleted product)'}</div>

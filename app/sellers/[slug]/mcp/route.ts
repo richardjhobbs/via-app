@@ -52,12 +52,13 @@ interface SellerRow {
   active:               boolean;
   shipping:             unknown; // raw jsonb; pass through getShippingConfig() before use
   owner_user_id:        string;  // auth.users.id of the seller account, used for notifications
+  purchase_policy:      string | null; // free-form note surfaced via get_seller_info
 }
 
 async function loadSeller(slug: string): Promise<SellerRow | null> {
   const { data, error } = await db
     .from('app_sellers')
-    .select('id, slug, name, kind, headline, description, website_url, contact_email, wallet_address, agent_wallet_address, erc8004_seller_id, erc8004_agent_id, active, shipping, owner_user_id')
+    .select('id, slug, name, kind, headline, description, website_url, contact_email, wallet_address, agent_wallet_address, erc8004_seller_id, erc8004_agent_id, active, shipping, owner_user_id, purchase_policy')
     .eq('slug', slug)
     .maybeSingle();
   if (error || !data || !data.active) return null;
@@ -80,6 +81,7 @@ function publicSellerInfo(s: SellerRow) {
     erc8004_agent_id:  s.erc8004_agent_id,
     agent_wallet:     s.agent_wallet_address,
     mcp_url:          `${APP_BASE}/sellers/${s.slug}/mcp`,
+    purchase_policy:  s.purchase_policy,
   };
 }
 
@@ -271,20 +273,30 @@ function createServer(seller: SellerRow, req: Request) {
   // ── buy_product (v1 — returns x402 payment requirement) ─────────
   server.tool(
     'buy_product',
-    `Initiate a purchase of one of ${seller.name}'s listings. Returns an x402 payment requirement (USDC on Base, product + shipping) plus a purchase_intent_id. Pay the requirement, then POST to /api/x402/purchase with the intent ID to trigger operatorMint + 97.5/2.5 USDC payout. Call get_shipping_quote first to know the shipping cost; pass buyer_country to fold it in here.`,
+    `Initiate a purchase of one of ${seller.name}'s listings. For physical products you MUST pass the full delivery block (name, address_line1, city, postcode, country, phone) — the call will reject with missing_delivery_details listing required_fields if any are blank. Digital and service kinds do not require delivery. Read get_seller_info().purchase_policy first to learn what the seller specifically needs. Returns an x402 payment requirement (USDC, product + shipping) and an order_ref ("VIA-YYMM-XXXXXX") the seller will reference. Pay the requirement, then POST to /api/x402/purchase with the order_ref to trigger operatorMint + 97.5/2.5 USDC payout. Call get_shipping_quote first to know the shipping cost; pass buyer_country to fold it in here.`,
     {
       product_id:     z.string().uuid(),
       qty:            z.number().int().min(1).max(1000).default(1),
       buyer_wallet:   z.string().regex(/^0x[a-fA-F0-9]{40}$/, 'invalid Base wallet address'),
       buyer_agent_id: z.string().optional().describe('ERC-8004 agent ID of the Buying Agent acting on the buyer\'s behalf'),
       buyer_country:  z.string().length(2).optional().describe('ISO 3166-1 alpha-2 destination country code. Required when the seller has shipping configured; the quote is included in the x402 total. Omit for digital / service kinds that do not ship.'),
+      delivery:       z.object({
+        name:          z.string().min(1).max(200),
+        address_line1: z.string().min(1).max(200),
+        address_line2: z.string().max(200).optional(),
+        city:          z.string().min(1).max(120),
+        region:        z.string().max(120).optional(),
+        postcode:      z.string().min(1).max(40),
+        country:       z.string().length(2).describe('ISO 3166-1 alpha-2; must match buyer_country if both are supplied'),
+        phone:         z.string().min(4).max(40),
+      }).optional().describe('Required for physical products. Omit for digital / service.'),
     },
-    async ({ product_id, qty, buyer_wallet, buyer_agent_id, buyer_country }) => {
+    async ({ product_id, qty, buyer_wallet, buyer_agent_id, buyer_country, delivery }) => {
       const t0 = Date.now();
 
       const { data: product, error: prodErr } = await db
         .from('app_seller_products')
-        .select('id, title, price_minor, currency, stock, token_id, on_chain_status, active, max_supply')
+        .select('id, title, price_minor, currency, stock, token_id, on_chain_status, active, max_supply, kind')
         .eq('id', product_id)
         .eq('seller_id', seller.id)
         .maybeSingle();
@@ -308,6 +320,33 @@ function createServer(seller: SellerRow, req: Request) {
         const r = asJson({ error: 'buyer_wallet is not a valid EVM address' });
         void logInteraction(seller.id, 'buy_product', identity, { product_id, qty, buyer_wallet }, { error: 'invalid_buyer_wallet' }, 400, Date.now() - t0);
         return r;
+      }
+
+      // ── Delivery gate (physical products only) ────────────────
+      // Digital and service kinds skip address collection. For physical
+      // products, every field below is mandatory so the seller can ship
+      // without follow-up. The buyer's agent should call get_seller_info
+      // first, read purchase_policy, gather the fields from its principal,
+      // then call buy_product. A clear required_fields list lets the agent
+      // re-prompt the buyer precisely.
+      if (product.kind === 'physical') {
+        const required: Array<keyof NonNullable<typeof delivery>> = ['name', 'address_line1', 'city', 'postcode', 'country', 'phone'];
+        const missing  = !delivery ? required : required.filter((k) => !delivery[k] || String(delivery[k]).trim().length === 0);
+        if (missing.length > 0) {
+          const r = asJson({
+            error: 'missing_delivery_details',
+            message: `${seller.name} ships physical orders and requires full delivery details before a payment requirement can be issued.`,
+            required_fields: missing,
+            purchase_policy: seller.purchase_policy,
+          });
+          void logInteraction(seller.id, 'buy_product', identity, { product_id, qty, buyer_wallet, has_delivery: !!delivery }, { error: 'missing_delivery_details', missing }, 400, Date.now() - t0);
+          return r;
+        }
+        if (buyer_country && delivery!.country.toUpperCase() !== buyer_country.toUpperCase()) {
+          const r = asJson({ error: 'country_mismatch', message: `buyer_country (${buyer_country.toUpperCase()}) and delivery.country (${delivery!.country.toUpperCase()}) must agree.` });
+          void logInteraction(seller.id, 'buy_product', identity, { product_id, qty, buyer_wallet, buyer_country, delivery_country: delivery!.country }, { error: 'country_mismatch' }, 400, Date.now() - t0);
+          return r;
+        }
       }
 
       // ── Shipping resolution ────────────────────────────────────
@@ -339,23 +378,41 @@ function createServer(seller: SellerRow, req: Request) {
       const productUsdc      = productUsdcMinor / 1_000_000;
       const totalUsdc        = totalUsdcMinor / 1_000_000;
 
-      // Record the purchase intent — purchase row in 'pending' state.
+      // Normalise the delivery block before persisting. Country uppercased,
+      // strings trimmed. For non-physical kinds, delivery stays null.
+      const deliveryRow = product.kind === 'physical' && delivery
+        ? {
+            name:          delivery.name.trim(),
+            address_line1: delivery.address_line1.trim(),
+            address_line2: delivery.address_line2?.trim() || null,
+            city:          delivery.city.trim(),
+            region:        delivery.region?.trim() || null,
+            postcode:      delivery.postcode.trim(),
+            country:       delivery.country.toUpperCase(),
+            phone:         delivery.phone.trim(),
+          }
+        : null;
+
+      // Record the purchase intent — purchase row in 'pending' state. The
+      // DB default fires app_generate_order_ref() so we get a short code
+      // back to surface to the buyer and seller immediately.
       const { data: purchase, error: intentErr } = await db
         .from('app_purchases')
         .insert({
-          product_id:     product.id,
-          seller_id:      seller.id,
-          buyer_wallet:   buyer_wallet.toLowerCase(),
-          buyer_agent_id: buyer_agent_id ?? null,
+          product_id:       product.id,
+          seller_id:        seller.id,
+          buyer_wallet:     buyer_wallet.toLowerCase(),
+          buyer_agent_id:   buyer_agent_id ?? null,
           qty,
-          total_usdc:     totalUsdc,
-          payment_method: 'x402_operator',
-          status:         'pending',
-          notes:          shippingQuote
+          total_usdc:       totalUsdc,
+          payment_method:   'x402_operator',
+          status:           'pending',
+          delivery_address: deliveryRow,
+          notes:            shippingQuote
             ? `awaiting x402 settlement; product ${productUsdc} + shipping ${shippingUsd} (${shippingQuote.status})`
             : 'awaiting x402 settlement',
         })
-        .select('id')
+        .select('id, order_ref')
         .single();
       if (intentErr || !purchase) {
         console.error('[mcp/buy_product] purchase insert failed', intentErr);
@@ -370,15 +427,19 @@ function createServer(seller: SellerRow, req: Request) {
       const usdcAddress    = process.env.NEXT_PUBLIC_USDC_CONTRACT_MAINNET ?? '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913';
       const platformWallet = process.env.NEXT_PUBLIC_PLATFORM_WALLET ?? '0x58554E8423EF5C10be6fFC82EfABA9149f64de3d';
 
+      const orderRef = purchase.order_ref as string;
       const out = asJson({
+        order_ref:          orderRef,
         purchase_intent_id: purchase.id,
         seller:             seller.slug,
-        product:            { id: product.id, title: product.title, token_id: product.token_id },
+        product:            { id: product.id, title: product.title, token_id: product.token_id, kind: product.kind },
         qty,
         product_usdc:       productUsdc,
         shipping_usdc:      shippingUsd,
         total_usdc:         totalUsdc,
         shipping:           shippingQuote,
+        delivery_recorded:  deliveryRow ? { name: deliveryRow.name, city: deliveryRow.city, country: deliveryRow.country } : null,
+        seller_acknowledgement: `Order ${orderRef} has been received by ${seller.name} and is pending payment confirmation. Quote this ref in any follow-up.`,
         x402_payment_required: {
           scheme:        'exact',
           network:       'base',
@@ -386,28 +447,29 @@ function createServer(seller: SellerRow, req: Request) {
           maxAmountRequired: String(totalUsdcMinor),
           payTo:         platformWallet,
           description:   shippingQuote && shippingQuote.status === 'flat_rate'
-            ? `Purchase ${qty}× ${product.title} from ${seller.name} + shipping to ${shippingQuote.shipsTo}`
-            : `Purchase ${qty}× ${product.title} from ${seller.name}`,
+            ? `Order ${orderRef} — ${qty}× ${product.title} from ${seller.name} + shipping to ${shippingQuote.shipsTo}`
+            : `Order ${orderRef} — ${qty}× ${product.title} from ${seller.name}`,
           mimeType:      'application/json',
           extra:         { decimals: 6, name: 'USDC' },
         },
         next: {
           settle_endpoint: `${APP_BASE}/api/x402/purchase`,
           method:          'POST',
-          body:            { purchase_intent_id: purchase.id, x_payment: '<X-PAYMENT header value from the x402 exchange>' },
+          body:            { order_ref: orderRef, x_payment: '<X-PAYMENT header value from the x402 exchange>' },
         },
-        note: 'v1: settlement endpoint at /api/x402/purchase is being wired next. Pay the requirement and we will fire operatorMint + 97.5/2.5 USDC split.',
+        note: 'v1: settlement endpoint at /api/x402/purchase is being wired next. Pay the requirement and we will fire operatorMint + 97.5/2.5 USDC split. Fulfilment is then handled by the seller; quote the order_ref in any further messages.',
       });
-      void logInteraction(seller.id, 'buy_product', identity, { product_id, qty, buyer_wallet, buyer_agent_id, buyer_country }, { purchase_intent_id: purchase.id, total_usdc: totalUsdc, shipping_usdc: shippingUsd, shipping_status: shippingQuote?.status }, 200, Date.now() - t0);
+      void logInteraction(seller.id, 'buy_product', identity, { product_id, qty, buyer_wallet, buyer_agent_id, buyer_country, has_delivery: !!deliveryRow }, { order_ref: orderRef, purchase_intent_id: purchase.id, total_usdc: totalUsdc, shipping_usdc: shippingUsd, shipping_status: shippingQuote?.status }, 200, Date.now() - t0);
       void insertNotification({
         ownerUserId: seller.owner_user_id,
         kind:        'sale',
-        title:       `Purchase intent on ${product.title}`,
-        body:        `${qty}× ${product.title} pending x402 settlement, total ${totalUsdc.toFixed(2)} USDC`,
-        link:        `/seller/${seller.slug}/admin/sales`,
+        title:       `${orderRef} — needs your fulfilment`,
+        body:        `${qty}× ${product.title} · ${totalUsdc.toFixed(2)} USDC · pending x402 settlement${deliveryRow ? ` · ship to ${deliveryRow.city}, ${deliveryRow.country}` : ''}`,
+        link:        `/seller/${seller.slug}/admin/orders/${orderRef}`,
         metadata:    {
           tool_name:          'buy_product',
           agent_identity:     identity,
+          order_ref:          orderRef,
           purchase_intent_id: purchase.id,
           product_id:         product.id,
           qty,

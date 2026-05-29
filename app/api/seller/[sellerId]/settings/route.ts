@@ -18,7 +18,7 @@ export async function GET(
 
   const { data, error } = await db
     .from('app_sellers')
-    .select('id, slug, name, kind, contact_email, website_url, description, headline, catalog_source, shopify_domain, squarespace_shop_url, source_currency, wallet_address, agent_wallet_address, erc8004_seller_id, erc8004_agent_id, active, created_at, updated_at')
+    .select('id, slug, name, kind, contact_email, website_url, description, headline, catalog_source, shopify_domain, squarespace_shop_url, source_currency, wallet_address, agent_wallet_address, erc8004_seller_id, erc8004_agent_id, active, created_at, updated_at, purchase_policy')
     .eq('id', sellerId)
     .single();
   if (error || !data) return NextResponse.json({ error: 'Seller not found' }, { status: 404 });
@@ -35,6 +35,7 @@ interface SettingsBody {
   shopify_domain?:       string | null;
   squarespace_shop_url?: string | null;
   source_currency?:      string;
+  purchase_policy?:      string | null;
 }
 
 /**
@@ -118,6 +119,12 @@ export async function PATCH(
     updates.source_currency = c;
   }
 
+  if (body.purchase_policy !== undefined) {
+    updates.purchase_policy = body.purchase_policy === null
+      ? null
+      : String(body.purchase_policy).trim().slice(0, 2000);
+  }
+
   if (Object.keys(updates).length === 1) {
     // only updated_at — nothing to do
     return NextResponse.json({ error: 'No editable fields supplied' }, { status: 400 });
@@ -127,7 +134,7 @@ export async function PATCH(
     .from('app_sellers')
     .update(updates)
     .eq('id', sellerId)
-    .select('id, slug, name, kind, contact_email, website_url, description, headline, catalog_source, shopify_domain, squarespace_shop_url, source_currency')
+    .select('id, slug, name, kind, contact_email, website_url, description, headline, catalog_source, shopify_domain, squarespace_shop_url, source_currency, purchase_policy')
     .single();
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   return NextResponse.json({ seller: data });

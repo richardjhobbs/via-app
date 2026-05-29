@@ -42,6 +42,7 @@ interface Interaction {
 
 interface Purchase {
   id:         string;
+  order_ref:  string;
   total_usdc: number;
   status:     string;
   created_at: string;
@@ -365,6 +366,7 @@ export function SellerDetailClient({ seller, memories, interactions, purchases, 
             <table className="w-full text-sm">
               <thead className="bg-neutral-50 text-xs font-mono uppercase tracking-widest text-neutral-500">
                 <tr>
+                  <th className="text-left px-4 py-3">Order</th>
                   <th className="text-left px-4 py-3">When</th>
                   <th className="text-right px-4 py-3">USDC</th>
                   <th className="text-left px-4 py-3">Status</th>
@@ -372,7 +374,15 @@ export function SellerDetailClient({ seller, memories, interactions, purchases, 
               </thead>
               <tbody className="divide-y divide-neutral-200">
                 {purchases.map((p) => (
-                  <tr key={p.id}>
+                  <tr key={p.id} className="hover:bg-neutral-50">
+                    <td className="px-4 py-3 font-mono text-xs">
+                      <Link
+                        href={`/admin/orders/${p.order_ref}`}
+                        className="text-neutral-900 underline hover:no-underline"
+                      >
+                        {p.order_ref}
+                      </Link>
+                    </td>
                     <td className="px-4 py-3 font-mono text-xs text-neutral-500 whitespace-nowrap">{fmtDate(p.created_at)}</td>
                     <td className="px-4 py-3 text-right font-mono">{p.total_usdc.toFixed(2)}</td>
                     <td className="px-4 py-3 font-mono text-xs">{p.status}</td>

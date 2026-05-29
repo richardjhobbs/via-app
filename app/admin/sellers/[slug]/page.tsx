@@ -40,7 +40,7 @@ export default async function AdminSellerDetailPage({
       .order('created_at', { ascending: false })
       .limit(50),
     db.from('app_purchases')
-      .select('id, total_usdc, status, created_at')
+      .select('id, order_ref, total_usdc, status, created_at')
       .eq('seller_id', sellerId)
       .order('created_at', { ascending: false })
       .limit(20),
@@ -99,7 +99,7 @@ export default async function AdminSellerDetailPage({
               id: string; tool_name: string; agent_identity: Record<string, unknown>; status_code: number | null; duration_ms: number | null; created_at: string;
             }>}
             purchases={(purchasesRes.data ?? []) as Array<{
-              id: string; total_usdc: number; status: string; created_at: string;
+              id: string; order_ref: string; total_usdc: number; status: string; created_at: string;
             }>}
             productCount={(productsRes.data ?? []).length}
           />

@@ -5,12 +5,13 @@ import { isAdmin, adminUnauthorized } from '@/lib/app/auth';
 export const dynamic = 'force-dynamic';
 
 interface PatchBody {
-  name?:           string;
-  headline?:       string | null;
-  description?:    string | null;
-  website_url?:    string | null;
-  wallet_address?: string;
-  contact_email?:  string;
+  name?:             string;
+  headline?:         string | null;
+  description?:      string | null;
+  website_url?:      string | null;
+  wallet_address?:   string;
+  contact_email?:    string;
+  purchase_policy?:  string | null;
 }
 
 const ADDR_RE  = /^0x[a-fA-F0-9]{40}$/;
@@ -39,6 +40,11 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
       return NextResponse.json({ error: 'contact_email must be a valid email address' }, { status: 400 });
     }
     update.contact_email = trimmed;
+  }
+  if (body.purchase_policy !== undefined) {
+    update.purchase_policy = body.purchase_policy === null
+      ? null
+      : String(body.purchase_policy).trim().slice(0, 2000);
   }
 
   if (Object.keys(update).length === 1) {
