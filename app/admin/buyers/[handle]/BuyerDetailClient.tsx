@@ -232,11 +232,11 @@ export function BuyerDetailClient({ buyer, memories, intents, interactions }: Pr
               <tbody className="divide-y divide-neutral-200">
                 {interactions.map((i) => {
                   const ident = i.agent_identity ?? {};
-                  const agentLabel =
-                    (ident.agent_id as string | undefined) ??
-                    (ident.name as string | undefined) ??
-                    (ident.wallet as string | undefined) ??
-                    'anonymous';
+                  const viaId = ident.via_agent_id;
+                  const ip    = ident.ip as string | null | undefined;
+                  const agentLabel = (viaId !== null && viaId !== undefined && viaId !== '')
+                    ? `agent #${viaId}`
+                    : (ip || 'anonymous');
                   return (
                     <tr key={i.id}>
                       <td className="px-4 py-3 font-mono text-xs text-neutral-500 whitespace-nowrap">{fmtDate(i.created_at)}</td>

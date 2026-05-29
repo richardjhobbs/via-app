@@ -224,22 +224,29 @@ function createServer(seller: SellerRow, req: Request) {
   // ── ask_sales_agent ──────────────────────────────────────────────
   server.tool(
     'ask_sales_agent',
-    `Ask ${seller.name}'s Sales Agent a question. The agent answers in the seller's voice using its locked-in memories (events, promotions, policies, stock notes).`,
+    `Ask ${seller.name}'s Sales Agent a question. The agent answers in the seller's voice using its locked-in memories (events, promotions, policies, stock notes). Pass an optional 'contact' string (email, telegram handle, Buying Agent MCP URL, or whatever you accept) so the seller can reach back if a follow-up needs a human touch.`,
     {
       question: z.string().min(1).max(2000).describe('Free-form buyer question'),
+      contact:  z.string().max(300).optional().describe('Optional reach-back identifier for the buyer or their agent so the seller can follow up. Examples: "buyer@example.com", "@buyerhandle", "https://buyer.example/agent/mcp".'),
     },
-    async ({ question }) => {
+    async ({ question, contact }) => {
       const t0 = Date.now();
       const reply = await askSalesAgent(seller, question);
       const out = asJson({ seller: seller.slug, question, answer: reply });
-      void logInteraction(seller.id, 'ask_sales_agent', identity, { question: question.slice(0, 200) }, { len: reply.length }, 200, Date.now() - t0);
+      const trimmedContact = contact?.trim().slice(0, 300) || null;
+      void logInteraction(seller.id, 'ask_sales_agent', identity, { question: question.slice(0, 200), contact: trimmedContact }, { len: reply.length }, 200, Date.now() - t0);
       void insertNotification({
         ownerUserId: seller.owner_user_id,
         kind:        'enquiry',
         title:       'New enquiry from a buying agent',
         body:        question.slice(0, 240),
         link:        `/seller/${seller.slug}/admin/sales-agent`,
-        metadata:    { tool_name: 'ask_sales_agent', agent_identity: identity, seller_id: seller.id },
+        metadata:    {
+          tool_name:      'ask_sales_agent',
+          agent_identity: identity,
+          contact:        trimmedContact,
+          seller_id:      seller.id,
+        },
       });
       return out;
     },

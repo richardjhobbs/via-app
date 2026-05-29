@@ -41,6 +41,22 @@ function kindBadgeClass(k: Kind): string {
   }
 }
 
+function senderLine(meta: Record<string, unknown>): string | null {
+  const ident   = (meta?.agent_identity ?? {}) as Record<string, unknown>;
+  const viaId   = ident.via_agent_id;
+  const ip      = (ident.ip as string | null | undefined) ?? null;
+  const contact = (meta?.contact as string | null | undefined) ?? null;
+
+  const parts: string[] = [];
+  if (viaId !== null && viaId !== undefined && viaId !== '') {
+    parts.push(`agent #${viaId}`);
+  } else if (ip) {
+    parts.push(ip);
+  }
+  if (contact) parts.push(`contact: ${contact}`);
+  return parts.length > 0 ? parts.join(' · ') : null;
+}
+
 function setAppBadge(count: number): void {
   if (typeof navigator === 'undefined') return;
   const nav = navigator as Navigator & {
@@ -168,6 +184,7 @@ export function NotificationBell() {
             <ul className="max-h-[60vh] overflow-y-auto divide-y divide-neutral-100">
               {recent.map((n) => {
                 const unreadRow = n.read_at == null;
+                const sender    = senderLine(n.metadata);
                 const Row = (
                   <div className={`px-4 py-3 ${unreadRow ? 'bg-amber-50/60' : 'bg-white'} hover:bg-neutral-50 transition-colors`}>
                     <div className="flex items-start gap-2 mb-1">
@@ -182,6 +199,11 @@ export function NotificationBell() {
                     {n.body && (
                       <p className="text-xs text-neutral-600 mt-1 leading-relaxed">
                         {n.body.length > 180 ? `${n.body.slice(0, 180)}…` : n.body}
+                      </p>
+                    )}
+                    {sender && (
+                      <p className="text-[10px] font-mono text-neutral-500 mt-1.5 truncate">
+                        From {sender}
                       </p>
                     )}
                   </div>
