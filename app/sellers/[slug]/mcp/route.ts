@@ -28,6 +28,7 @@ import { db } from '@/lib/app/db';
 import { ethers } from 'ethers';
 import { getShippingConfig, computeShippingQuote, type ShippingConfig } from '@/lib/app/shipping';
 import { insertNotification } from '@/lib/app/notifications';
+import { conciergeKeyFor } from '@/lib/app/auth';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -53,12 +54,14 @@ interface SellerRow {
   shipping:             unknown; // raw jsonb; pass through getShippingConfig() before use
   owner_user_id:        string;  // auth.users.id of the seller account, used for notifications
   purchase_policy:      string | null; // free-form note surfaced via get_seller_info
+  hermes_concierge_status: string | null; // null | 'pending' | 'provisioned' | 'failed:<msg>'
+  hermes_concierge_url:    string | null; // endpoint the Hermes-side Sales Agent answers on
 }
 
 async function loadSeller(slug: string): Promise<SellerRow | null> {
   const { data, error } = await db
     .from('app_sellers')
-    .select('id, slug, name, kind, headline, description, website_url, contact_email, wallet_address, agent_wallet_address, erc8004_seller_id, erc8004_agent_id, active, shipping, owner_user_id, purchase_policy')
+    .select('id, slug, name, kind, headline, description, website_url, contact_email, wallet_address, agent_wallet_address, erc8004_seller_id, erc8004_agent_id, active, shipping, owner_user_id, purchase_policy, hermes_concierge_status, hermes_concierge_url')
     .eq('slug', slug)
     .maybeSingle();
   if (error || !data || !data.active) return null;
@@ -231,10 +234,24 @@ function createServer(seller: SellerRow, req: Request) {
     },
     async ({ question, contact }) => {
       const t0 = Date.now();
-      const reply = await askSalesAgent(seller, question);
-      const out = asJson({ seller: seller.slug, question, answer: reply });
       const trimmedContact = contact?.trim().slice(0, 300) || null;
-      void logInteraction(seller.id, 'ask_sales_agent', identity, { question: question.slice(0, 200), contact: trimmedContact }, { len: reply.length }, 200, Date.now() - t0);
+      const result = await askSalesAgent(seller, question, trimmedContact);
+      const out = asJson({
+        seller:       seller.slug,
+        question,
+        answer:       result.answer,
+        agent_status: result.agent_status,
+        delegated_to: result.delegated_to,
+      });
+      void logInteraction(
+        seller.id,
+        'ask_sales_agent',
+        identity,
+        { question: question.slice(0, 200), contact: trimmedContact },
+        { len: result.answer.length, agent_status: result.agent_status, delegated: Boolean(result.delegated_to) },
+        200,
+        Date.now() - t0,
+      );
       void insertNotification({
         ownerUserId: seller.owner_user_id,
         kind:        'enquiry',
@@ -246,6 +263,8 @@ function createServer(seller: SellerRow, req: Request) {
           agent_identity: identity,
           contact:        trimmedContact,
           seller_id:      seller.id,
+          agent_status:   result.agent_status,
+          delegated_to:   result.delegated_to,
         },
       });
       return out;
@@ -495,66 +514,111 @@ function createServer(seller: SellerRow, req: Request) {
   return server;
 }
 
-// ── ask_sales_agent backend (lightweight DeepSeek call) ─────────────
+// ── ask_sales_agent backend (delegate to Hermes) ─────────────────────
+//
+// The buyer-facing Sales Agent runs as a persistent Hermes profile on the
+// Box, provisioned per seller via via-agent-wiki/scripts/via-concierges/.
+// This route NEVER hits DeepSeek directly — that stateless single-shot
+// pattern is the bug the user (correctly) called out. The in-app
+// /seller/[slug]/admin/sales-agent training chat keeps its own DeepSeek
+// path; that surface is the operator teaching memories. Buyer traffic is
+// answered by the persistent agent.
+//
+// While a seller's hermes_concierge_status is 'pending', the buyer agent
+// gets a clear "is being provisioned" reply with a hint to ask again
+// shortly. Once 'provisioned', this route proxies the question to the
+// seller's hermes_concierge_url with a slug-bound x-concierge-secret.
 
-async function askSalesAgent(seller: SellerRow, question: string): Promise<string> {
-  const apiKey = process.env.DEEPSEEK_API_KEY;
-  if (!apiKey) {
-    return `[${seller.name}'s Sales Agent is being trained — DEEPSEEK_API_KEY not yet provisioned on this deployment.]`;
+interface AskSalesAgentResult {
+  answer:        string;
+  delegated_to:  string | null;   // hermes_concierge_url when proxied, null otherwise
+  agent_status:  string;          // pending | provisioned | not_flagged | url_missing
+}
+
+async function askSalesAgent(seller: SellerRow, question: string, contact: string | null): Promise<AskSalesAgentResult> {
+  const status = (seller.hermes_concierge_status ?? null) as string | null;
+
+  if (status === null) {
+    return {
+      answer: `${seller.name}'s Sales Agent has not been flagged for provisioning yet. The operator can flip ` +
+              `app_sellers.hermes_concierge_status to 'pending' from the superadmin and the queue runner will ` +
+              `provision a persistent Sales Agent on the Box. Ask again once it's live.`,
+      delegated_to: null,
+      agent_status: 'not_flagged',
+    };
+  }
+  if (status === 'pending' || status.startsWith('failed:')) {
+    const detail = status.startsWith('failed:') ? ` (last attempt: ${status})` : '';
+    return {
+      answer: `${seller.name}'s Sales Agent is being provisioned${detail}. Ask again shortly — the operator queue ` +
+              `at app.getvia.xyz/api/admin/hermes-concierge drains pending rows and the persistent agent comes ` +
+              `online once cutover completes.`,
+      delegated_to: null,
+      agent_status: status,
+    };
+  }
+  if (status !== 'provisioned') {
+    return {
+      answer: `${seller.name}'s Sales Agent is in an unknown state (${status}). Operator review needed.`,
+      delegated_to: null,
+      agent_status: status,
+    };
   }
 
-  // Load active memories for context. Use the migration's RPC.
-  const { data: memories } = await db.rpc('app_seller_memory_list', {
-    p_slug:            seller.slug,
-    p_type:            null,
-    p_tag:             null,
-    p_include_expired: false,
-    p_limit:           20,
-  });
-  const memBlock = Array.isArray(memories) && memories.length > 0
-    ? memories.map((m: { title: string; body: string; type: string }) => `[${m.type}] ${m.title}: ${m.body}`).join('\n')
-    : '(no memories yet — answer based on the seller\'s name + description only)';
+  const conciergeUrl = (seller.hermes_concierge_url ?? '').trim();
+  if (!conciergeUrl) {
+    return {
+      answer: `${seller.name}'s Sales Agent is provisioned but its endpoint is not yet wired into app_sellers.` +
+              `hermes_concierge_url. The runner will populate it on next cutover.`,
+      delegated_to: null,
+      agent_status: 'url_missing',
+    };
+  }
 
-  const systemPrompt = `You are the Sales Agent for ${seller.name}.
-
-Public profile:
-- Kind: ${seller.kind}
-- Headline: ${seller.headline ?? '(none)'}
-- Description: ${seller.description ?? '(none)'}
-- Website: ${seller.website_url ?? '(none)'}
-
-Locked-in memories (your source of truth):
-${memBlock}
-
-You are speaking to a buying agent (representing a human buyer) over MCP. Be concise, factual, and warm. If you do not know something from the seller's profile or memories, say so explicitly rather than inventing. End every reply with a clear next-step suggestion (browse list_products, ask a follow-up, or call buy_product).`;
+  // Mint the slug-bound concierge secret here at request time. The root
+  // CONCIERGE_KEY_SECRET stays in app.getvia.xyz env only.
+  const conciergeKey = conciergeKeyFor(seller.slug);
+  if (!conciergeKey) {
+    return {
+      answer: `Sales Agent delegation is not configured on this deployment (CONCIERGE_KEY_SECRET missing).`,
+      delegated_to: null,
+      agent_status: 'misconfigured',
+    };
+  }
 
   try {
-    const res = await fetch('https://api.deepseek.com/v1/chat/completions', {
+    const res = await fetch(conciergeUrl, {
       method: 'POST',
       headers: {
-        'Content-Type':  'application/json',
-        'Authorization': `Bearer ${apiKey}`,
+        'Content-Type':       'application/json',
+        'Accept':             'application/json',
+        'x-concierge-secret': conciergeKey,
       },
-      body: JSON.stringify({
-        model: 'deepseek-chat',
-        messages: [
-          { role: 'system', content: systemPrompt },
-          { role: 'user',   content: question },
-        ],
-        temperature: 0.4,
-        max_tokens:  600,
-      }),
+      body: JSON.stringify({ question, contact: contact ?? null }),
+      signal: AbortSignal.timeout(45_000),
     });
     if (!res.ok) {
-      const text = await res.text();
-      console.warn(`[mcp/ask_sales_agent] DeepSeek ${res.status}: ${text.slice(0, 200)}`);
-      return `[Sales Agent transient error — please retry.]`;
+      const text = (await res.text()).slice(0, 200);
+      console.warn(`[mcp/ask_sales_agent] Hermes ${res.status}: ${text}`);
+      return {
+        answer:       `${seller.name}'s Sales Agent returned an error (${res.status}). Please retry.`,
+        delegated_to: conciergeUrl,
+        agent_status: 'provisioned',
+      };
     }
-    const json = await res.json() as { choices?: Array<{ message?: { content?: string } }> };
-    return json.choices?.[0]?.message?.content?.trim() ?? '[empty response]';
+    const json = await res.json() as { answer?: string };
+    return {
+      answer:       (json.answer ?? '').trim() || `${seller.name}'s Sales Agent returned an empty response. Please retry.`,
+      delegated_to: conciergeUrl,
+      agent_status: 'provisioned',
+    };
   } catch (err) {
-    console.error('[mcp/ask_sales_agent] fetch threw:', err);
-    return `[Sales Agent unreachable — please retry shortly.]`;
+    console.error('[mcp/ask_sales_agent] Hermes fetch threw:', err);
+    return {
+      answer:       `${seller.name}'s Sales Agent is temporarily unreachable. Please retry shortly.`,
+      delegated_to: conciergeUrl,
+      agent_status: 'provisioned',
+    };
   }
 }
 

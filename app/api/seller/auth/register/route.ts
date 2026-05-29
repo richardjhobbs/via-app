@@ -154,6 +154,11 @@ export async function POST(req: NextRequest) {
       squarespace_shop_url:  catalogSource === 'squarespace' ? squarespaceShopUrl : null,
       source_currency:       sourceCurrency,
       active:               true,
+      // Flag the Sales Agent for Hermes provisioning. The operator runner
+      // (via-agent-wiki/scripts/via-concierges/process-pending-concierges.ps1)
+      // drains 'pending' rows, clones a Hermes profile per seller on the Box,
+      // and POSTs back 'provisioned' + the live URL once cutover succeeds.
+      hermes_concierge_status: 'pending',
     })
     .select('id, slug, name, kind')
     .single();
