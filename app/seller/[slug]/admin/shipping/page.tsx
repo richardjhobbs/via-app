@@ -27,7 +27,7 @@ export default async function SellerShippingPage({
 
   const { data: seller, error } = await db
     .from('app_sellers')
-    .select('id, slug, name, kind, owner_user_id, shipping')
+    .select('id, slug, name, kind, owner_user_id, shipping, purchase_policy')
     .eq('slug', slug)
     .maybeSingle();
   if (error || !seller) return notFound();
@@ -75,6 +75,7 @@ export default async function SellerShippingPage({
             sellerSlug={seller.slug as string}
             initialConfig={config}
             initialReady={ready}
+            initialPurchasePolicy={(seller.purchase_policy as string | null) ?? ''}
           />
         </div>
       </section>

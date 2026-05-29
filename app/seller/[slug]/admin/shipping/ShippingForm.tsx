@@ -4,10 +4,11 @@ import { useState } from 'react';
 import type { ShippingConfig, ShippingMode } from '@/lib/app/shipping';
 
 interface Props {
-  sellerId:      string;
-  sellerSlug:    string;
-  initialConfig: ShippingConfig | null;
-  initialReady:  boolean;
+  sellerId:              string;
+  sellerSlug:            string;
+  initialConfig:         ShippingConfig | null;
+  initialReady:          boolean;
+  initialPurchasePolicy: string;
 }
 
 const COMMON_COUNTRIES = [
@@ -28,7 +29,7 @@ const COMMON_COUNTRIES = [
   { code: 'IE', name: 'Ireland' },
 ];
 
-export function ShippingForm({ sellerId, initialConfig, initialReady }: Props) {
+export function ShippingForm({ sellerId, initialConfig, initialReady, initialPurchasePolicy }: Props) {
   const [mode,           setMode]           = useState<ShippingMode>(initialConfig?.mode ?? 'flat_rate');
   const [shipsFrom,      setShipsFrom]      = useState(initialConfig?.shipsFromCountry ?? '');
   const [domestic,       setDomestic]       = useState(initialConfig?.domesticFlatUsd != null ? String(initialConfig.domesticFlatUsd) : '');
@@ -37,6 +38,7 @@ export function ShippingForm({ sellerId, initialConfig, initialReady }: Props) {
   const [excludedInput,  setExcludedInput]  = useState('');
   const [excluded,       setExcluded]       = useState<string[]>(initialConfig?.excludedCountries ?? []);
   const [notes,          setNotes]          = useState(initialConfig?.notes ?? '');
+  const [purchasePolicy, setPurchasePolicy] = useState(initialPurchasePolicy);
   const [ready,          setReady]          = useState(initialReady);
   const [saving,         setSaving]         = useState(false);
   const [err,            setErr]            = useState('');
@@ -86,16 +88,32 @@ export function ShippingForm({ sellerId, initialConfig, initialReady }: Props) {
             notes: notes.trim() || undefined,
           };
 
-      const res = await fetch(`/api/seller/${sellerId}/shipping`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      });
-      const json = await res.json();
-      if (!res.ok) {
-        setErr(json.error || `Save failed (${res.status})`);
+      const trimmedPolicy = purchasePolicy.trim().slice(0, 2000);
+      const [shipRes, policyRes] = await Promise.all([
+        fetch(`/api/seller/${sellerId}/shipping`, {
+          method:  'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body:    JSON.stringify(payload),
+        }),
+        fetch(`/api/seller/${sellerId}/settings`, {
+          method:  'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body:    JSON.stringify({ purchase_policy: trimmedPolicy.length > 0 ? trimmedPolicy : null }),
+        }),
+      ]);
+      const json = await shipRes.json();
+      if (!shipRes.ok) {
+        setErr(json.error || `Shipping save failed (${shipRes.status})`);
         return;
       }
+      if (!policyRes.ok) {
+        const pjson = await policyRes.json().catch(() => ({}));
+        setErr(pjson.error || `Purchase policy save failed (${policyRes.status})`);
+        return;
+      }
+      // Reset to the value the server stored so the textarea reflects the
+      // server's trim / truncate.
+      setPurchasePolicy(trimmedPolicy);
       const stored = json.shipping as ShippingConfig | null;
       if (stored) {
         setMode(stored.mode);
@@ -257,6 +275,28 @@ export function ShippingForm({ sellerId, initialConfig, initialReady }: Props) {
             className="w-full border border-neutral-300 rounded-md px-3 py-2 text-sm outline-none focus:border-neutral-900"
           />
         </label>
+
+        <div className="border-t border-neutral-200 pt-5">
+          <label className="block">
+            <span className="text-xs font-mono tracking-widest uppercase text-neutral-500 block mb-1">Purchase policy</span>
+            <p className="text-xs text-neutral-600 mb-2">
+              Surfaced to buying agents via{' '}
+              <code className="font-mono text-xs">get_seller_info</code>. Use it to tell them what
+              you need before they call{' '}
+              <code className="font-mono text-xs">buy_product</code> on a physical product (full
+              name, address, postcode, phone, anything else).
+            </p>
+            <textarea
+              value={purchasePolicy} onChange={(e) => setPurchasePolicy(e.target.value.slice(0, 2000))}
+              rows={4} maxLength={2000}
+              placeholder="Physical orders require name, full delivery address with postcode, and a contact phone number. Orders ship within 2 business days from the UK."
+              className="w-full border border-neutral-300 rounded-md px-3 py-2 text-sm outline-none focus:border-neutral-900"
+            />
+            <p className="text-[10px] font-mono text-neutral-400 mt-1">
+              {purchasePolicy.length}/2000 characters
+            </p>
+          </label>
+        </div>
 
         <div className="flex justify-end">
           <button
