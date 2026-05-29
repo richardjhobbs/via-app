@@ -350,10 +350,11 @@ function digestHtml(p: DigestPayload): string {
 
 /**
  * Owner-level daily digest. Sent at most once per owner per 24h window
- * (cap enforced by the caller in notification-watcher.ts).
+ * (cap enforced by the caller — the notification watcher that used to
+ * live alongside this helper was deleted in the via-app fork).
  *
  * Bundles every brand-join and listing match the owner is eligible for
- * across all the agents they own. Cream/serif RRG transactional design.
+ * across all the agents they own. RRG-style transactional template.
  */
 export async function sendOwnerDailyDigest(
   email: string,

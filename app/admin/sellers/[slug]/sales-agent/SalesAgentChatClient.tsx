@@ -35,7 +35,7 @@ interface Props {
   /**
    * When true, renders with a bounded height suitable for embedding inside
    * another admin page tab (no full-viewport takeover, no top-level header).
-   * Used by the Brand Admin Concierge tab at /brand/[slug]/admin.
+   * Used by the seller's own training chat at /seller/[slug]/admin/sales-agent.
    */
   embedded?: boolean;
 }
@@ -176,9 +176,9 @@ export default function SalesAgentChatClient({ sellerId, sellerSlug, sellerName,
           <h1 className="text-sm font-mono uppercase tracking-[0.3em] text-neutral-600 mb-3">Access denied</h1>
           <p className="text-neutral-800 mb-6">{deniedReason}</p>
           <div className="flex gap-3 justify-center text-xs font-mono">
-            <a href="/admin" className="text-neutral-600 hover:text-neutral-900 underline">RRG admin login</a>
+            <a href="/admin" className="text-neutral-600 hover:text-neutral-900 underline">Superadmin login</a>
             <span className="text-neutral-400">|</span>
-            <a href={`/brand/${sellerSlug}/login`} className="text-neutral-600 hover:text-neutral-900 underline">Brand login</a>
+            <a href="/seller/login" className="text-neutral-600 hover:text-neutral-900 underline">Seller login</a>
           </div>
         </div>
       </div>
