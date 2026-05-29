@@ -8,7 +8,7 @@ import { FREE_LISTED_CAP, countListedFor, listedCapReachedMessage } from '@/lib/
 
 export const dynamic = 'force-dynamic';
 
-const UNLIMITED_SUPPLY = 1_000_000_000; // 1e9 sentinel matches VIANetwork.sol cap
+const UNLIMITED_SUPPLY = 10_000; // RRG.sol caps edition size at 1-10000; use the ceiling for "unlimited" products
 
 /**
  * POST /api/seller/[sellerId]/products/[productId]/publish

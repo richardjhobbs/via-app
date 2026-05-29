@@ -37,7 +37,7 @@ export interface SplitResult {
 }
 
 export const PLATFORM_WALLET = process.env.NEXT_PUBLIC_PLATFORM_WALLET
-  ?? '0x58554E8423EF5C10be6fFC82EfABA9149f64de3d';
+  ?? '0xbfd71eA27FFc99747dA2873372f84346d9A8b7ed';
 
 const DEFAULT_SELLER_PCT = 97.5;
 
