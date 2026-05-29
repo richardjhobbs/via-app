@@ -1,62 +1,55 @@
 export const dynamic = 'force-static';
 
+// Lightweight agent-identity document for crawlers that prefer /agent.json
+// over /.well-known/agent-card.json. Same shape as the marketing site's
+// /agent.json on getvia.xyz; this is the app subdomain's version, so the
+// MCP endpoint points at the per-app surface at app.getvia.xyz/mcp.
+
 const AGENT = {
-  name: 'Real Real Genuine',
+  name: 'VIA',
   description:
-    'Open co-creation commerce platform on Base. AI agents and humans design, buy, and sell physical and digital products.',
+    'VIA Labs sales + buying agent platform. Sellers expose a Sales Agent over MCP at app.getvia.xyz/sellers/[slug]/mcp; buyers train a Buying Agent that negotiates and pays in USDC on Base.',
   type: 'https://eips.ethereum.org/EIPS/eip-8004#registration-v1',
-  url: 'https://realrealgenuine.com',
+  url: 'https://app.getvia.xyz',
   erc8004: {
-    agentId: 33313,
+    agentId: 38538,
     identityRegistry: '0x8004A169FB4a3325136EB29fA0ceB6D2e539a432',
     reputationRegistry: '0x8004BAa17C55a88189AE136b182e5fdA19dE9b63',
     network: 'base',
-    profile: 'https://8004scan.io/agents/base/33313',
+    profile: 'https://8004scan.io/agents/base/38538',
   },
-  wallet: '0xbfd71eA27FFc99747dA2873372f84346d9A8b7ed',
+  wallet: '0x58554E8423EF5C10be6fFC82EfABA9149f64de3d',
   endpoints: {
-    mcp: 'https://realrealgenuine.com/mcp',
-    agent_docs: 'https://realrealgenuine.com/api/rrg/agent-docs',
-    catalogue: 'https://realrealgenuine.com/api/rrg/catalogue',
-    telegram: 'https://t.me/realrealgenuine_bot',
+    mcp:           'https://app.getvia.xyz/mcp',
+    per_seller_mcp:'https://app.getvia.xyz/sellers/{slug}/mcp',
+    central_mcp:   'https://www.getvia.xyz/mcp',
+    onboard_seller:'https://app.getvia.xyz/onboard?role=seller',
+    onboard_buyer: 'https://app.getvia.xyz/onboard?role=buyer',
   },
   payment: {
-    token: 'USDC',
+    token:    'USDC',
     contract: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913',
-    network: 'base-mainnet',
-    address: '0xbfd71eA27FFc99747dA2873372f84346d9A8b7ed',
+    network:  'base-mainnet',
+    address:  '0x58554E8423EF5C10be6fFC82EfABA9149f64de3d',
   },
   services: [
     {
-      name: 'MCP',
-      endpoint: 'https://realrealgenuine.com/mcp',
+      name: 'discovery_mcp',
+      endpoint: 'https://app.getvia.xyz/mcp',
       description:
-        'RRG platform MCP server. Browse listings, purchase, submit designs, get agent pass.',
+        'VIA app discovery MCP. Tools: list_sellers, find_seller, seller_mcp_url, get_via_overview.',
     },
     {
-      name: 'Web',
-      endpoint: 'https://realrealgenuine.com/rrg',
-      description: 'RRG marketplace. Co-creation NFT platform on Base.',
-    },
-    {
-      name: 'catalogue',
-      endpoint: 'https://realrealgenuine.com/api/rrg/catalogue',
+      name: 'per_seller_mcp',
+      endpoint: 'https://app.getvia.xyz/sellers/{slug}/mcp',
       description:
-        'Agent-readable JSON catalogue of all brand-owned listings. Optional ?brand=<slug> filter.',
+        'Per-seller MCP. Tools: list_products, get_product, get_seller_info, ask_sales_agent, get_shipping_quote, buy_product.',
     },
   ],
   chains: ['base'],
-  protocols: ['erc-8004', 'erc-1155', 'mcp', 'world-agentkit'],
-  capabilities: {
-    worldId: {
-      agentBook: 'base',
-      verification: 'optional',
-      badge: true,
-      info: 'Agents verified via World AgentBook receive a trust badge on their listings and submissions.',
-    },
-  },
-  agentCard: 'https://realrealgenuine.com/.well-known/agent-card.json',
-  mcpServerCard: 'https://realrealgenuine.com/.well-known/mcp/server-card.json',
+  protocols: ['erc-8004', 'erc-1155', 'mcp', 'a2a', 'x402'],
+  agentCard:     'https://app.getvia.xyz/.well-known/agent-card.json',
+  mcpServerCard: 'https://app.getvia.xyz/.well-known/mcp/server-card.json',
 };
 
 export function GET() {

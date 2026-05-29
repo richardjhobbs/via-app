@@ -25,7 +25,7 @@ import {
   getAllActiveBrands,
 } from '@/lib/app/db';
 
-const SITE_URL = (process.env.NEXT_PUBLIC_SITE_URL ?? 'https://realrealgenuine.com').replace(/\/$/, '');
+const SITE_URL = (process.env.NEXT_PUBLIC_SITE_URL ?? 'https://getvia.xyz').replace(/\/$/, '');
 
 // ── Schemas ──────────────────────────────────────────────────────────
 
@@ -230,7 +230,10 @@ function dropUrl(tokenId: number): string {
 }
 
 function brandUrl(slug: string | null): string | null {
-  return slug ? `${SITE_URL}/brand/${slug}` : null;
+  // Public seller card lives on the marketing site under /sellers/[slug],
+  // not on app.getvia.xyz. The SITE_URL constant points at the marketing
+  // domain for this builder.
+  return slug ? `${SITE_URL}/sellers/${slug}` : null;
 }
 
 // Process-level brand lookup. getAllActiveBrands() is already wrapped in

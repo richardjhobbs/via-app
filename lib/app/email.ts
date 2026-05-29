@@ -7,8 +7,8 @@
  */
 
 const RESEND_URL = 'https://api.resend.com/emails';
-const FROM       = process.env.FROM_EMAIL ?? 'deliver@realrealgenuine.com';
-const SITE_URL   = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://realrealgenuine.com';
+const FROM       = process.env.FROM_EMAIL ?? 'deliver@getvia.xyz';
+const SITE_URL   = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://app.getvia.xyz';
 
 async function sendEmail(payload: {
   to: string;
@@ -512,7 +512,7 @@ export async function sendBrandApprovalEmail({
   sellerName: string;
   sellerSlug: string;
 }): Promise<void> {
-  const dashboardUrl = `${SITE_URL}/brand/${sellerSlug}/admin`;
+  const dashboardUrl = `${SITE_URL}/seller/${sellerSlug}/admin`;
 
   const html = `
 <!DOCTYPE html>

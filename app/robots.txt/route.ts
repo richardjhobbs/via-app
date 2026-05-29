@@ -1,7 +1,7 @@
 export const dynamic = 'force-static';
 
 const BODY = [
-  '# RRG robots.txt',
+  '# VIA app robots.txt',
   '# Content Signals per https://contentsignals.org/',
   '',
   'User-agent: *',
@@ -34,8 +34,8 @@ const BODY = [
   'Allow: /',
   'Content-Signal: search=yes, ai-train=yes, ai-input=yes',
   '',
-  'Sitemap: https://realrealgenuine.com/sitemap.xml',
-  'Host: https://realrealgenuine.com',
+  'Sitemap: https://app.getvia.xyz/sitemap.xml',
+  'Host: https://app.getvia.xyz',
   '',
 ].join('\n');
 

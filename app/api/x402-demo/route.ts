@@ -8,10 +8,10 @@ const X402_RESPONSE = {
       scheme: 'exact',
       network: 'base',
       maxAmountRequired: '10000',
-      resource: 'https://realrealgenuine.com/api/x402-demo',
-      description: 'RRG x402 demo endpoint. Any agent paying 0.01 USDC on Base can fetch a signed timestamp.',
+      resource: 'https://app.getvia.xyz/api/x402-demo',
+      description: 'VIA x402 demo endpoint. Any agent paying 0.01 USDC on Base can fetch a signed timestamp.',
       mimeType: 'application/json',
-      payTo: '0xbfd71eA27FFc99747dA2873372f84346d9A8b7ed',
+      payTo: '0x58554E8423EF5C10be6fFC82EfABA9149f64de3d',
       maxTimeoutSeconds: 60,
       asset: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913',
       extra: {
