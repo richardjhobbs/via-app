@@ -50,6 +50,15 @@ export default async function SellerAdminPage({
         ? 'Quote on purchase'
         : 'Not configured yet';
 
+  // Sales count for the dashboard CTA (full join lives behind /admin/sales).
+  const { count: salesCount } = await db
+    .from('app_purchases')
+    .select('id', { count: 'exact', head: true })
+    .eq('seller_id', seller.id as string);
+  const salesSummary = (salesCount ?? 0) === 0
+    ? 'No sales yet'
+    : `${salesCount} sale${salesCount === 1 ? '' : 's'} recorded`;
+
   return (
     <main className="min-h-screen bg-neutral-50 text-neutral-900 flex flex-col">
       <header className="bg-neutral-900 text-neutral-100">
@@ -86,7 +95,7 @@ export default async function SellerAdminPage({
             <Stat label="Status"        value={seller.active ? 'Active' : 'Inactive'} />
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 border-t border-neutral-200 pt-8 mb-10">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 border-t border-neutral-200 pt-8 mb-10">
             <div className="flex flex-col">
               <p className="text-xs font-mono tracking-widest text-neutral-500 mb-3 uppercase">Train your Sales Agent</p>
               <p className="text-sm text-neutral-600 mb-4 flex-grow">
@@ -131,6 +140,24 @@ export default async function SellerAdminPage({
                 {shippingReady ? 'Edit policy' : 'Set up shipping'} <span aria-hidden>&rarr;</span>
               </Link>
             </div>
+
+            <div className="flex flex-col">
+              <p className="text-xs font-mono tracking-widest text-neutral-500 mb-3 uppercase">Sales &amp; payouts</p>
+              <p className="text-sm text-neutral-600 mb-2 flex-grow">
+                Every settled <code className="font-mono text-neutral-900">buy_product</code> on your
+                MCP lands here. 97.5% USDC to your payout wallet on Base, 2.5% retained by the
+                platform.
+              </p>
+              <p className={`text-xs font-mono mb-4 ${(salesCount ?? 0) > 0 ? 'text-emerald-700' : 'text-neutral-500'}`}>
+                {salesSummary}
+              </p>
+              <Link
+                href={`/seller/${seller.slug}/admin/sales`}
+                className="inline-block self-start px-5 py-3 bg-neutral-900 text-neutral-50 text-xs font-mono tracking-widest uppercase hover:bg-neutral-800 transition-colors rounded-md"
+              >
+                Open ledger <span aria-hidden>&rarr;</span>
+              </Link>
+            </div>
           </div>
 
           <div className="border-t border-neutral-200 pt-8 mb-10">
@@ -154,14 +181,7 @@ export default async function SellerAdminPage({
             </a>
           </div>
 
-          <div className="border-t border-neutral-200 pt-8">
-            <p className="text-xs font-mono tracking-widest text-neutral-500 mb-3 uppercase">Coming next</p>
-            <ul className="text-sm text-neutral-600 leading-relaxed space-y-1">
-              <li>&middot; Sales + USDC payout history</li>
-            </ul>
-          </div>
-
-          <p className="text-xs font-mono tracking-widest text-neutral-500 mt-10 uppercase">
+          <p className="text-xs font-mono tracking-widest text-neutral-500 mt-2 uppercase">
             Onboarded {created}
           </p>
         </div>
