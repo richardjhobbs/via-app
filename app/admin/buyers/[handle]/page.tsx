@@ -21,7 +21,7 @@ export default async function AdminBuyerDetailPage({
 
   const { data: buyer, error } = await db
     .from('app_buyers')
-    .select('id, handle, display_name, wallet_address, erc8004_buyer_id, erc8004_agent_id, public, delegation_caps, created_at, updated_at')
+    .select('id, handle, display_name, wallet_address, erc8004_agent_id, public, delegation_caps, created_at, updated_at')
     .eq('handle', handle)
     .maybeSingle();
   if (error || !buyer) return notFound();
@@ -82,7 +82,6 @@ export default async function AdminBuyerDetailPage({
               handle:            buyer.handle as string,
               display_name:      buyer.display_name as string | null,
               wallet_address:    buyer.wallet_address as string,
-              erc8004_buyer_id:  buyer.erc8004_buyer_id as string | null,
               erc8004_agent_id:  buyer.erc8004_agent_id as string | null,
               public:            buyer.public as boolean,
               delegation_caps:   caps,

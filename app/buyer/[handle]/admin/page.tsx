@@ -21,7 +21,7 @@ export default async function BuyerAdminPage({
 
   const { data: buyer, error } = await db
     .from('app_buyers')
-    .select('id, handle, display_name, public, wallet_address, agent_wallet_address, erc8004_buyer_id, erc8004_agent_id, delegation_caps, owner_user_id, created_at')
+    .select('id, handle, display_name, public, wallet_address, agent_wallet_address, erc8004_agent_id, delegation_caps, owner_user_id, created_at')
     .eq('handle', handle)
     .maybeSingle();
   if (error || !buyer) return notFound();
@@ -73,7 +73,6 @@ export default async function BuyerAdminPage({
             <Stat label="Display name"      value={(buyer.display_name as string | null) ?? '(none)'} />
             <Stat label="Funding wallet"    value={buyer.wallet_address as string} mono />
             <Stat label="Agent wallet"      value={(buyer.agent_wallet_address as string | null) ?? '(not provisioned)'} mono />
-            <Stat label="ERC-8004 buyer ID" value={(buyer.erc8004_buyer_id as string | null) ?? 'minting…'} mono />
             <Stat label="ERC-8004 agent ID" value={(buyer.erc8004_agent_id as string | null) ?? 'minting…'} mono />
             <Stat label="Visibility"        value={buyer.public ? 'Public (agents can negotiate)' : 'Private'} />
           </div>

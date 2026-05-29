@@ -8,7 +8,6 @@ interface Buyer {
   handle:            string;
   display_name:      string | null;
   wallet_address:    string;
-  erc8004_buyer_id:  string | null;
   erc8004_agent_id:  string | null;
   public:            boolean;
   delegation_caps:   Record<string, unknown>;
@@ -118,10 +117,9 @@ export function BuyerDetailClient({ buyer, memories, intents, interactions }: Pr
         <h2 className="font-serif text-2xl tracking-tight mb-4">Details</h2>
         <div className="bg-white border border-neutral-200 rounded-lg p-6 grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-3">
           <Stat label="Handle"           value={`@${buyer.handle}`} mono />
-          <Stat label="Display name"     value={buyer.display_name ?? '—'} />
+          <Stat label="Display name"     value={buyer.display_name ?? '(none)'} />
           <Stat label="Funding wallet"   value={buyer.wallet_address} mono />
-          <Stat label="ERC-8004 buyer"   value={buyer.erc8004_buyer_id ?? '—'} mono />
-          <Stat label="ERC-8004 agent"   value={buyer.erc8004_agent_id ?? '—'} mono />
+          <Stat label="ERC-8004 agent"   value={buyer.erc8004_agent_id ?? '(none)'} mono />
           <Stat label="Card visibility"  value={buyer.public ? 'Public' : 'Private'} />
           <div className="md:col-span-2">
             <div className="text-xs font-mono tracking-widest text-neutral-500 uppercase mb-1">Delegation caps</div>
@@ -168,7 +166,7 @@ export function BuyerDetailClient({ buyer, memories, intents, interactions }: Pr
                     <td className="px-4 py-3 font-mono text-xs">{m.type}</td>
                     <td className="px-4 py-3">{m.title}</td>
                     <td className="px-4 py-3 text-neutral-600 text-xs">{m.body.slice(0, 160)}{m.body.length > 160 ? '…' : ''}</td>
-                    <td className="px-4 py-3 font-mono text-xs text-neutral-500">{m.tags.join(', ') || '—'}</td>
+                    <td className="px-4 py-3 font-mono text-xs text-neutral-500">{m.tags.join(', ') || '-'}</td>
                   </tr>
                 ))}
               </tbody>
@@ -201,7 +199,7 @@ export function BuyerDetailClient({ buyer, memories, intents, interactions }: Pr
                     <td className="px-4 py-3 font-mono text-xs text-neutral-500 whitespace-nowrap">{fmtDate(i.created_at)}</td>
                     <td className="px-4 py-3">{i.intent_text.slice(0, 200)}{i.intent_text.length > 200 ? '…' : ''}</td>
                     <td className="px-4 py-3 font-mono text-xs">{i.status}</td>
-                    <td className="px-4 py-3 font-mono text-xs text-neutral-500">{i.resolved_at ? fmtDate(i.resolved_at) : '—'}</td>
+                    <td className="px-4 py-3 font-mono text-xs text-neutral-500">{i.resolved_at ? fmtDate(i.resolved_at) : '-'}</td>
                   </tr>
                 ))}
               </tbody>
@@ -242,8 +240,8 @@ export function BuyerDetailClient({ buyer, memories, intents, interactions }: Pr
                       <td className="px-4 py-3 font-mono text-xs text-neutral-500 whitespace-nowrap">{fmtDate(i.created_at)}</td>
                       <td className="px-4 py-3 font-mono text-xs">{i.tool_name}</td>
                       <td className="px-4 py-3 font-mono text-xs text-neutral-700">{agentLabel}</td>
-                      <td className="px-4 py-3 text-right font-mono text-xs">{i.status_code ?? '—'}</td>
-                      <td className="px-4 py-3 text-right font-mono text-xs text-neutral-500">{i.duration_ms ?? '—'}</td>
+                      <td className="px-4 py-3 text-right font-mono text-xs">{i.status_code ?? '-'}</td>
+                      <td className="px-4 py-3 text-right font-mono text-xs text-neutral-500">{i.duration_ms ?? '-'}</td>
                     </tr>
                   );
                 })}

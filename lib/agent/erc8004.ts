@@ -1,6 +1,5 @@
 /**
- * ERC-8004 Trustless Agents — Identity & Reputation Registry integration.
- * Adapted from rrg/lib/app/erc8004.ts
+ * ERC-8004 Trustless Agents: Identity & Reputation Registry integration.
  *
  * Identity Registry:  0x8004A169FB4a3325136EB29fA0ceB6D2e539a432
  * Reputation Registry: 0x8004BAa17C55a88189AE136b182e5fdA19dE9b63
@@ -15,7 +14,7 @@ const IDENTITY_REGISTRY = '0x8004A169FB4a3325136EB29fA0ceB6D2e539a432';
 const REPUTATION_REGISTRY = '0x8004BAa17C55a88189AE136b182e5fdA19dE9b63';
 
 const SITE_URL = (
-  process.env.NEXT_PUBLIC_SITE_URL ?? 'https://realrealgenuine.com'
+  process.env.NEXT_PUBLIC_SITE_URL ?? 'https://app.getvia.xyz'
 ).replace(/\/$/, '');
 
 // ── ABIs ─────────────────────────────────────────────────────────────
@@ -63,8 +62,8 @@ export async function getAgentUri(agentId: bigint): Promise<string> {
  * Check if a wallet has an ERC-8004 identity token. Returns the first
  * currently-owned tokenId, or null if the wallet has no identity.
  *
- * NOTE: The Identity Registry does NOT implement ERC-721 enumeration —
- * tokenOfOwnerByIndex reverts with require(false) on the live Base contract
+ * NOTE: The Identity Registry does NOT implement ERC-721 enumeration.
+ * tokenOfOwnerByIndex reverts with require(false) on the live chain contract
  * (verified live 2026-05-06). The previous implementation called it directly
  * and threw on every wallet with balance > 0, silently failing the auto-link
  * step in agent creation flows.
@@ -147,10 +146,9 @@ export async function getAgentIdForWallet(
 
 // ── VIA protocol MCP client ──────────────────────────────────────────
 //
-// Identity minting moved off RRG's own deployer wallet and onto the VIA
-// protocol-level registrar at getvia.xyz/mcp. RRG is now a CALLER of
-// via_register_agent rather than directly signing register() on chain.
-// See via_agent_id_plan.md and via_payment_primitive_lessons.md.
+// Identity minting runs through the VIA protocol-level registrar at
+// getvia.xyz/mcp. This app is a CALLER of via_register_agent rather than
+// directly signing register() on chain.
 
 const VIA_MCP_URL = process.env.VIA_MCP_URL ?? 'https://www.getvia.xyz/mcp';
 
@@ -207,10 +205,7 @@ async function callViaTool(name: string, args: Record<string, unknown>): Promise
  * getvia.xyz/mcp. The VIA Registrar wallet (custodied by VIA Labs) signs
  * the on-chain register() tx; the agent's payment wallet is recorded as
  * agentWallet inside the registration JSON. Returns the new token ID
- * and tx hash for the existing 3 callers.
- *
- * Removes RRG's prior reliance on its own DEPLOYER_PRIVATE_KEY for
- * register() — RRG no longer mints its own identities.
+ * and tx hash for callers.
  */
 export async function registerAgentIdentity(
   agentId: string,
@@ -220,7 +215,7 @@ export async function registerAgentIdentity(
 ): Promise<{ tokenId: bigint; txHash: string }> {
   const platformSecret = process.env.VIA_PLATFORM_SECRET;
   if (!platformSecret) {
-    console.warn('[erc8004] VIA_PLATFORM_SECRET not set — call will be rejected once via-labs enforces gating');
+    console.warn('[erc8004] VIA_PLATFORM_SECRET not set. Call will be rejected once via-labs enforces gating');
   }
 
   const result = await callViaTool('via_register_agent', {
@@ -231,10 +226,10 @@ export async function registerAgentIdentity(
       {
         name: 'MCP',
         endpoint: `${SITE_URL}/api/agent/${agentId}/mcp`,
-        description: `RRG ${tier} concierge agent`,
+        description: `VIA ${tier} concierge agent`,
       },
     ],
-    source_platform: 'rrg',
+    source_platform: 'via',
     platform_secret: platformSecret,
     chain: 'base',
   });
