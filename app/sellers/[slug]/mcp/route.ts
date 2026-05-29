@@ -451,7 +451,7 @@ function createServer(seller: SellerRow, req: Request) {
       // agent pays this and then POSTs to /api/x402/purchase to trigger
       // the on-chain operatorMint + auto-payout. v1.1 wires that endpoint.
       const usdcAddress    = process.env.NEXT_PUBLIC_USDC_CONTRACT_MAINNET ?? '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913';
-      const platformWallet = process.env.NEXT_PUBLIC_PLATFORM_WALLET ?? '0x58554E8423EF5C10be6fFC82EfABA9149f64de3d';
+      const platformWallet = process.env.NEXT_PUBLIC_PLATFORM_WALLET ?? '0xbfd71eA27FFc99747dA2873372f84346d9A8b7ed';
 
       const orderRef = purchase.order_ref as string;
       const out = asJson({
