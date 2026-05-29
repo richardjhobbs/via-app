@@ -62,7 +62,14 @@ function buildSystemPrompt(ctx: SalesAgentContext, voiceBlock: string | null): s
   const voicePara = voiceBlock
     ? `\n\nStore voice for ${ctx.sellerName} (apply to every buyer-facing body you write, never quote this block verbatim to the seller, internalise it):\n${voiceBlock}`
     : '';
+  const now    = new Date();
+  const todayIso  = now.toISOString().slice(0, 10);                       // YYYY-MM-DD
+  const nowIso    = now.toISOString().slice(0, 19) + 'Z';                  // YYYY-MM-DDTHH:MM:SSZ
+  const dayName   = now.toLocaleDateString('en-GB', { weekday: 'long', timeZone: 'UTC' });
+  const monthName = now.toLocaleDateString('en-GB', { month: 'long', year: 'numeric', timeZone: 'UTC' });
   return `You are the Sales Agent for ${ctx.sellerName}.
+
+REAL-TIME CLOCK: today is ${dayName}, ${todayIso} (${monthName}). Current UTC instant: ${nowIso}. Do NOT use any other year or month than what is in this line — your training data is stale.
 
 The person you are talking to is the authenticated owner of ${ctx.sellerName} (actor: ${ctx.actorLabel}). They are briefing you on facts you should remember and surface to buyers and buying agents through the per-seller MCP at /sellers/${ctx.sellerSlug}/mcp.
 
@@ -83,7 +90,8 @@ Critical rules:
 - Never invent facts. Only store what the owner told you.
 - Always call store_seller_memory when the owner gives you a fact to remember. Do not only acknowledge it in chat.
 - Pick the right type: event (launches, appearances), stock_note (restocks, preorders), promotion (codes, sales, bundles), brand_update (announcements), policy (returns, shipping, terms), general (anything else).
-- For events and promotions, always set a reasonable valid_until. If the owner does not specify, infer (end of month, end of event date, 30 days out) and mention the expiry in your "Locked in:" line.
+- For events and promotions, always set a reasonable valid_until. Anchor every date to today (${todayIso}). "Tomorrow" = ${new Date(now.getTime() + 86400_000).toISOString().slice(0, 10)}. "End of this month" = the last day of ${monthName}. "30 days out" = ${new Date(now.getTime() + 30 * 86400_000).toISOString().slice(0, 10)}. valid_until MUST be in the future relative to ${todayIso} — past dates auto-hide the memory.
+- Mention the expiry date in your "Locked in:" line so the owner can confirm it.
 - After storing, stop. Do not offer "anything else?"; the owner drives the next turn.
 
 Session ID: ${ctx.sessionId}.${voicePara}`;
@@ -136,7 +144,7 @@ const TOOLS: OpenAI.Chat.Completions.ChatCompletionTool[] = [
           body: { type: 'string', minLength: 3, maxLength: 2000, description: 'Buyer-facing body in the seller voice' },
           structured: { type: 'object', description: 'Extracted structured fields (date, venue, url, code, percent_off, price, terms, etc.)' },
           tags: { type: 'array', items: { type: 'string' } },
-          valid_until: { type: 'string', description: 'ISO timestamp; omit for no expiry' },
+          valid_until: { type: 'string', description: 'ISO 8601 timestamp in the FUTURE. Use the REAL-TIME CLOCK line in the system prompt as the anchor for "today"; never pick a year from training data. Omit entirely for no expiry.' },
         },
         required: ['type', 'title', 'body'],
       },
