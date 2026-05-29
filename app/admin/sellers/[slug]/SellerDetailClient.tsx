@@ -76,6 +76,7 @@ export function SellerDetailClient({ seller, memories, interactions, purchases, 
     description:    seller.description ?? '',
     website_url:    seller.website_url ?? '',
     wallet_address: seller.wallet_address,
+    contact_email:  seller.contact_email,
   });
 
   async function save() {
@@ -202,6 +203,10 @@ export function SellerDetailClient({ seller, memories, interactions, purchases, 
             <Field label="Name">
               <input className="w-full bg-white border border-neutral-300 rounded-md px-3 py-2 text-sm"
                 value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
+            </Field>
+            <Field label="Contact email">
+              <input type="email" className="w-full bg-white border border-neutral-300 rounded-md px-3 py-2 text-sm font-mono"
+                value={form.contact_email} onChange={(e) => setForm({ ...form, contact_email: e.target.value })} />
             </Field>
             <Field label="Headline">
               <input className="w-full bg-white border border-neutral-300 rounded-md px-3 py-2 text-sm"

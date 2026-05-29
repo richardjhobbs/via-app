@@ -10,9 +10,11 @@ interface PatchBody {
   description?:    string | null;
   website_url?:    string | null;
   wallet_address?: string;
+  contact_email?:  string;
 }
 
-const ADDR_RE = /^0x[a-fA-F0-9]{40}$/;
+const ADDR_RE  = /^0x[a-fA-F0-9]{40}$/;
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
   if (!isAdmin(req)) return adminUnauthorized();
@@ -30,6 +32,13 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
       return NextResponse.json({ error: 'wallet_address must be a 42-char 0x… address' }, { status: 400 });
     }
     update.wallet_address = body.wallet_address.trim();
+  }
+  if (typeof body.contact_email === 'string') {
+    const trimmed = body.contact_email.trim();
+    if (!EMAIL_RE.test(trimmed)) {
+      return NextResponse.json({ error: 'contact_email must be a valid email address' }, { status: 400 });
+    }
+    update.contact_email = trimmed;
   }
 
   if (Object.keys(update).length === 1) {
