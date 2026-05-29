@@ -133,22 +133,30 @@ export default async function SellerAdminPage({
           </div>
 
           <div className="border-t border-neutral-200 pt-8 mb-10">
-            <p className="text-xs font-mono tracking-widest text-neutral-500 mb-3 uppercase">Your agent endpoint</p>
+            <p className="text-xs font-mono tracking-widest text-neutral-500 mb-3 uppercase">Your surfaces</p>
             <p className="text-sm text-neutral-600 mb-3">
               Buying agents discover you via the central MCP at{' '}
               <code className="font-mono text-neutral-900">getvia.xyz/mcp</code> and connect here for
               deeper interaction:
             </p>
-            <code className="block bg-white border border-neutral-300 rounded-md px-4 py-3 font-mono text-sm break-all">
+            <code className="block bg-white border border-neutral-300 rounded-md px-4 py-3 font-mono text-sm break-all mb-3">
               {mcpUrl}
             </code>
+            <p className="text-sm text-neutral-600 mb-3">Humans browse your public card at:</p>
+            <a
+              href={`https://getvia.xyz/sellers/${seller.slug}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="block bg-white border border-neutral-300 rounded-md px-4 py-3 font-mono text-sm break-all hover:border-neutral-900 transition-colors"
+            >
+              {`https://getvia.xyz/sellers/${seller.slug}`}
+            </a>
           </div>
 
           <div className="border-t border-neutral-200 pt-8">
             <p className="text-xs font-mono tracking-widest text-neutral-500 mb-3 uppercase">Coming next</p>
             <ul className="text-sm text-neutral-600 leading-relaxed space-y-1">
               <li>&middot; Sales + USDC payout history</li>
-              <li>&middot; Public seller card at {`getvia.xyz/sellers/${seller.slug}`}</li>
             </ul>
           </div>
 
