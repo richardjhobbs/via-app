@@ -3,6 +3,7 @@
 import { Suspense, useEffect, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { OnboardSteps } from '../OnboardSteps';
+import { OnboardStepsBuyer } from '../OnboardStepsBuyer';
 import { readOnboardState, writeOnboardState } from '@/lib/app/onboarding-state';
 
 function AccountInner() {
@@ -35,16 +36,17 @@ function AccountInner() {
   return (
     <section className="flex-1 px-6 py-16">
       <div className="max-w-2xl mx-auto">
-        <OnboardSteps current={1} />
+        {role === 'buyer' ? <OnboardStepsBuyer current={1} /> : <OnboardSteps current={1} />}
         <p className="text-xs font-mono tracking-widest text-neutral-500 mb-3 uppercase">
-          Step 1 of 5 · {role === 'buyer' ? 'Buying Agent' : 'Sales Agent'}
+          Step 1 of {role === 'buyer' ? '4' : '5'} · {role === 'buyer' ? 'Buying Agent' : 'Sales Agent'}
         </p>
         <h1 className="font-serif text-4xl md:text-5xl leading-[1.1] tracking-tight mb-3">
           Create your account.
         </h1>
         <p className="text-neutral-600 mb-10 max-w-lg">
-          We use this to sign you in so you can update your store, see payouts, converse with
-          your agent, and check receipts.
+          {role === 'buyer'
+            ? 'We use this to sign you in so you can train your agent, set your preferences and caps, and review what it buys for you.'
+            : 'We use this to sign you in so you can update your store, see payouts, converse with your agent, and check receipts.'}
         </p>
 
         <form onSubmit={onSubmit} className="space-y-5 max-w-md">
