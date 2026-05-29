@@ -1,6 +1,7 @@
 'use client';
 
 import { Suspense, useEffect, useState } from 'react';
+import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { OnboardSteps } from '../OnboardSteps';
 import { OnboardStepsBuyer } from '../OnboardStepsBuyer';
@@ -85,6 +86,16 @@ function AccountInner() {
             Continue <span aria-hidden>→</span>
           </button>
         </form>
+
+        <p className="text-sm text-neutral-600 mt-6">
+          Already have an account?{' '}
+          <Link
+            href={role === 'buyer' ? '/buyer/login' : '/seller/login'}
+            className="underline underline-offset-4 hover:text-neutral-900"
+          >
+            Log in
+          </Link>
+        </p>
       </div>
     </section>
   );
