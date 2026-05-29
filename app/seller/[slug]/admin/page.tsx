@@ -185,9 +185,14 @@ export default async function SellerAdminPage({
             </a>
           </div>
 
-          <p className="text-xs font-mono tracking-widest text-neutral-500 mt-2 uppercase">
-            Onboarded {created}
-          </p>
+          <div className="border-t border-neutral-200 pt-8 flex items-center justify-between">
+            <Link href="/faq/sellers" className="text-xs font-mono tracking-widest uppercase text-neutral-900 hover:underline">
+              New here? Read the seller FAQ <span aria-hidden>&rarr;</span>
+            </Link>
+            <p className="text-xs font-mono tracking-widest text-neutral-500 uppercase">
+              Onboarded {created}
+            </p>
+          </div>
         </div>
       </section>
     </main>

@@ -83,9 +83,15 @@ export default function OnboardCatalog() {
         <h1 className="font-serif text-4xl md:text-5xl leading-[1.1] tracking-tight mb-3">
           How does your catalog work?
         </h1>
-        <p className="text-neutral-600 mb-10 max-w-lg">
+        <p className="text-neutral-600 mb-4 max-w-lg">
           We pick this up so your Sales Agent has something concrete to pitch. You can change
           it later from the dashboard.
+        </p>
+        <p className="text-sm text-neutral-500 mb-10 max-w-lg">
+          Your buyer is an agent, and agents buy on data, not pictures.{' '}
+          <a href="/faq/sellers" target="_blank" rel="noopener noreferrer" className="underline hover:text-neutral-900">
+            See how to make your product data rich
+          </a>.
         </p>
 
         <form onSubmit={onSubmit} className="space-y-5 max-w-xl">
