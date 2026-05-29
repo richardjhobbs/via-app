@@ -1,4 +1,4 @@
-import { notFound } from 'next/navigation';
+import { notFound, redirect } from 'next/navigation';
 import Link from 'next/link';
 import Image from 'next/image';
 import { db } from '@/lib/app/db';
@@ -33,7 +33,10 @@ export default async function SellerShippingPage({
   if (error || !seller) return notFound();
 
   const user = await getSellerUser();
-  if (!user || user.id !== seller.owner_user_id) return notFound();
+  if (!user) {
+    redirect(`/seller/login?next=${encodeURIComponent(`/seller/${slug}/admin/shipping`)}`);
+  }
+  if (user.id !== seller.owner_user_id) return notFound();
 
   const config = getShippingConfig(seller.shipping);
   const ready  = isShippingReady(config);

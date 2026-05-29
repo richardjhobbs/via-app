@@ -1,4 +1,4 @@
-import { notFound } from 'next/navigation';
+import { notFound, redirect } from 'next/navigation';
 import Link from 'next/link';
 import Image from 'next/image';
 import { db } from '@/lib/app/db';
@@ -34,11 +34,10 @@ export default async function SellerAdminPage({
   if (error || !seller) return notFound();
 
   const user = await getSellerUser();
-  const ownsRow = user?.id === seller.owner_user_id;
-  if (!ownsRow) {
-    // Either signed out or signed in as someone else. Send to login.
-    return notFound();
+  if (!user) {
+    redirect(`/seller/login?next=${encodeURIComponent(`/seller/${slug}/admin`)}`);
   }
+  if (user.id !== seller.owner_user_id) return notFound();
 
   const mcpUrl  = `https://app.getvia.xyz/sellers/${seller.slug}/mcp`;
   const created = new Date(seller.created_at as string).toISOString().slice(0, 10);

@@ -1,4 +1,4 @@
-import { notFound } from 'next/navigation';
+import { notFound, redirect } from 'next/navigation';
 import Link from 'next/link';
 import Image from 'next/image';
 import { db } from '@/lib/app/db';
@@ -30,7 +30,10 @@ export default async function SellerSalesPage({
   if (error || !seller) return notFound();
 
   const user = await getSellerUser();
-  if (!user || user.id !== seller.owner_user_id) return notFound();
+  if (!user) {
+    redirect(`/seller/login?next=${encodeURIComponent(`/seller/${slug}/admin/sales`)}`);
+  }
+  if (user.id !== seller.owner_user_id) return notFound();
 
   return (
     <main className="min-h-screen bg-neutral-50 text-neutral-900 flex flex-col">

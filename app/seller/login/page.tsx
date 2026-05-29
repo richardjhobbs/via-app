@@ -11,12 +11,23 @@ interface BrandHit {
   sellerSlug: string;
 }
 
+function safeNext(raw: string | null): string | null {
+  if (!raw) return null;
+  // Only honour same-origin relative paths under /seller/ to avoid
+  // open-redirect issues. Anything else falls through to the default.
+  if (!raw.startsWith('/seller/')) return null;
+  // Block protocol-relative URLs like //evil.example.com
+  if (raw.startsWith('//')) return null;
+  return raw;
+}
+
 function SellerLoginInner() {
   const router       = useRouter();
   const searchParams = useSearchParams();
   const isReset      = searchParams.get('reset') === 'true';
   const accessToken  = searchParams.get('access_token');
   const refreshToken = searchParams.get('refresh_token');
+  const nextPath     = safeNext(searchParams.get('next'));
 
   const [mode,    setMode]    = useState<Mode>(isReset && accessToken ? 'reset' : 'login');
   const [email,   setEmail]   = useState('');
@@ -26,19 +37,25 @@ function SellerLoginInner() {
   const [msg,     setMsg]     = useState('');
   const [loading, setLoading] = useState(false);
 
-  // If a session cookie is already present, send them to their seller dashboard.
+  // If a session cookie is already present, send them straight on. Honour
+  // ?next= when it's a safe relative /seller/ path so notification deep
+  // links work without an extra hop through the slug guess.
   useEffect(() => {
     fetch('/api/seller/auth/check', { cache: 'no-store' })
       .then((r) => r.ok ? r.json() : null)
       .then((d) => {
         if (!d) return;
         if (d.authenticated && Array.isArray(d.brands) && d.brands.length > 0) {
+          if (nextPath) {
+            router.push(nextPath);
+            return;
+          }
           const first = (d.brands as BrandHit[])[0];
           router.push(`/seller/${first.sellerSlug}/admin`);
         }
       })
       .catch(() => {});
-  }, [router]);
+  }, [router, nextPath]);
 
   async function handleLogin(e: React.FormEvent) {
     e.preventDefault();
@@ -51,7 +68,11 @@ function SellerLoginInner() {
       });
       const data = await res.json();
       if (res.ok && Array.isArray(data.brands) && data.brands.length > 0) {
-        router.push(`/seller/${(data.brands as BrandHit[])[0].sellerSlug}/admin`);
+        if (nextPath) {
+          router.push(nextPath);
+        } else {
+          router.push(`/seller/${(data.brands as BrandHit[])[0].sellerSlug}/admin`);
+        }
       } else {
         setErr(data.error || 'Login failed');
       }
