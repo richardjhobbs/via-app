@@ -37,9 +37,9 @@ export const metadata: Metadata = {
     statusBarStyle: 'default',
   },
   icons: {
-    icon: '/favicon.svg',
-    shortcut: '/favicon.svg',
-    apple: '/icons/apple-touch-icon.png',
+    icon: '/vialogowhite.png',
+    shortcut: '/vialogowhite.png',
+    apple: '/vialogowhite.png',
   },
   openGraph: {
     title: 'VIA · Sales & Buying Agents',
