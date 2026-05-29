@@ -87,45 +87,46 @@ export default async function SellerAdminPage({
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4 border-t border-neutral-200 pt-8 mb-10">
-            <div>
+            <div className="flex flex-col">
               <p className="text-xs font-mono tracking-widest text-neutral-500 mb-3 uppercase">Train your Sales Agent</p>
-              <p className="text-sm text-neutral-600 mb-4">
+              <p className="text-sm text-neutral-600 mb-4 flex-grow">
                 Brief your agent on what you sell, policies, promotions. Locks facts in as memories
                 and reads them back to buying agents.
               </p>
               <Link
                 href={`/seller/${seller.slug}/admin/sales-agent`}
-                className="inline-block px-5 py-3 bg-neutral-900 text-neutral-50 text-xs font-mono tracking-widest uppercase hover:bg-neutral-800 transition-colors rounded-md"
+                className="inline-block self-start px-5 py-3 bg-neutral-900 text-neutral-50 text-xs font-mono tracking-widest uppercase hover:bg-neutral-800 transition-colors rounded-md"
               >
                 Open training chat <span aria-hidden>&rarr;</span>
               </Link>
             </div>
 
-            <div>
+            <div className="flex flex-col">
               <p className="text-xs font-mono tracking-widest text-neutral-500 mb-3 uppercase">Manage products</p>
-              <p className="text-sm text-neutral-600 mb-4">
+              <p className="text-sm text-neutral-600 mb-4 flex-grow">
                 Add what you sell. Each product becomes discoverable by AI agents and with a
                 blockchain record when you publish it. Immediately visible on the VIA MCP server.
               </p>
               <Link
                 href={`/seller/${seller.slug}/admin/products`}
-                className="inline-block px-5 py-3 bg-neutral-900 text-neutral-50 text-xs font-mono tracking-widest uppercase hover:bg-neutral-800 transition-colors rounded-md"
+                className="inline-block self-start px-5 py-3 bg-neutral-900 text-neutral-50 text-xs font-mono tracking-widest uppercase hover:bg-neutral-800 transition-colors rounded-md"
               >
                 Open products <span aria-hidden>&rarr;</span>
               </Link>
             </div>
 
-            <div>
+            <div className="flex flex-col">
               <p className="text-xs font-mono tracking-widest text-neutral-500 mb-3 uppercase">Shipping policy</p>
-              <p className="text-sm text-neutral-600 mb-2">
-                Flat rate or quote on purchase. Folds into the x402 total on <code className="font-mono text-neutral-900">buy_product</code>.
+              <p className="text-sm text-neutral-600 mb-2 flex-grow">
+                Flat rate or quote on purchase. If you are offering free delivery or collection enter
+                zero!
               </p>
               <p className={`text-xs font-mono mb-4 ${shippingReady ? 'text-emerald-700' : 'text-amber-700'}`}>
                 {shippingSummary}
               </p>
               <Link
                 href={`/seller/${seller.slug}/admin/shipping`}
-                className="inline-block px-5 py-3 bg-neutral-900 text-neutral-50 text-xs font-mono tracking-widest uppercase hover:bg-neutral-800 transition-colors rounded-md"
+                className="inline-block self-start px-5 py-3 bg-neutral-900 text-neutral-50 text-xs font-mono tracking-widest uppercase hover:bg-neutral-800 transition-colors rounded-md"
               >
                 {shippingReady ? 'Edit policy' : 'Set up shipping'} <span aria-hidden>&rarr;</span>
               </Link>
