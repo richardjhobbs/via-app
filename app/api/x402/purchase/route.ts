@@ -5,6 +5,7 @@ import { getRRGContract } from '@/lib/app/contract';
 import { calculateSplit } from '@/lib/app/splits';
 import { insertDistributionAndPay } from '@/lib/app/auto-payout';
 import { postViaReputationSignal, parseAgentId } from '@/lib/app/via-reputation';
+import { lookupAgentIdByWallet } from '@/lib/app/erc8004';
 import { insertNotification } from '@/lib/app/notifications';
 
 export const dynamic = 'force-dynamic';
@@ -172,8 +173,29 @@ export async function POST(req: NextRequest) {
   const reputation: { buyer: string | null; seller: string | null } = { buyer: null, seller: null };
   let nextNonce = signalBaseNonce;
 
-  const buyerAgentId  = parseAgentId(purchase.buyer_agent_id as string | null);
+  let   buyerAgentId  = parseAgentId(purchase.buyer_agent_id as string | null);
   const sellerAgentId = parseAgentId(seller.erc8004_agent_id as string | null);
+
+  // The buyer reputation signal must not depend on the buying agent having
+  // volunteered its ERC-8004 id in buy_product. When the column is empty,
+  // resolve the id on-chain from the wallet that actually paid, then persist
+  // it so the order record is complete. lookupAgentIdByWallet returns a
+  // positive id for a registered wallet, -1n for "registered but id unknown",
+  // and null for unregistered: only a positive id is usable for giveFeedback.
+  if (!buyerAgentId) {
+    try {
+      const resolved = await lookupAgentIdByWallet(buyerWalletRecorded);
+      if (resolved && resolved > 0n) {
+        buyerAgentId = resolved;
+        void db.from('app_purchases')
+          .update({ buyer_agent_id: resolved.toString() })
+          .eq('id', purchase.id);
+        console.log(`[x402/purchase] ${orderRef} resolved buyer agent id ${resolved} from wallet ${buyerWalletRecorded}`);
+      }
+    } catch (err) {
+      console.warn(`[x402/purchase] ${orderRef} buyer agent-id wallet lookup failed`, err);
+    }
+  }
 
   if (buyerAgentId) {
     try {
