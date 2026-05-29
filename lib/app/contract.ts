@@ -84,12 +84,19 @@ const USDC_ABI = [
   'function balanceOf(address account) external view returns (uint256)',
 ] as const;
 
+// Canonical USDC on Base mainnet. Same address hardcoded in x402-server.ts,
+// x402-client.ts and sendUsdc.ts. Used as the final fallback so seller payouts
+// never fail on a missing env var: NEXT_PUBLIC_USDC_CONTRACT_MAINNET and
+// NEXT_PUBLIC_CHAIN_ID were both unset in prod, which made the old ternary
+// route to the testnet branch and throw, leaving sellers unpaid.
+const USDC_BASE_MAINNET = '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913';
+
 export function getUsdcContract(): ethers.Contract {
   const usdcAddress = process.env.NEXT_PUBLIC_USDC_ADDRESS
-    || (process.env.NEXT_PUBLIC_CHAIN_ID === '8453'
-      ? process.env.NEXT_PUBLIC_USDC_CONTRACT_MAINNET
-      : process.env.NEXT_PUBLIC_USDC_CONTRACT_TESTNET);
-  if (!usdcAddress) throw new Error('USDC contract address not set (need NEXT_PUBLIC_USDC_ADDRESS or NEXT_PUBLIC_USDC_CONTRACT_MAINNET)');
+    || (process.env.NEXT_PUBLIC_CHAIN_ID === '84532'
+      ? process.env.NEXT_PUBLIC_USDC_CONTRACT_TESTNET
+      : process.env.NEXT_PUBLIC_USDC_CONTRACT_MAINNET)
+    || USDC_BASE_MAINNET;
   return new ethers.Contract(usdcAddress, USDC_ABI, getPlatformSigner());
 }
 

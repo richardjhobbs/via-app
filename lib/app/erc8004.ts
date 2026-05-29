@@ -98,6 +98,21 @@ export async function updateAgentUri(
 const _walletToAgent = new Map<string, bigint>();
 let _cachePopulated = false;
 
+// Known agent IDs - add new ones here as they register. Module-scoped so both
+// the bulk cache warm and the per-call direct scan share one source of truth.
+const KNOWN_AGENT_IDS: bigint[] = [
+  DRHOBBS_AGENT_ID,  // 17666 - DrHobbs personal agent
+  RRG_AGENT_ID,      // 33313 - RRG platform agent
+  37749n,            // Colin     - VIA Labs Admin & Company Secretary
+  37750n,            // Priscilla - VIA Labs Marketing & Content
+  37751n,            // Rosie     - VIA Labs Research & Market Intelligence
+  37752n,            // Jordan    - VIA Labs Product & Dev Coordination
+  38520n,            // Sasha     - VIA Labs Brand Partnerships
+  38538n,            // VIA_Labs  - company entity (getvia.xyz)
+  45690n,            // Nolo      - brand agent (wallet 0x27daa49f)
+  45691n,            // Clooudie  - brand agent (wallet 0xca5c9C4d)
+];
+
 /**
  * Populate the wallet→agentId cache by checking ownerOf for all known
  * agent IDs. Runs once per process lifetime (or until cache expires).
@@ -109,59 +124,65 @@ async function populateAgentCache(): Promise<void> {
     const abi = ['function ownerOf(uint256) view returns (address)'];
     const contract = new ethers.Contract(IDENTITY_REGISTRY_ADDR, abi, provider);
 
-    // Check all known agent IDs — add new ones here as they register
-    const KNOWN_IDS = [
-      DRHOBBS_AGENT_ID,  // 17666 — DrHobbs personal agent
-      RRG_AGENT_ID,      // 33313 — RRG platform agent
-      37749n,            // Colin     — VIA Labs Admin & Company Secretary
-      37750n,            // Priscilla — VIA Labs Marketing & Content
-      37751n,            // Rosie     — VIA Labs Research & Market Intelligence
-      37752n,            // Jordan    — VIA Labs Product & Dev Coordination
-      38520n,            // Sasha     — VIA Labs Brand Partnerships
-      38538n,            // VIA_Labs  — company entity (getvia.xyz)
-      45690n,            // Nolo      — brand agent (wallet 0x27daa49f…)
-      45691n,            // Clooudie  — brand agent (wallet 0xca5c9C4d…)
-    ];
-
-    const checks = KNOWN_IDS.map(async (id) => {
+    let failures = 0;
+    const checks = KNOWN_AGENT_IDS.map(async (id) => {
       try {
         const owner: string = await (contract.ownerOf as (id: bigint) => Promise<string>)(id);
         _walletToAgent.set(owner.toLowerCase(), id);
-      } catch { /* token doesn't exist or reverted */ }
+      } catch { failures++; }
     });
 
     await Promise.all(checks);
-    _cachePopulated = true;
 
-    // Refresh cache every 10 minutes
-    setTimeout(() => { _cachePopulated = false; }, 10 * 60 * 1000);
+    // Only treat the cache as warm when every known id resolved. A partial
+    // warm from an RPC hiccup on a serverless cold start must not stick, or
+    // wallet lookups return the -1n "unknown id" sentinel for the full 10
+    // minutes and miss a real registration (this skipped a buyer signal once).
+    if (failures === 0) {
+      _cachePopulated = true;
+      setTimeout(() => { _cachePopulated = false; }, 10 * 60 * 1000);
+    }
   } catch {
-    // non-fatal — badge just won't show
+    // non-fatal - lookup falls back to a direct scan
   }
 }
 
 /**
  * Look up the ERC-8004 agentId registered to a given wallet address.
- * Uses an in-memory cache populated from known agent IDs.
- * Falls back to balanceOf check for unknown wallets.
+ * Tries the in-memory cache, then a deterministic direct ownerOf scan over
+ * the known ids (so a single call still resolves even if the bulk warm
+ * partially failed), then a balanceOf sentinel for unknown registrations.
  */
 export async function lookupAgentIdByWallet(wallet: string): Promise<bigint | null> {
+  const lowerWallet = wallet.toLowerCase();
   try {
     await populateAgentCache();
-    const lowerWallet = wallet.toLowerCase();
 
-    // Check cache first (covers known agents)
+    // Fast path: cache hit (covers known agents on a healthy warm).
     const cached = _walletToAgent.get(lowerWallet);
     if (cached !== undefined) return cached;
 
-    // For unknown wallets: quick balanceOf check — if 0, definitely no token
     const provider = getBaseMainnetProvider();
-    const abi = ['function balanceOf(address) view returns (uint256)'];
-    const contract = new ethers.Contract(IDENTITY_REGISTRY_ADDR, abi, provider);
-    const balance = await (contract.balanceOf as (a: string) => Promise<bigint>)(wallet);
 
-    // If balance > 0, they have a token but it's not in our known list.
-    // Return a sentinel value so the badge still shows (without specific ID).
+    // Cache miss or partial warm: resolve deterministically with a direct
+    // ownerOf scan so this single call still succeeds for a known agent.
+    const ownerAbi = ['function ownerOf(uint256) view returns (address)'];
+    const idContract = new ethers.Contract(IDENTITY_REGISTRY_ADDR, ownerAbi, provider);
+    for (const id of KNOWN_AGENT_IDS) {
+      try {
+        const owner: string = await (idContract.ownerOf as (id: bigint) => Promise<string>)(id);
+        if (owner.toLowerCase() === lowerWallet) {
+          _walletToAgent.set(lowerWallet, id);
+          return id;
+        }
+      } catch { /* token doesn't exist or reverted - skip */ }
+    }
+
+    // Not a known agent. If the wallet still holds an identity token, signal
+    // "registered, unknown id" so the badge shows; otherwise unregistered.
+    const balAbi = ['function balanceOf(address) view returns (uint256)'];
+    const balContract = new ethers.Contract(IDENTITY_REGISTRY_ADDR, balAbi, provider);
+    const balance = await (balContract.balanceOf as (a: string) => Promise<bigint>)(wallet);
     if (balance > 0n) return -1n; // indicates "has token, unknown ID"
 
     return null;
