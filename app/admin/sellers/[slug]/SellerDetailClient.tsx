@@ -12,6 +12,7 @@ interface Seller {
   headline:              string | null;
   description:           string | null;
   contact_email:         string;
+  login_email:           string | null;
   website_url:           string | null;
   wallet_address:        string;
   agent_wallet_address:  string | null;
@@ -79,6 +80,42 @@ export function SellerDetailClient({ seller, memories, interactions, purchases, 
     wallet_address: seller.wallet_address,
     contact_email:  seller.contact_email,
   });
+
+  // Login email is intentionally separate from the rest of the form.
+  // Saving it hits a different endpoint (Supabase auth admin API) so
+  // partial failures don't muddle the regular edit save.
+  const [loginEmailInput, setLoginEmailInput] = useState(seller.login_email ?? '');
+  const [loginBusy,       setLoginBusy]       = useState(false);
+  const [loginErr,        setLoginErr]        = useState('');
+  const [loginInfo,       setLoginInfo]       = useState('');
+
+  async function saveLoginEmail() {
+    const next = loginEmailInput.trim().toLowerCase();
+    if (next === (seller.login_email ?? '').toLowerCase()) {
+      setLoginInfo('No change.');
+      return;
+    }
+    if (!confirm(`Change ${seller.name}'s login email to ${next}? They will sign in with this address next time.`)) return;
+    setLoginErr(''); setLoginInfo(''); setLoginBusy(true);
+    try {
+      const res = await fetch(`/api/admin/sellers/${seller.id}/login-email`, {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ email: next }),
+      });
+      const json = await res.json();
+      if (!res.ok) {
+        setLoginErr(json.error || `Save failed (${res.status})`);
+        return;
+      }
+      setLoginInfo(`Login email updated to ${json.login_email}.`);
+      router.refresh();
+    } catch (e) {
+      setLoginErr(e instanceof Error ? e.message : 'Network error');
+    } finally {
+      setLoginBusy(false);
+    }
+  }
 
   async function save() {
     setErr(''); setInfo(''); setBusy(true);
@@ -205,9 +242,12 @@ export function SellerDetailClient({ seller, memories, interactions, purchases, 
               <input className="w-full bg-white border border-neutral-300 rounded-md px-3 py-2 text-sm"
                 value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
             </Field>
-            <Field label="Contact email">
+            <Field label="Contact email (display only)">
               <input type="email" className="w-full bg-white border border-neutral-300 rounded-md px-3 py-2 text-sm font-mono"
                 value={form.contact_email} onChange={(e) => setForm({ ...form, contact_email: e.target.value })} />
+              <p className="text-[10px] font-mono text-neutral-500 mt-1">
+                For follow-ups. Does NOT change the seller&apos;s sign-in email.
+              </p>
             </Field>
             <Field label="Headline">
               <input className="w-full bg-white border border-neutral-300 rounded-md px-3 py-2 text-sm"
@@ -242,7 +282,8 @@ export function SellerDetailClient({ seller, memories, interactions, purchases, 
           </div>
         ) : (
           <div className="bg-white border border-neutral-200 rounded-lg p-6 grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-3">
-            <Stat label="Contact"           value={seller.contact_email} mono />
+            <Stat label="Contact email"     value={seller.contact_email} mono />
+            <Stat label="Login email"       value={seller.login_email ?? '(unavailable)'} mono />
             <Stat label="Website"           value={seller.website_url ?? '—'} mono />
             <Stat label="Headline"          value={seller.headline ?? '—'} />
             <Stat label="Kind"              value={seller.kind} />
@@ -257,6 +298,49 @@ export function SellerDetailClient({ seller, memories, interactions, purchases, 
             </div>
           </div>
         )}
+      </section>
+
+      {/* Login email — distinct from the Force-edit panel because it
+          hits Supabase auth.admin.updateUserById, not the row PATCH. */}
+      <section>
+        <h2 className="font-serif text-2xl tracking-tight mb-4">Login email</h2>
+        <div className="bg-white border border-neutral-200 rounded-lg p-6">
+          <p className="text-xs text-neutral-600 mb-4">
+            The address the seller signs in with. Distinct from the contact email above. Changing
+            it overwrites the Supabase auth user and confirms it immediately — no verification mail
+            is sent.
+          </p>
+          {loginErr  && <div className="bg-red-50 border border-red-200 text-red-800 text-sm rounded-md px-4 py-3 mb-4">{loginErr}</div>}
+          {loginInfo && <div className="bg-emerald-50 border border-emerald-200 text-emerald-800 text-sm rounded-md px-4 py-3 mb-4">{loginInfo}</div>}
+          <div className="flex flex-col sm:flex-row sm:items-end gap-3">
+            <div className="flex-1">
+              <label htmlFor="login-email" className="text-xs font-mono tracking-widest text-neutral-500 uppercase block mb-2">
+                Login email
+              </label>
+              <input
+                id="login-email"
+                type="email"
+                value={loginEmailInput}
+                onChange={(e) => setLoginEmailInput(e.target.value)}
+                placeholder={seller.login_email ?? 'unavailable'}
+                disabled={seller.login_email === null}
+                className="w-full bg-white border border-neutral-300 rounded-md px-3 py-2 text-sm font-mono disabled:bg-neutral-50 disabled:text-neutral-400"
+              />
+            </div>
+            <button
+              type="button" onClick={() => void saveLoginEmail()} disabled={loginBusy || seller.login_email === null}
+              className="px-5 py-3 bg-neutral-900 text-neutral-50 text-xs font-mono tracking-widest uppercase hover:bg-neutral-800 transition-colors rounded-md disabled:opacity-50"
+            >
+              {loginBusy ? 'Saving…' : 'Update login email'}
+            </button>
+          </div>
+          {seller.login_email === null && (
+            <p className="text-[10px] font-mono text-amber-700 mt-3">
+              Auth user lookup failed — the Supabase admin API did not return an email for this
+              seller&apos;s owner_user_id. Editing is disabled until the lookup succeeds.
+            </p>
+          )}
+        </div>
       </section>
 
       {/* Memories */}

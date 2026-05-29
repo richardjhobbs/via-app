@@ -3,6 +3,7 @@ import Image from 'next/image';
 import { notFound, redirect } from 'next/navigation';
 import { db } from '@/lib/app/db';
 import { isAdminFromCookies } from '@/lib/app/auth';
+import { supabaseAdmin } from '@/lib/app/seller-auth';
 import { SellerDetailClient } from './SellerDetailClient';
 
 export const dynamic = 'force-dynamic';
@@ -21,12 +22,24 @@ export default async function AdminSellerDetailPage({
 
   const { data: seller, error } = await db
     .from('app_sellers')
-    .select('id, slug, name, kind, headline, description, contact_email, website_url, wallet_address, agent_wallet_address, erc8004_seller_id, erc8004_agent_id, active, created_at, updated_at, shopify_domain')
+    .select('id, slug, name, kind, headline, description, contact_email, website_url, wallet_address, agent_wallet_address, erc8004_seller_id, erc8004_agent_id, active, created_at, updated_at, shopify_domain, owner_user_id')
     .eq('slug', slug)
     .maybeSingle();
   if (error || !seller) return notFound();
 
-  const sellerId = seller.id as string;
+  const sellerId    = seller.id as string;
+  const ownerUserId = seller.owner_user_id as string;
+
+  // Pull the auth user's email so superadmin can see (and edit) the
+  // login-of-record alongside the display-only contact email. Failures
+  // here are non-fatal — we render '(unavailable)' in the UI.
+  let loginEmail: string | null = null;
+  try {
+    const { data: authUser } = await supabaseAdmin.auth.admin.getUserById(ownerUserId);
+    loginEmail = authUser?.user?.email ?? null;
+  } catch {
+    loginEmail = null;
+  }
 
   const [memoriesRes, interactionsRes, purchasesRes, productsRes] = await Promise.all([
     db.from('app_seller_memories')
@@ -84,6 +97,7 @@ export default async function AdminSellerDetailPage({
               headline:              seller.headline as string | null,
               description:           seller.description as string | null,
               contact_email:         seller.contact_email as string,
+              login_email:           loginEmail,
               website_url:           seller.website_url as string | null,
               wallet_address:        seller.wallet_address as string,
               agent_wallet_address:  seller.agent_wallet_address as string | null,
