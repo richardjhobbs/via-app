@@ -55,7 +55,7 @@ function BrandLoginInner() {
       .then((r) => r.json())
       .then((d) => {
         if (d.authenticated && d.brands?.length > 0) {
-          router.push(`/brand/${d.brands[0].sellerSlug}/admin`);
+          router.push(`/seller/${d.brands[0].sellerSlug}/admin`);
         } else if (d.authenticated && d.pendingBrand) {
           setPendingBrand(d.pendingBrand);
           setMode('pending');
@@ -131,7 +131,7 @@ function BrandLoginInner() {
     setLoading(false);
 
     if (res.ok && data.brands?.length > 0) {
-      router.push(`/brand/${data.brands[0].sellerSlug}/admin`);
+      router.push(`/seller/${data.brands[0].sellerSlug}/admin`);
     } else {
       setErr(data.error || 'Login failed');
     }
@@ -180,7 +180,7 @@ function BrandLoginInner() {
 
     if (res.ok) {
       setMsg('Password updated. Redirecting…');
-      setTimeout(() => router.push('/brand/login'), 1500);
+      setTimeout(() => router.push('/seller/login'), 1500);
     } else {
       setErr(data.error || 'Failed to reset password');
     }

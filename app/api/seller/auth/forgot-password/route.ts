@@ -17,10 +17,10 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Email required' }, { status: 400 });
     }
 
-    const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://realrealgenuine.com';
+    const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://app.getvia.xyz';
 
     const { error } = await supabase.auth.resetPasswordForEmail(email, {
-      redirectTo: `${siteUrl}/brand/login?reset=true`,
+      redirectTo: `${siteUrl}/seller/login?reset=true`,
     });
 
     if (error) {
