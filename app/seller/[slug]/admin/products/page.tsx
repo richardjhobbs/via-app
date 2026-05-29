@@ -53,9 +53,10 @@ export default async function SellerProductsPage({
             {seller.name}
           </h1>
           <p className="text-sm text-neutral-600 mb-8 max-w-2xl">
-            Add what you sell. Each product becomes an ERC-1155 listing on Base when you publish it,
-            and immediately appears in <code className="font-mono text-neutral-900">list_products</code> on
-            the per-seller MCP so buying agents can discover it.
+            Add what you sell. Each product becomes a listing with an on-chain record when you
+            publish it, and immediately appears in{' '}
+            <code className="font-mono text-neutral-900">list_products</code> on the per-seller MCP
+            so buying agents can discover it.
           </p>
 
           <ProductsClient

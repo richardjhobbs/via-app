@@ -58,7 +58,7 @@ export default function OnboardWallet() {
     e.preventDefault();
     setErr('');
     if (!ADDR_RE.test(payout.trim())) {
-      setErr('Payout wallet must be a valid Base address (0x… 42 chars).');
+      setErr('Payout wallet must be a valid 0x… address (42 chars).');
       return;
     }
     if (!ADDR_RE.test(agentAddress)) {

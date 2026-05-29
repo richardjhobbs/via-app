@@ -59,7 +59,7 @@ export default async function SellerSalesPage({
           <p className="text-sm text-neutral-600 mb-8 max-w-2xl">
             Every purchase initiated through your per-seller MCP&apos;s{' '}
             <code className="font-mono text-xs">buy_product</code> tool lands here. The 97.5%
-            seller share of each settled sale lands at your payout wallet on Base.
+            seller share of each settled sale lands at your payout wallet.
           </p>
 
           <SalesClient

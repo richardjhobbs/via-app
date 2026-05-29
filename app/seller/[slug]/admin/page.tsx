@@ -97,7 +97,7 @@ export default async function SellerAdminPage({
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 border-t border-neutral-200 pt-8 mb-10">
             <div className="flex flex-col">
-              <p className="text-xs font-mono tracking-widest text-neutral-500 mb-3 uppercase">Train your Sales Agent</p>
+              <p className="text-xs font-mono tracking-widest text-neutral-500 mb-3 uppercase">Train your agent</p>
               <p className="text-sm text-neutral-600 mb-4 flex-grow">
                 Brief your agent on what you sell, policies, promotions. Locks facts in as memories
                 and reads them back to buying agents.
@@ -106,7 +106,7 @@ export default async function SellerAdminPage({
                 href={`/seller/${seller.slug}/admin/sales-agent`}
                 className="inline-block self-start px-5 py-3 bg-neutral-900 text-neutral-50 text-xs font-mono tracking-widest uppercase hover:bg-neutral-800 transition-colors rounded-md"
               >
-                Open training chat <span aria-hidden>&rarr;</span>
+                Open chat <span aria-hidden>&rarr;</span>
               </Link>
             </div>
 
@@ -144,9 +144,9 @@ export default async function SellerAdminPage({
             <div className="flex flex-col">
               <p className="text-xs font-mono tracking-widest text-neutral-500 mb-3 uppercase">Sales &amp; payouts</p>
               <p className="text-sm text-neutral-600 mb-2 flex-grow">
-                Every settled <code className="font-mono text-neutral-900">buy_product</code> on your
-                MCP lands here. 97.5% USDC to your payout wallet on Base, 2.5% retained by the
-                platform.
+                Every purchase initiated through your per-seller MCP&apos;s{' '}
+                <code className="font-mono text-neutral-900">buy_product</code> tool lands here. The
+                97.5% seller share of each settled sale lands at your payout wallet.
               </p>
               <p className={`text-xs font-mono mb-4 ${(salesCount ?? 0) > 0 ? 'text-emerald-700' : 'text-neutral-500'}`}>
                 {salesSummary}

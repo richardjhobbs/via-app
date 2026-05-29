@@ -226,7 +226,7 @@ export function ProductsClient({
     const skipNote = skipped > 0
       ? ` You have ${drafts.length} drafts but only ${remainingSlots} slot${remainingSlots === 1 ? '' : 's'} left on the free tier — ${skipped} will stay as draft.`
       : '';
-    if (!confirm(`Publish ${toPublish.length} draft product${toPublish.length === 1 ? '' : 's'}? Each one is registered on-chain (Base) and immediately becomes visible to buying agents calling list_products on this seller's MCP.${skipNote}`)) return;
+    if (!confirm(`Publish ${toPublish.length} draft product${toPublish.length === 1 ? '' : 's'}? Each one is registered on-chain and immediately becomes visible to buying agents calling list_products on this seller's MCP.${skipNote}`)) return;
     setErr('');
     setInfo('');
     setBulkBusy(true);
@@ -730,8 +730,8 @@ export function ProductsClient({
                     : draftCount === 0
                       ? `All active products are already published. Buying agents see them via list_products on your MCP.`
                       : capSkip > 0
-                        ? `${draftCount} draft${draftCount === 1 ? '' : 's'} waiting; the free tier lets you publish ${willPublish} now (${capSkip} will stay as draft). Each publish writes an on-chain record on Base.`
-                        : `${draftCount} draft${draftCount === 1 ? '' : 's'} waiting. Each publish writes an on-chain record on Base.`}
+                        ? `${draftCount} draft${draftCount === 1 ? '' : 's'} waiting; the free tier lets you publish ${willPublish} now (${capSkip} will stay as draft). Each publish writes an on-chain record.`
+                        : `${draftCount} draft${draftCount === 1 ? '' : 's'} waiting. Each publish writes an on-chain record.`}
                 </p>
                 {draftCount > 0 && !capReached && (
                   <button

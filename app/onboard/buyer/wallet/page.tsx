@@ -44,7 +44,7 @@ export default function BuyerWallet() {
     e.preventDefault();
     setErr('');
     if (!ADDR_RE.test(funding.trim())) {
-      setErr('Funding wallet must be a valid Base address (0x… 42 chars).');
+      setErr('Funding wallet must be a valid 0x… address (42 chars).');
       return;
     }
     if (!ADDR_RE.test(agentAddress)) {
@@ -85,7 +85,7 @@ export default function BuyerWallet() {
               <span className="text-neutral-400">A</span><span>Your funding wallet</span>
             </h2>
             <p className="text-sm text-neutral-600 mb-4">
-              Paste a Base wallet address you already control. Your agent never holds your funds; it
+              Paste a wallet address you already control. Your agent never holds your funds; it
               requests x402 payment that comes from this wallet.
             </p>
             <input
