@@ -1,5 +1,6 @@
-import { notFound } from 'next/navigation';
+import { notFound, redirect } from 'next/navigation';
 import { db } from '@/lib/app/db';
+import { isAdminFromCookies } from '@/lib/app/auth';
 import SalesAgentChatClient from './SalesAgentChatClient';
 
 export const dynamic = 'force-dynamic';
@@ -10,6 +11,10 @@ export default async function SalesAgentChatPage({
   params: Promise<{ slug: string }>;
 }) {
   const { slug } = await params;
+
+  if (!(await isAdminFromCookies())) {
+    redirect(`/admin/login?next=/admin/sellers/${slug}/sales-agent`);
+  }
 
   const { data: brand, error } = await db
     .from('app_sellers')
