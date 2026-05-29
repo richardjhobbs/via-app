@@ -4,6 +4,7 @@ import { db } from '@/lib/app/db';
 import { getRRGContract, toUsdc6dp } from '@/lib/app/contract';
 import { PLATFORM_WALLET } from '@/lib/app/splits';
 import { isTestEmail, shouldSkipErc8004 } from '@/lib/app/test-mode';
+import { FREE_LISTED_CAP, countListedFor, listedCapReachedMessage } from '@/lib/app/limits';
 
 export const dynamic = 'force-dynamic';
 
@@ -44,6 +45,17 @@ export async function POST(
   if (!product) return NextResponse.json({ error: 'Product not found' }, { status: 404 });
   if (product.on_chain_status === 'registered') {
     return NextResponse.json({ error: 'Product is already published on-chain', product }, { status: 409 });
+  }
+
+  // Free-tier cap: max FREE_LISTED_CAP active + registered products per seller.
+  const listedCount = await countListedFor(sellerId);
+  if (listedCount >= FREE_LISTED_CAP) {
+    return NextResponse.json({
+      error: listedCapReachedMessage(listedCount),
+      code: 'free_listed_cap_reached',
+      listed: listedCount,
+      cap: FREE_LISTED_CAP,
+    }, { status: 409 });
   }
 
   const { data: seller, error: sellerErr } = await db

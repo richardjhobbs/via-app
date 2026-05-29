@@ -28,6 +28,8 @@ interface Props {
   shopifyDomain: string | null;
   squarespaceShopUrl: string | null;
   sourceCurrency: string;
+  listedCount: number;
+  listedCap: number;
 }
 
 function statusBadge(status: Product['on_chain_status'], active: boolean) {
@@ -49,6 +51,8 @@ export function ProductsClient({
   shopifyDomain,
   squarespaceShopUrl,
   sourceCurrency,
+  listedCount: initialListedCount,
+  listedCap,
 }: Props) {
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading]   = useState(true);
@@ -80,6 +84,14 @@ export function ProductsClient({
   // Bulk publish state
   const [bulkBusy,     setBulkBusy]     = useState(false);
   const [bulkProgress, setBulkProgress] = useState<{ done: number; total: number; succeeded: number; failed: number }>({ done: 0, total: 0, succeeded: 0, failed: 0 });
+
+  // Live listed count — server-rendered initial value, kept in sync as
+  // we publish/remove products without forcing a full page reload.
+  const liveListedCount = products.length > 0
+    ? products.filter((p) => p.active && p.on_chain_status === 'registered').length
+    : initialListedCount;
+  const remainingSlots = Math.max(0, listedCap - liveListedCount);
+  const capReached = remainingSlots === 0;
 
   // ── Catalogue source connection — live editable so existing sellers
   //    (incl. arc-lights) can connect or switch their store source after
@@ -203,18 +215,30 @@ export function ProductsClient({
     if (bulkBusy) return;
     const drafts = products.filter((p) => p.active && p.on_chain_status === 'draft');
     if (drafts.length === 0) return;
-    if (!confirm(`Publish all ${drafts.length} draft product${drafts.length === 1 ? '' : 's'}? Each one is registered on-chain (Base) and immediately becomes visible to buying agents calling list_products on this seller's MCP.`)) return;
+    if (capReached) {
+      setErr(`Free-tier cap of ${listedCap} listed items reached (${liveListedCount}/${listedCap}). Unpublish or deactivate an existing product first.`);
+      return;
+    }
+    // Only attempt up to the remaining slots — the server enforces this
+    // too, but a client-side stop avoids N pointless 409 round-trips.
+    const toPublish = drafts.slice(0, remainingSlots);
+    const skipped = drafts.length - toPublish.length;
+    const skipNote = skipped > 0
+      ? ` You have ${drafts.length} drafts but only ${remainingSlots} slot${remainingSlots === 1 ? '' : 's'} left on the free tier — ${skipped} will stay as draft.`
+      : '';
+    if (!confirm(`Publish ${toPublish.length} draft product${toPublish.length === 1 ? '' : 's'}? Each one is registered on-chain (Base) and immediately becomes visible to buying agents calling list_products on this seller's MCP.${skipNote}`)) return;
     setErr('');
     setInfo('');
     setBulkBusy(true);
-    setBulkProgress({ done: 0, total: drafts.length, succeeded: 0, failed: 0 });
+    setBulkProgress({ done: 0, total: toPublish.length, succeeded: 0, failed: 0 });
     let succeeded = 0;
     let failed = 0;
     const failures: { title: string; reason: string }[] = [];
+    let capHit = false;
     // Sequential to keep server pressure low and to give the
     // app_next_token_id RPC a clean monotonic order.
-    for (let i = 0; i < drafts.length; i++) {
-      const p = drafts[i];
+    for (let i = 0; i < toPublish.length; i++) {
+      const p = toPublish[i];
       try {
         const res = await fetch(`/api/seller/${sellerId}/products/${p.id}/publish`, { method: 'POST' });
         const json = await res.json();
@@ -222,18 +246,30 @@ export function ProductsClient({
           succeeded++;
         } else {
           failed++;
+          if (json.code === 'free_listed_cap_reached') {
+            capHit = true;
+            failures.push({ title: p.title, reason: json.error ?? 'free-tier cap reached' });
+            // Stop sending requests — the cap won't change mid-run.
+            setBulkProgress({ done: i + 1, total: toPublish.length, succeeded, failed });
+            break;
+          }
           failures.push({ title: p.title, reason: json.error ?? `HTTP ${res.status}` });
         }
       } catch (e) {
         failed++;
         failures.push({ title: p.title, reason: e instanceof Error ? e.message : 'network error' });
       }
-      setBulkProgress({ done: i + 1, total: drafts.length, succeeded, failed });
+      setBulkProgress({ done: i + 1, total: toPublish.length, succeeded, failed });
     }
     setBulkBusy(false);
     await refresh();
-    if (failed === 0) {
-      setInfo(`Published ${succeeded} product${succeeded === 1 ? '' : 's'}. They are now live on the per-seller MCP.`);
+    const skippedTail = skipped > 0
+      ? ` (${skipped} draft${skipped === 1 ? '' : 's'} left untouched because the free tier caps you at ${listedCap} listed items)`
+      : '';
+    if (capHit) {
+      setErr(`Published ${succeeded}, then hit the free-tier cap of ${listedCap} listed items. Unpublish or deactivate something to make room for the remaining drafts.`);
+    } else if (failed === 0) {
+      setInfo(`Published ${succeeded} product${succeeded === 1 ? '' : 's'}. They are now live on the per-seller MCP.${skippedTail}`);
     } else {
       const top = failures.slice(0, 3).map((f) => `• ${f.title}: ${f.reason}`).join('\n');
       setErr(`Published ${succeeded}, ${failed} failed:\n${top}${failures.length > 3 ? `\n…and ${failures.length - 3} more.` : ''}`);
@@ -344,10 +380,24 @@ export function ProductsClient({
       )}
 
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-3">
           <p className="text-xs font-mono tracking-widest text-neutral-500 uppercase">
             {products.length} product{products.length === 1 ? '' : 's'}
           </p>
+          <span
+            className={`text-[10px] font-mono uppercase tracking-widest border rounded px-2 py-0.5 ${
+              capReached
+                ? 'border-rose-300 text-rose-800 bg-rose-50'
+                : liveListedCount >= listedCap - 2
+                  ? 'border-amber-300 text-amber-800 bg-amber-50'
+                  : 'border-neutral-200 text-neutral-500'
+            }`}
+            title={capReached
+              ? `Free-tier cap reached. Unpublish or deactivate something to publish more.`
+              : `Free tier: up to ${listedCap} listed items.`}
+          >
+            listed {liveListedCount} / {listedCap} (free tier)
+          </span>
           <span className="text-[10px] font-mono uppercase tracking-widest text-neutral-400 border border-neutral-200 rounded px-2 py-0.5">
             {cur} → USDC
           </span>
@@ -662,26 +712,38 @@ export function ProductsClient({
         <>
           {/* ── Publish explainer + bulk publish strip ──────────────── */}
           {(() => {
-            const draftCount = products.filter((p) => p.active && p.on_chain_status === 'draft').length;
+            const draftCount    = products.filter((p) => p.active && p.on_chain_status === 'draft').length;
+            const willPublish   = Math.min(draftCount, remainingSlots);
+            const capSkip       = Math.max(0, draftCount - remainingSlots);
+            const stripTheme    = capReached
+              ? 'bg-rose-50 border-rose-200 text-rose-900'
+              : 'bg-amber-50 border-amber-200 text-amber-900';
+            const btnTheme      = capReached
+              ? 'bg-rose-900 text-rose-50 hover:bg-rose-800'
+              : 'bg-amber-900 text-amber-50 hover:bg-amber-800';
             return (
-              <div className="flex flex-wrap items-center justify-between gap-3 bg-amber-50 border border-amber-200 rounded-md px-4 py-3">
-                <p className="text-sm text-amber-900">
+              <div className={`flex flex-wrap items-center justify-between gap-3 border rounded-md px-4 py-3 ${stripTheme}`}>
+                <p className="text-sm">
                   <strong>Publish your products to make them visible to buying agents.</strong>{' '}
-                  {draftCount > 0
-                    ? `${draftCount} draft${draftCount === 1 ? '' : 's'} waiting. Each publish writes an on-chain record on Base.`
-                    : 'All active products are already published. Buying agents see them via list_products on your MCP.'}
+                  {capReached
+                    ? `You are at the free-tier cap (${listedCap} listed). Unpublish or deactivate an existing product to make room.`
+                    : draftCount === 0
+                      ? `All active products are already published. Buying agents see them via list_products on your MCP.`
+                      : capSkip > 0
+                        ? `${draftCount} draft${draftCount === 1 ? '' : 's'} waiting; the free tier lets you publish ${willPublish} now (${capSkip} will stay as draft). Each publish writes an on-chain record on Base.`
+                        : `${draftCount} draft${draftCount === 1 ? '' : 's'} waiting. Each publish writes an on-chain record on Base.`}
                 </p>
-                {draftCount > 0 && (
+                {draftCount > 0 && !capReached && (
                   <button
                     type="button"
                     onClick={() => void bulkPublish()}
                     disabled={bulkBusy}
-                    className="px-4 py-2 bg-amber-900 text-amber-50 text-xs font-mono tracking-widest uppercase hover:bg-amber-800 disabled:opacity-40 transition-colors rounded-md whitespace-nowrap"
-                    title={`Publish all ${draftCount} drafts on-chain`}
+                    className={`px-4 py-2 text-xs font-mono tracking-widest uppercase disabled:opacity-40 transition-colors rounded-md whitespace-nowrap ${btnTheme}`}
+                    title={`Publish ${willPublish} draft${willPublish === 1 ? '' : 's'} on-chain`}
                   >
                     {bulkBusy
                       ? `Publishing ${bulkProgress.done}/${bulkProgress.total}…`
-                      : `Bulk publish (${draftCount})`}
+                      : `Bulk publish (${willPublish})`}
                   </button>
                 )}
               </div>

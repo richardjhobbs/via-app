@@ -3,6 +3,7 @@ import Link from 'next/link';
 import Image from 'next/image';
 import { db } from '@/lib/app/db';
 import { getSellerUser } from '@/lib/app/seller-auth';
+import { FREE_LISTED_CAP, countListedFor } from '@/lib/app/limits';
 import { ProductsClient } from './ProductsClient';
 
 export const dynamic = 'force-dynamic';
@@ -24,6 +25,8 @@ export default async function SellerProductsPage({
 
   const user = await getSellerUser();
   if (!user || user.id !== seller.owner_user_id) return notFound();
+
+  const listedCount = await countListedFor(seller.id as string);
 
   return (
     <main className="min-h-screen bg-neutral-50 text-neutral-900 flex flex-col">
@@ -63,6 +66,8 @@ export default async function SellerProductsPage({
             shopifyDomain={(seller.shopify_domain as string | null) ?? null}
             squarespaceShopUrl={(seller.squarespace_shop_url as string | null) ?? null}
             sourceCurrency={(seller.source_currency as string | null) ?? 'USD'}
+            listedCount={listedCount}
+            listedCap={FREE_LISTED_CAP}
           />
         </div>
       </section>

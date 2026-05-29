@@ -53,6 +53,22 @@ export function ShippingForm({ sellerId, initialConfig, initialReady }: Props) {
     setExcluded((prev) => prev.filter((c) => c !== code));
   }
 
+  // Identify exactly which fields are blocking ready=true so messaging
+  // is specific. Returns a short list of human-readable hints; empty
+  // when the policy is ready.
+  function missingFields(): string[] {
+    if (mode === 'quote_on_purchase') return [];
+    const out: string[] = [];
+    if (!/^[A-Z]{2}$/.test(shipsFrom.trim().toUpperCase().slice(0, 2))) {
+      out.push('a 2-letter ships-from country code');
+    }
+    const d = Number(domestic);
+    if (domestic === '' || !Number.isFinite(d) || d < 0) {
+      out.push('a domestic rate (0 if you only do free collection)');
+    }
+    return out;
+  }
+
   async function save(e: React.FormEvent) {
     e.preventDefault();
     setErr('');
@@ -91,9 +107,14 @@ export function ShippingForm({ sellerId, initialConfig, initialReady }: Props) {
         setNotes(stored.notes ?? '');
       }
       setReady(Boolean(json.ready));
-      setInfo(json.ready
-        ? 'Shipping policy saved. Live for the next get_shipping_quote / buy_product call.'
-        : 'Saved as draft. Add a ships-from country + domestic rate (or switch to quote-on-purchase) to make it ready for buyers.');
+      if (json.ready) {
+        setInfo('Shipping policy saved. Live for the next get_shipping_quote / buy_product call.');
+      } else {
+        const missing = missingFields();
+        setInfo(missing.length > 0
+          ? `Saved, but still draft. Add ${missing.join(' and ')} to go live for buyers. Or switch to "Quote on purchase" if you confirm cost per order.`
+          : 'Saved as draft.');
+      }
     } finally {
       setSaving(false);
     }
@@ -102,15 +123,22 @@ export function ShippingForm({ sellerId, initialConfig, initialReady }: Props) {
   return (
     <div className="space-y-6">
       {/* Status strip */}
-      <div className={`border rounded-md px-4 py-3 text-sm ${
-        ready
-          ? 'bg-emerald-50 border-emerald-200 text-emerald-900'
-          : 'bg-amber-50 border-amber-200 text-amber-900'
-      }`}>
-        {ready
-          ? <>Status: <strong>ready</strong>. Buying agents calling <code className="font-mono text-xs">get_shipping_quote</code> get a real answer.</>
-          : <>Status: <strong>draft</strong>. Buying agents see <code className="font-mono text-xs">not_configured</code> on quote calls until this is complete.</>}
-      </div>
+      {(() => {
+        const missing = ready ? [] : missingFields();
+        return (
+          <div className={`border rounded-md px-4 py-3 text-sm ${
+            ready
+              ? 'bg-emerald-50 border-emerald-200 text-emerald-900'
+              : 'bg-amber-50 border-amber-200 text-amber-900'
+          }`}>
+            {ready
+              ? <>Status: <strong>ready</strong>. Buying agents calling <code className="font-mono text-xs">get_shipping_quote</code> get a real answer.</>
+              : missing.length > 0
+                ? <>Status: <strong>draft</strong>. Still need {missing.join(' and ')} before buyers can quote shipping.</>
+                : <>Status: <strong>draft</strong>. Buying agents see <code className="font-mono text-xs">not_configured</code> on quote calls until this is saved.</>}
+          </div>
+        );
+      })()}
 
       {err  && <div className="bg-red-50 border border-red-200 text-red-800 text-sm rounded-md px-4 py-3">{err}</div>}
       {info && <div className="bg-emerald-50 border border-emerald-200 text-emerald-900 text-sm rounded-md px-4 py-3">{info}</div>}
