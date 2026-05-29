@@ -16,20 +16,20 @@ export default async function SalesAgentChatPage({
     redirect(`/admin/login?next=/admin/sellers/${slug}/sales-agent`);
   }
 
-  const { data: brand, error } = await db
+  const { data: seller, error } = await db
     .from('app_sellers')
-    .select('id, slug, name, headline, logo_path')
+    .select('id, slug, name, headline')
     .eq('slug', slug)
     .maybeSingle();
 
-  if (error || !brand) return notFound();
+  if (error || !seller) return notFound();
 
   return (
     <SalesAgentChatClient
-      sellerId={brand.id as string}
-      sellerSlug={brand.slug as string}
-      sellerName={brand.name as string}
-      brandHeadline={(brand.headline as string | null) ?? null}
+      sellerId={seller.id as string}
+      sellerSlug={seller.slug as string}
+      sellerName={seller.name as string}
+      brandHeadline={(seller.headline as string | null) ?? null}
     />
   );
 }
