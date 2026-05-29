@@ -45,7 +45,7 @@ export async function POST(req: NextRequest) {
   if (!password || password.length < 8)           return NextResponse.json({ error: 'password must be 8+ characters' }, { status: 400 });
   if (!displayName)                               return NextResponse.json({ error: 'display name required' },          { status: 400 });
   if (!ethers.isAddress(walletAddress))           return NextResponse.json({ error: 'invalid funding wallet address' }, { status: 400 });
-  if (!ethers.isAddress(agentWalletAddress))      return NextResponse.json({ error: 'invalid agent wallet address — provision the Buying Agent wallet in step 3' }, { status: 400 });
+  if (!ethers.isAddress(agentWalletAddress))      return NextResponse.json({ error: 'invalid agent wallet address. Provision the Buying Agent wallet in step 3' }, { status: 400 });
   if (walletAddress.toLowerCase() === agentWalletAddress.toLowerCase()) {
     return NextResponse.json({ error: 'funding wallet and agent wallet must be different EOAs' }, { status: 400 });
   }
@@ -75,7 +75,7 @@ export async function POST(req: NextRequest) {
     const found = list?.users?.find((u: { email?: string | null; id: string }) => u.email?.toLowerCase() === email);
     if (!found) return NextResponse.json({ error: 'could not create or find user account' }, { status: 500 });
     const { data: priorBuyer } = await db.from('app_buyers').select('handle').eq('owner_user_id', found.id).maybeSingle();
-    if (priorBuyer) return NextResponse.json({ error: `this email already owns "${priorBuyer.handle}" — sign in instead` }, { status: 409 });
+    if (priorBuyer) return NextResponse.json({ error: `this email already owns "${priorBuyer.handle}", sign in instead` }, { status: 409 });
     await supabaseAdmin.auth.admin.updateUserById(found.id, { password });
     userId = found.id;
   } else {
@@ -116,7 +116,7 @@ export async function POST(req: NextRequest) {
   } else {
     registerAgentIdentity(
       buyer.id,
-      `${displayName} — Buying Agent`,
+      `${displayName} Buying Agent`,
       agentWallet,
       'buying_agent',
     )
