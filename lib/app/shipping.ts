@@ -1,17 +1,23 @@
 /**
- * Shipping-config helpers for the per-brand MCP endpoint.
+ * Shipping-config helpers for the per-seller MCP endpoint and the
+ * /admin/shipping editor. Pattern ported from via-brand-onboarding.
  *
- * A brand's shipping config lives in app_sellers.brand_data.shipping
- * (written by the onboarding app at via-brand-onboarding). Two modes:
+ * The config is stored as the top-level jsonb column app_sellers.shipping
+ * (migration 0004). Two modes:
  *
  *   - flat_rate: ships-from country, flat USD rates for domestic and
  *     international, optional excluded-countries list. Applied
  *     uniformly to every product.
- *   - quote_on_purchase: merchant responds per-order. Agents get a
- *     "pending_merchant_quote" signal.
+ *   - quote_on_purchase: seller responds per-order. Buying agents get a
+ *     "pending_merchant_quote" signal and must confirm before settlement.
  *
- * get_quote on the per-brand MCP uses this to compute the total
- * including shipping before a buyer agent initiates payment.
+ * Keys are camelCase in TypeScript (shipsFromCountry, domesticFlatUsd)
+ * because that's the wire shape the brand-onboarding repo standardised
+ * on. The jsonb is stored with the same camelCase keys to avoid a
+ * pointless snake_case ↔ camelCase translation on every read/write.
+ *
+ * get_shipping_quote on the per-seller MCP uses this to compute the
+ * total including shipping before a buying agent initiates payment.
  */
 
 export type ShippingMode = 'flat_rate' | 'quote_on_purchase';
@@ -55,17 +61,18 @@ export type ShippingQuote =
     };
 
 /**
- * Extract a ShippingConfig from a brand row's brand_data jsonb.
- * Returns null if nothing has been saved yet.
+ * Coerce an unknown value (a row's `shipping` jsonb) into a typed
+ * ShippingConfig. Returns null if the value is empty/missing — the
+ * default for a seller who hasn't configured shipping yet.
+ *
+ * Unknown keys are dropped; missing keys are left undefined; the
+ * mode field is forced into the enum (defaults to flat_rate).
  */
-export function getShippingConfig(
-  brandData: unknown,
-): ShippingConfig | null {
-  if (!brandData || typeof brandData !== 'object') return null;
-  const bd = brandData as Record<string, unknown>;
-  const shipping = bd.shipping;
-  if (!shipping || typeof shipping !== 'object') return null;
-  const s = shipping as Record<string, unknown>;
+export function getShippingConfig(raw: unknown): ShippingConfig | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const s = raw as Record<string, unknown>;
+  // Empty object = unconfigured.
+  if (Object.keys(s).length === 0) return null;
   const mode = s.mode === 'quote_on_purchase' ? 'quote_on_purchase' : 'flat_rate';
   return {
     mode,
@@ -85,6 +92,68 @@ export function getShippingConfig(
         )
       : [],
     notes: typeof s.notes === 'string' ? s.notes : undefined,
+  };
+}
+
+/**
+ * True iff the config is sufficient to quote shipping.
+ *   - quote_on_purchase: always ready (seller will respond manually)
+ *   - flat_rate: needs ships-from country + domestic rate
+ */
+export function isShippingReady(config: ShippingConfig | null | undefined): boolean {
+  if (!config) return false;
+  if (config.mode === 'quote_on_purchase') return true;
+  if (config.mode !== 'flat_rate') return false;
+  const hasFromCountry = typeof config.shipsFromCountry === 'string' && config.shipsFromCountry.length === 2;
+  const hasDomestic    = typeof config.domesticFlatUsd === 'number' && config.domesticFlatUsd >= 0;
+  return hasFromCountry && hasDomestic;
+}
+
+const ISO2_RE = /^[A-Z]{2}$/;
+
+/**
+ * Validate + normalise a config from a PUT body. Discards unknown
+ * fields, clamps numbers to >=0, uppercases ISO codes, trims notes.
+ * Always returns a valid ShippingConfig (never throws); the caller is
+ * responsible for checking isShippingReady() before treating
+ * "configured" as a positive signal.
+ */
+export function normaliseShipping(input: Partial<ShippingConfig>): ShippingConfig {
+  const mode: ShippingMode = input.mode === 'quote_on_purchase' ? 'quote_on_purchase' : 'flat_rate';
+  if (mode === 'quote_on_purchase') {
+    return {
+      mode,
+      notes: typeof input.notes === 'string' ? input.notes.trim().slice(0, 400) || undefined : undefined,
+    };
+  }
+
+  const shipsFromCountry = String(input.shipsFromCountry ?? '').trim().toUpperCase().slice(0, 2);
+
+  const domestic =
+    typeof input.domesticFlatUsd === 'number' && Number.isFinite(input.domesticFlatUsd)
+      ? Math.max(0, input.domesticFlatUsd)
+      : undefined;
+
+  const international =
+    input.internationalFlatUsd === null
+      ? null
+      : typeof input.internationalFlatUsd === 'number' && Number.isFinite(input.internationalFlatUsd)
+        ? Math.max(0, input.internationalFlatUsd)
+        : undefined;
+
+  const excludedCountries = Array.isArray(input.excludedCountries)
+    ? input.excludedCountries
+        .map((c) => String(c ?? '').trim().toUpperCase().slice(0, 2))
+        .filter((c) => ISO2_RE.test(c))
+    : [];
+
+  return {
+    mode: 'flat_rate',
+    shipsFromCountry: ISO2_RE.test(shipsFromCountry) ? shipsFromCountry : undefined,
+    domesticFlatUsd: domestic,
+    internationalFlatUsd: international,
+    excludedCountries,
+    notes: typeof input.notes === 'string' ? input.notes.trim().slice(0, 400) || undefined : undefined,
   };
 }
 

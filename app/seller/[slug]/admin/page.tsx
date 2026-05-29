@@ -3,6 +3,7 @@ import Link from 'next/link';
 import Image from 'next/image';
 import { db } from '@/lib/app/db';
 import { getSellerUser } from '@/lib/app/seller-auth';
+import { getShippingConfig, isShippingReady } from '@/lib/app/shipping';
 
 export const dynamic = 'force-dynamic';
 
@@ -25,7 +26,7 @@ export default async function SellerAdminPage({
 
   const { data: seller, error } = await db
     .from('app_sellers')
-    .select('id, slug, name, kind, headline, description, website_url, contact_email, wallet_address, agent_wallet_address, erc8004_seller_id, erc8004_agent_id, owner_user_id, active, created_at')
+    .select('id, slug, name, kind, headline, description, website_url, contact_email, wallet_address, agent_wallet_address, erc8004_seller_id, erc8004_agent_id, owner_user_id, active, created_at, shipping')
     .eq('slug', slug)
     .maybeSingle();
 
@@ -40,6 +41,14 @@ export default async function SellerAdminPage({
 
   const mcpUrl  = `https://app.getvia.xyz/sellers/${seller.slug}/mcp`;
   const created = new Date(seller.created_at as string).toISOString().slice(0, 10);
+  const shippingConfig = getShippingConfig(seller.shipping);
+  const shippingReady  = isShippingReady(shippingConfig);
+  const shippingSummary =
+    shippingReady && shippingConfig?.mode === 'flat_rate'
+      ? `Flat rate from ${shippingConfig.shipsFromCountry ?? '??'} · domestic $${(shippingConfig.domesticFlatUsd ?? 0).toFixed(2)}`
+      : shippingReady && shippingConfig?.mode === 'quote_on_purchase'
+        ? 'Quote on purchase'
+        : 'Not configured yet';
 
   return (
     <main className="min-h-screen bg-neutral-50 text-neutral-900 flex flex-col">
@@ -77,12 +86,12 @@ export default async function SellerAdminPage({
             <Stat label="Status"        value={seller.active ? 'Active' : 'Inactive'} />
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 border-t border-neutral-200 pt-8 mb-10">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 border-t border-neutral-200 pt-8 mb-10">
             <div>
               <p className="text-xs font-mono tracking-widest text-neutral-500 mb-3 uppercase">Train your Sales Agent</p>
               <p className="text-sm text-neutral-600 mb-4">
-                Brief your agent on what you sell, your policies, current promotions. It locks
-                the facts in as memories and reads them back to buying agents.
+                Brief your agent on what you sell, policies, promotions. Locks facts in as memories
+                and reads them back to buying agents.
               </p>
               <Link
                 href={`/seller/${seller.slug}/admin/sales-agent`}
@@ -95,15 +104,30 @@ export default async function SellerAdminPage({
             <div>
               <p className="text-xs font-mono tracking-widest text-neutral-500 mb-3 uppercase">Manage products</p>
               <p className="text-sm text-neutral-600 mb-4">
-                Add what you sell. Each product becomes an ERC-1155 listing on Base when you publish
-                it, and appears in <code className="font-mono text-neutral-900">list_products</code> on
-                your MCP.
+                Add what you sell, sync from Shopify / Squarespace, or upload a CSV. Publish each
+                product on-chain to make it appear in <code className="font-mono text-neutral-900">list_products</code>.
               </p>
               <Link
                 href={`/seller/${seller.slug}/admin/products`}
                 className="inline-block px-5 py-3 bg-neutral-900 text-neutral-50 text-xs font-mono tracking-widest uppercase hover:bg-neutral-800 transition-colors rounded-md"
               >
                 Open products <span aria-hidden>&rarr;</span>
+              </Link>
+            </div>
+
+            <div>
+              <p className="text-xs font-mono tracking-widest text-neutral-500 mb-3 uppercase">Shipping policy</p>
+              <p className="text-sm text-neutral-600 mb-2">
+                Flat rate or quote on purchase. Folds into the x402 total on <code className="font-mono text-neutral-900">buy_product</code>.
+              </p>
+              <p className={`text-xs font-mono mb-4 ${shippingReady ? 'text-emerald-700' : 'text-amber-700'}`}>
+                {shippingSummary}
+              </p>
+              <Link
+                href={`/seller/${seller.slug}/admin/shipping`}
+                className="inline-block px-5 py-3 bg-neutral-900 text-neutral-50 text-xs font-mono tracking-widest uppercase hover:bg-neutral-800 transition-colors rounded-md"
+              >
+                {shippingReady ? 'Edit policy' : 'Set up shipping'} <span aria-hidden>&rarr;</span>
               </Link>
             </div>
           </div>
@@ -123,7 +147,6 @@ export default async function SellerAdminPage({
           <div className="border-t border-neutral-200 pt-8">
             <p className="text-xs font-mono tracking-widest text-neutral-500 mb-3 uppercase">Coming next</p>
             <ul className="text-sm text-neutral-600 leading-relaxed space-y-1">
-              <li>&middot; Shopify catalog sync (paste your store, import as drafts)</li>
               <li>&middot; Sales + USDC payout history</li>
               <li>&middot; Public seller card at {`getvia.xyz/sellers/${seller.slug}`}</li>
             </ul>

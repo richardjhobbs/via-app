@@ -26,6 +26,7 @@ import { WebStandardStreamableHTTPServerTransport } from '@modelcontextprotocol/
 import { z } from 'zod';
 import { db } from '@/lib/app/db';
 import { ethers } from 'ethers';
+import { getShippingConfig, computeShippingQuote, type ShippingConfig } from '@/lib/app/shipping';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -48,12 +49,13 @@ interface SellerRow {
   erc8004_seller_id:    string | null;
   erc8004_agent_id:     string | null;
   active:               boolean;
+  shipping:             unknown; // raw jsonb; pass through getShippingConfig() before use
 }
 
 async function loadSeller(slug: string): Promise<SellerRow | null> {
   const { data, error } = await db
     .from('app_sellers')
-    .select('id, slug, name, kind, headline, description, website_url, contact_email, wallet_address, agent_wallet_address, erc8004_seller_id, erc8004_agent_id, active')
+    .select('id, slug, name, kind, headline, description, website_url, contact_email, wallet_address, agent_wallet_address, erc8004_seller_id, erc8004_agent_id, active, shipping')
     .eq('slug', slug)
     .maybeSingle();
   if (error || !data || !data.active) return null;
@@ -231,17 +233,35 @@ function createServer(seller: SellerRow, req: Request) {
     },
   );
 
+  // ── get_shipping_quote ──────────────────────────────────────────
+  server.tool(
+    'get_shipping_quote',
+    `Resolve ${seller.name}'s shipping policy for a destination country. Returns the flat-rate cost (USD), or a 'pending_merchant_quote' signal when the seller quotes per order, or a rejection when the destination is excluded. Buying agents should call this before buy_product so they know the full landed cost.`,
+    {
+      buyer_country: z.string().min(2).max(2).describe('ISO 3166-1 alpha-2 destination country code (e.g. GB, US, JP).'),
+    },
+    async ({ buyer_country }) => {
+      const t0 = Date.now();
+      const config: ShippingConfig | null = getShippingConfig(seller.shipping);
+      const quote = computeShippingQuote(config, buyer_country);
+      const out = asJson({ seller: seller.slug, buyer_country: buyer_country.toUpperCase(), quote });
+      void logInteraction(seller.id, 'get_shipping_quote', identity, { buyer_country }, { status: quote.status }, 200, Date.now() - t0);
+      return out;
+    },
+  );
+
   // ── buy_product (v1 — returns x402 payment requirement) ─────────
   server.tool(
     'buy_product',
-    `Initiate a purchase of one of ${seller.name}'s listings. Returns an x402 payment requirement (USDC on Base) plus a purchase_intent_id. Pay the requirement, then POST to /api/x402/purchase with the intent ID to trigger operatorMint + 97.5/2.5 USDC payout.`,
+    `Initiate a purchase of one of ${seller.name}'s listings. Returns an x402 payment requirement (USDC on Base, product + shipping) plus a purchase_intent_id. Pay the requirement, then POST to /api/x402/purchase with the intent ID to trigger operatorMint + 97.5/2.5 USDC payout. Call get_shipping_quote first to know the shipping cost; pass buyer_country to fold it in here.`,
     {
       product_id:     z.string().uuid(),
       qty:            z.number().int().min(1).max(1000).default(1),
       buyer_wallet:   z.string().regex(/^0x[a-fA-F0-9]{40}$/, 'invalid Base wallet address'),
       buyer_agent_id: z.string().optional().describe('ERC-8004 agent ID of the Buying Agent acting on the buyer\'s behalf'),
+      buyer_country:  z.string().length(2).optional().describe('ISO 3166-1 alpha-2 destination country code. Required when the seller has shipping configured; the quote is included in the x402 total. Omit for digital / service kinds that do not ship.'),
     },
-    async ({ product_id, qty, buyer_wallet, buyer_agent_id }) => {
+    async ({ product_id, qty, buyer_wallet, buyer_agent_id, buyer_country }) => {
       const t0 = Date.now();
 
       const { data: product, error: prodErr } = await db
@@ -272,8 +292,34 @@ function createServer(seller: SellerRow, req: Request) {
         return r;
       }
 
-      const priceUsdcMinor = (product.price_minor as number) * qty; // 6-decimal USDC
-      const priceUsdc      = priceUsdcMinor / 1_000_000;
+      // ── Shipping resolution ────────────────────────────────────
+      const shippingConfig = getShippingConfig(seller.shipping);
+      const shippingQuote = buyer_country
+        ? computeShippingQuote(shippingConfig, buyer_country)
+        : null;
+
+      // Reject up front if the seller has shipping configured and the
+      // buyer's country is excluded / unsupported. quote_on_purchase is
+      // allowed through with shipping_usd=0 (seller confirms later).
+      if (shippingQuote && (shippingQuote.status === 'country_excluded' || shippingQuote.status === 'not_shipping_internationally')) {
+        const r = asJson({
+          error: `Cannot ship to ${('shipsTo' in shippingQuote) ? shippingQuote.shipsTo : buyer_country}`,
+          shipping: shippingQuote,
+        });
+        void logInteraction(seller.id, 'buy_product', identity, { product_id, qty, buyer_wallet, buyer_country }, { error: 'shipping_rejected', status: shippingQuote.status }, 409, Date.now() - t0);
+        return r;
+      }
+
+      const shippingUsd = shippingQuote && shippingQuote.status === 'flat_rate'
+        ? shippingQuote.costUsd
+        : 0;
+      const shippingUsdcMinor = Math.round(shippingUsd * 1_000_000);
+
+      // ── Totals ─────────────────────────────────────────────────
+      const productUsdcMinor = (product.price_minor as number) * qty;
+      const totalUsdcMinor   = productUsdcMinor + shippingUsdcMinor;
+      const productUsdc      = productUsdcMinor / 1_000_000;
+      const totalUsdc        = totalUsdcMinor / 1_000_000;
 
       // Record the purchase intent — purchase row in 'pending' state.
       const { data: purchase, error: intentErr } = await db
@@ -284,10 +330,12 @@ function createServer(seller: SellerRow, req: Request) {
           buyer_wallet:   buyer_wallet.toLowerCase(),
           buyer_agent_id: buyer_agent_id ?? null,
           qty,
-          total_usdc:     priceUsdc,
+          total_usdc:     totalUsdc,
           payment_method: 'x402_operator',
           status:         'pending',
-          notes:          'awaiting x402 settlement',
+          notes:          shippingQuote
+            ? `awaiting x402 settlement; product ${productUsdc} + shipping ${shippingUsd} (${shippingQuote.status})`
+            : 'awaiting x402 settlement',
         })
         .select('id')
         .single();
@@ -309,14 +357,19 @@ function createServer(seller: SellerRow, req: Request) {
         seller:             seller.slug,
         product:            { id: product.id, title: product.title, token_id: product.token_id },
         qty,
-        total_usdc:         priceUsdc,
+        product_usdc:       productUsdc,
+        shipping_usdc:      shippingUsd,
+        total_usdc:         totalUsdc,
+        shipping:           shippingQuote,
         x402_payment_required: {
           scheme:        'exact',
           network:       'base',
           asset:         usdcAddress,
-          maxAmountRequired: String(priceUsdcMinor),
+          maxAmountRequired: String(totalUsdcMinor),
           payTo:         platformWallet,
-          description:   `Purchase ${qty}× ${product.title} from ${seller.name}`,
+          description:   shippingQuote && shippingQuote.status === 'flat_rate'
+            ? `Purchase ${qty}× ${product.title} from ${seller.name} + shipping to ${shippingQuote.shipsTo}`
+            : `Purchase ${qty}× ${product.title} from ${seller.name}`,
           mimeType:      'application/json',
           extra:         { decimals: 6, name: 'USDC' },
         },
@@ -327,7 +380,7 @@ function createServer(seller: SellerRow, req: Request) {
         },
         note: 'v1: settlement endpoint at /api/x402/purchase is being wired next. Pay the requirement and we will fire operatorMint + 97.5/2.5 USDC split.',
       });
-      void logInteraction(seller.id, 'buy_product', identity, { product_id, qty, buyer_wallet, buyer_agent_id }, { purchase_intent_id: purchase.id, total_usdc: priceUsdc }, 200, Date.now() - t0);
+      void logInteraction(seller.id, 'buy_product', identity, { product_id, qty, buyer_wallet, buyer_agent_id, buyer_country }, { purchase_intent_id: purchase.id, total_usdc: totalUsdc, shipping_usdc: shippingUsd, shipping_status: shippingQuote?.status }, 200, Date.now() - t0);
       return out;
     },
   );
