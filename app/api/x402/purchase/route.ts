@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/app/db';
-import { extractPaymentProof, verifyAndExecutePayment } from '@/lib/app/x402-server';
+import { extractPaymentProof, verifyAndExecutePayment, verifyUsdcTransfer } from '@/lib/app/x402-server';
 import { getRRGContract } from '@/lib/app/contract';
 import { calculateSplit } from '@/lib/app/splits';
 import { insertDistributionAndPay } from '@/lib/app/auto-payout';
@@ -14,11 +14,15 @@ export const dynamic = 'force-dynamic';
  *
  * Settlement endpoint for the agent-to-agent buy flow. A seller's MCP
  * buy_product records a 'pending' purchase and quotes an x402 payment
- * requirement. Once the buyer's agent has signed the USDC permit it POSTs
- *   { order_ref, x_payment }
- * here. This route:
+ * requirement. The buyer's agent then settles by POSTing ONE of:
+ *   { order_ref, x_payment }       : x402 "exact" permit (we pull the USDC), OR
+ *   { order_ref, payment_tx_hash } : a raw USDC transfer it already sent to
+ *                                    the platform wallet (we verify, not pull).
+ * Both are accepted so any buyer agent can settle regardless of whether its
+ * wallet can sign an EIP-2612 permit. This route:
  *   1. Loads the pending purchase (idempotent: re-settling returns stored hashes).
- *   2. Verifies + executes the x402 permit on-chain (pulls USDC to platform).
+ *   2. Verifies payment: executes the permit on-chain, OR attests the transfer
+ *      landed on the platform wallet (anti-replay via unique payment_tx_hash).
  *   3. operatorMints the ERC-1155 receipt to the buyer.
  *   4. Fires BOTH ERC-8004 reputation signals (buyer agent + seller agent),
  *      nonces chained off the mint so neither collides on the gas wallet.
@@ -29,17 +33,20 @@ export const dynamic = 'force-dynamic';
  * records as paid and the seller is still paid out.
  */
 export async function POST(req: NextRequest) {
-  let body: { order_ref?: unknown; x_payment?: unknown };
+  let body: { order_ref?: unknown; x_payment?: unknown; payment_tx_hash?: unknown };
   try {
     body = await req.json();
   } catch {
     return NextResponse.json({ settled: false, error: 'invalid JSON body' }, { status: 400 });
   }
 
-  const orderRef  = typeof body.order_ref === 'string' ? body.order_ref.trim() : '';
-  const xPayment  = typeof body.x_payment === 'string' ? body.x_payment.trim() : '';
+  const orderRef      = typeof body.order_ref === 'string' ? body.order_ref.trim() : '';
+  const xPayment      = typeof body.x_payment === 'string' ? body.x_payment.trim() : '';
+  const paymentTxHash = typeof body.payment_tx_hash === 'string' ? body.payment_tx_hash.trim() : '';
   if (!orderRef) return NextResponse.json({ settled: false, error: 'order_ref is required' }, { status: 400 });
-  if (!xPayment) return NextResponse.json({ settled: false, error: 'x_payment is required' }, { status: 400 });
+  if (!xPayment && !paymentTxHash) {
+    return NextResponse.json({ settled: false, error: 'provide either x_payment (x402 permit) or payment_tx_hash (raw USDC transfer)' }, { status: 400 });
+  }
 
   // ── 1. Load the purchase + its seller + product ──────────────────────
   const { data: purchase, error: loadErr } = await db
@@ -84,27 +91,54 @@ export async function POST(req: NextRequest) {
   const tokenId   = product.token_id != null ? Number(product.token_id) : null;
   const buyerWalletRecorded = String(purchase.buyer_wallet).toLowerCase();
 
-  // ── 2. Verify + execute the x402 permit on-chain ─────────────────────
-  const headers = new Headers();
-  headers.set('x-payment', xPayment);
-  const proof = extractPaymentProof(headers);
-  if (!proof) {
-    return NextResponse.json({ settled: false, error: 'x_payment could not be parsed as an x402 payment proof' }, { status: 400 });
+  // ── 2. Verify payment (two accepted methods) ─────────────────────────
+  //   a) x_payment       → x402 "exact" permit; we execute it on-chain (pull).
+  //   b) payment_tx_hash  → buyer already sent a raw USDC transfer; we only
+  //                         attest the on-chain Transfer landed on platform.
+  // Sellers accept both so any buyer agent can settle, whether or not its
+  // wallet can sign an EIP-2612 permit.
+  let pay: { verified: boolean; txHash: string | null; buyerWallet: string | null; error: string | null };
+  let settledVia: 'permit' | 'transfer';
+
+  if (xPayment) {
+    settledVia = 'permit';
+    const headers = new Headers();
+    headers.set('x-payment', xPayment);
+    const proof = extractPaymentProof(headers);
+    if (!proof) {
+      return NextResponse.json({ settled: false, error: 'x_payment could not be parsed as an x402 payment proof' }, { status: 400 });
+    }
+    const r = await verifyAndExecutePayment(proof, totalUsdc);
+    pay = { verified: r.verified, txHash: r.txHash, buyerWallet: r.buyerWallet, error: r.error };
+  } else {
+    settledVia = 'transfer';
+    // Anti-replay: a given transfer can settle at most one order. The
+    // payment_tx_hash column has a unique index as the hard backstop.
+    const { data: dupe } = await db
+      .from('app_purchases')
+      .select('order_ref')
+      .ilike('payment_tx_hash', paymentTxHash)
+      .neq('id', purchase.id)
+      .maybeSingle();
+    if (dupe) {
+      return NextResponse.json({ settled: false, order_ref: orderRef, error: `payment_tx_hash already used to settle order ${dupe.order_ref}` }, { status: 409 });
+    }
+    const r = await verifyUsdcTransfer(paymentTxHash, totalUsdc, buyerWalletRecorded);
+    pay = { verified: r.verified, txHash: r.txHash, buyerWallet: r.buyerWallet, error: r.error };
   }
 
-  const pay = await verifyAndExecutePayment(proof, totalUsdc);
   if (!pay.verified || !pay.txHash) {
     return NextResponse.json({ settled: false, order_ref: orderRef, error: pay.error ?? 'payment verification failed' }, { status: 402 });
   }
 
-  // The signer the buyer's agent used must match the wallet on the order.
+  // The wallet the buyer paid from must match the wallet on the order.
   if (pay.buyerWallet && pay.buyerWallet.toLowerCase() !== buyerWalletRecorded) {
     console.warn(`[x402/purchase] ${orderRef} payer ${pay.buyerWallet} differs from recorded buyer_wallet ${buyerWalletRecorded}`);
   }
 
   // Payment is in. From here failures are non-fatal; record paid first.
   await db.from('app_purchases')
-    .update({ status: 'paid', notes: `x402 settled; payment tx ${pay.txHash}` })
+    .update({ status: 'paid', payment_tx_hash: pay.txHash, notes: `settled via ${settledVia}; payment tx ${pay.txHash}` })
     .eq('id', purchase.id);
 
   // ── 3. operatorMint the ERC-1155 receipt to the buyer ────────────────
@@ -227,6 +261,7 @@ export async function POST(req: NextRequest) {
   return NextResponse.json({
     settled:         true,
     order_ref:       orderRef,
+    settled_via:     settledVia,
     payment_tx_hash: pay.txHash,
     mint_tx_hash:    mintTxHash,
     seller_usdc:     split.sellerUsdc,

@@ -100,6 +100,77 @@ export function extractPaymentProof(headers: Headers): X402PaymentPayload | null
   }
 }
 
+// ── Verify a raw USDC transfer (send-not-sign path) ─────────────────────────
+
+const TRANSFER_TOPIC = ethers.id('Transfer(address,address,uint256)');
+
+/**
+ * Verify that an already-broadcast USDC transfer actually paid the platform
+ * wallet. This is the settlement path for buyer agents that pay by plain
+ * ERC-20 transfer (no x402 permit). No funds are moved here: we only read
+ * the receipt and confirm a USDC Transfer log of >= minUsdc landed on the
+ * platform wallet.
+ *
+ * Anti-replay is enforced by the caller via the unique payment_tx_hash
+ * column; this function only attests the on-chain fact.
+ *
+ * @param txHash       The buyer's USDC transfer transaction hash.
+ * @param minUsdc      Minimum amount required (the order total).
+ * @param expectedFrom Optional buyer wallet to match against the sender.
+ */
+export async function verifyUsdcTransfer(
+  txHash: string,
+  minUsdc: number,
+  expectedFrom?: string | null,
+): Promise<X402VerifyResult> {
+  if (!/^0x[0-9a-fA-F]{64}$/.test(txHash)) {
+    return { verified: false, buyerWallet: null, amountUsdc: 0, txHash: null, error: 'payment_tx_hash is not a valid 32-byte tx hash' };
+  }
+
+  const rpcUrl   = process.env.NEXT_PUBLIC_BASE_RPC_URL ?? 'https://mainnet.base.org';
+  const provider = new ethers.JsonRpcProvider(rpcUrl);
+
+  let receipt: ethers.TransactionReceipt | null;
+  try {
+    receipt = await provider.getTransactionReceipt(txHash);
+  } catch (err) {
+    return { verified: false, buyerWallet: null, amountUsdc: 0, txHash: null, error: `could not fetch tx receipt: ${err instanceof Error ? err.message : String(err)}` };
+  }
+  if (!receipt) {
+    return { verified: false, buyerWallet: null, amountUsdc: 0, txHash: null, error: 'transaction not found or not yet mined' };
+  }
+  if (receipt.status !== 1) {
+    return { verified: false, buyerWallet: null, amountUsdc: 0, txHash: null, error: 'transaction reverted on-chain' };
+  }
+
+  // Find a USDC Transfer log addressed to the platform wallet.
+  const platformTopic = '0x' + PLATFORM_WALLET.replace(/^0x/, '').padStart(64, '0').toLowerCase();
+  let paidUnits = 0n;
+  let sender: string | null = null;
+  for (const log of receipt.logs) {
+    if (log.address.toLowerCase() !== USDC_ADDRESS.toLowerCase()) continue;
+    if (log.topics[0]?.toLowerCase() !== TRANSFER_TOPIC.toLowerCase()) continue;
+    if (log.topics[2]?.toLowerCase() !== platformTopic) continue; // to == platform
+    paidUnits += BigInt(log.data);
+    sender = '0x' + log.topics[1].slice(26); // from (last 20 bytes of topic)
+  }
+
+  if (paidUnits === 0n || !sender) {
+    return { verified: false, buyerWallet: null, amountUsdc: 0, txHash: null, error: `no USDC transfer to platform wallet ${PLATFORM_WALLET} found in tx` };
+  }
+
+  const amountUsdc = Number(paidUnits) / 1_000_000;
+  if (amountUsdc < minUsdc) {
+    return { verified: false, buyerWallet: sender.toLowerCase(), amountUsdc, txHash: null, error: `transfer of $${amountUsdc} is less than $${minUsdc} required` };
+  }
+
+  if (expectedFrom && sender.toLowerCase() !== expectedFrom.toLowerCase()) {
+    return { verified: false, buyerWallet: sender.toLowerCase(), amountUsdc, txHash: null, error: `transfer sender ${sender} does not match order buyer_wallet ${expectedFrom}` };
+  }
+
+  return { verified: true, buyerWallet: sender.toLowerCase(), amountUsdc, txHash, error: null };
+}
+
 // ── Build 402 challenge response ────────────────────────────────────────────
 
 export function build402Challenge(
@@ -236,7 +307,7 @@ export async function verifyAndExecutePayment(
       buyerWallet: authorization.from,
       amountUsdc,
       txHash:      null,
-      error:       'PLATFORM_PRIVATE_KEY not configured — cannot execute permit',
+      error:       'PLATFORM_PRIVATE_KEY not configured: cannot execute permit',
     };
   }
 

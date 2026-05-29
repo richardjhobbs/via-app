@@ -299,7 +299,7 @@ function createServer(seller: SellerRow, req: Request) {
   // ── buy_product (v1 — returns x402 payment requirement) ─────────
   server.tool(
     'buy_product',
-    `Initiate a purchase of one of ${seller.name}'s listings. For physical products you MUST pass the full delivery block (name, address_line1, city, postcode, country, phone) — the call will reject with missing_delivery_details listing required_fields if any are blank. Digital and service kinds do not require delivery. Read get_seller_info().purchase_policy first to learn what the seller specifically needs. Returns an x402 payment requirement (USDC, product + shipping) and an order_ref ("VIA-YYMM-XXXXXX") the seller will reference. Pay the requirement, then POST to /api/x402/purchase with the order_ref to trigger operatorMint + 97.5/2.5 USDC payout. Call get_shipping_quote first to know the shipping cost; pass buyer_country to fold it in here.`,
+    `Initiate a purchase of one of ${seller.name}'s listings. For physical products you MUST pass the full delivery block (name, address_line1, city, postcode, country, phone) — the call will reject with missing_delivery_details listing required_fields if any are blank. Digital and service kinds do not require delivery. Read get_seller_info().purchase_policy first to learn what the seller specifically needs. Returns an x402 payment requirement (USDC, product + shipping) and an order_ref ("VIA-YYMM-XXXXXX") the seller will reference. SETTLE WITH EITHER of two methods at /api/x402/purchase: (a) x402 permit (sign-not-send): sign an EIP-2612 USDC permit authorising payTo to pull maxAmountRequired and POST { order_ref, x_payment }; the endpoint pulls the USDC. OR (b) raw transfer: send a plain USDC transfer of at least maxAmountRequired to payTo from your buyer_wallet, then POST { order_ref, payment_tx_hash }; the endpoint verifies the on-chain transfer. Either way it then fires operatorMint + 97.5/2.5 USDC payout. For the raw-transfer path the transfer must come from the same buyer_wallet on the order, and each tx settles at most one order. Call get_shipping_quote first to know the shipping cost; pass buyer_country to fold it in here.`,
     {
       product_id:     z.string().uuid(),
       qty:            z.number().int().min(1).max(1000).default(1),
@@ -481,9 +481,10 @@ function createServer(seller: SellerRow, req: Request) {
         next: {
           settle_endpoint: `${APP_BASE}/api/x402/purchase`,
           method:          'POST',
-          body:            { order_ref: orderRef, x_payment: '<X-PAYMENT header value from the x402 exchange>' },
+          body_option_a:   { order_ref: orderRef, x_payment: '<X-PAYMENT header value from signing the x402 permit>' },
+          body_option_b:   { order_ref: orderRef, payment_tx_hash: '<hash of a raw USDC transfer of maxAmountRequired to payTo from buyer_wallet>' },
         },
-        note: 'v1: settlement endpoint at /api/x402/purchase is being wired next. Pay the requirement and we will fire operatorMint + 97.5/2.5 USDC split. Fulfilment is then handled by the seller; quote the order_ref in any further messages.',
+        note: 'Settlement is live at /api/x402/purchase and accepts EITHER an x402 permit (POST x_payment) OR a raw USDC transfer you already sent (POST payment_tx_hash). Both trigger operatorMint + 97.5/2.5 USDC split. For the raw-transfer path the transfer must originate from buyer_wallet and each tx settles only one order. Fulfilment is then handled by the seller; quote the order_ref in any further messages.',
       });
       void logInteraction(seller.id, 'buy_product', identity, { product_id, qty, buyer_wallet, buyer_agent_id, buyer_country, has_delivery: !!deliveryRow }, { order_ref: orderRef, purchase_intent_id: purchase.id, total_usdc: totalUsdc, shipping_usdc: shippingUsd, shipping_status: shippingQuote?.status }, 200, Date.now() - t0);
       void insertNotification({
