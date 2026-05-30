@@ -48,4 +48,9 @@ Next.js App Router. `app/api/rrg/*` is the platform API surface. `app/api/seller
 
 ## Notion Build Log
 
-Update after every meaningful deploy ([feedback_update_build_log.md](../../.claude/projects/C--Users-Richard-Documents-rrg/memory/feedback_update_build_log.md)). Phase 34+ continuation page id: `34ddbc7b67f2811690afe320fa579892`. Format spec in [feedback_notion_build_log_format.md](../../.claude/projects/C--Users-Richard-Documents-rrg/memory/feedback_notion_build_log_format.md).
+Update after every meaningful deploy ([feedback_update_build_log.md](../../.claude/projects/C--Users-Richard-Documents-rrg/memory/feedback_update_build_log.md)). Format spec in [feedback_notion_build_log_format.md](../../.claude/projects/C--Users-Richard-Documents-rrg/memory/feedback_notion_build_log_format.md).
+
+There are two separate logs:
+
+- **via-app** (this repo, `app.getvia.xyz`): log to the "Build Log: Stage 1 + Superadmin" page under the "VIA APP" parent, id `36fdbc7b67f28170a3ddf14c4e6d2d07`. This is the one to update for via-app deploys.
+- **RRG + general via-labs-website builds**: the "VIA Labs - Build Log (Phase 51+)" continuation, id `366dbc7b67f281678751d79a56676e99`. The old "Phase 34+" page (`34ddbc7b67f2811690afe320fa579892`) is superseded; do not append there.
