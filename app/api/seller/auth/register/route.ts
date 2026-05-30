@@ -158,11 +158,11 @@ export async function POST(req: NextRequest) {
       squarespace_shop_url:  catalogSource === 'squarespace' ? squarespaceShopUrl : null,
       source_currency:       sourceCurrency,
       active:               true,
-      // Flag the Sales Agent for Hermes provisioning. The operator runner
-      // (via-agent-wiki/scripts/via-concierges/process-pending-concierges.ps1)
-      // drains 'pending' rows, clones a Hermes profile per seller on the Box,
-      // and POSTs back 'provisioned' + the live URL once cutover succeeds.
-      hermes_concierge_status: 'pending',
+      // The Sales Agent answers buyers IN-APP from day one: the per-seller
+      // MCP ask_sales_agent tool runs DeepSeek against this seller's memory
+      // store (app_seller_memories) with per-buyer recall. No Box/Hermes
+      // provisioning step, so hermes_concierge_status is left null and the
+      // operator concierge queue stays empty.
     })
     .select('id, slug, name, kind')
     .single();
