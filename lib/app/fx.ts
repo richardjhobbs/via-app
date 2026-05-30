@@ -16,6 +16,11 @@
 const FRANKFURTER_URL = 'https://api.frankfurter.app/latest';
 const FX_SPREAD = 1.03; // +3% — buyer pays this premium to absorb FX drift
 const FETCH_TIMEOUT_MS = 10_000;
+// frankfurter publishes the previous business day's close, so a quote can
+// legitimately be a few days old over a weekend or holiday. Beyond this the
+// quote is treated as a failed oracle (fall back / abort) rather than minted
+// permanently into registerDrop at a stale rate.
+const MAX_RATE_AGE_DAYS = 7;
 
 export interface UsdcRate {
   rate:           number;  // multiply native price by this to get USDC equivalent
@@ -52,6 +57,15 @@ export async function getUsdcRate(
     const mkt = Number(j?.rates?.USD);
     if (!Number.isFinite(mkt) || mkt <= 0) {
       throw new Error(`no USD rate for ${cur} in oracle response`);
+    }
+    if (j.date) {
+      const quoteMs = Date.parse(j.date);
+      if (Number.isFinite(quoteMs)) {
+        const ageDays = (Date.now() - quoteMs) / 86_400_000;
+        if (ageDays > MAX_RATE_AGE_DAYS) {
+          throw new Error(`frankfurter rate for ${cur} is stale (${j.date}, ${ageDays.toFixed(1)}d old > ${MAX_RATE_AGE_DAYS}d max)`);
+        }
+      }
     }
     const rate = mkt * FX_SPREAD;
     return {

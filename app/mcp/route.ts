@@ -74,7 +74,10 @@ function createServer() {
         .limit(max);
       if (category) query = query.eq('kind', category);
       const { data, error } = await query;
-      if (error) return asJson({ sellers: [], count: 0, note: `Seller index unavailable: ${error.message}` });
+      if (error) {
+        console.error('[mcp/list_sellers] query failed:', error);
+        return asJson({ sellers: [], count: 0, error_code: 'seller_index_unavailable', note: 'Seller index temporarily unavailable. Please retry.' });
+      }
       const rows = (data ?? []) as SellerSummaryRow[];
       return asJson({ count: rows.length, sellers: rows.map(rowToSummary) });
     },
@@ -98,7 +101,10 @@ function createServer() {
         .or(`name.ilike.${pattern},description.ilike.${pattern},headline.ilike.${pattern}`)
         .order('name', { ascending: true })
         .limit(max);
-      if (error) return asJson({ query, sellers: [], count: 0, note: `Seller search unavailable: ${error.message}` });
+      if (error) {
+        console.error('[mcp/find_seller] query failed:', error);
+        return asJson({ query, sellers: [], count: 0, error_code: 'seller_search_unavailable', note: 'Seller search temporarily unavailable. Please retry.' });
+      }
       const rows = (data ?? []) as SellerSummaryRow[];
       return asJson({ query, count: rows.length, sellers: rows.map(rowToSummary) });
     },
@@ -117,7 +123,11 @@ function createServer() {
         .select('slug, name, active')
         .eq('slug', slug)
         .maybeSingle();
-      if (error || !data) return asJson({ slug, mcp_url: url, verified: false, note: error?.message ?? 'Slug not found.' });
+      if (error) {
+        console.error('[mcp/seller_mcp_url] query failed:', error);
+        return asJson({ slug, mcp_url: url, verified: false, error_code: 'verification_unavailable', note: 'Could not verify the slug right now. Please retry.' });
+      }
+      if (!data) return asJson({ slug, mcp_url: url, verified: false, note: 'Slug not found.' });
       if (!data.active)   return asJson({ slug, mcp_url: url, verified: false, note: 'Seller exists but is inactive.' });
       return asJson({ slug, name: data.name, mcp_url: url, verified: true });
     },

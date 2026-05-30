@@ -38,13 +38,22 @@ export interface BuyerOnboardState {
 export type OnboardState = SellerOnboardState | BuyerOnboardState;
 
 const KEY = 'via.onboard.v1';
+// The password is the one sensitive field in the wizard. Keep it out of
+// localStorage (which persists to disk and is shared across tabs) and hold it
+// in sessionStorage instead: cleared when the tab closes, scoped to this tab,
+// and never written to disk. Read/write/clear overlay it transparently so the
+// call sites see a single state object.
+const PW_KEY = 'via.onboard.pw.v1';
 
 export function readOnboardState(): OnboardState | null {
   if (typeof window === 'undefined') return null;
   try {
     const raw = window.localStorage.getItem(KEY);
     if (!raw) return null;
-    return JSON.parse(raw) as OnboardState;
+    const state = JSON.parse(raw) as OnboardState;
+    const pw = window.sessionStorage.getItem(PW_KEY);
+    if (pw) (state as { password?: string }).password = pw;
+    return state;
   } catch {
     return null;
   }
@@ -54,13 +63,18 @@ export function writeOnboardState(patch: Partial<OnboardState>): OnboardState {
   if (typeof window === 'undefined') return patch as OnboardState;
   const prev = readOnboardState() ?? ({} as OnboardState);
   const next = { ...prev, ...patch } as OnboardState;
-  window.localStorage.setItem(KEY, JSON.stringify(next));
+  const { password, ...persisted } = next as unknown as Record<string, unknown> & { password?: string };
+  if (typeof password === 'string' && password.length > 0) {
+    window.sessionStorage.setItem(PW_KEY, password);
+  }
+  window.localStorage.setItem(KEY, JSON.stringify(persisted));
   return next;
 }
 
 export function clearOnboardState(): void {
   if (typeof window === 'undefined') return;
   window.localStorage.removeItem(KEY);
+  window.sessionStorage.removeItem(PW_KEY);
 }
 
 /** Normalise a free-form business name into a URL-safe slug. */

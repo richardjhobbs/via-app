@@ -56,21 +56,6 @@ export function getSellerPct(sellerPctOverride?: number | null): number {
   return DEFAULT_SELLER_PCT;
 }
 
-/**
- * Deduct card processing fee from the seller's share. Platform share is
- * preserved. Called when payment_method === 'card'.
- */
-export function applyCardFeeDeduction(
-  split: SplitResult,
-  cardFeeUsdc: number,
-): SplitResult & { cardFeeUsdc: number } {
-  return {
-    ...split,
-    sellerUsdc: round2(Math.max(0, split.sellerUsdc - cardFeeUsdc)),
-    cardFeeUsdc,
-  };
-}
-
 export function calculateSplit(input: SplitInput): SplitResult {
   const { totalUsdc, sellerWallet, sellerPctOverride } = input;
   const sellerPct = getSellerPct(sellerPctOverride);

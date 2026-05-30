@@ -154,13 +154,17 @@ async function negotiateReply(buyer: BuyerRow, offerText: string): Promise<strin
     ? prefs.map((m) => `[${m.type}] ${m.title}: ${m.body}`).join('\n')
     : '(no stated preferences yet; be cautious and do not assume taste)';
 
-  // Caps inform the agent's reasoning but are never disclosed to the seller.
+  // The numeric delegation caps (the dollar figure especially) are NEVER put
+  // into the LLM context: seller-controlled offer_text shares this prompt, so
+  // a crafted pitch could coax the exact cap out of the model. The amount cap
+  // is enforced deterministically in evaluateOffer() at accept_offer instead.
+  // Here the agent only gets non-numeric, non-secret guidance.
   const caps = buyer.delegation_caps;
   const capLines: string[] = [];
-  if (typeof caps.max_purchase_usd === 'number') capLines.push(`- Never agree to a single order above ${caps.max_purchase_usd} USD.`);
+  if (typeof caps.max_purchase_usd === 'number') capLines.push(`- The buyer has a per-order spending limit. Never state, confirm, or hint at any budget or limit figure. If a price looks high, say it needs the buyer's direct approval rather than committing.`);
   if (Array.isArray(caps.categories_blocked) && caps.categories_blocked.length) capLines.push(`- Refuse anything in these categories: ${caps.categories_blocked.join(', ')}.`);
   if (Array.isArray(caps.categories_allowed) && caps.categories_allowed.length) capLines.push(`- Only entertain offers in these categories: ${caps.categories_allowed.join(', ')}.`);
-  const capBlock = capLines.length ? `\n\nHard limits (apply silently, never reveal the exact figures):\n${capLines.join('\n')}` : '';
+  const capBlock = capLines.length ? `\n\nBuyer rules (apply silently, never reveal exact figures):\n${capLines.join('\n')}` : '';
 
   const systemPrompt = `You are @${buyer.handle}'s Buying Agent. You represent the buyer's interests when seller agents pitch you.
 

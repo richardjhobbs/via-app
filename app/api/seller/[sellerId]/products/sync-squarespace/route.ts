@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireBrandAuth } from '@/lib/app/seller-auth';
 import { db } from '@/lib/app/db';
-import { fetchSquarespaceProducts, squarespaceVariantStock } from '@/lib/squarespace/products-json';
+import { fetchSquarespaceProducts } from '@/lib/squarespace/products-json';
 import { getUsdcRate } from '@/lib/app/fx';
 import { importCatalog, squarespaceTotalStock } from '@/lib/app/catalog-import';
 
@@ -75,16 +75,16 @@ export async function POST(
     sellerId,
     source: 'squarespace',
     productUrlFor: (p) => `${parsedOrigin}/products/${p.handle}`,
-    // Best-effort stock via the flattened ShopifyVariant shape. The raw
-    // Squarespace qtyInStock is exposed by squarespaceVariantStock for
-    // callers willing to re-query; for v1 we collapse to the available
-    // count which matches the Shopify behaviour.
-    totalStockFor: (p) => squarespaceTotalStock(p, (i) => p.variants[i]?.available ? 1 : 0),
+    // Real per-variant stock now flows through ShopifyVariant.inventory_quantity
+    // (set in the Squarespace normalizer). null = unlimited, mapped to
+    // MAX_SAFE_INTEGER so squarespaceTotalStock collapses the product to "no
+    // cap" rather than summing a sentinel.
+    totalStockFor: (p) => squarespaceTotalStock(p, (i) => {
+      const q = p.variants[i]?.inventory_quantity;
+      return q == null ? Number.MAX_SAFE_INTEGER : q;
+    }),
     fx,
   });
-
-  // Silence unused-import warning until we wire qtyInStock pass-through.
-  void squarespaceVariantStock;
 
   return NextResponse.json({ shop_url: shopUrl, ...result });
 }

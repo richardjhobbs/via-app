@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { OnboardStepsBuyer } from '../../OnboardStepsBuyer';
 import { readOnboardState, clearOnboardState, type BuyerOnboardState } from '@/lib/app/onboarding-state';
@@ -9,6 +9,11 @@ export default function BuyerDone() {
   const router = useRouter();
   const [state, setState] = useState<BuyerOnboardState | null>(null);
   const [err,   setErr]   = useState('');
+  // Register must fire exactly once. The effect can re-run (React Strict Mode
+  // double-invoke in dev, or a router identity change) and the buyer/register
+  // endpoint is not idempotent, so guard with a ref rather than the cancelled
+  // flag (which only blocks state writes, not the duplicate POST).
+  const submittedRef = useRef(false);
 
   useEffect(() => {
     const s = readOnboardState();
@@ -21,6 +26,8 @@ export default function BuyerDone() {
 
   useEffect(() => {
     if (!state) return;
+    if (submittedRef.current) return;
+    submittedRef.current = true;
     let cancelled = false;
     (async () => {
       try {

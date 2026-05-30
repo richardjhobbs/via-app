@@ -38,7 +38,6 @@ export type SubmissionStatus =
   | 'ai_rejected'    // auto-rejected by vision model (superadmin can override)
   | 'needs_review';  // brand image flagged, pending superadmin sign-off
 export type SubmissionChannel = 'web' | 'api' | 'telegram' | 'bluesky' | 'agent' | 'email';
-export type BuyerType = 'human' | 'agent';
 export type CreatorType = 'human' | 'agent';
 export type RrgNetwork = 'base';
 export type BrandStatus = 'pending' | 'active' | 'suspended' | 'archived';
@@ -166,66 +165,6 @@ export interface RrgSubmission {
    *  Distinct from `hidden` (hard kill-switch across every surface).
    *  Default true; admins curate per-brand from /admin. */
   ui_visible: boolean;
-}
-
-export interface RrgPurchase {
-  id: string;
-  created_at: string;
-  submission_id: string;
-  token_id: number;
-  buyer_wallet: string;
-  buyer_email: string | null;
-  buyer_type: BuyerType;
-  tx_hash: string;
-  amount_usdc: string;
-  files_delivered: boolean;
-  delivery_email: string | null;
-  download_token: string | null;
-  download_expires_at: string | null;
-  mint_status: string;
-  payment_method: string;
-  network: RrgNetwork;
-  brand_id: string | null;
-  // Revenue split audit columns
-  split_creator_usdc: number | null;
-  split_brand_usdc: number | null;
-  split_platform_usdc: number | null;
-  brand_pct_applied: number | null;
-  split_model: string | null;
-  // Shipping fields (physical products)
-  shipping_name: string | null;
-  shipping_address_line1: string | null;
-  shipping_address_line2: string | null;
-  shipping_city: string | null;
-  shipping_state: string | null;
-  shipping_postal_code: string | null;
-  shipping_country: string | null;
-  shipping_phone: string | null;
-  physical_terms_accepted: boolean;
-}
-
-export interface RrgDistribution {
-  id: string;
-  created_at: string;
-  purchase_id: string;
-  brand_id: string | null;
-  total_usdc: number;
-  creator_usdc: number;
-  brand_usdc: number;
-  platform_usdc: number;
-  creator_wallet: string | null;
-  brand_wallet: string | null;
-  split_type: string;
-  status: DistributionStatus;
-  notes: string | null;
-  /** Joined from app_purchases , the buyer's on-chain purchase tx hash */
-  purchase_tx_hash?: string | null;
-  /** Joined from app_purchases , the token ID */
-  token_id?: number | null;
-  /** Joined from app_purchases → rrg_submissions , the product title */
-  submission_title?: string | null;
-  /** Joined from app_sellers , the brand name */
-  brand_name?: string | null;
 }
 
 // ── Brand helpers ─────────────────────────────────────────────────────
@@ -366,41 +305,6 @@ export async function getAllBrands(): Promise<RrgBrand[]> {
     .select('*')
     .order('created_at', { ascending: false });
   return data ?? [];
-}
-
-export async function getBrandSalesStats(sellerId: string): Promise<{
-  totalSales: number;
-  totalRevenue: number;
-  brandRevenue: number;
-  pendingDistributions: number;
-}> {
-  // Count purchases for this brand
-  const { count: totalSales } = await db
-    .from('app_purchases')
-    .select('id', { count: 'exact', head: true })
-    .eq('brand_id', sellerId);
-
-  // Sum revenue from distributions
-  const { data: distData } = await db
-    .from('app_distributions')
-    .select('total_usdc, brand_usdc, status')
-    .eq('brand_id', sellerId);
-
-  let totalRevenue = 0;
-  let brandRevenue = 0;
-  let pendingDistributions = 0;
-  for (const d of distData ?? []) {
-    totalRevenue += parseFloat(d.total_usdc ?? '0');
-    brandRevenue += parseFloat(d.brand_usdc ?? '0');
-    if (d.status === 'pending') pendingDistributions++;
-  }
-
-  return {
-    totalSales: totalSales ?? 0,
-    totalRevenue,
-    brandRevenue,
-    pendingDistributions,
-  };
 }
 
 // ── Brief helpers ──────────────────────────────────────────────────────
@@ -671,23 +575,6 @@ export async function getApprovedDropsPaginated(
   )();
 }
 
-export async function getPurchaseCountsByTokenIds(
-  tokenIds: number[],
-): Promise<Map<number, number>> {
-  if (tokenIds.length === 0) return new Map();
-
-  const { data } = await db
-    .from('app_purchases')
-    .select('token_id')
-    .in('token_id', tokenIds);
-
-  const counts = new Map<number, number>();
-  for (const row of data ?? []) {
-    counts.set(row.token_id, (counts.get(row.token_id) ?? 0) + 1);
-  }
-  return counts;
-}
-
 export async function getDropByTokenId(tokenId: number): Promise<RrgSubmission | null> {
   const { data } = await db
     .from('rrg_submissions')
@@ -705,47 +592,6 @@ export async function getSubmissionById(id: string): Promise<RrgSubmission | nul
     .from('rrg_submissions')
     .select('*')
     .eq('id', id)
-    .single();
-  return data ?? null;
-}
-
-// ── Token ID counter ───────────────────────────────────────────────────
-
-export async function claimNextTokenId(): Promise<number> {
-  // Atomic increment: read current, update, return claimed value
-  const { data: cfg } = await db
-    .from('rrg_config')
-    .select('value')
-    .eq('key', 'next_token_id')
-    .single();
-
-  const current = parseInt(cfg?.value ?? '1', 10);
-  const next = current + 1;
-
-  await db
-    .from('rrg_config')
-    .update({ value: String(next), updated_at: new Date().toISOString() })
-    .eq('key', 'next_token_id');
-
-  return current;
-}
-
-// ── Purchase helpers ───────────────────────────────────────────────────
-
-export async function getPurchaseByTxHash(txHash: string): Promise<RrgPurchase | null> {
-  const { data } = await db
-    .from('app_purchases')
-    .select('*')
-    .eq('tx_hash', txHash)
-    .single();
-  return data ?? null;
-}
-
-export async function getPurchaseByDownloadToken(token: string): Promise<RrgPurchase | null> {
-  const { data } = await db
-    .from('app_purchases')
-    .select('*')
-    .eq('download_token', token)
     .single();
   return data ?? null;
 }
@@ -805,38 +651,6 @@ export async function getContributorStats(): Promise<{
     totalRevenue += parseFloat(c.total_revenue_usdc ?? '0');
   }
   return { total: humans + agents, humans, agents, totalRevenue };
-}
-
-// ── Distribution helpers ──────────────────────────────────────────────
-
-export async function getDistributions(
-  status?: DistributionStatus,
-  sellerId?: string,
-): Promise<RrgDistribution[]> {
-  let query = db
-    .from('app_distributions')
-    .select('*, app_purchases(tx_hash, token_id, rrg_submissions(title)), app_sellers(name)');
-
-  if (status) {
-    query = query.eq('status', status);
-  }
-  if (sellerId) {
-    query = query.eq('brand_id', sellerId);
-  }
-
-  const { data } = await query.order('created_at', { ascending: false });
-  return (data ?? []).map((row: Record<string, unknown>) => {
-    const purchase    = row.app_purchases as { tx_hash?: string | null; token_id?: number | null; rrg_submissions?: { title?: string | null } | null } | null;
-    const brandRow    = row.app_sellers as { name?: string | null } | null;
-    const { app_purchases: _, app_sellers: __, ...rest } = row;
-    return {
-      ...rest,
-      purchase_tx_hash: purchase?.tx_hash     ?? null,
-      token_id:         purchase?.token_id    ?? null,
-      submission_title: purchase?.rrg_submissions?.title ?? null,
-      brand_name:       brandRow?.name        ?? null,
-    } as unknown as RrgDistribution;
-  });
 }
 
 // ── Product variant helpers ──────────────────────────────────────────

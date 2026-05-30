@@ -16,6 +16,10 @@ export interface ShopifyVariant {
   sku: string | null;
   available: boolean;
   position: number;
+  /** Real per-variant stock when the source exposes it (Squarespace).
+   *  null = unlimited / unknown. Shopify's public /products.json omits this,
+   *  so it stays undefined there and stock falls back to the available-count. */
+  inventory_quantity?: number | null;
 }
 
 export interface ShopifyImage {

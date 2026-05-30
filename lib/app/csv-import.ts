@@ -119,8 +119,38 @@ export function parseFile(filename: string, buffer: Buffer): RawRow[] {
 
 const MAX_ROWS = 5_000; // hard cap to avoid runaway uploads
 
+/**
+ * Parse a price string that may use either US (1,234.56) or EU (1.234,56 /
+ * 1234,56) grouping. The previous version stripped commas blindly, so any
+ * comma-decimal locale was misread by ~100x (e.g. "12,50" became 1250).
+ *
+ * Rule: strip everything except digits, separators, and sign. If both '.' and
+ * ',' appear, the right-most one is the decimal point and the other is a
+ * thousands separator. If only commas appear, treat a trailing group of
+ * exactly 3 digits as thousands ("1,234" -> 1234) and anything else as a
+ * decimal comma ("12,50" -> 12.5). Dot-only strings are left as standard
+ * decimals. Genuinely ambiguous inputs (a lone "1,234") resolve the same way
+ * the old code did, so no previously-correct value regresses.
+ */
 function parseNumber(raw: string): number {
-  return Number(raw.replace(/[^0-9.\-]/g, ''));
+  if (!raw) return NaN;
+  let s = raw.replace(/[^0-9.,\-]/g, '');
+  if (!s) return NaN;
+  const lastDot = s.lastIndexOf('.');
+  const lastComma = s.lastIndexOf(',');
+  if (lastDot !== -1 && lastComma !== -1) {
+    if (lastComma > lastDot) s = s.replace(/\./g, '').replace(',', '.'); // EU: 1.234,56
+    else                     s = s.replace(/,/g, '');                    // US: 1,234.56
+  } else if (lastComma !== -1) {
+    const trailing = s.length - lastComma - 1;
+    const singleComma = s.indexOf(',') === lastComma;
+    // Only a single comma with 1-2 trailing digits is a decimal ("12,50").
+    // Multiple commas, or a trailing group of 3, are thousands separators
+    // ("1,234", "1,234,567") and get stripped.
+    if (singleComma && trailing > 0 && trailing <= 2) s = s.replace(',', '.');
+    else                                              s = s.replace(/,/g, '');
+  }
+  return Number(s);
 }
 
 function parseIntOrNull(raw: string): number | null | 'invalid' {

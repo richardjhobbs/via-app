@@ -15,7 +15,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { calculateSplit, PLATFORM_WALLET, applyCardFeeDeduction } from '../splits.ts';
+import { calculateSplit, PLATFORM_WALLET } from '../splits.ts';
 
 const SELLER_WALLET = '0xBbBbBbBbBbBbBbBbBbBbBbBbBbBbBbBbBbBbBbBb';
 
@@ -82,24 +82,4 @@ test('totals sum to input (no penny drift on round numbers)', () => {
     sellerWallet: SELLER_WALLET,
   });
   assert.equal(split.sellerUsdc + split.platformUsdc, split.totalUsdc);
-});
-
-test('applyCardFeeDeduction: card fee comes out of seller share', () => {
-  const base = calculateSplit({
-    totalUsdc:    100,
-    sellerWallet: SELLER_WALLET,
-  });
-  const adjusted = applyCardFeeDeduction(base, 3.5);
-  assert.equal(adjusted.sellerUsdc, 94);
-  assert.equal(adjusted.platformUsdc, 2.5);
-  assert.equal(adjusted.cardFeeUsdc, 3.5);
-});
-
-test('applyCardFeeDeduction: never pushes seller share below zero', () => {
-  const base = calculateSplit({
-    totalUsdc:    1,
-    sellerWallet: SELLER_WALLET,
-  });
-  const adjusted = applyCardFeeDeduction(base, 999);
-  assert.equal(adjusted.sellerUsdc, 0);
 });

@@ -90,17 +90,24 @@ function normalizeItem(item: SqsItem): ShopifyProduct {
     const attrLabel = v.attributes
       ? Object.values(v.attributes).join(' / ')
       : 'Default';
-    const priceMajor = (v.price / 100).toFixed(2);
+    // Shopify semantics: `price` is what the buyer actually pays (the sale
+    // price when on sale); `compare_at_price` is the struck-through original.
+    // Squarespace gives v.price (regular) and v.salePrice (active sale), both
+    // in cents. Previously price was always v.price, so discounted items
+    // imported at full price and overcharged the buyer.
+    const onSale = typeof v.salePrice === 'number' && v.salePrice > 0 && v.salePrice < v.price;
+    const effectivePrice = onSale ? v.salePrice : v.price;
     return {
-      id:               0,
-      title:            attrLabel || 'Default',
-      price:            priceMajor,
-      compare_at_price: v.salePrice && v.salePrice > 0 && v.salePrice < v.price
-        ? (v.price / 100).toFixed(2)
-        : null,
-      sku:              v.sku,
-      available:        v.unlimited || v.qtyInStock > 0,
-      position:         idx + 1,
+      id:                 0,
+      title:              attrLabel || 'Default',
+      price:              (effectivePrice / 100).toFixed(2),
+      compare_at_price:   onSale ? (v.price / 100).toFixed(2) : null,
+      sku:                v.sku,
+      available:          v.unlimited || v.qtyInStock > 0,
+      // Real stock count. null = unlimited, so the importer treats it as no
+      // cap instead of collapsing every variant to 1-if-available.
+      inventory_quantity: v.unlimited ? null : Math.max(0, Number(v.qtyInStock) || 0),
+      position:           idx + 1,
     };
   });
 
@@ -108,13 +115,14 @@ function normalizeItem(item: SqsItem): ShopifyProduct {
   // downstream code never sees zero variants.
   if (variants.length === 0) {
     variants.push({
-      id:               0,
-      title:            'Default',
-      price:            '0.00',
-      compare_at_price: null,
-      sku:              null,
-      available:        true,
-      position:         1,
+      id:                 0,
+      title:              'Default',
+      price:              '0.00',
+      compare_at_price:   null,
+      sku:                null,
+      available:          true,
+      inventory_quantity: null, // unlimited / unknown
+      position:           1,
     });
   }
 

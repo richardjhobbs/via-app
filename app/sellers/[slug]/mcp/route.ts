@@ -482,7 +482,7 @@ function createServer(seller: SellerRow, req: Request) {
         .single();
       if (intentErr || !purchase) {
         console.error('[mcp/buy_product] purchase insert failed', intentErr);
-        const r = asJson({ error: 'could not record purchase intent', details: intentErr?.message });
+        const r = asJson({ error: 'could not record purchase intent', error_code: 'intent_insert_failed' });
         void logInteraction(seller.id, 'buy_product', identity, { product_id, qty, buyer_wallet }, { error: 'intent_insert_failed' }, 500, Date.now() - t0);
         return r;
       }
