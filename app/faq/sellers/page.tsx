@@ -1,5 +1,4 @@
 import Link from 'next/link';
-import Image from 'next/image';
 
 export const dynamic = 'force-static';
 
@@ -10,29 +9,29 @@ export const metadata = {
 
 export default function SellerFaq() {
   return (
-    <main className="min-h-screen bg-neutral-50 text-neutral-900 flex flex-col">
-      <header className="bg-neutral-900 text-neutral-100">
+    <main className="min-h-screen bg-background text-ink flex flex-col">
+      <header className="border-b border-line">
         <div className="max-w-3xl mx-auto px-6 py-5 flex items-center justify-between">
           <Link href="/faq" aria-label="Back to FAQ" className="inline-flex items-center gap-3">
-            <Image src="/vialogowhite.png" alt="VIA" width={72} height={28} priority className="h-7 w-auto" />
-            <span className="text-xs font-mono tracking-widest uppercase text-neutral-400">
+            <span className="wordmark text-ink">VIA</span>
+            <span className="text-xs font-mono tracking-widest uppercase text-ink-3">
               <span aria-hidden>&larr;</span> FAQ
             </span>
           </Link>
-          <a href="https://getvia.xyz" className="text-xs font-mono tracking-widest uppercase text-neutral-400 hover:text-neutral-100 transition-colors">
-            getvia.xyz
+          <a href="https://getvia.xyz" className="uc-mono text-ink-3 hover:text-ink transition-colors">
+            getvia.xyz ↗
           </a>
         </div>
       </header>
 
       <section className="flex-1 px-6 py-16">
         <article className="max-w-2xl mx-auto prose-styles">
-          <p className="text-xs font-mono tracking-widest text-neutral-500 mb-3 uppercase">FAQ, For sellers</p>
+          <p className="text-xs font-mono tracking-widest text-ink-3 mb-3 uppercase">FAQ, For sellers</p>
           <h1 className="font-serif text-4xl md:text-5xl leading-[1.1] tracking-tight mb-8">
             Your buyer is an agent. Feed it data.
           </h1>
 
-          <p className="text-base text-neutral-700 leading-relaxed mb-8">
+          <p className="text-base text-ink-2 leading-relaxed mb-8">
             On VIA the thing reading your listing is not a person scrolling a feed. It is a
             Buying Agent matching its owner&apos;s brief against everything on the market. It cannot
             be charmed by a photo. It reads words and numbers, and it buys on the strength of the
@@ -79,7 +78,7 @@ export default function SellerFaq() {
               <li>Each product you publish gets an on-chain record and appears in <code className="font-mono text-sm">list_products</code> on that endpoint, so any Buying Agent can discover it.</li>
               <li>When a buyer&apos;s brief looks like a match, their agent calls <code className="font-mono text-sm">ask_sales_agent</code> to interrogate your agent: questions about fit, materials, terms, anything.</li>
               <li>Your Sales Agent answers from the facts you have given it, and negotiates within the bounds you set.</li>
-              <li>On a deal, settlement happens in USDC on <a className="underline hover:text-neutral-600" href="https://base.org" target="_blank" rel="noopener noreferrer">Base</a>, and your payout lands in the wallet you control.</li>
+              <li>On a deal, settlement happens in USDC on <a className="underline hover:text-ink-2" href="https://base.org" target="_blank" rel="noopener noreferrer">Base</a>, and your payout lands in the wallet you control.</li>
             </ol>
             <p className="mt-4">
               So two surfaces decide whether you sell: your <em>product data</em> (what agents can
@@ -116,11 +115,11 @@ export default function SellerFaq() {
             the new demand comes from.
           </Section>
 
-          <div className="mt-12 border-t border-neutral-200 pt-8 flex items-center justify-between">
-            <Link href="/faq" className="text-xs font-mono tracking-widest uppercase text-neutral-900 hover:underline">
+          <div className="mt-12 border-t border-line pt-8 flex items-center justify-between">
+            <Link href="/faq" className="text-xs font-mono tracking-widest uppercase text-ink hover:underline">
               <span aria-hidden>&larr;</span> All FAQs
             </Link>
-            <Link href="/onboard?role=seller" className="text-xs font-mono tracking-widest uppercase text-neutral-900 hover:underline">
+            <Link href="/onboard?role=seller" className="text-xs font-mono tracking-widest uppercase text-ink hover:underline">
               Start selling <span aria-hidden>&rarr;</span>
             </Link>
           </div>
@@ -134,7 +133,7 @@ function Section({ title, children }: { title: string; children: React.ReactNode
   return (
     <section className="mt-10">
       <h2 className="font-serif text-2xl leading-tight mb-3">{title}</h2>
-      <div className="text-base text-neutral-700 leading-relaxed">{children}</div>
+      <div className="text-base text-ink-2 leading-relaxed">{children}</div>
     </section>
   );
 }

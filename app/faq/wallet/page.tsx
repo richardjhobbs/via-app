@@ -1,5 +1,4 @@
 import Link from 'next/link';
-import Image from 'next/image';
 
 export const metadata = {
   title: 'Wallets, VIA FAQ',
@@ -8,26 +7,24 @@ export const metadata = {
 
 export default function WalletFaq() {
   return (
-    <main className="min-h-screen bg-neutral-50 text-neutral-900 flex flex-col">
-      <header className="bg-neutral-900 text-neutral-100">
+    <main className="min-h-screen bg-background text-ink flex flex-col">
+      <header className="border-b border-line">
         <div className="max-w-3xl mx-auto px-6 py-5 flex items-center justify-between">
-          <Link href="/" aria-label="VIA home" className="inline-flex items-center">
-            <Image src="/vialogowhite.png" alt="VIA" width={72} height={28} priority className="h-7 w-auto" />
-          </Link>
-          <a href="https://getvia.xyz" className="text-xs font-mono tracking-widest uppercase text-neutral-400 hover:text-neutral-100 transition-colors">
-            getvia.xyz
+          <Link href="/" aria-label="VIA home" className="wordmark text-ink">VIA</Link>
+          <a href="https://getvia.xyz" className="uc-mono text-ink-3 hover:text-ink transition-colors">
+            getvia.xyz ↗
           </a>
         </div>
       </header>
 
       <section className="flex-1 px-6 py-16">
         <article className="max-w-2xl mx-auto prose-styles">
-          <p className="text-xs font-mono tracking-widest text-neutral-500 mb-3 uppercase">FAQ, Wallets</p>
+          <p className="text-xs font-mono tracking-widest text-ink-3 mb-3 uppercase">FAQ, Wallets</p>
           <h1 className="font-serif text-4xl md:text-5xl leading-[1.1] tracking-tight mb-8">
             Wallets, explained simply.
           </h1>
 
-          <p className="text-base text-neutral-700 leading-relaxed mb-8">
+          <p className="text-base text-ink-2 leading-relaxed mb-8">
             VIA settles every sale on-chain in USDC. To pay you and to give your agent a verifiable
             identity, we ask you for two wallets during onboarding. They do different jobs and you
             keep full control of both.
@@ -52,22 +49,22 @@ export default function WalletFaq() {
             <p>Pick one of these. Each takes a few minutes and is free:</p>
             <ul className="list-disc list-inside mt-3 space-y-2">
               <li>
-                <a className="underline hover:text-neutral-600" href="https://metamask.io/download" target="_blank" rel="noopener noreferrer">MetaMask</a>
+                <a className="underline hover:text-ink-2" href="https://metamask.io/download" target="_blank" rel="noopener noreferrer">MetaMask</a>
                 {' · '}
                 browser extension and mobile app. The most widely used wallet. Good first choice.
               </li>
               <li>
-                <a className="underline hover:text-neutral-600" href="https://www.coinbase.com/wallet" target="_blank" rel="noopener noreferrer">Coinbase Wallet</a>
+                <a className="underline hover:text-ink-2" href="https://www.coinbase.com/wallet" target="_blank" rel="noopener noreferrer">Coinbase Wallet</a>
                 {' · '}
                 from the Coinbase exchange. Friendly if you already have a Coinbase account.
               </li>
               <li>
-                <a className="underline hover:text-neutral-600" href="https://rabby.io" target="_blank" rel="noopener noreferrer">Rabby</a>
+                <a className="underline hover:text-ink-2" href="https://rabby.io" target="_blank" rel="noopener noreferrer">Rabby</a>
                 {' · '}
                 a leaner browser extension favoured by experienced users.
               </li>
               <li>
-                <a className="underline hover:text-neutral-600" href="https://safe.global" target="_blank" rel="noopener noreferrer">Safe</a>
+                <a className="underline hover:text-ink-2" href="https://safe.global" target="_blank" rel="noopener noreferrer">Safe</a>
                 {' · '}
                 a smart-contract multisig if your business needs more than one signer.
               </li>
@@ -81,7 +78,7 @@ export default function WalletFaq() {
           </Section>
 
           <Section title="What network does VIA use?">
-            <a className="underline hover:text-neutral-600" href="https://base.org" target="_blank" rel="noopener noreferrer">Base</a>
+            <a className="underline hover:text-ink-2" href="https://base.org" target="_blank" rel="noopener noreferrer">Base</a>
             , a fast, low-fee Ethereum Layer 2 from Coinbase. Your wallet just needs to support EVM
             networks (all the wallets above do). You do not need to fund your payout wallet with
             anything; USDC arrives there when you make sales.
@@ -89,7 +86,7 @@ export default function WalletFaq() {
 
           <Section title="What about the Sales Agent wallet?">
             That one is created for you. When you sign in with email or Google on the wallet step,
-            we use <a className="underline hover:text-neutral-600" href="https://thirdweb.com/in-app-wallets" target="_blank" rel="noopener noreferrer">thirdweb&apos;s in-app wallet</a> infrastructure to
+            we use <a className="underline hover:text-ink-2" href="https://thirdweb.com/in-app-wallets" target="_blank" rel="noopener noreferrer">thirdweb&apos;s in-app wallet</a> infrastructure to
             derive a fresh non-custodial wallet from your authentication. You retain control via
             your email or Google account; recovery works the same way you would recover your inbox.
           </Section>
@@ -100,8 +97,8 @@ export default function WalletFaq() {
             the on-chain record.
           </Section>
 
-          <div className="mt-12 border-t border-neutral-200 pt-8">
-            <Link href="/onboard/wallet" className="text-xs font-mono tracking-widest uppercase text-neutral-900 hover:underline">
+          <div className="mt-12 border-t border-line pt-8">
+            <Link href="/onboard/wallet" className="text-xs font-mono tracking-widest uppercase text-ink hover:underline">
               <span aria-hidden>←</span> Back to wallet step
             </Link>
           </div>
@@ -115,7 +112,7 @@ function Section({ title, children }: { title: string; children: React.ReactNode
   return (
     <section className="mt-10">
       <h2 className="font-serif text-2xl leading-tight mb-3">{title}</h2>
-      <div className="text-base text-neutral-700 leading-relaxed">{children}</div>
+      <div className="text-base text-ink-2 leading-relaxed">{children}</div>
     </section>
   );
 }
