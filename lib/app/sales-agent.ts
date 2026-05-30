@@ -634,13 +634,14 @@ STYLE: Never use em-dashes or en-dashes in your replies. Use commas, colons, or 
 }
 
 /**
- * Strip em-dashes and en-dashes from buyer-facing output (project rule:
- * no em/en dashes in user-facing copy). The prompt asks the model to
- * avoid them, but a prompt is a soft constraint, so this guarantees it.
- * Any dash with optional surrounding whitespace collapses to a comma.
+ * Strip em-dashes, en-dashes, and double-hyphen dash substitutes from
+ * buyer-facing output (project rule: no em/en dashes in user-facing
+ * copy). The prompt asks the model to avoid them, but a prompt is a soft
+ * constraint, so this guarantees it. Any such dash with optional
+ * surrounding whitespace collapses to a comma.
  */
 function stripDashes(s: string): string {
-  return s.replace(/\s*[—–]\s*/g, ', ');
+  return s.replace(/\s*(?:—|–|--)\s*/g, ', ');
 }
 
 /**
