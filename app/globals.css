@@ -1165,3 +1165,53 @@ body {
   .lst-head span:nth-child(2), .lst-head span:nth-child(4) { display: none; }
   .via-foot-inner { padding: 20px; }
 }
+
+/* ─── Landing "The Seam" (Maison) ─────────────────────────────────────── */
+.via-page { min-height: 100vh; background: var(--bg); color: var(--ink); font-family: var(--font-inter), 'Inter', sans-serif; display: flex; flex-direction: column; }
+
+.via-top-link { transition: color .15s; text-decoration: none; }
+.via-top-link:hover { color: var(--ink) !important; }
+.via-faq-link { display: inline-flex; align-items: center; gap: 7px; font-family: var(--font-inter), 'Inter', sans-serif; font-size: 13px; font-weight: 600; letter-spacing: 0.02em; color: var(--live); text-decoration: none; transition: opacity .15s; }
+.via-faq-link::before { content: ''; width: 6px; height: 6px; border-radius: 999px; background: var(--live); box-shadow: 0 0 0 3px color-mix(in srgb, var(--live) 22%, transparent); }
+.via-faq-link:hover { opacity: 0.75; }
+
+@keyframes via-marquee { from { transform: translateX(0); } to { transform: translateX(-50%); } }
+@keyframes via-rise { from { transform: translateY(9px); } to { transform: none; } }
+.via-rise { animation: via-rise .5s cubic-bezier(.2,.7,.3,1) both; }
+@keyframes via-blink { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
+.via-caret::after { content: '▍'; margin-left: 1px; color: var(--accent); animation: via-blink 1s steps(1) infinite; }
+
+.via-hero { max-width: 1100px; margin: 0 auto; padding: 56px 40px 34px; text-align: center; width: 100%; box-sizing: border-box; }
+.via-h1 { font-family: var(--font-fraunces), 'Fraunces', serif; font-variation-settings: "opsz" 144, "wght" 300; font-weight: 300; font-size: clamp(42px, 6.2vw, 76px); line-height: 0.98; letter-spacing: -0.025em; margin: 16px 0 0; color: var(--ink); }
+.via-hero-sub { font-family: var(--font-inter), 'Inter', sans-serif; font-weight: 300; font-size: 16px; line-height: 1.55; color: var(--ink-2); max-width: 58ch; margin: 20px auto 0; }
+
+.via-seam { max-width: 1440px; margin: 0 auto; width: 100%; height: 470px; box-sizing: border-box; display: grid; grid-template-columns: 1fr 420px 1fr; border-top: 1px solid var(--line); }
+.seam-side { padding: 36px 44px; display: flex; flex-direction: column; justify-content: space-between; height: 100%; box-sizing: border-box; }
+.seam-buyer { text-align: right; }
+.seam-copy { font-family: var(--font-inter), 'Inter', sans-serif; font-weight: 300; font-size: 16px; line-height: 1.55; color: var(--ink-2); margin: 20px 0 0; max-width: 34ch; }
+.seam-buyer .seam-copy { margin-left: auto; }
+.seam-foot { margin-top: 28px; display: flex; flex-direction: column; align-items: flex-start; gap: 16px; }
+.seam-note { font-size: 9.5px; color: var(--ink-3); }
+
+.seam-deal { border-left: 1px solid var(--line); border-right: 1px solid var(--line); background: var(--bg-2); padding: 24px 26px 22px; display: flex; flex-direction: column; height: 100%; min-height: 0; box-sizing: border-box; }
+.deal-head { display: flex; align-items: center; justify-content: space-between; padding-bottom: 16px; border-bottom: 1px solid var(--line); flex: 0 0 auto; }
+.deal-thread { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; justify-content: flex-end; gap: 16px; padding: 14px 0; overflow: hidden; }
+.deal-settle { flex: 0 0 auto; height: 46px; display: flex; align-items: center; justify-content: center; }
+
+.via-stats { display: grid; grid-template-columns: repeat(3, 1fr); border-top: 1px solid var(--line); max-width: 1440px; margin: 0 auto; width: 100%; box-sizing: border-box; }
+.stat-cell { padding: 18px 44px; display: flex; align-items: baseline; gap: 12px; border-right: 1px solid var(--line); }
+.stat-cell:last-child { border-right: none; }
+.stat-val { font-family: var(--font-fraunces), 'Fraunces', serif; font-weight: 300; font-size: 26px; letter-spacing: -0.02em; color: var(--ink); }
+
+@media (max-width: 900px) {
+  .via-hero { padding: 40px 20px 26px; }
+  .via-seam { grid-template-columns: 1fr; height: auto; }
+  .seam-deal { border-left: none; border-right: none; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); order: -1; height: auto; min-height: 300px; }
+  .seam-side { min-height: 0; padding: 28px 20px; }
+  .seam-buyer { text-align: left; }
+  .seam-buyer .seam-copy { margin-left: 0; }
+  .seam-foot, .seam-buyer .seam-foot { align-items: flex-start !important; }
+  .via-stats { grid-template-columns: 1fr; }
+  .stat-cell { border-right: none; border-bottom: 1px solid var(--line); padding: 16px 20px; }
+  .stat-cell:last-child { border-bottom: none; }
+}
