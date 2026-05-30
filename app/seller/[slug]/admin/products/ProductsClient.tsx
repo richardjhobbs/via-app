@@ -33,13 +33,13 @@ interface Props {
 }
 
 function statusBadge(status: Product['on_chain_status'], active: boolean) {
-  if (!active) return <span className="inline-block px-2 py-0.5 bg-neutral-200 text-neutral-600 text-[10px] font-mono uppercase rounded">Inactive</span>;
+  if (!active) return <span className="inline-block px-2 py-0.5 bg-paper text-ink-2 text-[10px] font-mono uppercase rounded">Inactive</span>;
   switch (status) {
-    case 'registered': return <span className="inline-block px-2 py-0.5 bg-green-100 text-green-800 text-[10px] font-mono uppercase rounded">Registered</span>;
-    case 'paused':     return <span className="inline-block px-2 py-0.5 bg-amber-100 text-amber-800 text-[10px] font-mono uppercase rounded">Paused</span>;
-    case 'sold_out':   return <span className="inline-block px-2 py-0.5 bg-rose-100 text-rose-800 text-[10px] font-mono uppercase rounded">Sold out</span>;
+    case 'registered': return <span className="inline-block px-2 py-0.5 bg-[color:var(--live)]/15 text-[color:var(--live)] text-[10px] font-mono uppercase rounded">Registered</span>;
+    case 'paused':     return <span className="inline-block px-2 py-0.5 bg-[color:var(--warning)]/15 text-[color:var(--warning)] text-[10px] font-mono uppercase rounded">Paused</span>;
+    case 'sold_out':   return <span className="inline-block px-2 py-0.5 bg-[color:var(--danger)]/15 text-[color:var(--danger)] text-[10px] font-mono uppercase rounded">Sold out</span>;
     case 'draft':
-    default:           return <span className="inline-block px-2 py-0.5 bg-neutral-200 text-neutral-700 text-[10px] font-mono uppercase rounded">Draft</span>;
+    default:           return <span className="inline-block px-2 py-0.5 bg-paper text-ink-2 text-[10px] font-mono uppercase rounded">Draft</span>;
   }
 }
 
@@ -85,7 +85,7 @@ export function ProductsClient({
   const [bulkBusy,     setBulkBusy]     = useState(false);
   const [bulkProgress, setBulkProgress] = useState<{ done: number; total: number; succeeded: number; failed: number }>({ done: 0, total: 0, succeeded: 0, failed: 0 });
 
-  // Live listed count — server-rendered initial value, kept in sync as
+  // Live listed count - server-rendered initial value, kept in sync as
   // we publish/remove products without forcing a full page reload.
   const liveListedCount = products.length > 0
     ? products.filter((p) => p.active && p.on_chain_status === 'registered').length
@@ -93,7 +93,7 @@ export function ProductsClient({
   const remainingSlots = Math.max(0, listedCap - liveListedCount);
   const capReached = remainingSlots === 0;
 
-  // ── Catalogue source connection — live editable so existing sellers
+  // ── Catalogue source connection - live editable so existing sellers
   //    (incl. arc-lights) can connect or switch their store source after
   //    onboarding. Locally mirrors what the server passed in, then PATCHes
   //    /settings on save and updates state from the server response.
@@ -219,12 +219,12 @@ export function ProductsClient({
       setErr(`Free-tier cap of ${listedCap} listed items reached (${liveListedCount}/${listedCap}). Unpublish or deactivate an existing product first.`);
       return;
     }
-    // Only attempt up to the remaining slots — the server enforces this
+    // Only attempt up to the remaining slots - the server enforces this
     // too, but a client-side stop avoids N pointless 409 round-trips.
     const toPublish = drafts.slice(0, remainingSlots);
     const skipped = drafts.length - toPublish.length;
     const skipNote = skipped > 0
-      ? ` You have ${drafts.length} drafts but only ${remainingSlots} slot${remainingSlots === 1 ? '' : 's'} left on the free tier — ${skipped} will stay as draft.`
+      ? ` You have ${drafts.length} drafts but only ${remainingSlots} slot${remainingSlots === 1 ? '' : 's'} left on the free tier - ${skipped} will stay as draft.`
       : '';
     if (!confirm(`Publish ${toPublish.length} draft product${toPublish.length === 1 ? '' : 's'}? Each one is registered on-chain and immediately becomes visible to buying agents calling list_products on this seller's MCP.${skipNote}`)) return;
     setErr('');
@@ -249,7 +249,7 @@ export function ProductsClient({
           if (json.code === 'free_listed_cap_reached') {
             capHit = true;
             failures.push({ title: p.title, reason: json.error ?? 'free-tier cap reached' });
-            // Stop sending requests — the cap won't change mid-run.
+            // Stop sending requests - the cap won't change mid-run.
             setBulkProgress({ done: i + 1, total: toPublish.length, succeeded, failed });
             break;
           }
@@ -369,28 +369,28 @@ export function ProductsClient({
   return (
     <div className="space-y-8">
       {err && (
-        <div className="bg-red-50 border border-red-200 text-red-800 text-sm rounded-md px-4 py-3">
+        <div className="bg-[color:var(--danger)]/10 border border-[color:var(--danger)] text-[color:var(--danger)] text-sm rounded-md px-4 py-3">
           {err}
         </div>
       )}
       {info && (
-        <div className="bg-emerald-50 border border-emerald-200 text-emerald-900 text-sm rounded-md px-4 py-3">
+        <div className="bg-[color:var(--live)]/10 border border-[color:var(--live)] text-[color:var(--live)] text-sm rounded-md px-4 py-3">
           {info}
         </div>
       )}
 
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex flex-wrap items-center gap-3">
-          <p className="text-xs font-mono tracking-widest text-neutral-500 uppercase">
+          <p className="text-xs font-mono tracking-widest text-ink-3 uppercase">
             {products.length} product{products.length === 1 ? '' : 's'}
           </p>
           <span
             className={`text-[10px] font-mono uppercase tracking-widest border rounded px-2 py-0.5 ${
               capReached
-                ? 'border-rose-300 text-rose-800 bg-rose-50'
+                ? 'border-[color:var(--danger)] text-[color:var(--danger)] bg-[color:var(--danger)]/10'
                 : liveListedCount >= listedCap - 2
-                  ? 'border-amber-300 text-amber-800 bg-amber-50'
-                  : 'border-neutral-200 text-neutral-500'
+                  ? 'border-[color:var(--warning)] text-[color:var(--warning)] bg-[color:var(--warning)]/10'
+                  : 'border-line text-ink-3'
             }`}
             title={capReached
               ? `Free-tier cap reached. Unpublish or deactivate something to publish more.`
@@ -398,11 +398,11 @@ export function ProductsClient({
           >
             listed {liveListedCount} / {listedCap} (free tier)
           </span>
-          <span className="text-[10px] font-mono uppercase tracking-widest text-neutral-400 border border-neutral-200 rounded px-2 py-0.5">
+          <span className="text-[10px] font-mono uppercase tracking-widest text-ink-3 border border-line rounded px-2 py-0.5">
             {cur} → USDC
           </span>
           {src && (
-            <span className="text-[10px] font-mono uppercase tracking-widest text-neutral-400 border border-neutral-200 rounded px-2 py-0.5">
+            <span className="text-[10px] font-mono uppercase tracking-widest text-ink-3 border border-line rounded px-2 py-0.5">
               source: {src}
             </span>
           )}
@@ -413,7 +413,7 @@ export function ProductsClient({
               type="button"
               onClick={() => void runSync('shopify', shop)}
               disabled={syncing}
-              className="px-4 py-2 border border-neutral-900 text-neutral-900 text-xs font-mono tracking-widest uppercase hover:bg-neutral-900 hover:text-neutral-50 disabled:opacity-40 transition-colors rounded-md"
+              className="px-4 py-2 border border-ink text-ink text-xs font-mono tracking-widest uppercase hover:bg-ink hover:text-background disabled:opacity-40 transition-colors rounded-md"
               title={`Sync from ${shop}`}
             >
               {syncing ? 'Syncing…' : `Sync Shopify (${shop})`}
@@ -424,7 +424,7 @@ export function ProductsClient({
               type="button"
               onClick={() => void runSync('squarespace', sqs)}
               disabled={syncing}
-              className="px-4 py-2 border border-neutral-900 text-neutral-900 text-xs font-mono tracking-widest uppercase hover:bg-neutral-900 hover:text-neutral-50 disabled:opacity-40 transition-colors rounded-md"
+              className="px-4 py-2 border border-ink text-ink text-xs font-mono tracking-widest uppercase hover:bg-ink hover:text-background disabled:opacity-40 transition-colors rounded-md"
               title={`Sync from ${sqs}`}
             >
               {syncing ? 'Syncing…' : 'Sync Squarespace'}
@@ -433,7 +433,7 @@ export function ProductsClient({
           <button
             type="button"
             onClick={() => setAdding((v) => !v)}
-            className="px-4 py-2 bg-neutral-900 text-neutral-50 text-xs font-mono tracking-widest uppercase hover:bg-neutral-800 transition-colors rounded-md"
+            className="px-4 py-2 bg-ink text-background text-xs font-mono tracking-widest uppercase hover:opacity-90 transition-colors rounded-md"
           >
             {adding ? 'Close' : '+ Add product'}
           </button>
@@ -441,19 +441,19 @@ export function ProductsClient({
       </div>
 
       {/* ── Catalogue-source connection panel ───────────────────────── */}
-      <div className="bg-white border border-neutral-200 rounded-lg p-5">
+      <div className="bg-paper border border-line rounded-lg p-5">
         <div className="flex items-start justify-between gap-3">
           <div>
-            <p className="text-xs font-mono tracking-widest uppercase text-neutral-500 mb-1">Storefront connection</p>
+            <p className="text-xs font-mono tracking-widest uppercase text-ink-3 mb-1">Storefront connection</p>
             {hasSource ? (
-              <p className="text-sm text-neutral-700">
-                Connected to <strong className="text-neutral-900">{src}</strong>
+              <p className="text-sm text-ink-2">
+                Connected to <strong className="text-ink">{src}</strong>
                 {src === 'shopify'     && shop && <> · <code className="font-mono text-xs">{shop}</code></>}
                 {src === 'squarespace' && sqs  && <> · <code className="font-mono text-xs">{sqs}</code></>}
                 {' · '}prices in <span className="font-mono text-xs">{cur}</span> converted to USDC at sync time.
               </p>
             ) : (
-              <p className="text-sm text-neutral-700">
+              <p className="text-sm text-ink-2">
                 No store connected. Connect Shopify or Squarespace to pull your catalogue and resync any
                 time. Sellers without a store or a different provider can upload their products and
                 inventory at this stage and then add new products manually below.
@@ -464,7 +464,7 @@ export function ProductsClient({
             <button
               type="button"
               onClick={() => setEditingSrc(true)}
-              className="text-[10px] font-mono uppercase tracking-widest text-neutral-900 hover:underline whitespace-nowrap"
+              className="text-[10px] font-mono uppercase tracking-widest text-ink hover:underline whitespace-nowrap"
             >
               {hasSource ? 'Change' : 'Connect a store →'}
             </button>
@@ -474,11 +474,11 @@ export function ProductsClient({
         {editingSrc && (
           <form onSubmit={saveSourceSettings} className="mt-5 grid grid-cols-1 md:grid-cols-2 gap-4">
             <label className="md:col-span-2">
-              <span className="text-xs font-mono tracking-widest uppercase text-neutral-500 block mb-1">Source</span>
+              <span className="text-xs font-mono tracking-widest uppercase text-ink-3 block mb-1">Source</span>
               <select
                 value={src ?? ''}
                 onChange={(e) => setSrc((e.target.value || null) as typeof src)}
-                className="w-full border border-neutral-300 rounded-md px-3 py-2 text-sm bg-white outline-none focus:border-neutral-900"
+                className="w-full border border-line-strong rounded-md px-3 py-2 text-sm bg-paper outline-none focus:border-ink"
               >
                 <option value="">None (manual products only)</option>
                 <option value="shopify">Shopify</option>
@@ -490,14 +490,14 @@ export function ProductsClient({
 
             {src === 'shopify' && (
               <label className="md:col-span-2">
-                <span className="text-xs font-mono tracking-widest uppercase text-neutral-500 block mb-1">Shopify domain</span>
+                <span className="text-xs font-mono tracking-widest uppercase text-ink-3 block mb-1">Shopify domain</span>
                 <input
                   type="text" required value={shop} onChange={(e) => setShop(e.target.value)}
                   placeholder="your-store.myshopify.com or shop.your-brand.com"
                   spellCheck={false} autoComplete="off"
-                  className="w-full border border-neutral-300 rounded-md px-3 py-2 text-sm font-mono outline-none focus:border-neutral-900"
+                  className="w-full border border-line-strong rounded-md px-3 py-2 text-sm font-mono outline-none focus:border-ink"
                 />
-                <p className="text-[10px] font-mono text-neutral-400 mt-1">
+                <p className="text-[10px] font-mono text-ink-3 mt-1">
                   Public /products.json is fetched. Works on any store that hasn&apos;t disabled the JSON view.
                 </p>
               </label>
@@ -505,30 +505,30 @@ export function ProductsClient({
 
             {src === 'squarespace' && (
               <label className="md:col-span-2">
-                <span className="text-xs font-mono tracking-widest uppercase text-neutral-500 block mb-1">Squarespace shop URL</span>
+                <span className="text-xs font-mono tracking-widest uppercase text-ink-3 block mb-1">Squarespace shop URL</span>
                 <input
                   type="url" required value={sqs} onChange={(e) => setSqs(e.target.value)}
                   placeholder="https://www.your-site.com/shop"
                   spellCheck={false} autoComplete="off"
-                  className="w-full border border-neutral-300 rounded-md px-3 py-2 text-sm font-mono outline-none focus:border-neutral-900"
+                  className="w-full border border-line-strong rounded-md px-3 py-2 text-sm font-mono outline-none focus:border-ink"
                 />
-                <p className="text-[10px] font-mono text-neutral-400 mt-1">
+                <p className="text-[10px] font-mono text-ink-3 mt-1">
                   Paste the full URL to the shop page (the one ending in /shop or /shop-1).
                 </p>
               </label>
             )}
 
             <label>
-              <span className="text-xs font-mono tracking-widest uppercase text-neutral-500 block mb-1">Storefront currency</span>
+              <span className="text-xs font-mono tracking-widest uppercase text-ink-3 block mb-1">Storefront currency</span>
               <select
                 value={cur} onChange={(e) => setCur(e.target.value)}
-                className="w-full border border-neutral-300 rounded-md px-3 py-2 text-sm bg-white outline-none focus:border-neutral-900"
+                className="w-full border border-line-strong rounded-md px-3 py-2 text-sm bg-paper outline-none focus:border-ink"
               >
                 {['USD','GBP','EUR','HKD','SGD','AUD','CAD','JPY','CNY','INR','CHF','SEK','NOK','DKK','NZD','BRL','MXN','ZAR','AED'].map((c) => (
                   <option key={c} value={c}>{c}</option>
                 ))}
               </select>
-              <p className="text-[10px] font-mono text-neutral-400 mt-1">
+              <p className="text-[10px] font-mono text-ink-3 mt-1">
                 Prices on your storefront. Converted to USDC via frankfurter.app + 3% spread at each sync.
               </p>
             </label>
@@ -542,13 +542,13 @@ export function ProductsClient({
                   setEditingSrc(false);
                 }}
                 disabled={savingSrc}
-                className="px-4 py-2 text-xs font-mono tracking-widest uppercase text-neutral-500 hover:text-neutral-900 disabled:opacity-40"
+                className="px-4 py-2 text-xs font-mono tracking-widest uppercase text-ink-3 hover:text-ink disabled:opacity-40"
               >
                 Cancel
               </button>
               <button
                 type="submit" disabled={savingSrc}
-                className="px-5 py-2 bg-neutral-900 text-neutral-50 text-xs font-mono tracking-widest uppercase hover:bg-neutral-800 disabled:opacity-40 transition-colors rounded-md"
+                className="px-5 py-2 bg-ink text-background text-xs font-mono tracking-widest uppercase hover:opacity-90 disabled:opacity-40 transition-colors rounded-md"
               >
                 {savingSrc ? 'Saving…' : 'Save'}
               </button>
@@ -559,11 +559,11 @@ export function ProductsClient({
 
       {/* ── CSV upload panel (visible when catalog_source = 'csv') ───── */}
       {src === 'csv' && (
-        <div className="bg-white border border-neutral-200 rounded-lg p-5">
+        <div className="bg-paper border border-line rounded-lg p-5">
           <div className="flex items-start justify-between gap-3 mb-4">
             <div>
-              <p className="text-xs font-mono tracking-widest uppercase text-neutral-500 mb-1">Spreadsheet upload</p>
-              <p className="text-sm text-neutral-700">
+              <p className="text-xs font-mono tracking-widest uppercase text-ink-3 mb-1">Spreadsheet upload</p>
+              <p className="text-sm text-ink-2">
                 Upload your catalogue as CSV or XLSX. Download the template, fill it in, then come
                 back and upload. Re-uploading a row with the same <code className="font-mono text-xs">external_id</code> updates it in place.
               </p>
@@ -571,41 +571,41 @@ export function ProductsClient({
             <a
               href="/templates/via-products.csv"
               download
-              className="text-[10px] font-mono uppercase tracking-widest text-neutral-900 hover:underline whitespace-nowrap"
+              className="text-[10px] font-mono uppercase tracking-widest text-ink hover:underline whitespace-nowrap"
             >
               Download template ↓
             </a>
           </div>
 
-          <label className="block text-xs font-mono uppercase tracking-widest text-neutral-500 mb-2">
-            Choose a file (.csv, .xlsx, .xls — max 5 MB)
+          <label className="block text-xs font-mono uppercase tracking-widest text-ink-3 mb-2">
+            Choose a file (.csv, .xlsx, .xls - max 5 MB)
           </label>
           <input
             type="file"
             accept=".csv,.xlsx,.xls"
             onChange={(e) => { setCsvFile(e.target.files?.[0] ?? null); setCsvErrors(null); }}
             disabled={csvBusy}
-            className="block w-full text-sm border border-neutral-300 rounded-md p-2 bg-white file:mr-3 file:border-0 file:bg-neutral-100 file:px-3 file:py-1.5 file:text-xs file:font-mono file:uppercase file:tracking-widest"
+            className="block w-full text-sm border border-line-strong rounded-md p-2 bg-paper file:mr-3 file:border-0 file:bg-paper file:px-3 file:py-1.5 file:text-xs file:font-mono file:uppercase file:tracking-widest"
           />
 
           <div className="flex items-center justify-between mt-3">
-            <span className="text-[10px] font-mono uppercase tracking-widest text-neutral-400">
+            <span className="text-[10px] font-mono uppercase tracking-widest text-ink-3">
               {csvFile ? csvFile.name : 'No file selected'}
               {' · '}
-              prices in <span className="text-neutral-600">{cur}</span> &rarr; converted to USDC at upload
+              prices in <span className="text-ink-2">{cur}</span> &rarr; converted to USDC at upload
             </span>
             <button
               type="button"
               onClick={() => void uploadCsv()}
               disabled={!csvFile || csvBusy}
-              className="px-4 py-2 bg-neutral-900 text-neutral-50 text-xs font-mono tracking-widest uppercase hover:bg-neutral-800 disabled:opacity-40 transition-colors rounded-md"
+              className="px-4 py-2 bg-ink text-background text-xs font-mono tracking-widest uppercase hover:opacity-90 disabled:opacity-40 transition-colors rounded-md"
             >
               {csvBusy ? 'Uploading…' : 'Upload'}
             </button>
           </div>
 
           {csvErrors && csvErrors.length > 0 && (
-            <div className="mt-4 border border-rose-200 bg-rose-50 text-rose-900 rounded-md p-3 text-xs">
+            <div className="mt-4 border border-[color:var(--danger)] bg-[color:var(--danger)]/10 text-[color:var(--danger)] rounded-md p-3 text-xs">
               <p className="font-medium mb-2">
                 {csvErrors.length} issue{csvErrors.length === 1 ? '' : 's'} to fix before this CSV can be accepted:
               </p>
@@ -623,21 +623,21 @@ export function ProductsClient({
       )}
 
       {adding && (
-        <form onSubmit={onCreate} className="bg-white border border-neutral-200 rounded-lg p-5 grid grid-cols-1 md:grid-cols-2 gap-4">
+        <form onSubmit={onCreate} className="bg-paper border border-line rounded-lg p-5 grid grid-cols-1 md:grid-cols-2 gap-4">
           <label className="md:col-span-2">
-            <span className="text-xs font-mono tracking-widest uppercase text-neutral-500 block mb-1">Title</span>
+            <span className="text-xs font-mono tracking-widest uppercase text-ink-3 block mb-1">Title</span>
             <input
               required value={title} onChange={(e) => setTitle(e.target.value)}
-              className="w-full border border-neutral-300 rounded-md px-3 py-2 text-sm outline-none focus:border-neutral-900"
+              className="w-full border border-line-strong rounded-md px-3 py-2 text-sm outline-none focus:border-ink"
               maxLength={200}
             />
           </label>
 
           <label>
-            <span className="text-xs font-mono tracking-widest uppercase text-neutral-500 block mb-1">Kind</span>
+            <span className="text-xs font-mono tracking-widest uppercase text-ink-3 block mb-1">Kind</span>
             <select
               value={kind} onChange={(e) => setKind(e.target.value as Product['kind'])}
-              className="w-full border border-neutral-300 rounded-md px-3 py-2 text-sm bg-white outline-none focus:border-neutral-900"
+              className="w-full border border-line-strong rounded-md px-3 py-2 text-sm bg-paper outline-none focus:border-ink"
             >
               <option value="physical">Physical</option>
               <option value="digital">Digital</option>
@@ -646,46 +646,46 @@ export function ProductsClient({
           </label>
 
           <label>
-            <span className="text-xs font-mono tracking-widest uppercase text-neutral-500 block mb-1">Price (USDC)</span>
+            <span className="text-xs font-mono tracking-widest uppercase text-ink-3 block mb-1">Price (USDC)</span>
             <input
               required type="number" step="0.01" min="0"
               value={priceUsdc} onChange={(e) => setPriceUsdc(e.target.value)}
-              className="w-full border border-neutral-300 rounded-md px-3 py-2 text-sm font-mono outline-none focus:border-neutral-900"
+              className="w-full border border-line-strong rounded-md px-3 py-2 text-sm font-mono outline-none focus:border-ink"
             />
           </label>
 
           <label className="md:col-span-2">
-            <span className="text-xs font-mono tracking-widest uppercase text-neutral-500 block mb-1">Description</span>
+            <span className="text-xs font-mono tracking-widest uppercase text-ink-3 block mb-1">Description</span>
             <textarea
               value={description} onChange={(e) => setDescription(e.target.value)}
               rows={3}
-              className="w-full border border-neutral-300 rounded-md px-3 py-2 text-sm outline-none focus:border-neutral-900"
+              className="w-full border border-line-strong rounded-md px-3 py-2 text-sm outline-none focus:border-ink"
             />
           </label>
 
           <label>
-            <span className="text-xs font-mono tracking-widest uppercase text-neutral-500 block mb-1">Stock (optional)</span>
+            <span className="text-xs font-mono tracking-widest uppercase text-ink-3 block mb-1">Stock (optional)</span>
             <input
               type="number" min="0" placeholder="Leave blank for unlimited"
               value={stock} onChange={(e) => setStock(e.target.value)}
-              className="w-full border border-neutral-300 rounded-md px-3 py-2 text-sm font-mono outline-none focus:border-neutral-900"
+              className="w-full border border-line-strong rounded-md px-3 py-2 text-sm font-mono outline-none focus:border-ink"
             />
           </label>
 
           <label>
-            <span className="text-xs font-mono tracking-widest uppercase text-neutral-500 block mb-1">Max supply (on-chain, optional)</span>
+            <span className="text-xs font-mono tracking-widest uppercase text-ink-3 block mb-1">Max supply (on-chain, optional)</span>
             <input
               type="number" min="1" placeholder="Blank = 1,000,000,000"
               value={maxSupply} onChange={(e) => setMaxSupply(e.target.value)}
-              className="w-full border border-neutral-300 rounded-md px-3 py-2 text-sm font-mono outline-none focus:border-neutral-900"
+              className="w-full border border-line-strong rounded-md px-3 py-2 text-sm font-mono outline-none focus:border-ink"
             />
           </label>
 
           <label>
-            <span className="text-xs font-mono tracking-widest uppercase text-neutral-500 block mb-1">Product URL (optional)</span>
+            <span className="text-xs font-mono tracking-widest uppercase text-ink-3 block mb-1">Product URL (optional)</span>
             <input
               type="url" value={url} onChange={(e) => setUrl(e.target.value)}
-              className="w-full border border-neutral-300 rounded-md px-3 py-2 text-sm font-mono outline-none focus:border-neutral-900"
+              className="w-full border border-line-strong rounded-md px-3 py-2 text-sm font-mono outline-none focus:border-ink"
             />
           </label>
 
@@ -693,7 +693,7 @@ export function ProductsClient({
           <div className="md:col-span-2 flex justify-end">
             <button
               type="submit" disabled={busy}
-              className="px-5 py-2 bg-neutral-900 text-neutral-50 text-xs font-mono tracking-widest uppercase hover:bg-neutral-800 disabled:opacity-40 transition-colors rounded-md"
+              className="px-5 py-2 bg-ink text-background text-xs font-mono tracking-widest uppercase hover:opacity-90 disabled:opacity-40 transition-colors rounded-md"
             >
               {busy ? 'Saving&hellip;' : 'Save as draft'}
             </button>
@@ -702,9 +702,9 @@ export function ProductsClient({
       )}
 
       {loading ? (
-        <p className="text-sm text-neutral-500">Loading&hellip;</p>
+        <p className="text-sm text-ink-3">Loading&hellip;</p>
       ) : products.length === 0 ? (
-        <p className="text-sm text-neutral-500">
+        <p className="text-sm text-ink-3">
           No products yet. Click + Add product above, save a draft, then click Publish to mint it
           on-chain and make it discoverable.
         </p>
@@ -716,11 +716,11 @@ export function ProductsClient({
             const willPublish   = Math.min(draftCount, remainingSlots);
             const capSkip       = Math.max(0, draftCount - remainingSlots);
             const stripTheme    = capReached
-              ? 'bg-rose-50 border-rose-200 text-rose-900'
-              : 'bg-amber-50 border-amber-200 text-amber-900';
+              ? 'bg-[color:var(--danger)]/10 border-[color:var(--danger)] text-[color:var(--danger)]'
+              : 'bg-[color:var(--warning)]/10 border-[color:var(--warning)] text-[color:var(--warning)]';
             const btnTheme      = capReached
-              ? 'bg-rose-900 text-rose-50 hover:bg-rose-800'
-              : 'bg-amber-900 text-amber-50 hover:bg-amber-800';
+              ? 'bg-[color:var(--danger)] text-background hover:opacity-90'
+              : 'bg-[color:var(--warning)] text-background hover:opacity-90';
             return (
               <div className={`flex flex-wrap items-center justify-between gap-3 border rounded-md px-4 py-3 ${stripTheme}`}>
                 <p className="text-sm">
@@ -750,9 +750,9 @@ export function ProductsClient({
             );
           })()}
 
-        <div className="bg-white border border-neutral-200 rounded-lg overflow-hidden">
+        <div className="bg-paper border border-line rounded-lg overflow-hidden">
           <table className="w-full text-sm">
-            <thead className="bg-neutral-50 text-xs font-mono uppercase tracking-widest text-neutral-500">
+            <thead className="bg-paper text-xs font-mono uppercase tracking-widest text-ink-3">
               <tr>
                 <th className="text-left px-4 py-3">Title</th>
                 <th className="text-left px-4 py-3">Kind</th>
@@ -762,22 +762,22 @@ export function ProductsClient({
                 <th className="text-right px-4 py-3">Actions</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-neutral-200">
+            <tbody className="divide-y divide-[color:var(--line)]">
               {products.map((p) => (
                 <tr key={p.id} className={p.active ? '' : 'opacity-50'}>
                   <td className="px-4 py-3">
-                    <div className="font-medium text-neutral-900">{p.title}</div>
+                    <div className="font-medium text-ink">{p.title}</div>
                     {p.token_id != null && (
-                      <div className="text-[10px] font-mono text-neutral-400 mt-0.5">
+                      <div className="text-[10px] font-mono text-ink-3 mt-0.5">
                         token #{p.token_id}
                       </div>
                     )}
                   </td>
-                  <td className="px-4 py-3 text-neutral-600 capitalize">{p.kind}</td>
+                  <td className="px-4 py-3 text-ink-2 capitalize">{p.kind}</td>
                   <td className="px-4 py-3 text-right font-mono">
                     {(Number(p.price_minor) / 1_000_000).toFixed(2)}
                   </td>
-                  <td className="px-4 py-3 text-right font-mono text-neutral-600">
+                  <td className="px-4 py-3 text-right font-mono text-ink-2">
                     {p.stock == null ? '∞' : p.stock}
                   </td>
                   <td className="px-4 py-3">{statusBadge(p.on_chain_status, p.active)}</td>
@@ -787,7 +787,7 @@ export function ProductsClient({
                         type="button"
                         onClick={() => void onPublish(p)}
                         disabled={publishingId === p.id}
-                        className="mr-3 text-[10px] font-mono uppercase tracking-widest text-neutral-900 hover:underline disabled:opacity-40"
+                        className="mr-3 text-[10px] font-mono uppercase tracking-widest text-ink hover:underline disabled:opacity-40"
                       >
                         {publishingId === p.id ? 'Publishing…' : 'Publish'}
                       </button>
@@ -797,7 +797,7 @@ export function ProductsClient({
                         type="button"
                         onClick={() => void onDelete(p)}
                         disabled={deletingId === p.id}
-                        className="text-[10px] font-mono uppercase tracking-widest text-neutral-500 hover:text-rose-700 disabled:opacity-40"
+                        className="text-[10px] font-mono uppercase tracking-widest text-ink-3 hover:text-[color:var(--danger)] disabled:opacity-40"
                       >
                         {deletingId === p.id ? 'Removing…' : 'Remove'}
                       </button>
@@ -811,7 +811,7 @@ export function ProductsClient({
         </>
       )}
 
-      <p className="text-[10px] font-mono text-neutral-400 leading-relaxed">
+      <p className="text-[10px] font-mono text-ink-3 leading-relaxed">
         Buying agents see registered + active products at <code>/sellers/{sellerSlug}/mcp</code>{' '}
         via the <code>list_products</code> tool. Drafts stay private until published.
       </p>

@@ -158,14 +158,14 @@ async function copyToClipboard(text: string): Promise<boolean> {
 
 function StatusBadge({ s }: { s: OrderDetail['status'] }) {
   const map = {
-    pending:  'bg-neutral-200 text-neutral-700',
-    paid:     'bg-sky-100 text-sky-900',
-    minted:   'bg-amber-100 text-amber-900',
-    paid_out: 'bg-emerald-100 text-emerald-900',
-    failed:   'bg-rose-100 text-rose-900',
+    pending:  'bg-paper text-ink-2',
+    paid:     'bg-[color:var(--accent)]/15 text-[color:var(--accent)]',
+    minted:   'bg-[color:var(--warning)]/15 text-[color:var(--warning)]',
+    paid_out: 'bg-[color:var(--live)]/15 text-[color:var(--live)]',
+    failed:   'bg-[color:var(--danger)]/15 text-[color:var(--danger)]',
   } as const;
   return (
-    <span className={`inline-block px-2.5 py-1 text-[10px] font-mono uppercase tracking-widest rounded ${map[s] ?? 'bg-neutral-200'}`}>
+    <span className={`inline-block px-2.5 py-1 text-[10px] font-mono uppercase tracking-widest rounded ${map[s] ?? 'bg-paper'}`}>
       {s.replace('_', ' ')}
     </span>
   );
@@ -186,11 +186,11 @@ export function OrderDetailView({ order }: { order: OrderDetail }) {
   return (
     <div className="space-y-10">
       {/* Order ref strip */}
-      <div className="bg-white border border-neutral-200 rounded-lg p-6 flex flex-wrap items-center gap-6 justify-between">
+      <div className="bg-paper border border-line rounded-lg p-6 flex flex-wrap items-center gap-6 justify-between">
         <div>
-          <p className="text-xs font-mono uppercase tracking-widest text-neutral-500 mb-2">Order ref</p>
-          <p className="font-mono text-2xl tracking-tight text-neutral-900">{order.order_ref}</p>
-          <p className="text-[10px] font-mono uppercase tracking-widest text-neutral-400 mt-1">
+          <p className="text-xs font-mono uppercase tracking-widest text-ink-3 mb-2">Order ref</p>
+          <p className="font-mono text-2xl tracking-tight text-ink">{order.order_ref}</p>
+          <p className="text-[10px] font-mono uppercase tracking-widest text-ink-3 mt-1">
             Placed {fmtDate(order.created_at)}
           </p>
         </div>
@@ -199,7 +199,7 @@ export function OrderDetailView({ order }: { order: OrderDetail }) {
           <button
             type="button"
             onClick={async () => { const ok = await copyToClipboard(order.order_ref); flash(ok ? 'Order ref copied.' : 'Copy failed.'); }}
-            className="text-[10px] font-mono uppercase tracking-widest text-neutral-700 underline hover:no-underline"
+            className="text-[10px] font-mono uppercase tracking-widest text-ink-2 underline hover:no-underline"
           >
             Copy ref
           </button>
@@ -207,14 +207,14 @@ export function OrderDetailView({ order }: { order: OrderDetail }) {
       </div>
 
       {toast && (
-        <div className="bg-emerald-50 border border-emerald-200 text-emerald-800 text-sm rounded-md px-4 py-3">{toast}</div>
+        <div className="bg-[color:var(--live)]/10 border border-[color:var(--live)] text-[color:var(--live)] text-sm rounded-md px-4 py-3">{toast}</div>
       )}
 
       {/* Lines */}
-      <section className="bg-white border border-neutral-200 rounded-lg p-6 grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-3">
+      <section className="bg-paper border border-line rounded-lg p-6 grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-3">
         <Stat label="Product" value={`${order.qty}× ${order.product.title}`} />
         <Stat label="Kind"    value={order.product.kind} />
-        <Stat label="Token"   value={order.product.token_id != null ? `#${order.product.token_id}` : '—'} mono />
+        <Stat label="Token"   value={order.product.token_id != null ? `#${order.product.token_id}` : '-'} mono />
         <Stat label="Total"   value={`${fmtUsdc(order.total_usdc)} USDC`} mono />
         <Stat label="Payment" value={order.payment_method} mono />
         <Stat label="Buyer wallet"   value={order.buyer_wallet} mono />
@@ -223,56 +223,56 @@ export function OrderDetailView({ order }: { order: OrderDetail }) {
         {distro && <Stat label="Platform share" value={`${fmtUsdc(platformUsdc)} USDC`} mono />}
         {order.notes && (
           <div className="md:col-span-2">
-            <div className="text-xs font-mono tracking-widest text-neutral-500 uppercase mb-1">Notes</div>
-            <div className="text-sm text-neutral-700">{order.notes}</div>
+            <div className="text-xs font-mono tracking-widest text-ink-3 uppercase mb-1">Notes</div>
+            <div className="text-sm text-ink-2">{order.notes}</div>
           </div>
         )}
       </section>
 
       {/* Delivery */}
       {order.delivery_address ? (
-        <section className="bg-white border border-neutral-200 rounded-lg p-6">
+        <section className="bg-paper border border-line rounded-lg p-6">
           <div className="flex items-end justify-between mb-3">
             <h2 className="font-serif text-2xl tracking-tight">Ship to</h2>
             <div className="flex flex-wrap items-center gap-3">
               <button
                 type="button"
                 onClick={async () => { const ok = await copyToClipboard(addressLines(order.delivery_address!).join('\n')); flash(ok ? 'Address copied.' : 'Copy failed.'); }}
-                className="text-[10px] font-mono uppercase tracking-widest text-neutral-700 underline hover:no-underline"
+                className="text-[10px] font-mono uppercase tracking-widest text-ink-2 underline hover:no-underline"
               >
                 Copy address
               </button>
               <button
                 type="button"
                 onClick={async () => { const ok = await copyToClipboard(asCsv(order)); flash(ok ? 'CSV row copied.' : 'Copy failed.'); }}
-                className="text-[10px] font-mono uppercase tracking-widest text-neutral-700 underline hover:no-underline"
+                className="text-[10px] font-mono uppercase tracking-widest text-ink-2 underline hover:no-underline"
               >
                 Copy CSV row
               </button>
               <button
                 type="button"
                 onClick={() => download(`${order.order_ref}.txt`, asTxt(order), 'text/plain;charset=utf-8')}
-                className="text-[10px] font-mono uppercase tracking-widest text-neutral-700 underline hover:no-underline"
+                className="text-[10px] font-mono uppercase tracking-widest text-ink-2 underline hover:no-underline"
               >
                 Download .txt
               </button>
               <button
                 type="button"
                 onClick={() => download(`${order.order_ref}.md`, asMd(order), 'text/markdown;charset=utf-8')}
-                className="text-[10px] font-mono uppercase tracking-widest text-neutral-700 underline hover:no-underline"
+                className="text-[10px] font-mono uppercase tracking-widest text-ink-2 underline hover:no-underline"
               >
                 Download .md
               </button>
             </div>
           </div>
-          <pre className="font-mono text-sm text-neutral-900 bg-neutral-50 border border-neutral-200 rounded-md p-4 whitespace-pre-wrap leading-relaxed">
+          <pre className="font-mono text-sm text-ink bg-paper border border-line rounded-md p-4 whitespace-pre-wrap leading-relaxed">
 {addressLines(order.delivery_address).join('\n')}
           </pre>
         </section>
       ) : (
-        <section className="bg-white border border-neutral-200 rounded-lg p-6">
+        <section className="bg-paper border border-line rounded-lg p-6">
           <h2 className="font-serif text-2xl tracking-tight mb-2">No physical shipment</h2>
-          <p className="text-sm text-neutral-600">
+          <p className="text-sm text-ink-2">
             This is a {order.product.kind} order. No delivery address is required.
           </p>
         </section>
@@ -280,29 +280,29 @@ export function OrderDetailView({ order }: { order: OrderDetail }) {
 
       {/* On-chain */}
       {(order.mint_tx_hash || order.payout_tx_hash || distro?.seller_tx_hash) && (
-        <section className="bg-white border border-neutral-200 rounded-lg p-6">
+        <section className="bg-paper border border-line rounded-lg p-6">
           <h2 className="font-serif text-2xl tracking-tight mb-4">On-chain</h2>
           <ul className="space-y-2 text-sm">
             {order.mint_tx_hash && (
               <li>
-                <span className="font-mono text-[10px] uppercase tracking-widest text-neutral-500 mr-2">mint</span>
-                <a href={`${BASESCAN}${order.mint_tx_hash}`} target="_blank" rel="noopener noreferrer" className="font-mono text-neutral-900 underline hover:no-underline">
+                <span className="font-mono text-[10px] uppercase tracking-widest text-ink-3 mr-2">mint</span>
+                <a href={`${BASESCAN}${order.mint_tx_hash}`} target="_blank" rel="noopener noreferrer" className="font-mono text-ink underline hover:no-underline">
                   {order.mint_tx_hash.slice(0, 14)}…{order.mint_tx_hash.slice(-6)} &nearr;
                 </a>
               </li>
             )}
             {order.payout_tx_hash && (
               <li>
-                <span className="font-mono text-[10px] uppercase tracking-widest text-neutral-500 mr-2">payout</span>
-                <a href={`${BASESCAN}${order.payout_tx_hash}`} target="_blank" rel="noopener noreferrer" className="font-mono text-neutral-900 underline hover:no-underline">
+                <span className="font-mono text-[10px] uppercase tracking-widest text-ink-3 mr-2">payout</span>
+                <a href={`${BASESCAN}${order.payout_tx_hash}`} target="_blank" rel="noopener noreferrer" className="font-mono text-ink underline hover:no-underline">
                   {order.payout_tx_hash.slice(0, 14)}…{order.payout_tx_hash.slice(-6)} &nearr;
                 </a>
               </li>
             )}
             {distro?.seller_tx_hash && (
               <li>
-                <span className="font-mono text-[10px] uppercase tracking-widest text-neutral-500 mr-2">seller tx</span>
-                <a href={`${BASESCAN}${distro.seller_tx_hash}`} target="_blank" rel="noopener noreferrer" className="font-mono text-neutral-900 underline hover:no-underline">
+                <span className="font-mono text-[10px] uppercase tracking-widest text-ink-3 mr-2">seller tx</span>
+                <a href={`${BASESCAN}${distro.seller_tx_hash}`} target="_blank" rel="noopener noreferrer" className="font-mono text-ink underline hover:no-underline">
                   {distro.seller_tx_hash.slice(0, 14)}…{distro.seller_tx_hash.slice(-6)} &nearr;
                 </a>
               </li>
@@ -317,8 +317,8 @@ export function OrderDetailView({ order }: { order: OrderDetail }) {
 function Stat({ label, value, mono = false }: { label: string; value: string; mono?: boolean }) {
   return (
     <div>
-      <div className="text-xs font-mono tracking-widest text-neutral-500 uppercase mb-1">{label}</div>
-      <div className={`text-sm text-neutral-900 ${mono ? 'font-mono break-all' : ''}`}>{value}</div>
+      <div className="text-xs font-mono tracking-widest text-ink-3 uppercase mb-1">{label}</div>
+      <div className={`text-sm text-ink ${mono ? 'font-mono break-all' : ''}`}>{value}</div>
     </div>
   );
 }

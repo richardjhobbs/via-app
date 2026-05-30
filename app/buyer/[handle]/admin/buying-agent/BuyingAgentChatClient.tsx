@@ -57,7 +57,7 @@ export function BuyingAgentChatClient({ buyerId, handle, displayName, seedGreeti
       const json = await res.json();
       if (Array.isArray(json.memories)) setMemories(json.memories);
     } catch {
-      // silent — preference panel is non-critical
+      // silent - preference panel is non-critical
     }
   }
 
@@ -117,26 +117,26 @@ export function BuyingAgentChatClient({ buyerId, handle, displayName, seedGreeti
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-[1fr_280px] gap-8 items-start">
-      <div className="bg-white border border-neutral-200 rounded-lg shadow-sm">
+      <div className="bg-paper border border-line rounded-lg shadow-sm">
         <div className="max-h-[60vh] overflow-y-auto p-5 space-y-5">
           {turns.map((t, i) => (
             <div key={i} className={t.role === 'user' ? 'pl-12' : 'pr-12'}>
-              <div className="text-[10px] font-mono tracking-widest uppercase text-neutral-400 mb-1">
+              <div className="text-[10px] font-mono tracking-widest uppercase text-ink-3 mb-1">
                 {t.role === 'user' ? 'You' : `@${handle} agent`}
               </div>
-              <div className={`text-sm whitespace-pre-wrap leading-relaxed ${t.role === 'user' ? 'text-neutral-900' : 'text-neutral-800'}`}>
+              <div className={`text-sm whitespace-pre-wrap leading-relaxed ${t.role === 'user' ? 'text-ink' : 'text-ink'}`}>
                 {t.content}
               </div>
               {t.toolCalls && t.toolCalls.length > 0 && (
-                <details className="mt-2 text-[11px] font-mono text-neutral-500">
-                  <summary className="cursor-pointer hover:text-neutral-800">
+                <details className="mt-2 text-[11px] font-mono text-ink-3">
+                  <summary className="cursor-pointer hover:text-ink">
                     {t.toolCalls.length} tool call{t.toolCalls.length === 1 ? '' : 's'}
                   </summary>
-                  <ul className="mt-2 space-y-2 pl-3 border-l border-neutral-200">
+                  <ul className="mt-2 space-y-2 pl-3 border-l border-line">
                     {t.toolCalls.map((c, j) => (
                       <li key={j}>
-                        <div className="text-neutral-700">{c.name}</div>
-                        <div className="text-neutral-500 break-all">{c.result}</div>
+                        <div className="text-ink-2">{c.name}</div>
+                        <div className="text-ink-3 break-all">{c.result}</div>
                       </li>
                     ))}
                   </ul>
@@ -146,15 +146,15 @@ export function BuyingAgentChatClient({ buyerId, handle, displayName, seedGreeti
           ))}
           {sending && (
             <div className="pr-12">
-              <div className="text-[10px] font-mono tracking-widest uppercase text-neutral-400 mb-1">
+              <div className="text-[10px] font-mono tracking-widest uppercase text-ink-3 mb-1">
                 @{handle} agent
               </div>
-              <div className="text-sm text-neutral-400">thinking&hellip;</div>
+              <div className="text-sm text-ink-3">thinking&hellip;</div>
             </div>
           )}
           <div ref={endRef} />
         </div>
-        <div className="border-t border-neutral-200 p-4">
+        <div className="border-t border-line p-4">
           <textarea
             value={input}
             onChange={(e) => setInput(e.target.value)}
@@ -162,18 +162,18 @@ export function BuyingAgentChatClient({ buyerId, handle, displayName, seedGreeti
             placeholder={`Tell your agent what you want, what you will not buy, your budget. Enter to send, Shift+Enter for newline.`}
             rows={3}
             disabled={sending}
-            className="w-full bg-neutral-50 border border-neutral-300 rounded-md px-3 py-2 text-sm font-sans outline-none focus:border-neutral-900 transition-colors disabled:opacity-50"
+            className="w-full bg-paper border border-line-strong rounded-md px-3 py-2 text-sm font-sans outline-none focus:border-ink transition-colors disabled:opacity-50"
           />
-          {err && <p className="text-xs text-red-600 mt-2">{err}</p>}
+          {err && <p className="text-xs text-[color:var(--danger)] mt-2">{err}</p>}
           <div className="flex items-center justify-between mt-2">
-            <span className="text-[10px] font-mono uppercase tracking-widest text-neutral-400">
+            <span className="text-[10px] font-mono uppercase tracking-widest text-ink-3">
               session {sessionId.slice(0, 8)}
             </span>
             <button
               type="button"
               onClick={() => void send()}
               disabled={sending || !input.trim()}
-              className="px-4 py-2 bg-neutral-900 text-neutral-50 text-xs font-mono tracking-widest uppercase hover:bg-neutral-800 disabled:opacity-40 disabled:cursor-not-allowed transition-colors rounded-md"
+              className="px-4 py-2 bg-ink text-background text-xs font-mono tracking-widest uppercase hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed transition-colors rounded-md"
             >
               {sending ? 'Sending…' : 'Send'}
             </button>
@@ -181,33 +181,33 @@ export function BuyingAgentChatClient({ buyerId, handle, displayName, seedGreeti
         </div>
       </div>
 
-      <aside className="bg-white border border-neutral-200 rounded-lg p-4">
+      <aside className="bg-paper border border-line rounded-lg p-4">
         <div className="flex items-center justify-between mb-3">
-          <p className="text-xs font-mono tracking-widest uppercase text-neutral-500">Locked-in preferences</p>
+          <p className="text-xs font-mono tracking-widest uppercase text-ink-3">Locked-in preferences</p>
           <button
             type="button"
             onClick={() => void refreshMemories()}
-            className="text-[10px] font-mono uppercase tracking-widest text-neutral-400 hover:text-neutral-900"
+            className="text-[10px] font-mono uppercase tracking-widest text-ink-3 hover:text-ink"
           >
             Refresh
           </button>
         </div>
         {memories.length === 0 ? (
-          <p className="text-xs text-neutral-500">
+          <p className="text-xs text-ink-3">
             Nothing locked in yet. Tell the agent something above and it will appear here.
           </p>
         ) : (
           <ul className="space-y-3 max-h-[55vh] overflow-y-auto">
             {memories.map((m) => (
-              <li key={m.id} className="border-b border-neutral-100 pb-3 last:border-b-0">
-                <div className="text-[10px] font-mono uppercase tracking-widest text-neutral-400 mb-1">{m.type}</div>
-                <div className="text-xs font-medium text-neutral-900 mb-1">{m.title}</div>
-                <div className="text-xs text-neutral-600 leading-relaxed">{m.body}</div>
+              <li key={m.id} className="border-b border-line pb-3 last:border-b-0">
+                <div className="text-[10px] font-mono uppercase tracking-widest text-ink-3 mb-1">{m.type}</div>
+                <div className="text-xs font-medium text-ink mb-1">{m.title}</div>
+                <div className="text-xs text-ink-2 leading-relaxed">{m.body}</div>
               </li>
             ))}
           </ul>
         )}
-        <p className="text-[10px] font-mono text-neutral-400 mt-4 leading-relaxed">
+        <p className="text-[10px] font-mono text-ink-3 mt-4 leading-relaxed">
           When your profile is public, seller agents read a PII-safe slice of these at{' '}
           <code>/buyers/{handle}/mcp</code>.
         </p>

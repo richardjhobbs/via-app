@@ -64,50 +64,50 @@ export function DelegationForm({ buyerId, initialCaps }: Props) {
   }
 
   const inputClass =
-    'w-full bg-neutral-50 border border-neutral-300 rounded-md px-3 py-2 text-sm outline-none focus:border-neutral-900 transition-colors disabled:opacity-50';
+    'w-full bg-paper border border-line-strong rounded-md px-3 py-2 text-sm outline-none focus:border-ink transition-colors disabled:opacity-50';
 
   return (
-    <form onSubmit={save} className="bg-white border border-neutral-200 rounded-lg p-5 space-y-5">
+    <form onSubmit={save} className="bg-paper border border-line rounded-lg p-5 space-y-5">
       <div>
-        <label className="text-xs font-mono tracking-widest uppercase text-neutral-500 block mb-1">
+        <label className="text-xs font-mono tracking-widest uppercase text-ink-3 block mb-1">
           Max purchase (USD)
         </label>
-        <p className="text-xs text-neutral-500 mb-2">The most your agent may commit to a single order. Leave blank for no ceiling.</p>
+        <p className="text-xs text-ink-3 mb-2">The most your agent may commit to a single order. Leave blank for no ceiling.</p>
         <input type="number" min="0" step="0.01" value={maxPurchase} onChange={(e) => setMaxPurchase(e.target.value)} disabled={busy} className={inputClass} placeholder="e.g. 500" />
       </div>
 
       <div>
-        <label className="text-xs font-mono tracking-widest uppercase text-neutral-500 block mb-1">
+        <label className="text-xs font-mono tracking-widest uppercase text-ink-3 block mb-1">
           Auto-buy under (USD)
         </label>
-        <p className="text-xs text-neutral-500 mb-2">Orders below this may be accepted without asking you. Anything above queues for your approval.</p>
+        <p className="text-xs text-ink-3 mb-2">Orders below this may be accepted without asking you. Anything above queues for your approval.</p>
         <input type="number" min="0" step="0.01" value={autoBuy} onChange={(e) => setAutoBuy(e.target.value)} disabled={busy} className={inputClass} placeholder="e.g. 50" />
       </div>
 
       <div>
-        <label className="text-xs font-mono tracking-widest uppercase text-neutral-500 block mb-1">
+        <label className="text-xs font-mono tracking-widest uppercase text-ink-3 block mb-1">
           Categories allowed
         </label>
-        <p className="text-xs text-neutral-500 mb-2">Comma-separated. When set, your agent only pursues these. Leave blank to allow everything except blocked.</p>
+        <p className="text-xs text-ink-3 mb-2">Comma-separated. When set, your agent only pursues these. Leave blank to allow everything except blocked.</p>
         <input type="text" value={allowed} onChange={(e) => setAllowed(e.target.value)} disabled={busy} className={inputClass} placeholder="electronics, books, coffee" />
       </div>
 
       <div>
-        <label className="text-xs font-mono tracking-widest uppercase text-neutral-500 block mb-1">
+        <label className="text-xs font-mono tracking-widest uppercase text-ink-3 block mb-1">
           Categories blocked
         </label>
-        <p className="text-xs text-neutral-500 mb-2">Comma-separated. Your agent always refuses these.</p>
+        <p className="text-xs text-ink-3 mb-2">Comma-separated. Your agent always refuses these.</p>
         <input type="text" value={blocked} onChange={(e) => setBlocked(e.target.value)} disabled={busy} className={inputClass} placeholder="alcohol, tobacco" />
       </div>
 
-      {err && <p className="text-sm text-red-600">{err}</p>}
-      {msg && <p className="text-sm text-emerald-700">{msg}</p>}
+      {err && <p className="text-sm text-[color:var(--danger)]">{err}</p>}
+      {msg && <p className="text-sm text-[color:var(--live)]">{msg}</p>}
 
       <div className="flex justify-end">
         <button
           type="submit"
           disabled={busy}
-          className="px-5 py-3 bg-neutral-900 text-neutral-50 text-xs font-mono tracking-widest uppercase hover:bg-neutral-800 disabled:opacity-40 transition-colors rounded-md"
+          className="px-5 py-3 bg-ink text-background text-xs font-mono tracking-widest uppercase hover:opacity-90 disabled:opacity-40 transition-colors rounded-md"
         >
           {busy ? 'Saving…' : 'Save caps'}
         </button>
