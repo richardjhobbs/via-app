@@ -4,6 +4,7 @@ import { db } from '@/lib/app/db';
 import { getSellerUser } from '@/lib/app/seller-auth';
 import { FREE_LISTED_CAP, countListedFor } from '@/lib/app/limits';
 import { ProductsClient } from './ProductsClient';
+import { Wordmark } from '@/components/app/Wordmark';
 
 export const dynamic = 'force-dynamic';
 
@@ -35,7 +36,7 @@ export default async function SellerProductsPage({
       <header className="border-b border-line">
         <div className="max-w-5xl mx-auto px-6 py-5 flex items-center justify-between">
           <Link href={`/seller/${slug}/admin`} aria-label="Back to dashboard" className="inline-flex items-center gap-3">
-            <span className="wordmark text-ink">VIA</span>
+            <Wordmark />
             <span className="text-xs font-mono tracking-widest uppercase text-ink-3">
               <span aria-hidden>&larr;</span> Dashboard
             </span>

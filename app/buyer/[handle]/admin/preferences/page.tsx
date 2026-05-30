@@ -2,6 +2,7 @@ import { notFound } from 'next/navigation';
 import Link from 'next/link';
 import { db } from '@/lib/app/db';
 import { getBuyerUser } from '@/lib/app/buyer-auth';
+import { Wordmark } from '@/components/app/Wordmark';
 
 export const dynamic = 'force-dynamic';
 
@@ -48,7 +49,7 @@ export default async function BuyerPreferencesPage({
       <header className="border-b border-line">
         <div className="max-w-5xl mx-auto px-6 py-5 flex items-center justify-between">
           <Link href={`/buyer/${handle}/admin`} aria-label="Back to dashboard" className="inline-flex items-center gap-3">
-            <span className="wordmark text-ink">VIA</span>
+            <Wordmark />
             <span className="text-xs font-mono tracking-widest uppercase text-ink-3">
               <span aria-hidden>&larr;</span> Dashboard
             </span>

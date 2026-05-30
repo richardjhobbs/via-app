@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import { Wordmark } from '@/components/app/Wordmark';
 
 export const dynamic = 'force-static';
 
@@ -13,7 +14,7 @@ export default function SellerFaq() {
       <header className="border-b border-line">
         <div className="max-w-3xl mx-auto px-6 py-5 flex items-center justify-between">
           <Link href="/faq" aria-label="Back to FAQ" className="inline-flex items-center gap-3">
-            <span className="wordmark text-ink">VIA</span>
+            <Wordmark />
             <span className="text-xs font-mono tracking-widest uppercase text-ink-3">
               <span aria-hidden>&larr;</span> FAQ
             </span>

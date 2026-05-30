@@ -3,6 +3,7 @@
 import { Suspense, useState, useEffect } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
+import { Wordmark } from '@/components/app/Wordmark';
 
 function BuyerLoginInner() {
   const router = useRouter();
@@ -99,7 +100,7 @@ function BuyerLoginInner() {
 
   return (
     <div className="w-full max-w-sm px-6">
-      <Link href="/" aria-label="VIA home" className="wordmark text-ink inline-block mb-8">VIA</Link>
+      <Link href="/" aria-label="VIA home" className="inline-block mb-8"><Wordmark /></Link>
       <p className="text-xs font-mono tracking-widest uppercase text-ink-3 mb-2">Buying Agent</p>
 
       {mode === 'login' && (

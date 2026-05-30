@@ -2,6 +2,7 @@
 
 import { Suspense, useEffect, useState } from 'react';
 import Link from 'next/link';
+import { Wordmark } from '@/components/app/Wordmark';
 import { useRouter, useSearchParams } from 'next/navigation';
 
 type Mode = 'login' | 'forgot' | 'reset';
@@ -240,7 +241,7 @@ export default function SellerLoginPage() {
     <main className="min-h-screen bg-background text-ink flex flex-col">
       <header className="border-b border-line">
         <div className="max-w-5xl mx-auto px-6 py-5 flex items-center justify-between">
-          <Link href="/" aria-label="VIA home" className="wordmark text-ink">VIA</Link>
+          <Link href="/" aria-label="VIA home"><Wordmark /></Link>
           <span className="text-xs font-mono tracking-widest uppercase text-ink-3">Seller</span>
         </div>
       </header>

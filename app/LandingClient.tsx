@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import ThemeToggle from '@/components/app/ThemeToggle';
+import { Wordmark } from '@/components/app/Wordmark';
 
 /* ──────────────────────────────────────────────────────────────────────────
    Landing "The Seam", Maison design. Sellers left, buyers right, one live deal
@@ -154,7 +155,7 @@ export default function LandingClient() {
       <header className="via-top">
         <div className="via-top-inner">
           <a className="uc-mono via-top-link" href="https://getvia.xyz" style={{ fontSize: 10, color: 'var(--ink-3)' }}>getvia.xyz ↗</a>
-          <Link href="/" aria-label="VIA home" className="wordmark" style={{ textAlign: 'center' }}>VIA</Link>
+          <Link href="/" aria-label="VIA home" style={{ display: 'inline-flex', justifyContent: 'center' }}><Wordmark /></Link>
           <div style={{ display: 'flex', gap: 18, alignItems: 'center', justifyContent: 'flex-end' }}>
             <Link href="/faq" className="via-faq-link">FAQ</Link>
             <Link href="/seller/login" className="via-top-link" style={{ fontSize: 13, color: 'var(--ink-2)', textDecoration: 'none' }}>Seller sign in →</Link>

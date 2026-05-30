@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import ThemeToggle from '@/components/app/ThemeToggle';
+import { Wordmark } from '@/components/app/Wordmark';
 
 /* ──────────────────────────────────────────────────────────────────────────
    Buyer dashboard, Maison design. Identity (name, agent code, MCP url) is real;
@@ -160,7 +161,7 @@ export default function BuyerDashboardClient({
             <Link href={intentsHref}>Briefs</Link>
             <Link href={intentsHref}>Bookings</Link>
           </nav>
-          <Link href="/" aria-label="VIA home" className="wordmark" style={{ textAlign: 'center' }}>VIA</Link>
+          <Link href="/" aria-label="VIA home" style={{ display: 'inline-flex', justifyContent: 'center' }}><Wordmark /></Link>
           <div className="dash-right">
             <a href={mcpUrl} target="_blank" rel="noreferrer" className="dash-mcp uc-mono">MCP ↗</a>
             <div className="dash-acct"><span className="dash-avatar" />{name}</div>

@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import ThemeToggle from '@/components/app/ThemeToggle';
 import { NotificationBell } from '@/components/app/NotificationBell';
+import { Wordmark } from '@/components/app/Wordmark';
 
 /* ──────────────────────────────────────────────────────────────────────────
    Seller dashboard, Maison design. Identity (name, agent code, MCP url) and the
@@ -165,7 +166,7 @@ export default function SellerDashboardClient({
             <Link href={salesHref}>Sales</Link>
             <Link href={shippingHref}>Shipping</Link>
           </nav>
-          <Link href="/" aria-label="VIA home" className="wordmark" style={{ textAlign: 'center' }}>VIA</Link>
+          <Link href="/" aria-label="VIA home" style={{ display: 'inline-flex', justifyContent: 'center' }}><Wordmark /></Link>
           <div className="dash-right">
             <a href={mcpUrl} target="_blank" rel="noreferrer" className="dash-mcp uc-mono">MCP ↗</a>
             <NotificationBell />
