@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { setBuyerAuthCookies } from '@/lib/app/buyer-auth';
+import { clientIp, isRateLimited } from '@/lib/app/rate-limit';
 
 export const dynamic = 'force-dynamic';
 
@@ -9,9 +10,13 @@ const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? '',
 );
 
-// POST /api/buyer/auth/reset-password — set new password with recovery tokens
+// POST /api/buyer/auth/reset-password : set new password with recovery tokens
 export async function POST(req: NextRequest) {
   try {
+    if (isRateLimited(`buyer-reset|${clientIp(req)}`, 10, 60_000)) {
+      return NextResponse.json({ error: 'Too many attempts. Please wait a minute and try again.' }, { status: 429 });
+    }
+
     const { access_token, refresh_token, password } = await req.json();
 
     if (!password || password.length < 8) {

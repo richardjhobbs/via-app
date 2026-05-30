@@ -63,7 +63,7 @@ export default function OnboardWallet() {
     }
     if (!ADDR_RE.test(agentAddress)) {
       setErr(testMode
-        ? 'Test wallet failed to derive — please reload.'
+        ? 'Test wallet failed to derive. Please reload.'
         : 'Sign in with email or Google to provision your Sales Agent’s wallet before continuing.');
       return;
     }

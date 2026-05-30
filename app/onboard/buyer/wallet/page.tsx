@@ -49,7 +49,7 @@ export default function BuyerWallet() {
     }
     if (!ADDR_RE.test(agentAddress)) {
       setErr(testMode
-        ? 'Test wallet failed to derive — please reload.'
+        ? 'Test wallet failed to derive. Please reload.'
         : 'Sign in with email or Google to provision your Buying Agent’s wallet.');
       return;
     }

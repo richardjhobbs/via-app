@@ -14,7 +14,7 @@ const supabase = createClient(
 );
 
 /**
- * POST /api/seller/auth/register — self-serve seller onboarding commit.
+ * POST /api/seller/auth/register : self-serve seller onboarding commit.
  *
  * Body:
  *   {
@@ -38,7 +38,7 @@ const supabase = createClient(
  *      agent_wallet_address = Sales Agent's own EOA.
  *   3. Fires ERC-8004 registration via getvia.xyz/mcp `via_register_agent`,
  *      passing the AGENT's wallet (not the payout wallet). On success,
- *      records erc8004_agent_id on the row. Failure is non-fatal — the
+ *      records erc8004_agent_id on the row. Failure is non-fatal: the
  *      seller is created and can re-trigger from the dashboard.
  *   4. Returns { seller } so the wizard can redirect to the Sales Agent
  *      chat surface.
@@ -78,7 +78,7 @@ export async function POST(req: NextRequest) {
   if (!sellerName)                                    return NextResponse.json({ error: 'business name required' },         { status: 400 });
   if (!['product','service','mixed'].includes(kind))  return NextResponse.json({ error: "kind must be 'product', 'service', or 'mixed'" }, { status: 400 });
   if (!ethers.isAddress(walletAddress))               return NextResponse.json({ error: 'invalid payout wallet address' },  { status: 400 });
-  if (!ethers.isAddress(agentWalletAddress))          return NextResponse.json({ error: 'invalid agent wallet address — provision the Sales Agent wallet in step 3' }, { status: 400 });
+  if (!ethers.isAddress(agentWalletAddress))          return NextResponse.json({ error: 'invalid agent wallet address. Provision the Sales Agent wallet in step 3' }, { status: 400 });
   if (walletAddress.toLowerCase() === agentWalletAddress.toLowerCase()) {
     return NextResponse.json({ error: 'payout wallet and agent wallet must be different EOAs' }, { status: 400 });
   }
@@ -96,7 +96,7 @@ export async function POST(req: NextRequest) {
   // ── Slug uniqueness check ──────────────────────────────────────────
   const { data: existing } = await db.from('app_sellers').select('id').eq('slug', slug).maybeSingle();
   if (existing) {
-    return NextResponse.json({ error: `slug "${slug}" already taken — please choose a different business name` }, { status: 409 });
+    return NextResponse.json({ error: `slug "${slug}" already taken. Please choose a different business name` }, { status: 409 });
   }
 
   // ── Create or recover the Supabase auth user ────────────────────────
@@ -170,7 +170,7 @@ export async function POST(req: NextRequest) {
   if (sellerErr || !seller) {
     console.error('[onboard/register] app_sellers insert failed', sellerErr);
     if (sellerErr?.code === '23505') {
-      return NextResponse.json({ error: 'slug taken (race) — pick a different name' }, { status: 409 });
+      return NextResponse.json({ error: 'slug taken (race). Pick a different name' }, { status: 409 });
     }
     return NextResponse.json({ error: 'failed to create seller record' }, { status: 500 });
   }
@@ -182,14 +182,14 @@ export async function POST(req: NextRequest) {
   if (shouldSkipErc8004(email)) {
     const placeholder = syntheticTestAgentId();
     await db.from('app_sellers').update({ erc8004_agent_id: placeholder }).eq('id', seller.id);
-    console.log(`[onboard/register] TEST MODE — skipped ERC-8004 mint for seller=${seller.slug}, placeholder=${placeholder}`);
+    console.log(`[onboard/register] TEST MODE: skipped ERC-8004 mint for seller=${seller.slug}, placeholder=${placeholder}`);
   } else {
-    // Real mint — calls getvia.xyz/mcp via_register_agent which signs the
+    // Real mint: calls getvia.xyz/mcp via_register_agent which signs the
     // on-chain register() with VIA_REGISTRAR_PRIVATE_KEY and records
     // agentWallet = the supplied wallet_address. Non-fatal on failure.
     registerAgentIdentity(
       seller.id,
-      `${sellerName} — Sales Agent`,
+      `${sellerName} Sales Agent`,
       agentWallet,
       'sales_agent',
     )

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import crypto from 'crypto';
 import { issueAdminToken } from '@/lib/app/auth';
+import { clientIp, isRateLimited } from '@/lib/app/rate-limit';
 
 export const dynamic = 'force-dynamic';
 
@@ -15,6 +16,10 @@ export async function POST(req: NextRequest) {
   const adminSecret = process.env.ADMIN_SECRET;
   if (!adminSecret) {
     return NextResponse.json({ error: 'ADMIN_SECRET not configured' }, { status: 500 });
+  }
+
+  if (isRateLimited(`admin-login|${clientIp(req)}`, 10, 60_000)) {
+    return NextResponse.redirect(new URL('/admin/login?error=too-many', req.url), 303);
   }
 
   const form = await req.formData();

@@ -17,7 +17,7 @@ const UNLIMITED_SUPPLY = 10_000; // RRG.sol caps edition size at 1-10000; use th
  *   1. Claim next global token_id via app_next_token_id RPC.
  *   2. Fire registerDrop(tokenId, PLATFORM_WALLET, price_6dp, max_supply).
  *      `creator` must be PLATFORM_WALLET so the 97.5/2.5 auto-payout
- *      pattern works — see [lib/app/contract.ts:5-15] post-mortem.
+ *      pattern works, see [lib/app/contract.ts:5-15] post-mortem.
  *   3. Update the row: token_id, on_chain_tx_hash, on_chain_status='registered'.
  *
  * Test mode: when the seller's contact_email matches the +test/+e2e alias
@@ -150,6 +150,24 @@ export async function POST(
     .single();
 
   if (updErr) return NextResponse.json({ error: updErr.message }, { status: 500 });
+
+  // Append-only audit row for the mint (review finding L7). Non-fatal: a
+  // failed audit write must not roll back a product that is already minted
+  // and registered on-chain, but we log loudly so the gap is visible.
+  try {
+    await db.from('app_publish_audit').insert({
+      seller_id:     sellerId,
+      product_id:    productId,
+      actor_user_id: auth.user.id,
+      token_id:      tokenId,
+      tx_hash:       txHash,
+      chain_skipped: skipChain,
+      price_minor:   priceMinor,
+      max_supply:    maxSupply,
+    });
+  } catch (e) {
+    console.error('[publish] audit insert failed', { sellerId, productId, tokenId, txHash, err: e });
+  }
 
   return NextResponse.json({
     product:    updated,

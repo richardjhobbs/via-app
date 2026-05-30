@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
+import { clientIp, isRateLimited } from '@/lib/app/rate-limit';
 
 export const dynamic = 'force-dynamic';
 
@@ -8,9 +9,13 @@ const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? '',
 );
 
-// POST /api/buyer/auth/forgot-password — send password reset email
+// POST /api/buyer/auth/forgot-password : send password reset email
 export async function POST(req: NextRequest) {
   try {
+    if (isRateLimited(`buyer-forgot|${clientIp(req)}`, 5, 60_000)) {
+      return NextResponse.json({ error: 'Too many requests. Please wait a minute and try again.' }, { status: 429 });
+    }
+
     const { email } = await req.json();
 
     if (!email) {
