@@ -59,14 +59,14 @@ export default function BuyerDone() {
     <section className="flex-1 px-6 py-16">
       <div className="max-w-2xl mx-auto">
         <OnboardStepsBuyer current={4} />
-        <p className="text-xs font-mono tracking-widest text-neutral-500 mb-3 uppercase">Step 4 of 4</p>
+        <p className="text-xs font-mono tracking-widest text-ink-3 mb-3 uppercase">Step 4 of 4</p>
         <h1 className="font-serif text-4xl md:text-5xl leading-[1.1] tracking-tight mb-3">
           {err ? 'Something stopped us.' : 'Provisioning your Buying Agent…'}
         </h1>
         {err ? (
-          <p className="text-red-600 text-sm">{err}</p>
+          <p className="text-[color:var(--danger)] text-sm">{err}</p>
         ) : (
-          <p className="text-neutral-600">Creating your account, registering your agent on ERC-8004, and routing you to its training surface.</p>
+          <p className="text-ink-2">Creating your account, registering your agent on ERC-8004, and routing you to its training surface.</p>
         )}
       </div>
     </section>

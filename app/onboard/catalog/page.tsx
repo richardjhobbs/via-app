@@ -79,46 +79,46 @@ export default function OnboardCatalog() {
     <section className="flex-1 px-6 py-16">
       <div className="max-w-2xl mx-auto">
         <OnboardSteps current={4} />
-        <p className="text-xs font-mono tracking-widest text-neutral-500 mb-3 uppercase">Step 4 of 5</p>
+        <p className="text-xs font-mono tracking-widest text-ink-3 mb-3 uppercase">Step 4 of 5</p>
         <h1 className="font-serif text-4xl md:text-5xl leading-[1.1] tracking-tight mb-3">
           How does your catalog work?
         </h1>
-        <p className="text-neutral-600 mb-4 max-w-lg">
+        <p className="text-ink-2 mb-4 max-w-lg">
           We pick this up so your Sales Agent has something concrete to pitch. You can change
           it later from the dashboard.
         </p>
-        <p className="text-sm text-neutral-500 mb-10 max-w-lg">
+        <p className="text-sm text-ink-3 mb-10 max-w-lg">
           Your buyer is an agent, and agents buy on data, not pictures.{' '}
-          <a href="/faq/sellers" target="_blank" rel="noopener noreferrer" className="underline hover:text-neutral-900">
+          <a href="/faq/sellers" target="_blank" rel="noopener noreferrer" className="underline hover:text-ink">
             See how to make your product data rich
           </a>.
         </p>
 
         <form onSubmit={onSubmit} className="space-y-5 max-w-xl">
           <fieldset>
-            <legend className="text-xs font-mono tracking-widest text-neutral-500 uppercase block mb-3">Catalog source</legend>
+            <legend className="text-xs font-mono tracking-widest text-ink-3 uppercase block mb-3">Catalog source</legend>
             <div className="space-y-2">
-              <label className={`flex items-start gap-3 p-4 border rounded-md cursor-pointer ${source === 'shopify' ? 'border-neutral-900 bg-white' : 'border-neutral-300 bg-white/50 hover:border-neutral-600'}`}>
+              <label className={`flex items-start gap-3 p-4 border cursor-pointer ${source === 'shopify' ? 'border-ink bg-paper' : 'border-line-strong bg-paper hover:border-ink'}`}>
                 <input type="radio" name="src" value="shopify" checked={source === 'shopify'} onChange={() => setSource('shopify')} className="mt-1" />
                 <div>
                   <div className="font-medium">Shopify store</div>
-                  <div className="text-sm text-neutral-600">We poll your public catalog and surface live stock. Your storefront stays as-is.</div>
+                  <div className="text-sm text-ink-2">We poll your public catalog and surface live stock. Your storefront stays as-is.</div>
                 </div>
               </label>
 
-              <label className={`flex items-start gap-3 p-4 border rounded-md cursor-pointer ${source === 'csv' ? 'border-neutral-900 bg-white' : 'border-neutral-300 bg-white/50 hover:border-neutral-600'}`}>
+              <label className={`flex items-start gap-3 p-4 border cursor-pointer ${source === 'csv' ? 'border-ink bg-paper' : 'border-line-strong bg-paper hover:border-ink'}`}>
                 <input type="radio" name="src" value="csv" checked={source === 'csv'} onChange={() => setSource('csv')} className="mt-1" />
                 <div>
                   <div className="font-medium">Upload a CSV later</div>
-                  <div className="text-sm text-neutral-600">Add products manually from the dashboard after onboarding.</div>
+                  <div className="text-sm text-ink-2">Add products manually from the dashboard after onboarding.</div>
                 </div>
               </label>
 
-              <label className={`flex items-start gap-3 p-4 border rounded-md cursor-pointer ${source === 'services' ? 'border-neutral-900 bg-white' : 'border-neutral-300 bg-white/50 hover:border-neutral-600'}`}>
+              <label className={`flex items-start gap-3 p-4 border cursor-pointer ${source === 'services' ? 'border-ink bg-paper' : 'border-line-strong bg-paper hover:border-ink'}`}>
                 <input type="radio" name="src" value="services" checked={source === 'services'} onChange={() => setSource('services')} className="mt-1" />
                 <div>
                   <div className="font-medium">I sell services</div>
-                  <div className="text-sm text-neutral-600">Describe your offer to the Sales Agent in the next step. No catalog to sync.</div>
+                  <div className="text-sm text-ink-2">Describe your offer to the Sales Agent in the next step. No catalog to sync.</div>
                 </div>
               </label>
             </div>
@@ -126,34 +126,30 @@ export default function OnboardCatalog() {
 
           {source === 'shopify' && (
             <label className="block">
-              <span className="text-xs font-mono tracking-widest text-neutral-500 uppercase block mb-2">Shopify domain</span>
+              <span className="text-xs font-mono tracking-widest text-ink-3 uppercase block mb-2">Shopify domain</span>
               <input
                 type="text"
                 value={shopify}
                 onChange={(e) => setShopify(e.target.value)}
                 placeholder="your-store.myshopify.com"
-                className="w-full bg-white border border-neutral-300 px-4 py-3 text-base font-mono outline-none focus:border-neutral-900 transition-colors rounded-md"
+                className="w-full bg-paper border border-line-strong px-4 py-3 text-base font-mono outline-none focus:border-ink transition-colors"
               />
             </label>
           )}
 
-          {err && <p className="text-sm text-red-600">{err}</p>}
+          {err && <p className="text-sm text-[color:var(--danger)]">{err}</p>}
 
           <div className="flex items-center justify-between pt-2">
             <button
               type="button"
               disabled={busy}
               onClick={() => router.push('/onboard/wallet')}
-              className="text-xs font-mono tracking-widest uppercase text-neutral-500 hover:text-neutral-900 transition-colors disabled:opacity-40"
+              className="text-xs font-mono tracking-widest uppercase text-ink-3 hover:text-ink transition-colors disabled:opacity-40"
             >
               <span aria-hidden>←</span> Back
             </button>
-            <button
-              type="submit"
-              disabled={busy}
-              className="px-6 py-3 bg-neutral-900 text-neutral-50 text-xs font-mono tracking-widest uppercase hover:bg-neutral-800 transition-colors rounded-md disabled:opacity-50"
-            >
-              {busy ? 'Creating account…' : 'Create Sales Agent →'}
+            <button type="submit" disabled={busy} className="btn disabled:opacity-50">
+              {busy ? 'Creating account…' : <>Create Sales Agent <span className="arrow" aria-hidden>→</span></>}
             </button>
           </div>
         </form>

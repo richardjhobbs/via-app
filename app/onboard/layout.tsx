@@ -1,5 +1,4 @@
 import type { ReactNode } from 'react';
-import Image from 'next/image';
 import Link from 'next/link';
 
 export const metadata = {
@@ -8,24 +7,15 @@ export const metadata = {
 
 export default function OnboardLayout({ children }: { children: ReactNode }) {
   return (
-    <main className="min-h-screen bg-neutral-50 text-neutral-900 flex flex-col">
-      <header className="bg-neutral-900 text-neutral-100">
+    <main className="min-h-screen bg-background text-ink flex flex-col">
+      <header className="border-b border-line">
         <div className="max-w-3xl mx-auto px-6 py-5 flex items-center justify-between">
-          <Link href="/" aria-label="VIA home" className="inline-flex items-center">
-            <Image
-              src="/vialogowhite.png"
-              alt="VIA"
-              width={72}
-              height={28}
-              priority
-              className="h-7 w-auto"
-            />
-          </Link>
+          <Link href="/" aria-label="VIA home" className="wordmark text-ink">VIA</Link>
           <a
             href="https://getvia.xyz"
-            className="text-xs font-mono tracking-widest uppercase text-neutral-400 hover:text-neutral-100 transition-colors"
+            className="uc-mono text-ink-3 hover:text-ink transition-colors"
           >
-            getvia.xyz
+            getvia.xyz ↗
           </a>
         </div>
       </header>

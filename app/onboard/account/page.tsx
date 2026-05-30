@@ -38,13 +38,13 @@ function AccountInner() {
     <section className="flex-1 px-6 py-16">
       <div className="max-w-2xl mx-auto">
         {role === 'buyer' ? <OnboardStepsBuyer current={1} /> : <OnboardSteps current={1} />}
-        <p className="text-xs font-mono tracking-widest text-neutral-500 mb-3 uppercase">
+        <p className="text-xs font-mono tracking-widest text-ink-3 mb-3 uppercase">
           Step 1 of {role === 'buyer' ? '4' : '5'} · {role === 'buyer' ? 'Buying Agent' : 'Sales Agent'}
         </p>
         <h1 className="font-serif text-4xl md:text-5xl leading-[1.1] tracking-tight mb-3">
           Create your account.
         </h1>
-        <p className="text-neutral-600 mb-10 max-w-lg">
+        <p className="text-ink-2 mb-10 max-w-lg">
           {role === 'buyer'
             ? 'We use this to sign you in so you can train your agent, set your preferences and caps, and review what it buys for you.'
             : 'We use this to sign you in so you can update your store, see payouts, converse with your agent, and check receipts.'}
@@ -52,19 +52,19 @@ function AccountInner() {
 
         <form onSubmit={onSubmit} className="space-y-5 max-w-md">
           <label className="block">
-            <span className="text-xs font-mono tracking-widest text-neutral-500 uppercase block mb-2">Email</span>
+            <span className="text-xs font-mono tracking-widest text-ink-3 uppercase block mb-2">Email</span>
             <input
               type="email"
               required
               autoComplete="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              className="w-full bg-white border border-neutral-300 px-4 py-3 text-base outline-none focus:border-neutral-900 transition-colors rounded-md"
+              className="w-full bg-paper border border-line-strong px-4 py-3 text-base outline-none focus:border-ink transition-colors"
             />
           </label>
 
           <label className="block">
-            <span className="text-xs font-mono tracking-widest text-neutral-500 uppercase block mb-2">Password</span>
+            <span className="text-xs font-mono tracking-widest text-ink-3 uppercase block mb-2">Password</span>
             <input
               type="password"
               required
@@ -72,26 +72,23 @@ function AccountInner() {
               minLength={8}
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              className="w-full bg-white border border-neutral-300 px-4 py-3 text-base outline-none focus:border-neutral-900 transition-colors rounded-md"
+              className="w-full bg-paper border border-line-strong px-4 py-3 text-base outline-none focus:border-ink transition-colors"
             />
-            <span className="text-xs text-neutral-500 mt-2 block">Minimum 8 characters.</span>
+            <span className="text-xs text-ink-3 mt-2 block">Minimum 8 characters.</span>
           </label>
 
-          {err && <p className="text-sm text-red-600">{err}</p>}
+          {err && <p className="text-sm text-[color:var(--danger)]">{err}</p>}
 
-          <button
-            type="submit"
-            className="px-6 py-3 bg-neutral-900 text-neutral-50 text-xs font-mono tracking-widest uppercase hover:bg-neutral-800 transition-colors rounded-md"
-          >
-            Continue <span aria-hidden>→</span>
+          <button type="submit" className="btn">
+            Continue <span className="arrow" aria-hidden>→</span>
           </button>
         </form>
 
-        <p className="text-sm text-neutral-600 mt-6">
+        <p className="text-sm text-ink-2 mt-6">
           Already have an account?{' '}
           <Link
             href={role === 'buyer' ? '/buyer/login' : '/seller/login'}
-            className="underline underline-offset-4 hover:text-neutral-900"
+            className="underline underline-offset-4 hover:text-ink"
           >
             Log in
           </Link>

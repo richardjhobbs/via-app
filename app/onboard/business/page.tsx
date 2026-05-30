@@ -54,50 +54,50 @@ export default function OnboardBusiness() {
     <section className="flex-1 px-6 py-16">
       <div className="max-w-2xl mx-auto">
         <OnboardSteps current={2} />
-        <p className="text-xs font-mono tracking-widest text-neutral-500 mb-3 uppercase">Step 2 of 5</p>
+        <p className="text-xs font-mono tracking-widest text-ink-3 mb-3 uppercase">Step 2 of 5</p>
         <h1 className="font-serif text-4xl md:text-5xl leading-[1.1] tracking-tight mb-3">
           What do you offer?
         </h1>
-        <p className="text-neutral-600 mb-10 max-w-lg">
+        <p className="text-ink-2 mb-10 max-w-lg">
           Your business name, what you sell, and where buyers can learn more. Buying agents will
           read this when they discover you.
         </p>
 
         <form onSubmit={onSubmit} className="space-y-5 max-w-xl">
           <label className="block">
-            <span className="text-xs font-mono tracking-widest text-neutral-500 uppercase block mb-2">Business name</span>
+            <span className="text-xs font-mono tracking-widest text-ink-3 uppercase block mb-2">Business name</span>
             <input
               type="text" required value={name}
               onChange={(e) => setName(e.target.value)}
-              className="w-full bg-white border border-neutral-300 px-4 py-3 text-base outline-none focus:border-neutral-900 transition-colors rounded-md"
+              className="w-full bg-paper border border-line-strong px-4 py-3 text-base outline-none focus:border-ink transition-colors"
             />
           </label>
 
           <label className="block">
-            <span className="text-xs font-mono tracking-widest text-neutral-500 uppercase block mb-2">URL slug</span>
+            <span className="text-xs font-mono tracking-widest text-ink-3 uppercase block mb-2">URL slug</span>
             <div className="flex items-center gap-2">
-              <span className="text-sm text-neutral-500 font-mono">app.getvia.xyz/seller/</span>
+              <span className="text-sm text-ink-3 font-mono">app.getvia.xyz/seller/</span>
               <input
                 type="text" required value={effectiveSlug}
                 onChange={(e) => { setSlug(slugifyName(e.target.value)); setTouchedSlug(true); }}
-                className="flex-1 bg-white border border-neutral-300 px-4 py-3 text-base font-mono outline-none focus:border-neutral-900 transition-colors rounded-md"
+                className="flex-1 bg-paper border border-line-strong px-4 py-3 text-base font-mono outline-none focus:border-ink transition-colors"
               />
             </div>
-            <span className="text-xs text-neutral-500 mt-2 block">Lowercase letters, numbers, hyphens. Auto-derived from your name; edit if you want.</span>
+            <span className="text-xs text-ink-3 mt-2 block">Lowercase letters, numbers, hyphens. Auto-derived from your name; edit if you want.</span>
           </label>
 
           <fieldset>
-            <legend className="text-xs font-mono tracking-widest text-neutral-500 uppercase block mb-2">What kind of seller?</legend>
+            <legend className="text-xs font-mono tracking-widest text-ink-3 uppercase block mb-2">What kind of seller?</legend>
             <div className="grid grid-cols-3 gap-2">
               {(['product', 'service', 'mixed'] as const).map((k) => (
                 <button
                   type="button"
                   key={k}
                   onClick={() => setKind(k)}
-                  className={`px-4 py-3 text-sm border rounded-md transition-colors ${
+                  className={`px-4 py-3 text-sm border transition-colors ${
                     kind === k
-                      ? 'bg-neutral-900 text-neutral-50 border-neutral-900'
-                      : 'bg-white text-neutral-700 border-neutral-300 hover:border-neutral-900'
+                      ? 'bg-ink text-background border-ink'
+                      : 'bg-paper text-ink-2 border-line-strong hover:border-ink'
                   }`}
                 >
                   {k === 'product' && 'Physical or digital goods'}
@@ -109,40 +109,37 @@ export default function OnboardBusiness() {
           </fieldset>
 
           <label className="block">
-            <span className="text-xs font-mono tracking-widest text-neutral-500 uppercase block mb-2">One-line description</span>
+            <span className="text-xs font-mono tracking-widest text-ink-3 uppercase block mb-2">One-line description</span>
             <input
               type="text" value={description}
               onChange={(e) => setDescription(e.target.value)}
               placeholder="What you sell or offer, in one line."
-              className="w-full bg-white border border-neutral-300 px-4 py-3 text-base outline-none focus:border-neutral-900 transition-colors rounded-md"
+              className="w-full bg-paper border border-line-strong px-4 py-3 text-base outline-none focus:border-ink transition-colors"
             />
           </label>
 
           <label className="block">
-            <span className="text-xs font-mono tracking-widest text-neutral-500 uppercase block mb-2">Website (optional)</span>
+            <span className="text-xs font-mono tracking-widest text-ink-3 uppercase block mb-2">Website (optional)</span>
             <input
               type="url" value={websiteUrl}
               onChange={(e) => setWebsiteUrl(e.target.value)}
               placeholder="https://"
-              className="w-full bg-white border border-neutral-300 px-4 py-3 text-base outline-none focus:border-neutral-900 transition-colors rounded-md"
+              className="w-full bg-paper border border-line-strong px-4 py-3 text-base outline-none focus:border-ink transition-colors"
             />
           </label>
 
-          {err && <p className="text-sm text-red-600">{err}</p>}
+          {err && <p className="text-sm text-[color:var(--danger)]">{err}</p>}
 
           <div className="flex items-center justify-between pt-2">
             <button
               type="button"
               onClick={() => router.push('/onboard/account?role=seller')}
-              className="text-xs font-mono tracking-widest uppercase text-neutral-500 hover:text-neutral-900 transition-colors"
+              className="text-xs font-mono tracking-widest uppercase text-ink-3 hover:text-ink transition-colors"
             >
               <span aria-hidden>←</span> Back
             </button>
-            <button
-              type="submit"
-              className="px-6 py-3 bg-neutral-900 text-neutral-50 text-xs font-mono tracking-widest uppercase hover:bg-neutral-800 transition-colors rounded-md"
-            >
-              Continue <span aria-hidden>→</span>
+            <button type="submit" className="btn">
+              Continue <span className="arrow" aria-hidden>→</span>
             </button>
           </div>
         </form>

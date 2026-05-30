@@ -22,6 +22,8 @@
   --accent: #6b4f3a;   /* muted brass */
   --paper: #ffffff;
   --live: #2b9a66;
+  --danger: #b5453a;
+  --warning: #9a6b2b;
 
   /* Back-compat aliases for any remaining legacy classes. */
   --background: var(--bg);
@@ -39,6 +41,8 @@
   --accent: #c9a477;
   --paper: #1b1714;
   --live: #3dbb82;
+  --danger: #d66a5e;
+  --warning: #cda35f;
 
   --background: var(--bg);
   --foreground: var(--ink);
