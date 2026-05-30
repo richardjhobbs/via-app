@@ -1,6 +1,7 @@
 import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
 import { db } from '@/lib/app/db';
+import { verifyAdminToken } from '@/lib/app/auth';
 import type { Agent } from './types';
 
 const AGENT_SESSION_COOKIE = 'via_agent_session';
@@ -38,11 +39,10 @@ export async function clearAgentSession() {
   cookieStore.delete(AGENT_SESSION_COOKIE);
 }
 
-/** Admin auth check — same pattern as RRG. */
+/** Admin auth check. Validates the derived admin_token cookie (see lib/app/auth). */
 export async function isAdmin(): Promise<boolean> {
   const cookieStore = await cookies();
-  const token = cookieStore.get('admin_token')?.value;
-  return token === process.env.ADMIN_SECRET;
+  return verifyAdminToken(cookieStore.get('admin_token')?.value);
 }
 
 export function adminUnauthorized() {

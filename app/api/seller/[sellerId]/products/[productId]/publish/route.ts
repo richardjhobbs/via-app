@@ -46,6 +46,17 @@ export async function POST(
   if (product.on_chain_status === 'registered') {
     return NextResponse.json({ error: 'Product is already published on-chain', product }, { status: 409 });
   }
+  // A non-null token_id on an unregistered row means a prior publish claimed
+  // and reserved a token but never reached 'registered' (crash mid-mint, or a
+  // failed registerDrop). Re-publishing would claim a SECOND token_id and mint
+  // again. Refuse and require manual reconciliation of the on-chain state.
+  if (product.token_id != null) {
+    return NextResponse.json({
+      error: 'Product has a reserved token_id from a prior publish attempt that did not complete. Reconcile the on-chain state before re-publishing to avoid a duplicate mint.',
+      token_id: product.token_id,
+      on_chain_status: product.on_chain_status,
+    }, { status: 409 });
+  }
 
   // Free-tier cap: max FREE_LISTED_CAP active + registered products per seller.
   const listedCount = await countListedFor(sellerId);
@@ -73,6 +84,27 @@ export async function POST(
     return NextResponse.json({ error: `Failed to claim token_id: ${tokenErr?.message ?? 'null'}` }, { status: 500 });
   }
   const tokenId = Number(tokenIdData);
+
+  // Reserve the claimed token_id on the row BEFORE minting. The `is('token_id',
+  // null)` guard makes this a compare-and-set: two concurrent publishes cannot
+  // both win it, and a crash between the mint and the final 'registered' write
+  // leaves a recoverable row (token_id set, status still pre-registered) that
+  // the entry guard above refuses to re-publish, so we never double-mint.
+  const { data: reserved, error: resErr } = await db
+    .from('app_seller_products')
+    .update({ token_id: tokenId, updated_at: new Date().toISOString() })
+    .eq('id', productId)
+    .eq('seller_id', sellerId)
+    .is('token_id', null)
+    .neq('on_chain_status', 'registered')
+    .select('id')
+    .maybeSingle();
+  if (resErr) {
+    return NextResponse.json({ error: `Failed to reserve token_id: ${resErr.message}`, token_id_claimed: tokenId }, { status: 500 });
+  }
+  if (!reserved) {
+    return NextResponse.json({ error: 'Publish already in progress for this product (token_id reserved by a concurrent request).' }, { status: 409 });
+  }
 
   const maxSupply = product.max_supply ?? UNLIMITED_SUPPLY;
   const priceMinor = Number(product.price_minor);

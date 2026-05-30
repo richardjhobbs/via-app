@@ -3,23 +3,47 @@ import { cookies } from 'next/headers';
 import crypto from 'crypto';
 
 export function isAdmin(req?: NextRequest): boolean {
-  const secret = process.env.ADMIN_SECRET;
-  if (!secret) return false;
-
-  // Check cookie (browser sessions)
-  const cookieStore = req
-    ? req.cookies.get('admin_token')?.value
-    : undefined;
-
-  // For route handlers we use next/headers
-  return cookieStore === secret;
+  if (!process.env.ADMIN_SECRET) return false;
+  // Browser sessions present a derived admin_token cookie (see issueAdminToken).
+  const token = req ? req.cookies.get('admin_token')?.value : undefined;
+  return verifyAdminToken(token);
 }
 
 export async function isAdminFromCookies(): Promise<boolean> {
-  const secret = process.env.ADMIN_SECRET;
-  if (!secret) return false;
+  if (!process.env.ADMIN_SECRET) return false;
   const cookieStore = await cookies();
-  return cookieStore.get('admin_token')?.value === secret;
+  return verifyAdminToken(cookieStore.get('admin_token')?.value);
+}
+
+// ── Admin session cookie ──────────────────────────────────────────────
+// The cookie carries a derived, expiring token, never the raw ADMIN_SECRET.
+// Format: `${nonce}.${exp}.${sig}` where sig = HMAC-SHA256(ADMIN_SECRET,
+// `${nonce}.${exp}`). A leaked cookie therefore cannot be replayed as the
+// x-admin-secret bearer (it does not contain the master secret), and every
+// token self-expires. Verified with a constant-time comparison.
+const ADMIN_TOKEN_TTL_MS = 1000 * 60 * 60 * 24 * 7; // 7 days, matches cookie maxAge
+
+function adminTokenSig(payload: string, secret: string): string {
+  return crypto.createHmac('sha256', secret).update(payload).digest('hex');
+}
+
+export function issueAdminToken(): string {
+  const secret = process.env.ADMIN_SECRET;
+  if (!secret) throw new Error('ADMIN_SECRET not configured');
+  const nonce = crypto.randomBytes(32).toString('hex');
+  const exp   = String(Date.now() + ADMIN_TOKEN_TTL_MS);
+  return `${nonce}.${exp}.${adminTokenSig(`${nonce}.${exp}`, secret)}`;
+}
+
+export function verifyAdminToken(token: string | undefined | null): boolean {
+  const secret = process.env.ADMIN_SECRET;
+  if (!secret || !token) return false;
+  const parts = token.split('.');
+  if (parts.length !== 3) return false;
+  const [nonce, exp, sig] = parts;
+  const expMs = Number(exp);
+  if (!Number.isFinite(expMs) || Date.now() > expMs) return false;
+  return timingSafeEqual(sig, adminTokenSig(`${nonce}.${exp}`, secret));
 }
 
 // Read-only admin gate for VIA agents (Priscilla #37750, Sasha #38520, Rosie
@@ -30,10 +54,10 @@ export async function isAdminReader(req: Request): Promise<boolean> {
   if (await isAdminFromCookies()) return true;
   const adminSecret = process.env.ADMIN_SECRET;
   const adminHeader = req.headers.get('x-admin-secret');
-  if (adminSecret && adminHeader && adminHeader === adminSecret) return true;
+  if (adminSecret && adminHeader && timingSafeEqual(adminHeader, adminSecret)) return true;
   const readSecret = process.env.ADMIN_READONLY_SECRET;
   const readHeader = req.headers.get('x-admin-readonly-secret');
-  return !!(readSecret && readHeader && readHeader === readSecret);
+  return !!(readSecret && readHeader && timingSafeEqual(readHeader, readSecret));
 }
 
 export function adminUnauthorized() {

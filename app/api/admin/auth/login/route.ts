@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import crypto from 'crypto';
+import { issueAdminToken } from '@/lib/app/auth';
 
 export const dynamic = 'force-dynamic';
 
@@ -26,7 +27,7 @@ export async function POST(req: NextRequest) {
   }
 
   const res = NextResponse.redirect(new URL(safeNext, req.url), 303);
-  res.cookies.set('admin_token', adminSecret, {
+  res.cookies.set('admin_token', issueAdminToken(), {
     httpOnly: true,
     secure: process.env.NODE_ENV === 'production',
     sameSite: 'lax',

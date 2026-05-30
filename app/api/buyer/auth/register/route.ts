@@ -76,7 +76,10 @@ export async function POST(req: NextRequest) {
     if (!found) return NextResponse.json({ error: 'could not create or find user account' }, { status: 500 });
     const { data: priorBuyer } = await db.from('app_buyers').select('handle').eq('owner_user_id', found.id).maybeSingle();
     if (priorBuyer) return NextResponse.json({ error: `this email already owns "${priorBuyer.handle}", sign in instead` }, { status: 409 });
-    await supabaseAdmin.auth.admin.updateUserById(found.id, { password });
+    // Account exists for this email but owns no buyer profile (e.g. a seller
+    // account). Do NOT reset its password: an unauthenticated request must
+    // never take over an existing account. Reuse it only if the supplied
+    // password authenticates in the sign-in step below.
     userId = found.id;
   } else {
     userId = created.user.id;
@@ -85,7 +88,7 @@ export async function POST(req: NextRequest) {
   const { data: signIn, error: signInErr } = await supabase.auth.signInWithPassword({ email, password });
   if (signInErr || !signIn.session) {
     console.error('[onboard/buyer/register] signIn failed', signInErr);
-    return NextResponse.json({ error: 'account created but sign-in failed' }, { status: 500 });
+    return NextResponse.json({ error: 'this email may already have an account. Sign in with your existing password, or use Login.' }, { status: 401 });
   }
 
   const { data: buyer, error: buyerErr } = await db

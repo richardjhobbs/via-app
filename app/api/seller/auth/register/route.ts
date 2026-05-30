@@ -118,9 +118,13 @@ export async function POST(req: NextRequest) {
 
     const { data: priorSeller } = await db.from('app_sellers').select('slug').eq('owner_user_id', found.id).maybeSingle();
     if (priorSeller) {
-      return NextResponse.json({ error: `this email already owns "${priorSeller.slug}" — sign in instead` }, { status: 409 });
+      return NextResponse.json({ error: `this email already owns "${priorSeller.slug}", sign in instead` }, { status: 409 });
     }
-    await supabaseAdmin.auth.admin.updateUserById(found.id, { password });
+    // An account already exists for this email but owns no seller (e.g. a
+    // buyer account, or a previous attempt whose seller insert failed). Do
+    // NOT reset its password: an unauthenticated request must never be able
+    // to take over an existing account. Reuse the account only if the
+    // supplied password authenticates in the sign-in step below.
     userId = found.id;
   } else {
     userId = created.user.id;
@@ -130,7 +134,7 @@ export async function POST(req: NextRequest) {
   const { data: signIn, error: signInErr } = await supabase.auth.signInWithPassword({ email, password });
   if (signInErr || !signIn.session) {
     console.error('[onboard/register] signIn failed', signInErr);
-    return NextResponse.json({ error: 'account created but sign-in failed; please use Login' }, { status: 500 });
+    return NextResponse.json({ error: 'this email may already have an account. Sign in with your existing password, or use Login.' }, { status: 401 });
   }
   accessToken  = signIn.session.access_token;
   refreshToken = signIn.session.refresh_token;

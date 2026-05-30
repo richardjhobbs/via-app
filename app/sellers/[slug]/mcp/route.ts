@@ -123,6 +123,28 @@ function parseAgentIdentity(req: Request): Record<string, unknown> {
   };
 }
 
+// ── Rate limiting (best-effort, per warm instance) ───────────────────
+// Keyed by ip|agent over a sliding 60s window. The stateless transport
+// means this is per-lambda-instance, which is enough to blunt abusive
+// bursts (e.g. buy_product / ask_sales_agent spam). Mirrors the buyer MCP
+// route limiter.
+const RATE_WINDOW_MS = 60_000;
+const RATE_MAX = 30;
+const rateHits = new Map<string, number[]>();
+
+function rateLimitKey(req: Request): string {
+  const identity = parseAgentIdentity(req);
+  return `${identity.ip ?? 'noip'}|${identity.via_agent_id ?? 'noagent'}`;
+}
+
+function isRateLimited(key: string): boolean {
+  const now = Date.now();
+  const hits = (rateHits.get(key) ?? []).filter((t) => now - t < RATE_WINDOW_MS);
+  hits.push(now);
+  rateHits.set(key, hits);
+  return hits.length > RATE_MAX;
+}
+
 // ── Build the MCP server per-request ─────────────────────────────────
 
 function createServer(seller: SellerRow, req: Request) {
@@ -339,6 +361,24 @@ function createServer(seller: SellerRow, req: Request) {
       if (product.currency !== 'USDC') {
         const r = asJson({ error: `non-USDC pricing not supported in v1 (got ${product.currency})` });
         void logInteraction(seller.id, 'buy_product', identity, { product_id, qty, buyer_wallet }, { error: 'unsupported_currency' }, 400, Date.now() - t0);
+        return r;
+      }
+
+      // ── Stock / supply gate ───────────────────────────────────
+      // Reject oversell before we record an intent or quote a payment.
+      // `stock` is the seller-tracked available count (null = untracked).
+      // `max_supply` is the on-chain edition ceiling; one order can never
+      // exceed it. Both are checked when present.
+      const stockNum     = typeof product.stock === 'number' ? product.stock : null;
+      const maxSupplyNum  = typeof product.max_supply === 'number' ? product.max_supply : null;
+      if (stockNum !== null && qty > stockNum) {
+        const r = asJson({ error: 'insufficient_stock', message: `Only ${stockNum} unit(s) of "${product.title}" remain; requested ${qty}.`, available: stockNum, requested: qty });
+        void logInteraction(seller.id, 'buy_product', identity, { product_id, qty, buyer_wallet }, { error: 'insufficient_stock', available: stockNum }, 409, Date.now() - t0);
+        return r;
+      }
+      if (maxSupplyNum !== null && qty > maxSupplyNum) {
+        const r = asJson({ error: 'exceeds_max_supply', message: `"${product.title}" has an edition cap of ${maxSupplyNum}; a single order cannot request ${qty}.`, max_supply: maxSupplyNum, requested: qty });
+        void logInteraction(seller.id, 'buy_product', identity, { product_id, qty, buyer_wallet }, { error: 'exceeds_max_supply', max_supply: maxSupplyNum }, 409, Date.now() - t0);
         return r;
       }
 
@@ -642,6 +682,10 @@ export async function POST(req: Request, { params }: { params: Promise<{ slug: s
   const { slug } = await params;
   const seller = await loadSeller(slug);
   if (!seller) return Response.json({ error: `seller "${slug}" not found or inactive` }, { status: 404 });
+
+  if (isRateLimited(rateLimitKey(req))) {
+    return Response.json({ error: 'rate limit exceeded, slow down' }, { status: 429 });
+  }
 
   const transport = new WebStandardStreamableHTTPServerTransport({
     sessionIdGenerator: undefined, // stateless
