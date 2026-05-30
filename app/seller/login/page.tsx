@@ -2,7 +2,6 @@
 
 import { Suspense, useEffect, useState } from 'react';
 import Link from 'next/link';
-import Image from 'next/image';
 import { useRouter, useSearchParams } from 'next/navigation';
 
 type Mode = 'login' | 'forgot' | 'reset';
@@ -125,30 +124,30 @@ function SellerLoginInner() {
 
   return (
     <div className="w-full max-w-md px-6">
-      <p className="text-xs font-mono tracking-widest text-neutral-500 mb-3 uppercase">
+      <p className="text-xs font-mono tracking-widest text-ink-3 mb-3 uppercase">
         {mode === 'reset' ? 'Reset password' : mode === 'forgot' ? 'Forgot password' : 'Seller sign in'}
       </p>
       <h1 className="font-serif text-4xl leading-[1.1] tracking-tight mb-2">
         {mode === 'reset' ? 'Pick a new password.' : mode === 'forgot' ? 'Send me a reset link.' : 'Welcome back.'}
       </h1>
-      <p className="text-sm text-neutral-600 mb-8">
+      <p className="text-sm text-ink-2 mb-8">
         {mode === 'reset'
           ? 'You arrived here from the email link. Enter your new password and we will sign you straight in.'
           : mode === 'forgot'
             ? 'Enter the email on your seller account and we will email a reset link.'
             : (<>
                 New to VIA?{' '}
-                <Link href="/onboard?role=seller" className="text-neutral-900 underline hover:no-underline">
+                <Link href="/onboard?role=seller" className="text-ink underline hover:no-underline">
                   Onboard a seller &rarr;
                 </Link>
               </>)}
       </p>
 
       {err && (
-        <div className="bg-red-50 border border-red-200 text-red-800 text-sm rounded-md px-4 py-3 mb-6">{err}</div>
+        <div className="border border-[color:var(--danger)] bg-[color:var(--danger)]/10 text-[color:var(--danger)] text-sm px-4 py-3 mb-6">{err}</div>
       )}
       {msg && (
-        <div className="bg-emerald-50 border border-emerald-200 text-emerald-800 text-sm rounded-md px-4 py-3 mb-6">{msg}</div>
+        <div className="border border-[color:var(--live)] bg-[color:var(--live)]/10 text-[color:var(--live)] text-sm px-4 py-3 mb-6">{msg}</div>
       )}
 
       {mode === 'login' && (
@@ -157,28 +156,25 @@ function SellerLoginInner() {
             <input
               type="email" required autoComplete="email" spellCheck={false}
               value={email} onChange={(e) => setEmail(e.target.value)}
-              className="w-full bg-white border border-neutral-300 rounded-md px-4 py-3 font-mono text-sm focus:outline-none focus:border-neutral-900"
+              className="w-full bg-paper border border-line-strong px-4 py-3 font-mono text-sm focus:outline-none focus:border-ink transition-colors"
             />
           </Field>
           <Field label="Password">
             <input
               type="password" required autoComplete="current-password"
               value={pass} onChange={(e) => setPass(e.target.value)}
-              className="w-full bg-white border border-neutral-300 rounded-md px-4 py-3 font-mono text-sm focus:outline-none focus:border-neutral-900"
+              className="w-full bg-paper border border-line-strong px-4 py-3 font-mono text-sm focus:outline-none focus:border-ink transition-colors"
             />
           </Field>
           <div className="flex items-center justify-between">
             <button
               type="button" onClick={() => { setMode('forgot'); setErr(''); setMsg(''); }}
-              className="text-[10px] font-mono uppercase tracking-widest text-neutral-700 underline hover:no-underline"
+              className="text-[10px] font-mono uppercase tracking-widest text-ink-2 underline hover:no-underline"
             >
               Forgot password?
             </button>
           </div>
-          <button
-            type="submit" disabled={loading}
-            className="w-full px-5 py-3 bg-neutral-900 text-neutral-50 text-xs font-mono tracking-widest uppercase hover:bg-neutral-800 transition-colors rounded-md disabled:opacity-50"
-          >
+          <button type="submit" disabled={loading} className="btn w-full justify-center disabled:opacity-50">
             {loading ? 'Signing in…' : 'Sign in'}
           </button>
         </form>
@@ -190,20 +186,17 @@ function SellerLoginInner() {
             <input
               type="email" required autoComplete="email" spellCheck={false}
               value={email} onChange={(e) => setEmail(e.target.value)}
-              className="w-full bg-white border border-neutral-300 rounded-md px-4 py-3 font-mono text-sm focus:outline-none focus:border-neutral-900"
+              className="w-full bg-paper border border-line-strong px-4 py-3 font-mono text-sm focus:outline-none focus:border-ink transition-colors"
             />
           </Field>
           <div className="flex flex-col-reverse gap-3 sm:flex-row sm:items-center sm:justify-between">
             <button
               type="button" onClick={() => { setMode('login'); setErr(''); setMsg(''); }}
-              className="text-[10px] font-mono uppercase tracking-widest text-neutral-700 underline hover:no-underline"
+              className="text-[10px] font-mono uppercase tracking-widest text-ink-2 underline hover:no-underline"
             >
               <span aria-hidden>&larr;</span> Back to sign in
             </button>
-            <button
-              type="submit" disabled={loading}
-              className="px-5 py-3 bg-neutral-900 text-neutral-50 text-xs font-mono tracking-widest uppercase hover:bg-neutral-800 transition-colors rounded-md disabled:opacity-50"
-            >
+            <button type="submit" disabled={loading} className="btn justify-center disabled:opacity-50">
               {loading ? 'Sending…' : 'Send reset link'}
             </button>
           </div>
@@ -216,17 +209,14 @@ function SellerLoginInner() {
             <input
               type="password" required minLength={8} autoComplete="new-password"
               value={newPass} onChange={(e) => setNewPass(e.target.value)}
-              className="w-full bg-white border border-neutral-300 rounded-md px-4 py-3 font-mono text-sm focus:outline-none focus:border-neutral-900"
+              className="w-full bg-paper border border-line-strong px-4 py-3 font-mono text-sm focus:outline-none focus:border-ink transition-colors"
             />
           </Field>
-          <button
-            type="submit" disabled={loading || !accessToken}
-            className="w-full px-5 py-3 bg-neutral-900 text-neutral-50 text-xs font-mono tracking-widest uppercase hover:bg-neutral-800 transition-colors rounded-md disabled:opacity-50"
-          >
+          <button type="submit" disabled={loading || !accessToken} className="btn w-full justify-center disabled:opacity-50">
             {loading ? 'Updating…' : 'Update password'}
           </button>
           {!accessToken && (
-            <p className="text-xs text-amber-700">
+            <p className="text-xs text-[color:var(--warning)]">
               The reset link is missing its token. Request a new one from the forgot-password screen.
             </p>
           )}
@@ -239,7 +229,7 @@ function SellerLoginInner() {
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div>
-      <div className="text-xs font-mono tracking-widest text-neutral-500 uppercase mb-2">{label}</div>
+      <div className="text-xs font-mono tracking-widest text-ink-3 uppercase mb-2">{label}</div>
       {children}
     </div>
   );
@@ -247,19 +237,17 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 
 export default function SellerLoginPage() {
   return (
-    <main className="min-h-screen bg-neutral-50 text-neutral-900 flex flex-col">
-      <header className="bg-neutral-900 text-neutral-100">
+    <main className="min-h-screen bg-background text-ink flex flex-col">
+      <header className="border-b border-line">
         <div className="max-w-5xl mx-auto px-6 py-5 flex items-center justify-between">
-          <Link href="/" aria-label="VIA home" className="inline-flex items-center">
-            <Image src="/vialogowhite.png" alt="VIA" width={72} height={28} priority className="h-7 w-auto" />
-          </Link>
-          <span className="text-xs font-mono tracking-widest uppercase text-neutral-400">Seller</span>
+          <Link href="/" aria-label="VIA home" className="wordmark text-ink">VIA</Link>
+          <span className="text-xs font-mono tracking-widest uppercase text-ink-3">Seller</span>
         </div>
       </header>
 
       <section className="flex-1 flex items-start justify-center px-6 py-16">
         <Suspense fallback={
-          <p className="text-xs font-mono uppercase tracking-widest text-neutral-500">Loading…</p>
+          <p className="text-xs font-mono uppercase tracking-widest text-ink-3">Loading…</p>
         }>
           <SellerLoginInner />
         </Suspense>

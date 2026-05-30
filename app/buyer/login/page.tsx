@@ -3,7 +3,6 @@
 import { Suspense, useState, useEffect } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
-import Image from 'next/image';
 
 function BuyerLoginInner() {
   const router = useRouter();
@@ -96,41 +95,37 @@ function BuyerLoginInner() {
   };
 
   const inputClass =
-    'w-full bg-white border border-neutral-300 rounded-md px-4 py-3 text-sm outline-none focus:border-neutral-900 transition-colors';
+    'w-full bg-paper border border-line-strong px-4 py-3 text-sm outline-none focus:border-ink transition-colors';
 
   return (
     <div className="w-full max-w-sm px-6">
-      <Image src="/vialogowhite.png" alt="VIA" width={72} height={28} priority className="h-7 w-auto mb-8 invert" />
-      <p className="text-xs font-mono tracking-widest uppercase text-neutral-500 mb-2">Buying Agent</p>
+      <Link href="/" aria-label="VIA home" className="wordmark text-ink inline-block mb-8">VIA</Link>
+      <p className="text-xs font-mono tracking-widest uppercase text-ink-3 mb-2">Buying Agent</p>
 
       {mode === 'login' && (
         <form onSubmit={handleLogin} className="space-y-4">
           <h1 className="font-serif text-3xl tracking-tight mb-4">Sign in</h1>
           <div>
-            <label className="text-xs font-mono tracking-widest uppercase text-neutral-500 block mb-1">Email</label>
+            <label className="text-xs font-mono tracking-widest uppercase text-ink-3 block mb-1">Email</label>
             <input type="email" required value={email} onChange={(e) => setEmail(e.target.value)} className={inputClass} autoFocus />
           </div>
           <div>
-            <label className="text-xs font-mono tracking-widest uppercase text-neutral-500 block mb-1">Password</label>
+            <label className="text-xs font-mono tracking-widest uppercase text-ink-3 block mb-1">Password</label>
             <input type="password" required value={password} onChange={(e) => setPassword(e.target.value)} className={inputClass} />
           </div>
-          {err && <p className="text-sm text-red-600 font-mono">{err}</p>}
-          <button
-            type="submit"
-            disabled={loading}
-            className="w-full py-3 bg-neutral-900 text-neutral-50 text-xs font-mono tracking-widest uppercase hover:bg-neutral-800 disabled:opacity-40 transition-colors rounded-md"
-          >
+          {err && <p className="text-sm text-[color:var(--danger)] font-mono">{err}</p>}
+          <button type="submit" disabled={loading} className="btn w-full justify-center disabled:opacity-40">
             {loading ? 'Signing in…' : 'Sign in'}
           </button>
           <div className="flex items-center justify-between pt-2">
             <button
               type="button"
               onClick={() => { setMode('forgot'); setErr(''); setMsg(''); }}
-              className="text-xs font-mono text-neutral-400 hover:text-neutral-900 transition-colors"
+              className="text-xs font-mono text-ink-3 hover:text-ink transition-colors"
             >
               Forgot password?
             </button>
-            <Link href="/onboard?role=buyer" className="text-xs font-mono text-neutral-400 hover:text-neutral-900 transition-colors">
+            <Link href="/onboard?role=buyer" className="text-xs font-mono text-ink-3 hover:text-ink transition-colors">
               Create an agent <span aria-hidden>&rarr;</span>
             </Link>
           </div>
@@ -140,21 +135,17 @@ function BuyerLoginInner() {
       {mode === 'forgot' && (
         <form onSubmit={handleForgot} className="space-y-4">
           <h1 className="font-serif text-3xl tracking-tight mb-2">Reset password</h1>
-          <p className="text-sm text-neutral-600 mb-2">Enter your email and we will send a reset link.</p>
+          <p className="text-sm text-ink-2 mb-2">Enter your email and we will send a reset link.</p>
           <input type="email" required value={email} onChange={(e) => setEmail(e.target.value)} placeholder="Email" className={inputClass} autoFocus />
-          {err && <p className="text-sm text-red-600 font-mono">{err}</p>}
-          {msg && <p className="text-sm text-emerald-700 font-mono">{msg}</p>}
-          <button
-            type="submit"
-            disabled={loading}
-            className="w-full py-3 bg-neutral-900 text-neutral-50 text-xs font-mono tracking-widest uppercase hover:bg-neutral-800 disabled:opacity-40 transition-colors rounded-md"
-          >
+          {err && <p className="text-sm text-[color:var(--danger)] font-mono">{err}</p>}
+          {msg && <p className="text-sm text-[color:var(--live)] font-mono">{msg}</p>}
+          <button type="submit" disabled={loading} className="btn w-full justify-center disabled:opacity-40">
             {loading ? 'Sending…' : 'Send reset link'}
           </button>
           <button
             type="button"
             onClick={() => { setMode('login'); setErr(''); setMsg(''); }}
-            className="w-full text-xs font-mono text-neutral-400 hover:text-neutral-900 transition-colors"
+            className="w-full text-xs font-mono text-ink-3 hover:text-ink transition-colors"
           >
             <span aria-hidden>&larr;</span> Back to sign in
           </button>
@@ -164,15 +155,11 @@ function BuyerLoginInner() {
       {mode === 'reset' && (
         <form onSubmit={handleReset} className="space-y-4">
           <h1 className="font-serif text-3xl tracking-tight mb-2">New password</h1>
-          <p className="text-sm text-neutral-600 mb-2">Choose a new password (8+ characters).</p>
+          <p className="text-sm text-ink-2 mb-2">Choose a new password (8+ characters).</p>
           <input type="password" required minLength={8} value={newPass} onChange={(e) => setNewPass(e.target.value)} placeholder="New password" className={inputClass} autoFocus />
-          {err && <p className="text-sm text-red-600 font-mono">{err}</p>}
-          {msg && <p className="text-sm text-emerald-700 font-mono">{msg}</p>}
-          <button
-            type="submit"
-            disabled={loading}
-            className="w-full py-3 bg-neutral-900 text-neutral-50 text-xs font-mono tracking-widest uppercase hover:bg-neutral-800 disabled:opacity-40 transition-colors rounded-md"
-          >
+          {err && <p className="text-sm text-[color:var(--danger)] font-mono">{err}</p>}
+          {msg && <p className="text-sm text-[color:var(--live)] font-mono">{msg}</p>}
+          <button type="submit" disabled={loading} className="btn w-full justify-center disabled:opacity-40">
             {loading ? 'Updating…' : 'Set new password'}
           </button>
         </form>
@@ -183,8 +170,8 @@ function BuyerLoginInner() {
 
 export default function BuyerLoginPage() {
   return (
-    <div className="min-h-screen bg-neutral-50 text-neutral-900 flex items-center justify-center">
-      <Suspense fallback={<div className="text-xs font-mono text-neutral-400">Loading…</div>}>
+    <div className="min-h-screen bg-background text-ink flex items-center justify-center">
+      <Suspense fallback={<div className="text-xs font-mono text-ink-3">Loading…</div>}>
         <BuyerLoginInner />
       </Suspense>
     </div>
