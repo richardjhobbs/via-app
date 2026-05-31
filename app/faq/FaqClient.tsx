@@ -54,8 +54,7 @@ export function FaqClient() {
       <div className="faq-hero">
         <div className="dash-eyebrow">Reference</div>
         <h1 className="faq-h1">
-          Questions,<br />
-          <em>quietly</em> answered.
+          Questions <em>answered</em>.
         </h1>
       </div>
 
