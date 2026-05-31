@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import ThemeToggle from '@/components/app/ThemeToggle';
 import { Wordmark } from '@/components/app/Wordmark';
+import type { NetworkMetrics } from '@/lib/app/network-stats';
 
 /* ──────────────────────────────────────────────────────────────────────────
    Landing "The Seam", Maison design. Sellers left, buyers right, one live deal
@@ -51,15 +52,6 @@ const DEALS: Deal[] = [
     { who: 'sell', text: 'Scoped and booked at 2,400. Starting Thursday.' },
   ], settle: 'Booked · 2,400 USDC' },
 ];
-
-function useDrift(base: number, max: number, period = 2600) {
-  const [v, setV] = useState(base);
-  useEffect(() => {
-    const id = setInterval(() => setV((x) => (x >= max ? base : x + 1 + Math.floor(Math.random() * 2))), period);
-    return () => clearInterval(id);
-  }, [base, max, period]);
-  return v;
-}
 
 function LiveDot() {
   return <span style={{ display: 'inline-block', width: 6, height: 6, borderRadius: 999, background: 'var(--live)', animation: 'via-pulse 2s infinite' }} />;
@@ -143,12 +135,11 @@ function LiveDeal() {
   );
 }
 
-export default function LandingClient() {
-  const live = useDrift(214, 240);
+export default function LandingClient({ metrics }: { metrics: NetworkMetrics }) {
   const stats: [string, string, string][] = [
-    ['AGENTS ACTIVE', live.toLocaleString(), 'live now'],
-    ['SETTLED TODAY', '1,204', 'USDC'],
-    ['AVG MATCH', '38s', 'to first offer'],
+    ['LIVE SELLERS', metrics.sellers.toLocaleString(), 'across the network'],
+    ['LIVE BUYING AGENTS', metrics.buyingAgents.toLocaleString(), 'trained and active'],
+    ['PRODUCTS AVAILABLE', metrics.products.toLocaleString(), 'agent-purchasable'],
   ];
   return (
     <div className="via-page">
