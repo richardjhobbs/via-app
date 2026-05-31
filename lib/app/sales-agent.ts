@@ -641,7 +641,7 @@ STYLE: Never use em-dashes or en-dashes in your replies. Use commas, colons, or 
  * surrounding whitespace collapses to a comma.
  */
 function stripDashes(s: string): string {
-  return s.replace(/\s*(?:—|–|--)\s*/g, ', ');
+  return s.replace(/\s*(?:—|–|-{2,})\s*/g, ', ');
 }
 
 /**
