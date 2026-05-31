@@ -37,15 +37,56 @@ function sellerMcpUrl(slug: string): string {
   return `${APP_BASE}/sellers/${encodeURIComponent(slug)}/mcp`;
 }
 
-function rowToSummary(row: SellerSummaryRow) {
+// VIA network members federated over HTTP. Each exposes GET /api/via/search?q=&limit=
+// returning { platform, results:[{name,kind,detail,mcp_url,web_url}] }. The catalogue
+// and the buy stay at origin; the network layer only routes. Append future platforms here.
+const NETWORK_MEMBERS: { platform: string; searchUrl: string }[] = [
+  { platform: 'rrg', searchUrl: 'https://realrealgenuine.com/api/via/search' },
+];
+
+interface NetworkResult {
+  platform:    string;
+  name:        string;
+  kind:        string;
+  detail:      string | null;
+  mcp_url:     string;
+  web_url:     string | null;
+}
+
+async function fetchMember(member: { platform: string; searchUrl: string }, q: string, max: number): Promise<NetworkResult[]> {
+  try {
+    const url = `${member.searchUrl}?q=${encodeURIComponent(q)}&limit=${max}`;
+    const res = await fetch(url, { signal: AbortSignal.timeout(6000) });
+    if (!res.ok) return [];
+    const json = await res.json() as { platform?: string; results?: unknown };
+    const rows = Array.isArray(json.results) ? json.results : [];
+    return rows.map((r: any) => ({
+      platform: json.platform ?? member.platform,
+      name:     String(r?.name ?? ''),
+      kind:     String(r?.kind ?? 'brand'),
+      detail:   r?.detail ?? null,
+      mcp_url:  String(r?.mcp_url ?? ''),
+      web_url:  r?.web_url ?? null,
+    })).filter((r) => r.name && r.mcp_url);
+  } catch {
+    return [];
+  }
+}
+
+async function fetchNetwork(q: string, max: number): Promise<NetworkResult[]> {
+  const batches = await Promise.all(NETWORK_MEMBERS.map((m) => fetchMember(m, q, max)));
+  return batches.flat();
+}
+
+function rowToSummary(row: SellerSummaryRow): NetworkResult & { slug: string; erc8004_agent_id: string | null } {
   return {
+    platform:         'via',
     slug:             row.slug,
     name:             row.name,
     kind:             row.kind,
-    headline:         row.headline,
-    description:      row.description,
-    website_url:      row.website_url,
+    detail:           row.headline ?? row.description,
     erc8004_agent_id: row.erc8004_agent_id,
+    web_url:          row.website_url,
     mcp_url:          sellerMcpUrl(row.slug),
   };
 }
@@ -59,10 +100,10 @@ function createServer() {
 
   server.tool(
     'list_sellers',
-    'List active VIA sellers (any product or service). Each result includes the per-seller MCP URL to connect to for deeper interaction (list_products, ask_sales_agent, buy_product).',
+    'List active sellers across the VIA network (VIA app + RRG + integrated platforms). Each result is tagged with its platform and includes the per-seller MCP URL to connect to for deeper interaction (list_products, ask_sales_agent, buy_product).',
     {
-      category: z.enum(['product', 'service', 'mixed']).optional().describe('Optional kind filter.'),
-      limit:    z.number().int().min(1).max(100).optional().describe('Max sellers to return (default 25).'),
+      category: z.enum(['product', 'service', 'mixed']).optional().describe('Optional kind filter (applies to VIA-app sellers only).'),
+      limit:    z.number().int().min(1).max(100).optional().describe('Max sellers to return per platform (default 25).'),
     },
     async ({ category, limit }) => {
       const max = Math.min(Math.max(limit ?? 25, 1), 100);
@@ -73,40 +114,42 @@ function createServer() {
         .order('name', { ascending: true })
         .limit(max);
       if (category) query = query.eq('kind', category);
-      const { data, error } = await query;
-      if (error) {
-        console.error('[mcp/list_sellers] query failed:', error);
-        return asJson({ sellers: [], count: 0, error_code: 'seller_index_unavailable', note: 'Seller index temporarily unavailable. Please retry.' });
-      }
+      const [{ data, error }, network] = await Promise.all([
+        query,
+        fetchNetwork('', max),
+      ]);
+      if (error) console.error('[mcp/list_sellers] query failed:', error);
       const rows = (data ?? []) as SellerSummaryRow[];
-      return asJson({ count: rows.length, sellers: rows.map(rowToSummary) });
+      const sellers = [...rows.map(rowToSummary), ...network];
+      return asJson({ count: sellers.length, sellers });
     },
   );
 
   server.tool(
     'find_seller',
-    'Search active VIA sellers by free-text query against name, description, and headline.',
+    'Search active sellers across the VIA network (VIA app + RRG + integrated platforms) by free-text query. Results are tagged with their platform; connect to each result\'s mcp_url for the catalogue and the buy.',
     {
-      query: z.string().min(1).describe("Free-text search, e.g. 'pendant lighting' or 'paralegal services for startups'."),
-      limit: z.number().int().min(1).max(50).optional().describe('Max results (default 10).'),
+      query: z.string().min(1).describe("Free-text search, e.g. 'coffee', 'pendant lighting', or 'paralegal services for startups'."),
+      limit: z.number().int().min(1).max(50).optional().describe('Max results per platform (default 10).'),
     },
     async ({ query, limit }) => {
       const max = Math.min(Math.max(limit ?? 10, 1), 50);
       const safe = query.replace(/[%,()]/g, ' ').trim();
       const pattern = `%${safe}%`;
-      const { data, error } = await db
-        .from('app_sellers')
-        .select('slug, name, kind, headline, description, website_url, erc8004_agent_id')
-        .eq('active', true)
-        .or(`name.ilike.${pattern},description.ilike.${pattern},headline.ilike.${pattern}`)
-        .order('name', { ascending: true })
-        .limit(max);
-      if (error) {
-        console.error('[mcp/find_seller] query failed:', error);
-        return asJson({ query, sellers: [], count: 0, error_code: 'seller_search_unavailable', note: 'Seller search temporarily unavailable. Please retry.' });
-      }
+      const [{ data, error }, network] = await Promise.all([
+        db
+          .from('app_sellers')
+          .select('slug, name, kind, headline, description, website_url, erc8004_agent_id')
+          .eq('active', true)
+          .or(`name.ilike.${pattern},description.ilike.${pattern},headline.ilike.${pattern}`)
+          .order('name', { ascending: true })
+          .limit(max),
+        fetchNetwork(safe, max),
+      ]);
+      if (error) console.error('[mcp/find_seller] query failed:', error);
       const rows = (data ?? []) as SellerSummaryRow[];
-      return asJson({ query, count: rows.length, sellers: rows.map(rowToSummary) });
+      const sellers = [...rows.map(rowToSummary), ...network];
+      return asJson({ query, count: sellers.length, sellers });
     },
   );
 
@@ -147,10 +190,11 @@ function createServer() {
       per_seller_mcp:  `${APP_BASE}/sellers/{slug}/mcp`,
       marketing_site:  'https://www.getvia.xyz',
       central_mcp:     'https://www.getvia.xyz/mcp',
+      network:         'list_sellers and find_seller federate across every VIA network member (VIA app + RRG + integrated platforms). Results are tagged by platform; connect to each result mcp_url for the catalogue and the buy.',
       tools_here: {
-        list_sellers:    'Browse active sellers',
-        find_seller:     'Free-text search',
-        seller_mcp_url:  'Resolve a slug to its per-seller MCP URL',
+        list_sellers:    'Browse active sellers across the whole network',
+        find_seller:     'Free-text search across the whole network',
+        seller_mcp_url:  'Resolve a VIA-app slug to its per-seller MCP URL',
       },
     }),
   );
