@@ -29,6 +29,7 @@ import { ethers } from 'ethers';
 import { getShippingConfig, computeShippingQuote, type ShippingConfig } from '@/lib/app/shipping';
 import { insertNotification } from '@/lib/app/notifications';
 import { runSalesAgentAnswer, recordBuyerNote, type BuyerAnswerContext } from '@/lib/app/sales-agent';
+import { parseOfferingSchema, computeQuote, type Selections } from '@/lib/app/quote-pricing';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -344,13 +345,26 @@ function createServer(seller: SellerRow, req: Request) {
 
       const { data: product, error: prodErr } = await db
         .from('app_seller_products')
-        .select('id, title, price_minor, currency, stock, token_id, on_chain_status, active, max_supply, kind')
+        .select('id, title, price_minor, currency, stock, token_id, on_chain_status, active, max_supply, kind, pricing_mode')
         .eq('id', product_id)
         .eq('seller_id', seller.id)
         .maybeSingle();
       if (prodErr || !product) {
         const r = asJson({ error: `product ${product_id} not found for ${seller.slug}` });
         void logInteraction(seller.id, 'buy_product', identity, { product_id, qty, buyer_wallet }, { error: 'not_found' }, 404, Date.now() - t0);
+        return r;
+      }
+      // Configurable products have no single fixed price; they settle through
+      // a negotiated quote. Refuse the fixed-price buy path and redirect the
+      // buying agent to request_quote.
+      if (product.pricing_mode === 'configurable') {
+        const r = asJson({
+          error: 'quote_required',
+          message: `"${product.title}" is configured per order and does not have a fixed price. Call request_quote with your selections to get an advisory quote, which ${seller.name} then approves before payment.`,
+          next_tool: 'request_quote',
+          product_id: product.id,
+        });
+        void logInteraction(seller.id, 'buy_product', identity, { product_id, qty, buyer_wallet }, { error: 'quote_required' }, 409, Date.now() - t0);
         return r;
       }
       if (!product.active || product.on_chain_status !== 'registered') {
@@ -547,6 +561,308 @@ function createServer(seller: SellerRow, req: Request) {
           buyer_country:      buyer_country ?? null,
           seller_id:          seller.id,
         },
+      });
+      return out;
+    },
+  );
+
+  // ── get_offering_schema ──────────────────────────────────────────
+  // Discovery for configurable products: the buying agent learns the option
+  // space (groups, choices, price deltas, quantity tiers, modifiers) so it can
+  // assemble a valid request_quote call.
+  server.tool(
+    'get_offering_schema',
+    `Fetch the configurable option space for one of ${seller.name}'s products that is priced per order (pricing_mode 'configurable'). Returns the option groups, their choices, the quantity rules, and any surcharges. Use this before request_quote so you know exactly which selections are valid. Fixed-price products do not have a schema; buy them directly with buy_product.`,
+    {
+      product_id: z.string().uuid().describe('UUID of a configurable product (see list_products).'),
+    },
+    async ({ product_id }) => {
+      const t0 = Date.now();
+      const { data: product, error } = await db
+        .from('app_seller_products')
+        .select('id, title, pricing_mode, option_schema, currency')
+        .eq('id', product_id)
+        .eq('seller_id', seller.id)
+        .maybeSingle();
+      if (error || !product) {
+        const r = asJson({ error: `product ${product_id} not found for ${seller.slug}` });
+        void logInteraction(seller.id, 'get_offering_schema', identity, { product_id }, { error: 'not_found' }, 404, Date.now() - t0);
+        return r;
+      }
+      if (product.pricing_mode !== 'configurable') {
+        const r = asJson({ error: 'not_configurable', message: `"${product.title}" is a fixed-price product. Use get_product / buy_product.`, product_id: product.id });
+        void logInteraction(seller.id, 'get_offering_schema', identity, { product_id }, { error: 'not_configurable' }, 409, Date.now() - t0);
+        return r;
+      }
+      const schema = parseOfferingSchema(product.option_schema);
+      if (!schema) {
+        const r = asJson({ error: 'schema_unavailable', message: `"${product.title}" is configurable but has no usable option schema yet. Ask the seller, or use ask_sales_agent.`, product_id: product.id });
+        void logInteraction(seller.id, 'get_offering_schema', identity, { product_id }, { error: 'schema_unavailable' }, 409, Date.now() - t0);
+        return r;
+      }
+      const out = asJson({
+        seller:     seller.slug,
+        product_id: product.id,
+        title:      product.title,
+        currency:   schema.currency,
+        from_price: schema.base_price,
+        groups:     schema.groups,
+        quantity:   schema.quantity ?? null,
+        modifiers:  schema.modifiers ?? [],
+        how_to_quote: 'Call request_quote with { product_id, selections: { options: { <group_key>: <choice|choices|number|boolean> }, quantity } }. The price returned is advisory and becomes binding only after the seller approves it.',
+      });
+      void logInteraction(seller.id, 'get_offering_schema', identity, { product_id }, { groups: schema.groups.length }, 200, Date.now() - t0);
+      return out;
+    },
+  );
+
+  // ── request_quote ────────────────────────────────────────────────
+  // The buying agent submits a configuration. We compute the seller's own
+  // pricing rule deterministically and record an ADVISORY quote that the human
+  // seller must approve before it is binding.
+  server.tool(
+    'request_quote',
+    `Request an advisory price for a configurable ${seller.name} product. Pass product_id and your selections (the option values from get_offering_schema). Optionally pass a 'spec' object for free-form context (deadline, artwork notes) and a 'contact' so the seller can reach back. Returns a quote_ref and a proposed_total that is NON-BINDING: ${seller.name} reviews and approves, revises, or rejects it. Poll get_quote to see the decision.`,
+    {
+      product_id: z.string().uuid(),
+      selections: z.object({
+        options:  z.record(z.string(), z.any()).describe('Map of option group key to the chosen value (string for single_select, string[] for multi_select, number for numeric, boolean for a modifier toggle).'),
+        quantity: z.number().int().min(1).max(100000).optional().describe('Order quantity (default 1).'),
+      }),
+      spec:    z.record(z.string(), z.any()).optional().describe('Free-form brief: deadline, delivery target, artwork notes. Not priced, surfaced to the seller.'),
+      contact: z.string().max(300).optional().describe('Reach-back identifier so the seller can follow up.'),
+    },
+    async ({ product_id, selections, spec, contact }) => {
+      const t0 = Date.now();
+      const { data: product, error } = await db
+        .from('app_seller_products')
+        .select('id, title, pricing_mode, option_schema, active')
+        .eq('id', product_id)
+        .eq('seller_id', seller.id)
+        .maybeSingle();
+      if (error || !product) {
+        const r = asJson({ error: `product ${product_id} not found for ${seller.slug}` });
+        void logInteraction(seller.id, 'request_quote', identity, { product_id }, { error: 'not_found' }, 404, Date.now() - t0);
+        return r;
+      }
+      if (product.pricing_mode !== 'configurable') {
+        const r = asJson({ error: 'not_configurable', message: `"${product.title}" is fixed-price. Use buy_product.`, product_id: product.id });
+        void logInteraction(seller.id, 'request_quote', identity, { product_id }, { error: 'not_configurable' }, 409, Date.now() - t0);
+        return r;
+      }
+      const schema = parseOfferingSchema(product.option_schema);
+      if (!schema) {
+        const r = asJson({ error: 'schema_unavailable', message: `"${product.title}" has no usable option schema yet.`, product_id: product.id });
+        void logInteraction(seller.id, 'request_quote', identity, { product_id }, { error: 'schema_unavailable' }, 409, Date.now() - t0);
+        return r;
+      }
+
+      const sel: Selections = {
+        options:  (selections.options ?? {}) as Selections['options'],
+        quantity: selections.quantity,
+      };
+      const quote = computeQuote(schema, sel);
+      if (!quote.ok) {
+        const r = asJson({ error: 'invalid_selections', message: 'Your selections did not validate against the option schema.', issues: quote.errors });
+        void logInteraction(seller.id, 'request_quote', identity, { product_id, selections: sel }, { error: 'invalid_selections', issues: quote.errors.length }, 400, Date.now() - t0);
+        return r;
+      }
+
+      const viaAgentId = typeof identity.via_agent_id === 'number' ? identity.via_agent_id : null;
+      const trimmedContact = contact?.trim().slice(0, 300) || null;
+      const firstRound = {
+        round:      1,
+        by:         'agent' as const,
+        total_usdc: quote.total,
+        selections: sel,
+        note:       'Advisory quote computed from the seller pricing rule. Pending seller approval.',
+        at:         new Date().toISOString(),
+      };
+
+      const { data: inserted, error: insErr } = await db
+        .from('app_seller_quotes')
+        .insert({
+          seller_id:           seller.id,
+          product_id:          product.id,
+          buyer_agent_id:      viaAgentId != null ? String(viaAgentId) : null,
+          buyer_wallet:        null,
+          contact:             trimmedContact,
+          spec:                spec ?? {},
+          selections:          sel,
+          proposed_total_usdc: quote.total,
+          breakdown:           quote.breakdown,
+          status:              'pending_seller_approval',
+          thread:              [firstRound],
+        })
+        .select('id, quote_ref')
+        .single();
+      if (insErr || !inserted) {
+        console.error('[mcp/request_quote] insert failed', insErr);
+        const r = asJson({ error: 'could not record quote', error_code: 'quote_insert_failed' });
+        void logInteraction(seller.id, 'request_quote', identity, { product_id }, { error: 'quote_insert_failed' }, 500, Date.now() - t0);
+        return r;
+      }
+
+      const quoteRef = inserted.quote_ref as string;
+      const out = asJson({
+        quote_ref:      quoteRef,
+        quote_id:       inserted.id,
+        seller:         seller.slug,
+        product:        { id: product.id, title: product.title },
+        proposed_total_usdc: quote.total,
+        currency:       quote.currency,
+        quantity:       quote.quantity,
+        unit_price_usdc: quote.unit_price,
+        breakdown:      quote.breakdown,
+        binding:        false,
+        status:         'pending_seller_approval',
+        message:        `This is an advisory quote from ${seller.name}. It is not binding until the seller approves it. Poll get_quote("${quoteRef}") for the decision.`,
+      });
+      void logInteraction(seller.id, 'request_quote', identity, { product_id, selections: sel, has_spec: !!spec }, { quote_ref: quoteRef, proposed_total: quote.total }, 200, Date.now() - t0);
+      void insertNotification({
+        ownerUserId: seller.owner_user_id,
+        kind:        'enquiry',
+        title:       `New quote request: ${quoteRef}`,
+        body:        `${quote.quantity}x ${product.title}, advisory ${quote.total} ${quote.currency}. Awaiting your approval.`,
+        link:        `/seller/${seller.slug}/admin/quotes`,
+        metadata:    {
+          tool_name:      'request_quote',
+          agent_identity: identity,
+          quote_ref:      quoteRef,
+          quote_id:       inserted.id,
+          product_id:     product.id,
+          proposed_total: quote.total,
+          contact:        trimmedContact,
+          seller_id:      seller.id,
+        },
+      });
+      return out;
+    },
+  );
+
+  // ── get_quote ────────────────────────────────────────────────────
+  server.tool(
+    'get_quote',
+    `Check the status of a quote by its quote_ref. Returns the current status (pending_seller_approval, approved, revised_by_seller, countered_by_buyer, rejected, expired), the binding total once approved, and the full negotiation thread.`,
+    {
+      quote_ref: z.string().min(3).max(40).describe('The quote_ref returned by request_quote, e.g. "QUO-2605-7K3PQM".'),
+    },
+    async ({ quote_ref }) => {
+      const t0 = Date.now();
+      const { data: quote, error } = await db
+        .from('app_seller_quotes')
+        .select('id, quote_ref, product_id, status, proposed_total_usdc, approved_total_usdc, breakdown, thread, valid_until, selections, spec, created_at, updated_at')
+        .eq('quote_ref', quote_ref)
+        .eq('seller_id', seller.id)
+        .maybeSingle();
+      if (error || !quote) {
+        const r = asJson({ error: `quote ${quote_ref} not found for ${seller.slug}` });
+        void logInteraction(seller.id, 'get_quote', identity, { quote_ref }, { error: 'not_found' }, 404, Date.now() - t0);
+        return r;
+      }
+      const isApproved = quote.status === 'approved';
+      const out = asJson({
+        quote_ref:           quote.quote_ref,
+        seller:              seller.slug,
+        status:              quote.status,
+        binding:             isApproved,
+        proposed_total_usdc: quote.proposed_total_usdc,
+        approved_total_usdc: quote.approved_total_usdc,
+        current_total_usdc:  isApproved ? quote.approved_total_usdc : quote.proposed_total_usdc,
+        breakdown:           quote.breakdown,
+        valid_until:         quote.valid_until,
+        selections:          quote.selections,
+        spec:                quote.spec,
+        thread:              quote.thread,
+        message:             isApproved
+          ? `${seller.name} approved this quote. It is binding until valid_until. (Settlement lands in a later release.)`
+          : quote.status === 'rejected'
+            ? `${seller.name} declined this quote.`
+            : `This quote is ${quote.status.replace(/_/g, ' ')}. The proposed total is advisory until the seller approves it.`,
+      });
+      void logInteraction(seller.id, 'get_quote', identity, { quote_ref }, { status: quote.status }, 200, Date.now() - t0);
+      return out;
+    },
+  );
+
+  // ── counter_quote ────────────────────────────────────────────────
+  // The buying agent pushes back: a new target price, a different
+  // configuration, or both. Re-enters the seller's approval queue.
+  server.tool(
+    'counter_quote',
+    `Counter an existing quote. Pass the quote_ref and either a counter_total_usdc (your target price), revised selections, or both, with an optional note. This appends a round to the negotiation and puts the quote back in front of ${seller.name} for a decision. The result stays non-binding until the seller approves.`,
+    {
+      quote_ref:          z.string().min(3).max(40),
+      counter_total_usdc: z.number().min(0).optional().describe('Your proposed price for the configuration.'),
+      selections: z.object({
+        options:  z.record(z.string(), z.any()),
+        quantity: z.number().int().min(1).max(100000).optional(),
+      }).optional().describe('Revised configuration, if you are changing what you want.'),
+      note: z.string().max(1000).optional().describe('Free-form message to the seller.'),
+    },
+    async ({ quote_ref, counter_total_usdc, selections, note }) => {
+      const t0 = Date.now();
+      const { data: quote, error } = await db
+        .from('app_seller_quotes')
+        .select('id, quote_ref, product_id, status, proposed_total_usdc, thread')
+        .eq('quote_ref', quote_ref)
+        .eq('seller_id', seller.id)
+        .maybeSingle();
+      if (error || !quote) {
+        const r = asJson({ error: `quote ${quote_ref} not found for ${seller.slug}` });
+        void logInteraction(seller.id, 'counter_quote', identity, { quote_ref }, { error: 'not_found' }, 404, Date.now() - t0);
+        return r;
+      }
+      if (quote.status === 'rejected' || quote.status === 'expired') {
+        const r = asJson({ error: 'quote_closed', message: `Quote ${quote_ref} is ${quote.status} and cannot be countered. Start a new request_quote.` });
+        void logInteraction(seller.id, 'counter_quote', identity, { quote_ref }, { error: 'quote_closed', status: quote.status }, 409, Date.now() - t0);
+        return r;
+      }
+      if (counter_total_usdc === undefined && !selections && !note) {
+        const r = asJson({ error: 'empty_counter', message: 'Provide at least one of counter_total_usdc, selections, or note.' });
+        void logInteraction(seller.id, 'counter_quote', identity, { quote_ref }, { error: 'empty_counter' }, 400, Date.now() - t0);
+        return r;
+      }
+
+      const existingThread = Array.isArray(quote.thread) ? quote.thread as unknown[] : [];
+      const round = {
+        round:      existingThread.length + 1,
+        by:         'buyer' as const,
+        total_usdc: counter_total_usdc ?? null,
+        selections: selections ?? null,
+        note:       note ?? null,
+        at:         new Date().toISOString(),
+      };
+
+      const { error: updErr } = await db
+        .from('app_seller_quotes')
+        .update({
+          status: 'countered_by_buyer',
+          thread: [...existingThread, round],
+        })
+        .eq('id', quote.id)
+        .eq('seller_id', seller.id);
+      if (updErr) {
+        const r = asJson({ error: 'could not record counter', error_code: 'counter_update_failed' });
+        void logInteraction(seller.id, 'counter_quote', identity, { quote_ref }, { error: 'counter_update_failed' }, 500, Date.now() - t0);
+        return r;
+      }
+
+      const out = asJson({
+        quote_ref,
+        seller:  seller.slug,
+        status:  'countered_by_buyer',
+        binding: false,
+        message: `Your counter on ${quote_ref} has been sent to ${seller.name}. Poll get_quote for their decision.`,
+      });
+      void logInteraction(seller.id, 'counter_quote', identity, { quote_ref, counter_total_usdc, has_selections: !!selections }, { status: 'countered_by_buyer' }, 200, Date.now() - t0);
+      void insertNotification({
+        ownerUserId: seller.owner_user_id,
+        kind:        'enquiry',
+        title:       `Buyer countered ${quote_ref}`,
+        body:        counter_total_usdc !== undefined ? `Counter target: ${counter_total_usdc} USDC.` : (note?.slice(0, 200) ?? 'Revised configuration.'),
+        link:        `/seller/${seller.slug}/admin/quotes`,
+        metadata:    { tool_name: 'counter_quote', agent_identity: identity, quote_ref, quote_id: quote.id, counter_total_usdc: counter_total_usdc ?? null, seller_id: seller.id },
       });
       return out;
     },

@@ -1,54 +1,65 @@
 'use client';
 
-import { useState, useEffect } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import ThemeToggle from '@/components/app/ThemeToggle';
 import { NotificationBell } from '@/components/app/NotificationBell';
 import { Wordmark } from '@/components/app/Wordmark';
 
 /* ──────────────────────────────────────────────────────────────────────────
-   Seller dashboard, Maison design. Identity (name, agent code, MCP url) and the
-   management links are real; the live-activity ledger, open-negotiation cards,
-   metrics and listings table are design seed data, a visual prototype of the
-   Sales Agent's work surface.
+   Seller dashboard, Maison design. Every number, row and card on this surface
+   is read from the seller's real rows (app_seller_products, app_seller_quotes,
+   app_purchases / app_distributions) by the server component and passed in as
+   props. There is no seed or placeholder data here.
    ────────────────────────────────────────────────────────────────────────── */
 
-const FEED = [
-  { t: '07:04', buyer: 'NOVA·BA',    item: 'Alaïa wool dress, FR38',   amt: '1,450' },
-  { t: '06:58', buyer: 'agent/0x4c', item: 'Cartier Trinity ring, 52', amt: '2,100' },
-  { t: '06:45', buyer: 'ATLAS·BA',   item: 'RRL waxed jacket, M',      amt: '540'   },
-  { t: '06:30', buyer: 'agent/0x90', item: 'LV Ursula bag',            amt: '3,200' },
-  { t: '06:12', buyer: 'WREN·BA',    item: 'JPG cargo jeans, 31',      amt: '380'   },
-  { t: '05:55', buyer: 'agent/0x33', item: 'Alaïa knit, FR40',         amt: '690'   },
-  { t: '05:40', buyer: 'agent/0x77', item: 'Cartier Love band, 18',    amt: '4,100' },
-];
-const FSTATUS = ['ASKING', 'MATCHED', 'NEGOTIATING', 'SOLD'];
-const FCOLOR: Record<string, string> = {
-  ASKING: 'var(--ink-3)', MATCHED: 'var(--accent)', NEGOTIATING: 'var(--accent)', SOLD: 'var(--live)',
+export interface BrandOption { slug: string; name: string }
+export interface Metrics {
+  productsLive:  number;
+  quotesTotal:   number;
+  inNegotiation: number;
+  paidOutUsdc:   number;
+}
+export interface ActivityRow {
+  at:       string;
+  who:      string;
+  quoteRef: string;
+  item:     string;
+  amount:   number | null;
+  status:   string;
+}
+export interface NegotiationRow {
+  quoteRef: string;
+  item:     string;
+  buyer:    string;
+  proposed: number | null;
+  status:   string;
+}
+export interface ListingRow {
+  title:       string;
+  kind:        string;
+  price:       number;
+  pricingMode: string;
+  status:      string;
+}
+
+const OPEN_LABEL: Record<string, string> = {
+  pending_seller_approval: 'AWAITING YOU',
+  countered_by_buyer:      'BUYER COUNTERED',
+  revised_by_seller:       'YOU REVISED',
+  approved:                'APPROVED',
+  rejected:                'DECLINED',
+  expired:                 'EXPIRED',
 };
 
-const NEGOS = [
-  { buyer: 'NOVA·BA',    item: 'Alaïa wool dress, FR38',   floor: 1450, offer: 1290 },
-  { buyer: 'agent/0x4c', item: 'Cartier Trinity ring, 52', floor: 2100, offer: 1980 },
-  { buyer: 'ATLAS·BA',   item: 'RRL waxed jacket, M',      floor: 540,  offer: 470  },
-];
+function usdc(n: number): string {
+  return n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
 
-const LISTINGS = [
-  { product: 'Alaïa wool dress, FR38',   cat: 'Womenswear', price: '1,450', interest: '6 agents', status: 'NEGOTIATING' },
-  { product: 'Cartier Trinity ring, 52', cat: 'Jewellery',  price: '2,100', interest: '9 agents', status: 'LIVE' },
-  { product: 'RRL waxed jacket, M',      cat: 'Menswear',   price: '540',   interest: '4 agents', status: 'NEGOTIATING' },
-  { product: 'LV Ursula bag',            cat: 'Bags',       price: '3,200', interest: '3 agents', status: 'LIVE' },
-  { product: 'JPG cargo jeans, 31',      cat: 'Menswear',   price: '380',   interest: '5 agents', status: 'SOLD OUT' },
-  { product: 'Cartier Love band, 18',    cat: 'Jewellery',  price: '4,100', interest: '2 agents', status: 'PAUSED' },
-];
-
-function useDrift(min: number, max: number, ms: number) {
-  const [v, setV] = useState(Math.round((min + max) / 2));
-  useEffect(() => {
-    const id = setInterval(() => setV(Math.floor(min + Math.random() * (max - min + 1))), ms);
-    return () => clearInterval(id);
-  }, [min, max, ms]);
-  return v;
+function hhmm(iso: string): string {
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return '';
+  return d.toISOString().slice(11, 16);
 }
 
 function LiveDot() {
@@ -64,9 +75,7 @@ function Metric({ label, val, sub }: { label: string; val: string | number; sub:
   );
 }
 
-function Ledger({ agentCode }: { agentCode: string }) {
-  const [tick, setTick] = useState(0);
-  useEffect(() => { const id = setInterval(() => setTick((t) => t + 1), 1900); return () => clearInterval(id); }, []);
+function Ledger({ agentCode, rows }: { agentCode: string; rows: ActivityRow[] }) {
   return (
     <div className="panel">
       <div className="panel-head">
@@ -77,19 +86,27 @@ function Ledger({ agentCode }: { agentCode: string }) {
       </div>
       <div className="ledger">
         <div className="ledger-row ledger-head uc-mono">
-          <span>TIME</span><span>BUYER</span><span>ITEM</span><span style={{ textAlign: 'right' }}>STATUS</span><span style={{ textAlign: 'right' }}>USDC</span>
+          <span>TIME</span><span>BY</span><span>ITEM</span><span style={{ textAlign: 'right' }}>STATUS</span><span style={{ textAlign: 'right' }}>USDC</span>
         </div>
-        {FEED.map((r, i) => {
-          const st = FSTATUS[(tick + i) % FSTATUS.length];
+        {rows.length === 0 && (
+          <div className="ledger-row">
+            <span className="lg-item" style={{ gridColumn: '1 / -1', color: 'var(--ink-3)' }}>
+              No agent activity yet. When a buying agent opens a quote, every round shows here.
+            </span>
+          </div>
+        )}
+        {rows.map((r, i) => {
+          const st = OPEN_LABEL[r.status] ?? r.status.toUpperCase();
+          const sold = r.status === 'approved';
           return (
             <div className="ledger-row" key={i}>
-              <span className="font-mono lg-dim">{r.t}</span>
-              <span className="font-mono lg-buyer">{r.buyer}</span>
+              <span className="font-mono lg-dim">{hhmm(r.at)}</span>
+              <span className="font-mono lg-buyer">{r.who.toUpperCase()}</span>
               <span className="lg-item">{r.item}</span>
               <span style={{ textAlign: 'right' }}>
-                <span className="font-mono lg-status" style={{ color: FCOLOR[st], borderColor: st === 'SOLD' ? 'var(--live)' : 'var(--line-strong)' }}>{st}</span>
+                <span className="font-mono lg-status" style={{ color: sold ? 'var(--live)' : 'var(--ink-3)', borderColor: sold ? 'var(--live)' : 'var(--line-strong)' }}>{st}</span>
               </span>
-              <span className="font-mono lg-amt" style={{ color: st === 'SOLD' ? 'var(--ink)' : 'var(--ink-3)' }}>{r.amt}</span>
+              <span className="font-mono lg-amt" style={{ color: sold ? 'var(--ink)' : 'var(--ink-3)' }}>{r.amount == null ? '·' : usdc(r.amount)}</span>
             </div>
           );
         })}
@@ -98,64 +115,60 @@ function Ledger({ agentCode }: { agentCode: string }) {
   );
 }
 
-function NegoCard({ n }: { n: typeof NEGOS[number] }) {
-  const [offer, setOffer] = useState(n.offer);
-  const [status, setStatus] = useState<'open' | 'countered' | 'booked'>('open');
-  const pct = Math.min(100, Math.round((offer / n.floor) * 100));
-  const counter = () => { setOffer((o) => Math.min(n.floor, o + Math.ceil((n.floor - o) / 2))); setStatus('countered'); };
-  const accept = () => setStatus('booked');
+function NegoCard({ n, slug }: { n: NegotiationRow; slug: string }) {
   return (
-    <div className="nego-card">
+    <Link href={`/seller/${slug}/admin/quotes`} className="nego-card" style={{ textDecoration: 'none', color: 'inherit', display: 'block' }}>
       <div className="nego-top">
         <div>
           <div className="nego-item">{n.item}</div>
           <div className="uc-mono nego-buyer">{n.buyer}</div>
         </div>
-        <div className={'nego-pill uc-mono ' + status}>{status === 'booked' ? 'SOLD' : status === 'countered' ? 'COUNTERED' : 'OPEN'}</div>
+        <div className="nego-pill uc-mono open">{OPEN_LABEL[n.status] ?? n.status.toUpperCase()}</div>
       </div>
       <div className="nego-nums">
-        <div><span className="uc-mono nego-k">THEIR OFFER</span><span className="nego-v tnum">{offer}</span></div>
-        <div className="nego-arrow">{status === 'booked' ? '·' : '→'}</div>
-        <div style={{ textAlign: 'right' }}><span className="uc-mono nego-k">YOUR FLOOR</span><span className="nego-v tnum">{n.floor}</span></div>
+        <div><span className="uc-mono nego-k">QUOTE</span><span className="nego-v tnum" style={{ fontSize: 13 }}>{n.quoteRef}</span></div>
+        <div className="nego-arrow">→</div>
+        <div style={{ textAlign: 'right' }}><span className="uc-mono nego-k">ON THE TABLE</span><span className="nego-v tnum">{n.proposed == null ? '·' : usdc(n.proposed)}</span></div>
       </div>
-      <div className="nego-bar"><span style={{ width: pct + '%', background: status === 'booked' ? 'var(--live)' : 'var(--accent)' }} /></div>
       <div className="nego-actions">
-        {status === 'booked'
-          ? <div className="uc-mono nego-done"><span className="d" /> SOLD AT {offer} USDC</div>
-          : <>
-              <button className="nego-btn ghost" onClick={counter}>Let agent counter</button>
-              <button className="nego-btn fill" onClick={accept} disabled={offer < n.floor} style={offer < n.floor ? { opacity: 0.45, cursor: 'not-allowed' } : undefined}>
-                {offer < n.floor ? 'Below floor' : 'Accept'}
-              </button>
-            </>}
+        <span className="uc-mono" style={{ fontSize: 10, color: 'var(--ink-2)' }}>Open in quote inbox →</span>
       </div>
-    </div>
+    </Link>
   );
 }
 
-function Listing({ l }: { l: typeof LISTINGS[number] }) {
+function Listing({ l }: { l: ListingRow }) {
   const cls = 's-' + l.status.toLowerCase().replace(/ /g, '-');
   return (
     <div className="lst-row">
-      <span className="lst-item">{l.product}</span>
-      <span className="font-mono lst-cat">{l.cat}</span>
-      <span className="lst-price tnum">{l.price}</span>
-      <span className="font-mono lst-lead">{l.interest}</span>
+      <span className="lst-item">{l.title}</span>
+      <span className="font-mono lst-cat">{l.kind}</span>
+      <span className="lst-price tnum">{usdc(l.price)}</span>
+      <span className="font-mono lst-lead">{l.pricingMode === 'configurable' ? 'quote-based' : 'fixed price'}</span>
       <span style={{ textAlign: 'right' }}><span className={'lst-tag uc-mono ' + cls}>{l.status}</span></span>
     </div>
   );
 }
 
 export default function SellerDashboardClient({
-  name, slug, agentCode, mcpUrl,
+  name, slug, agentCode, mcpUrl, brands, metrics, activity, negotiations, listings,
 }: {
-  name: string; slug: string; agentCode: string; mcpUrl: string;
+  name: string;
+  slug: string;
+  agentCode: string;
+  mcpUrl: string;
+  brands: BrandOption[];
+  metrics: Metrics;
+  activity: ActivityRow[];
+  negotiations: NegotiationRow[];
+  listings: ListingRow[];
 }) {
-  const queries = useDrift(40, 72, 2400);
+  const router = useRouter();
   const productsHref = `/seller/${slug}/admin/products`;
-  const salesHref = `/seller/${slug}/admin/sales`;
-  const shippingHref = `/seller/${slug}/admin/shipping`;
-  const agentHref = `/seller/${slug}/admin/sales-agent`;
+  const salesHref    = `/seller/${slug}/admin/sales`;
+  const agentHref    = `/seller/${slug}/admin/sales-agent`;
+  const quotesHref   = `/seller/${slug}/admin/quotes`;
+
   return (
     <div className="dash-page">
       <header className="via-top">
@@ -163,11 +176,24 @@ export default function SellerDashboardClient({
           <nav className="dash-nav">
             <Link href={`/seller/${slug}/admin`} className="is-active">Dashboard</Link>
             <Link href={productsHref}>Products</Link>
+            <Link href={quotesHref}>Quotes</Link>
             <Link href={salesHref}>Sales</Link>
-            <Link href={shippingHref}>Shipping</Link>
           </nav>
           <Link href="/" aria-label="VIA home" style={{ display: 'inline-flex', justifyContent: 'center' }}><Wordmark /></Link>
           <div className="dash-right">
+            {brands.length > 1 && (
+              <select
+                aria-label="Switch seller"
+                value={slug}
+                onChange={(e) => router.push(`/seller/${e.target.value}/admin`)}
+                className="dash-mcp uc-mono"
+                style={{ background: 'transparent', border: '1px solid var(--line-strong)', padding: '4px 8px', cursor: 'pointer' }}
+              >
+                {brands.map((b) => (
+                  <option key={b.slug} value={b.slug}>{b.name}</option>
+                ))}
+              </select>
+            )}
             <a href={mcpUrl} target="_blank" rel="noreferrer" className="dash-mcp uc-mono">MCP ↗</a>
             <NotificationBell />
             <div className="dash-acct"><span className="dash-avatar" />{name}</div>
@@ -185,7 +211,12 @@ export default function SellerDashboardClient({
             <span className="dash-eyebrow">· Seller</span>
             <h1 className="dash-h1">Good morning, <em>{name}</em>.</h1>
             <div className="dash-agentline">
-              <span className="dash-agentpill"><LiveDot /> Your Sales Agent · {agentCode} · answering 3 buyers now</span>
+              <span className="dash-agentpill">
+                <LiveDot /> Your Sales Agent · {agentCode} ·{' '}
+                {metrics.inNegotiation === 0
+                  ? 'no live negotiations'
+                  : `${metrics.inNegotiation} in negotiation now`}
+              </span>
             </div>
           </div>
           <div className="dash-actions">
@@ -195,21 +226,26 @@ export default function SellerDashboardClient({
         </div>
 
         <div className="dash-metrics">
-          <Metric label="PRODUCTS LIVE" val="5" sub="listed" />
-          <Metric label="QUERIES" val={queries} sub="today" />
-          <Metric label="IN NEGOTIATION" val="3" sub="live" />
-          <Metric label="EARNED · 30D" val="18,400" sub="USDC" />
+          <Metric label="PRODUCTS LIVE"  val={metrics.productsLive}  sub="listed" />
+          <Metric label="QUOTES"         val={metrics.quotesTotal}   sub="all time" />
+          <Metric label="IN NEGOTIATION" val={metrics.inNegotiation} sub="open" />
+          <Metric label="PAID OUT"       val={usdc(metrics.paidOutUsdc)} sub="USDC" />
         </div>
 
         <div className="dash-main">
-          <Ledger agentCode={agentCode} />
+          <Ledger agentCode={agentCode} rows={activity} />
           <div className="panel">
             <div className="panel-head">
               <h3>Open negotiations</h3>
-              <div className="uc-mono" style={{ fontSize: 9.5, color: 'var(--ink-3)' }}>3 live</div>
+              <div className="uc-mono" style={{ fontSize: 9.5, color: 'var(--ink-3)' }}>{negotiations.length} live</div>
             </div>
             <div className="nego-list">
-              {NEGOS.map((n, i) => <NegoCard key={i} n={n} />)}
+              {negotiations.length === 0 && (
+                <p style={{ fontSize: 13, color: 'var(--ink-3)', padding: '4px 2px' }}>
+                  No open quotes. When a buying agent calls request_quote on a configurable product, the thread opens here and in your <Link href={quotesHref} style={{ color: 'var(--ink-2)' }}>quote inbox</Link>.
+                </p>
+              )}
+              {negotiations.map((n, i) => <NegoCard key={i} n={n} slug={slug} />)}
             </div>
           </div>
         </div>
@@ -221,9 +257,14 @@ export default function SellerDashboardClient({
           </div>
           <div className="lst">
             <div className="lst-row lst-head uc-mono">
-              <span>PRODUCT</span><span>CATEGORY</span><span>PRICE</span><span>INTEREST</span><span style={{ textAlign: 'right' }}>STATUS</span>
+              <span>PRODUCT</span><span>KIND</span><span>FROM</span><span>PRICING</span><span style={{ textAlign: 'right' }}>STATUS</span>
             </div>
-            {LISTINGS.map((l, i) => <Listing key={i} l={l} />)}
+            {listings.length === 0 && (
+              <div className="lst-row">
+                <span className="lst-item" style={{ color: 'var(--ink-3)' }}>No products yet.</span>
+              </div>
+            )}
+            {listings.map((l, i) => <Listing key={i} l={l} />)}
           </div>
         </div>
       </div>
