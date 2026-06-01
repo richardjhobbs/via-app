@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import ThemeToggle from '@/components/app/ThemeToggle';
 import { NotificationBell } from '@/components/app/NotificationBell';
 import { Wordmark } from '@/components/app/Wordmark';
+import TestAgentBadge from '@/components/app/TestAgentBadge';
 
 /* ──────────────────────────────────────────────────────────────────────────
    Seller dashboard, Maison design. Every number, row and card on this surface
@@ -275,7 +276,7 @@ export default function SellerDashboardClient({
           <nav className="via-foot-nav">
             <Link href="/">Home</Link>
             <Link href="/faq/sellers" className="foot-faq">FAQ</Link>
-            <span className="via-foot-badge"><span className="d" /> AGENT-READY</span>
+            <TestAgentBadge />
           </nav>
         </div>
       </footer>

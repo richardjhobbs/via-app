@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import ThemeToggle from '@/components/app/ThemeToggle';
 import { Wordmark } from '@/components/app/Wordmark';
+import TestAgentBadge from '@/components/app/TestAgentBadge';
 import type { NetworkMetrics } from '@/lib/app/network-stats';
 
 /* ──────────────────────────────────────────────────────────────────────────
@@ -210,7 +211,7 @@ export default function LandingClient({ metrics }: { metrics: NetworkMetrics }) 
           <nav className="via-foot-nav">
             <Link href="/faq" className="foot-faq">FAQ</Link>
             <a href="https://getvia.xyz/mcp">MCP endpoint ↗</a>
-            <span className="via-foot-badge"><span className="d" /> AGENT-READY</span>
+            <TestAgentBadge />
           </nav>
         </div>
       </footer>

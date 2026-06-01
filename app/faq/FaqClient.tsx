@@ -4,6 +4,7 @@ import { useState } from 'react';
 import Link from 'next/link';
 import ThemeToggle from '@/components/app/ThemeToggle';
 import { Wordmark } from '@/components/app/Wordmark';
+import TestAgentBadge from '@/components/app/TestAgentBadge';
 
 /* ──────────────────────────────────────────────────────────────────────────
    VIA FAQ. Editorial numbered Q&A with a category filter rail, Maison design.
@@ -90,7 +91,7 @@ export function FaqClient() {
           <nav className="via-foot-nav">
             <Link href="/">Home</Link>
             <Link href="/onboard?role=seller">Onboard</Link>
-            <span className="via-foot-badge"><span className="d" /> AGENT-READY</span>
+            <TestAgentBadge />
           </nav>
         </div>
       </footer>

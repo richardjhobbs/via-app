@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import ThemeToggle from '@/components/app/ThemeToggle';
 import { Wordmark } from '@/components/app/Wordmark';
+import TestAgentBadge from '@/components/app/TestAgentBadge';
 
 /* ──────────────────────────────────────────────────────────────────────────
    Buyer dashboard, Maison design. Identity (name, agent code, MCP url) is real;
@@ -225,7 +226,7 @@ export default function BuyerDashboardClient({
           <nav className="via-foot-nav">
             <Link href="/">Home</Link>
             <Link href="/faq/buyers" className="foot-faq">FAQ</Link>
-            <span className="via-foot-badge"><span className="d" /> AGENT-READY</span>
+            <TestAgentBadge />
           </nav>
         </div>
       </footer>
