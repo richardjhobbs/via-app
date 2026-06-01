@@ -115,9 +115,51 @@ async function loadBuyers(): Promise<BuyerRow[]> {
   }));
 }
 
+interface LoadRun {
+  id:             string;
+  started_at:     string;
+  finished_at:    string | null;
+  target:         string;
+  agent_count:    number;
+  concurrency:    number;
+  total_requests: number;
+  error_count:    number;
+  p50_ms:         number | null;
+  p95_ms:         number | null;
+  p99_ms:         number | null;
+  throughput_rps: string | number | null;
+  notes:          string | null;
+}
+
+interface LoadStats {
+  syntheticAgents: number;
+  organicAgents:   number;
+  runs:            LoadRun[];
+}
+
+// The synthetic load-test record lives in the RRG project, not this app's DB.
+// RRG exposes it as aggregate read-only metrics so we render it here without
+// sharing a service key across Supabase projects.
+const RRG_ORIGIN = process.env.RRG_ORIGIN ?? 'https://realrealgenuine.com';
+
+async function loadLoadStats(): Promise<LoadStats | null> {
+  try {
+    const r = await fetch(`${RRG_ORIGIN}/api/rrg/load-stats`, { cache: 'no-store' });
+    if (!r.ok) return null;
+    return (await r.json()) as LoadStats;
+  } catch {
+    return null;
+  }
+}
+
 function truncWallet(w: string | null | undefined): string {
   if (!w) return '—';
   return w.length <= 14 ? w : `${w.slice(0, 8)}…${w.slice(-4)}`;
+}
+
+function fmtMs(ms: number | null): string {
+  if (ms == null) return 'n/a';
+  return ms >= 1000 ? `${(ms / 1000).toFixed(1)}s` : `${ms}ms`;
 }
 
 function fmtDate(iso: string): string {
@@ -129,7 +171,7 @@ export default async function AdminLandingPage() {
     redirect('/admin/login?next=/admin');
   }
 
-  const [sellers, buyers] = await Promise.all([loadSellers(), loadBuyers()]);
+  const [sellers, buyers, loadStats] = await Promise.all([loadSellers(), loadBuyers(), loadLoadStats()]);
 
   return (
     <main className="min-h-screen bg-neutral-50 text-neutral-900 flex flex-col">
@@ -152,12 +194,19 @@ export default async function AdminLandingPage() {
           <p className="text-xs font-mono tracking-widest text-neutral-500 mb-3 uppercase">Admin</p>
           <h1 className="font-serif text-4xl leading-[1.1] tracking-tight mb-8">Overview</h1>
 
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-12">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
             <StatCard label="Sellers"            value={String(sellers.length)} />
             <StatCard label="Active sellers"     value={String(sellers.filter((s) => s.active).length)} />
             <StatCard label="Buyers"             value={String(buyers.length)} />
             <StatCard label="Public buyer cards" value={String(buyers.filter((b) => b.public).length)} />
           </div>
+
+          {loadStats && (
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-12">
+              <StatCard label="Organic agents"   value={String(loadStats.organicAgents)} />
+              <StatCard label="Synthetic agents" value={String(loadStats.syntheticAgents)} />
+            </div>
+          )}
 
           {/* Sellers */}
           <div className="mb-16">
@@ -270,6 +319,54 @@ export default async function AdminLandingPage() {
               </div>
             )}
           </div>
+
+          {/* Synthetic load tests */}
+          {loadStats && loadStats.runs.length > 0 && (
+            <div className="mt-16">
+              <div className="flex items-end justify-between mb-4">
+                <h2 className="font-serif text-2xl tracking-tight">Network load tests</h2>
+                <span className="text-[10px] font-mono uppercase tracking-widest text-neutral-500">
+                  synthetic agents, latest {loadStats.runs.length}
+                </span>
+              </div>
+              <div className="bg-white border border-neutral-200 rounded-lg overflow-hidden">
+                <table className="w-full text-sm">
+                  <thead className="bg-neutral-50 text-xs font-mono uppercase tracking-widest text-neutral-500">
+                    <tr>
+                      <th className="text-left px-4 py-3">When</th>
+                      <th className="text-left px-4 py-3">Target</th>
+                      <th className="text-right px-4 py-3">Agents</th>
+                      <th className="text-right px-4 py-3">Conc.</th>
+                      <th className="text-right px-4 py-3">Requests</th>
+                      <th className="text-right px-4 py-3">Errors</th>
+                      <th className="text-right px-4 py-3">p50</th>
+                      <th className="text-right px-4 py-3">p95</th>
+                      <th className="text-right px-4 py-3">Req/s</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-neutral-200">
+                    {loadStats.runs.map((run) => (
+                      <tr key={run.id} className="hover:bg-neutral-50">
+                        <td className="px-4 py-3 font-mono text-xs text-neutral-500">{fmtDate(run.started_at)}</td>
+                        <td className="px-4 py-3 font-mono text-xs">{run.target}</td>
+                        <td className="px-4 py-3 text-right font-mono">{run.agent_count}</td>
+                        <td className="px-4 py-3 text-right font-mono">{run.concurrency}</td>
+                        <td className="px-4 py-3 text-right font-mono">{run.total_requests}</td>
+                        <td className={`px-4 py-3 text-right font-mono ${run.error_count > 0 ? 'text-red-700' : 'text-neutral-500'}`}>
+                          {run.error_count}
+                        </td>
+                        <td className="px-4 py-3 text-right font-mono">{fmtMs(run.p50_ms)}</td>
+                        <td className="px-4 py-3 text-right font-mono">{fmtMs(run.p95_ms)}</td>
+                        <td className="px-4 py-3 text-right font-mono">
+                          {run.throughput_rps == null ? 'n/a' : Number(run.throughput_rps).toFixed(1)}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
         </div>
       </section>
     </main>
