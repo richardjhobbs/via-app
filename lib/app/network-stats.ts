@@ -11,12 +11,14 @@ export interface NetworkMetrics {
   sellers: number;
   buyingAgents: number;
   products: number;
+  syntheticAgents: number;
 }
 
 interface MemberStats {
   sellers: number;
   products: number;
   buyingAgents: number;
+  syntheticAgents: number;
 }
 
 // Other VIA platforms that self-report counts. via-app's own counts are local.
@@ -35,21 +37,23 @@ async function fetchLocal(): Promise<MemberStats> {
     sellers: sellers.count ?? 0,
     products: products.count ?? 0,
     buyingAgents: buyers.count ?? 0,
+    syntheticAgents: 0,
   };
 }
 
 async function fetchMember(statsUrl: string): Promise<MemberStats> {
   try {
     const res = await fetch(statsUrl, { next: { revalidate: 60 } });
-    if (!res.ok) return { sellers: 0, products: 0, buyingAgents: 0 };
+    if (!res.ok) return { sellers: 0, products: 0, buyingAgents: 0, syntheticAgents: 0 };
     const j = (await res.json()) as Partial<MemberStats>;
     return {
       sellers: Number(j.sellers) || 0,
       products: Number(j.products) || 0,
       buyingAgents: Number(j.buyingAgents) || 0,
+      syntheticAgents: Number(j.syntheticAgents) || 0,
     };
   } catch {
-    return { sellers: 0, products: 0, buyingAgents: 0 };
+    return { sellers: 0, products: 0, buyingAgents: 0, syntheticAgents: 0 };
   }
 }
 
@@ -63,8 +67,9 @@ async function compute(): Promise<NetworkMetrics> {
       sellers: acc.sellers + p.sellers,
       buyingAgents: acc.buyingAgents + p.buyingAgents,
       products: acc.products + p.products,
+      syntheticAgents: acc.syntheticAgents + p.syntheticAgents,
     }),
-    { sellers: 0, buyingAgents: 0, products: 0 },
+    { sellers: 0, buyingAgents: 0, products: 0, syntheticAgents: 0 },
   );
 }
 
