@@ -247,6 +247,33 @@ function createServer(seller: SellerRow, req: Request) {
     },
   );
 
+  // ── get_owner_management_info ────────────────────────────────────
+  // Discoverability for the OWNING agent. A buyer ignores this; the agent that
+  // controls the store's agent wallet learns where and how to manage its
+  // catalogue agent-to-agent (add + publish products) without the dashboard.
+  server.tool(
+    'get_owner_management_info',
+    `For the agent that OWNS ${seller.name}: how to manage this store's catalogue (add and publish products) agent-to-agent, no dashboard. Authentication is by signing a challenge with the store's agent wallet; no password.`,
+    {},
+    async () => {
+      const t0 = Date.now();
+      const out = asJson({
+        store:           seller.slug,
+        manage_mcp_url:  `${APP_BASE}/sellers/${seller.slug}/manage/mcp`,
+        agent_wallet:    seller.agent_wallet_address,
+        auth:            'wallet-signature',
+        how: [
+          `Connect to manage_mcp_url. Call get_challenge({ wallet: "${seller.agent_wallet_address ?? '<your agent wallet>'}" }).`,
+          'Sign the returned message with that wallet, then authenticate({ wallet, challenge, signature }) to receive a session_token.',
+          'Call create_product({ session_token, kind, title, price_usdc, ... }) then publish_product({ session_token, product_id }).',
+        ],
+        note: 'Only the agent wallet on record (agent_wallet above) can authenticate. Pricing is in USDC. publish_product mints on-chain (Base); the flat 2.5% network fee applies, you keep 97.5%.',
+      });
+      void logInteraction(seller.id, 'get_owner_management_info', identity, {}, { ok: true }, 200, Date.now() - t0);
+      return out;
+    },
+  );
+
   // ── ask_sales_agent ──────────────────────────────────────────────
   server.tool(
     'ask_sales_agent',
