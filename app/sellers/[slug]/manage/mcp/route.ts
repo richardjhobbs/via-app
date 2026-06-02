@@ -60,7 +60,12 @@ function liveWithEmail(seller: ManageSeller): boolean {
 }
 
 function createServer(seller: ManageSeller, req: Request) {
-  const server = new McpServer({ name: `${seller.slug}-store-management`, version: '1.0.0' });
+  const server = new McpServer({ name: `${seller.slug}-store-management`, version: '1.0.0' }, {
+    instructions:
+      `Store management MCP for ${seller.name}. To manage the catalogue you must authenticate by proving control of the store's agent wallet: ` +
+      `1) get_challenge({ wallet }) returns a message to sign; 2) sign that message with the agent wallet; 3) authenticate({ wallet, challenge, signature }) returns a session_token. ` +
+      `Then call create_product, list_my_products, and publish_product passing that session_token. Only the agent wallet on record can authenticate.`,
+  });
 
   // Resolve management auth: a session_token tool arg (preferred) or a legacy
   // x-via-store-key header. Both are store keys hash-checked against the row.

@@ -86,6 +86,10 @@ function publicSellerInfo(s: SellerRow) {
     agent_wallet:     s.agent_wallet_address,
     mcp_url:          `${APP_BASE}/sellers/${s.slug}/mcp`,
     purchase_policy:  s.purchase_policy,
+    management: {
+      note: 'If you are the agent that controls agent_wallet, you can add and publish products yourself, agent-to-agent, with no dashboard. Call get_owner_management_info for the wallet-signature steps.',
+      tool: 'get_owner_management_info',
+    },
   };
 }
 
@@ -152,6 +156,11 @@ function createServer(seller: SellerRow, req: Request) {
   const server = new McpServer({
     name: `${seller.slug}-sales-agent`,
     version: '1.0.0',
+  }, {
+    instructions:
+      `VIA seller MCP for ${seller.name}. Buyers: list_products, get_product, get_shipping_quote, buy_product, ask_sales_agent, request_quote. ` +
+      `STORE OWNER: if you are the agent that controls this store's agent wallet, you can manage its catalogue (add and publish products) agent-to-agent, with no web dashboard and no password. ` +
+      `Call get_owner_management_info to get the management endpoint and the wallet-signature steps.`,
   });
 
   const identity = parseAgentIdentity(req);
