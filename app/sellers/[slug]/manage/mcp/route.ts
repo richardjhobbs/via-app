@@ -37,18 +37,32 @@ interface ManageSeller {
   owner_user_id:        string;
   active:               boolean;
   contact_email:        string | null;
-  agent_wallet_address: string | null;
+  wallet_address:       string | null; // payout wallet (user-controlled)
+  agent_wallet_address: string | null; // identity wallet (may be platform-managed)
   agent_api_key_hash:   string | null;
 }
 
 async function loadSeller(slug: string): Promise<ManageSeller | null> {
   const { data, error } = await db
     .from('app_sellers')
-    .select('id, slug, name, owner_user_id, active, contact_email, agent_wallet_address, agent_api_key_hash')
+    .select('id, slug, name, owner_user_id, active, contact_email, wallet_address, agent_wallet_address, agent_api_key_hash')
     .eq('slug', slug)
     .maybeSingle();
   if (error || !data) return null;
   return data as ManageSeller;
+}
+
+/**
+ * Wallets allowed to authenticate management for this store: the payout wallet
+ * (always user-controlled) and the agent/identity wallet (user-controlled only
+ * when the user supplied it; platform-managed otherwise). The agent signs with
+ * whichever it controls, in practice the payout wallet for platform-created
+ * stores.
+ */
+function signerWallets(seller: ManageSeller): string[] {
+  return [seller.wallet_address, seller.agent_wallet_address]
+    .filter((w): w is string => !!w)
+    .map((w) => w.toLowerCase());
 }
 
 function asJson(payload: unknown) {
@@ -62,9 +76,9 @@ function liveWithEmail(seller: ManageSeller): boolean {
 function createServer(seller: ManageSeller, req: Request) {
   const server = new McpServer({ name: `${seller.slug}-store-management`, version: '1.0.0' }, {
     instructions:
-      `Store management MCP for ${seller.name}. To manage the catalogue you must authenticate by proving control of the store's agent wallet: ` +
-      `1) get_challenge({ wallet }) returns a message to sign; 2) sign that message with the agent wallet; 3) authenticate({ wallet, challenge, signature }) returns a session_token. ` +
-      `Then call create_product, list_my_products, and publish_product passing that session_token. Only the agent wallet on record can authenticate.`,
+      `Store management MCP for ${seller.name}. To manage the catalogue, authenticate by proving control of one of the store's wallets (the payout wallet you registered with; or the agent wallet if you supplied your own): ` +
+      `1) get_challenge({ wallet }) returns a message to sign; 2) sign that message with that wallet; 3) authenticate({ wallet, challenge, signature }) returns a session_token. ` +
+      `Then call create_product, list_my_products, and publish_product passing that session_token.`,
   });
 
   // Resolve management auth: a session_token tool arg (preferred) or a legacy
@@ -85,16 +99,16 @@ function createServer(seller: ManageSeller, req: Request) {
   // ── get_challenge ────────────────────────────────────────────────
   server.tool(
     'get_challenge',
-    `Begin agent-native authentication for ${seller.name}. Pass the store's agent wallet (see get_seller_info.agent_wallet on the public MCP). Returns a message to sign with that wallet and a challenge token. Only the wallet on record for this store can manage it.`,
+    `Begin agent-native authentication for ${seller.name}. Pass a wallet you control that is on record for this store: your payout wallet, or the agent wallet if you supplied your own (see get_owner_management_info on the public MCP). Returns a message to sign with that wallet and a challenge token.`,
     {
-      wallet: z.string().regex(/^0x[a-fA-F0-9]{40}$/, 'invalid EVM address').describe("The store's agent wallet address (ERC-8004 holder)."),
+      wallet: z.string().regex(/^0x[a-fA-F0-9]{40}$/, 'invalid EVM address').describe('A wallet on record for this store that you control (your payout wallet, or your own agent wallet if you supplied one).'),
     },
     async ({ wallet }) => {
       if (!liveWithEmail(seller)) {
         return asJson({ ok: false, error: 'store_not_live', message: 'This store is not authorised for management (must be approved/active with a contact email).' });
       }
-      if (!seller.agent_wallet_address || wallet.toLowerCase() !== seller.agent_wallet_address.toLowerCase()) {
-        return asJson({ ok: false, error: 'wallet_not_authorised', message: 'That wallet is not the agent wallet on record for this store.' });
+      if (!signerWallets(seller).includes(wallet.toLowerCase())) {
+        return asJson({ ok: false, error: 'wallet_not_authorised', message: "That wallet is not authorised for this store. Sign with the store's payout wallet (or the agent wallet, if you supplied your own)." });
       }
       const challenge = issueChallenge(seller.slug, wallet);
       if (!challenge) return asJson({ ok: false, error: 'not_configured', message: 'Store auth is not configured on the server.' });
@@ -121,7 +135,7 @@ function createServer(seller: ManageSeller, req: Request) {
       if (!liveWithEmail(seller)) {
         return asJson({ ok: false, error: 'store_not_live' });
       }
-      if (!seller.agent_wallet_address || wallet.toLowerCase() !== seller.agent_wallet_address.toLowerCase()) {
+      if (!signerWallets(seller).includes(wallet.toLowerCase())) {
         return asJson({ ok: false, error: 'wallet_not_authorised' });
       }
       const result = verifyChallenge(seller.slug, wallet, challenge, signature);

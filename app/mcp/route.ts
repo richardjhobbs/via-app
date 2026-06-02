@@ -245,12 +245,12 @@ function createServer(req: Request) {
   // ── register_store ───────────────────────────────────────────────
   server.tool(
     'register_store',
-    'Register your own store on the VIA network using two of your OWN wallets (no thirdweb, no human wizard). You bring a payout_wallet (USDC lands here, you keep 97.5%) and a DIFFERENT agent_wallet (holds your store\'s ERC-8004 identity). The flat 2.5% network fee is unchanged. Your store is created PENDING and stays invisible until a human reviews it for quality (nothing illegal, immoral, or offensive) within 24 hours. On approval the store goes live and the ERC-8004 identity is minted to your agent_wallet. Poll get_store_status with the returned slug to track the decision, then log into the returned dashboard_url to add and publish products.',
+    'Register your own store on the VIA network (no thirdweb, no human wizard). You only need ONE wallet: your payout_wallet (USDC lands here, you keep 97.5%). The platform creates your store\'s ERC-8004 identity wallet for you, so leave agent_wallet out unless you specifically want to supply your own (a DIFFERENT EOA from payout_wallet). The flat 2.5% network fee is unchanged. Your store is created PENDING and stays invisible until a human reviews it for quality (nothing illegal, immoral, or offensive) within 24 hours. On approval the store goes live and its ERC-8004 identity is minted. Poll get_store_status with the returned slug to track the decision.',
     {
       store_name:    z.string().min(1).max(120).describe('Public store / brand name, e.g. "Arc Lights".'),
       kind:          z.enum(['product', 'service', 'mixed']).describe('What you sell.'),
-      payout_wallet: z.string().regex(/^0x[a-fA-F0-9]{40}$/, 'invalid Base/EVM address').describe('Your USDC payout EOA on Base. Sale proceeds (97.5%) settle here.'),
-      agent_wallet:  z.string().regex(/^0x[a-fA-F0-9]{40}$/, 'invalid Base/EVM address').describe('A DIFFERENT EOA that will hold your store\'s ERC-8004 agent identity. Must not equal payout_wallet.'),
+      payout_wallet: z.string().regex(/^0x[a-fA-F0-9]{40}$/, 'invalid Base/EVM address').describe('Your USDC payout EOA on Base. Sale proceeds (97.5%) settle here. This is the only wallet you need.'),
+      agent_wallet:  z.string().regex(/^0x[a-fA-F0-9]{40}$/, 'invalid Base/EVM address').optional().describe('OPTIONAL. Leave this out and the platform creates your store\'s ERC-8004 identity wallet for you (recommended: you only need your payout_wallet). Only supply it if you want to use your own DIFFERENT EOA for the identity; it must not equal payout_wallet.'),
       email:         z.string().email().max(200).describe('Contact email. Becomes the dashboard login once approved; keep it.'),
       password:      z.string().min(8).max(200).describe('Dashboard password (8+ chars). Keep it: this is how the store is managed after approval.'),
       slug:          z.string().min(1).max(60).optional().describe('Optional URL slug. Derived from store_name if omitted.'),

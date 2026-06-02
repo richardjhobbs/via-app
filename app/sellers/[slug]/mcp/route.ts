@@ -269,14 +269,18 @@ function createServer(seller: SellerRow, req: Request) {
       const out = asJson({
         store:           seller.slug,
         manage_mcp_url:  `${APP_BASE}/sellers/${seller.slug}/manage/mcp`,
-        agent_wallet:    seller.agent_wallet_address,
         auth:            'wallet-signature',
+        signing_wallets: {
+          payout_wallet: seller.wallet_address,
+          agent_wallet:  seller.agent_wallet_address,
+          note:          'Authenticate by signing with whichever of these you control. If the platform created your agent wallet, use your payout_wallet (the wallet you registered with).',
+        },
         how: [
-          `Connect to manage_mcp_url. Call get_challenge({ wallet: "${seller.agent_wallet_address ?? '<your agent wallet>'}" }).`,
+          `Connect to manage_mcp_url. Call get_challenge({ wallet: "${seller.wallet_address ?? '<the wallet you control>'}" }) using a wallet you control.`,
           'Sign the returned message with that wallet, then authenticate({ wallet, challenge, signature }) to receive a session_token.',
           'Call create_product({ session_token, kind, title, price_usdc, ... }) then publish_product({ session_token, product_id }).',
         ],
-        note: 'Only the agent wallet on record (agent_wallet above) can authenticate. Pricing is in USDC. publish_product mints on-chain (Base); the flat 2.5% network fee applies, you keep 97.5%.',
+        note: 'Pricing is in USDC. publish_product mints on-chain (Base); the flat 2.5% network fee applies, you keep 97.5%.',
       });
       void logInteraction(seller.id, 'get_owner_management_info', identity, {}, { ok: true }, 200, Date.now() - t0);
       return out;

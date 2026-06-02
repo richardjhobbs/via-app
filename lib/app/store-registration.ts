@@ -25,6 +25,7 @@ import { db } from './db';
 import { supabaseAdmin } from './seller-auth';
 import { registerAgentIdentity, getAgentIdForWallet } from '@/lib/agent/erc8004';
 import { shouldSkipErc8004, syntheticTestAgentId } from './test-mode';
+import { deriveAgentWallet, platformAgentWalletsEnabled } from './agent-wallet';
 
 const APP_BASE = (process.env.NEXT_PUBLIC_APP_BASE_URL || 'https://app.getvia.xyz').replace(/\/$/, '');
 const APPROVAL_WINDOW_MS = 24 * 60 * 60 * 1000; // 24h review SLA
@@ -37,7 +38,8 @@ export interface CreatePendingStoreInput {
   headline?:    string | null;
   websiteUrl?:  string | null;
   payoutWallet: string;
-  agentWallet:  string;
+  /** Optional. If omitted, the platform derives an identity wallet (needs AGENT_WALLET_SEED). */
+  agentWallet?: string;
   email:        string;
   password:     string;
 }
@@ -79,13 +81,25 @@ export async function createPendingAgentStore(
   if (!storeName)                                    return { ok: false, code: 'missing_name',      error: 'store_name is required.' };
   if (!['product', 'service', 'mixed'].includes(kind)) return { ok: false, code: 'invalid_kind',   error: "kind must be 'product', 'service', or 'mixed'." };
   if (!ethers.isAddress(payoutWallet))               return { ok: false, code: 'invalid_payout_wallet', error: 'payout_wallet is not a valid Base/EVM address.' };
-  if (!ethers.isAddress(agentWallet))                return { ok: false, code: 'invalid_agent_wallet',  error: 'agent_wallet is not a valid Base/EVM address.' };
-  if (payoutWallet.toLowerCase() === agentWallet.toLowerCase()) {
-    return { ok: false, code: 'wallets_must_differ', error: 'payout_wallet and agent_wallet must be two different EOAs. The payout wallet receives USDC; the agent wallet holds the ERC-8004 identity.' };
-  }
 
+  // agent_wallet is OPTIONAL. If supplied, it must be a valid EOA distinct from
+  // the payout wallet. If omitted, the platform derives an identity wallet from
+  // its server seed (so the user only needs one wallet); that requires
+  // AGENT_WALLET_SEED to be configured.
   const payout = payoutWallet.toLowerCase();
-  const agent  = agentWallet.toLowerCase();
+  let agent: string | null = null;
+  const agentProvided = agentWallet.length > 0;
+  if (agentProvided) {
+    if (!ethers.isAddress(agentWallet)) return { ok: false, code: 'invalid_agent_wallet', error: 'agent_wallet is not a valid Base/EVM address.' };
+    if (payout === agentWallet.toLowerCase()) {
+      return { ok: false, code: 'wallets_must_differ', error: 'payout_wallet and agent_wallet must be two different EOAs. The payout wallet receives USDC; the agent wallet holds the ERC-8004 identity. Omit agent_wallet to have the platform create one for you.' };
+    }
+    agent = agentWallet.toLowerCase();
+  } else if (!platformAgentWalletsEnabled()) {
+    return { ok: false, code: 'agent_wallet_required', error: 'Provide an agent_wallet (an EOA distinct from your payout wallet), or contact VIA: platform-managed identity wallets are not enabled.' };
+  }
+  // else: agent stays null here and is derived after insert (needs the store id).
+
   const slug   = normaliseSlug(input.slug, storeName);
   if (!slug) return { ok: false, code: 'invalid_slug', error: 'store_name must contain alphanumeric characters.' };
 
@@ -152,6 +166,24 @@ export async function createPendingAgentStore(
     }
     console.error('[store-registration] insert failed', sellerErr);
     return { ok: false, code: 'insert_failed', error: 'Failed to create the store record.' };
+  }
+
+  // ── Platform-managed agent wallet ───────────────────────────────────
+  // No agent wallet supplied: derive a dedicated identity wallet from the
+  // platform seed + this store's id and persist its address. The private key
+  // is never stored (re-derivable). This wallet holds the ERC-8004 identity
+  // only; it never touches USDC.
+  if (agent === null) {
+    const derived = deriveAgentWallet(seller.id);
+    if (!derived) {
+      // Seed vanished between the gate and here; the store exists but has no
+      // identity wallet. Leave it pending for the operator to reconcile.
+      console.error('[store-registration] AGENT_WALLET_SEED unavailable post-insert for', seller.slug);
+    } else {
+      await db.from('app_sellers')
+        .update({ agent_wallet_address: derived.address.toLowerCase() })
+        .eq('id', seller.id);
+    }
   }
 
   return {
