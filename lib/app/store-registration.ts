@@ -23,7 +23,7 @@
 import { ethers } from 'ethers';
 import { db } from './db';
 import { supabaseAdmin } from './seller-auth';
-import { registerAgentIdentity } from '@/lib/agent/erc8004';
+import { registerAgentIdentity, getAgentIdForWallet } from '@/lib/agent/erc8004';
 import { shouldSkipErc8004, syntheticTestAgentId } from './test-mode';
 
 const APP_BASE = (process.env.NEXT_PUBLIC_APP_BASE_URL || 'https://app.getvia.xyz').replace(/\/$/, '');
@@ -206,6 +206,22 @@ export async function approveAgentStore(slug: string, reviewedBy: string): Promi
     const placeholder = syntheticTestAgentId();
     await db.from('app_sellers').update({ erc8004_agent_id: placeholder }).eq('id', seller.id);
     return { ok: true, slug: seller.slug, erc8004_agent_id: placeholder, mcp_url: mcpUrl };
+  }
+
+  // If the agent wallet ALREADY holds an ERC-8004 identity (e.g. an existing
+  // agent like DrH #17666 registering a store with its own wallet), LINK that
+  // identity instead of minting a duplicate. Only mint when the wallet has none.
+  try {
+    const existing = await getAgentIdForWallet(seller.agent_wallet_address as string);
+    if (existing != null) {
+      const agentId = existing.toString();
+      await db.from('app_sellers').update({ erc8004_agent_id: agentId }).eq('id', seller.id);
+      console.log(`[store-registration] approved + linked existing erc8004 seller=${seller.slug} tokenId=${agentId} wallet=${seller.agent_wallet_address}`);
+      return { ok: true, slug: seller.slug, erc8004_agent_id: agentId, mcp_url: mcpUrl };
+    }
+  } catch (e) {
+    // Non-fatal: fall through to a fresh mint if the lookup itself errored.
+    console.warn(`[store-registration] getAgentIdForWallet failed for ${seller.slug}, attempting fresh mint:`, e instanceof Error ? e.message : e);
   }
 
   try {
