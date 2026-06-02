@@ -17,11 +17,35 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { WebStandardStreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js';
 import { z } from 'zod';
 import { db } from '@/lib/app/db';
+import { createPendingAgentStore } from '@/lib/app/store-registration';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 
 const APP_BASE = (process.env.NEXT_PUBLIC_APP_BASE_URL || 'https://app.getvia.xyz').replace(/\/$/, '');
+
+// ── register_store rate limiting (best-effort, per warm instance) ────
+// register_store creates a Supabase auth user + a DB row on every call, so it
+// is the one write surface on this otherwise read-only discovery MCP. Throttle
+// it hard, keyed by client IP over a sliding 5-minute window. Per-lambda-
+// instance like the per-seller MCP limiter, which is enough to blunt scripted
+// signup floods; a human approves every store before it goes live regardless.
+const REGISTER_WINDOW_MS = 5 * 60_000;
+const REGISTER_MAX = 5;
+const registerHits = new Map<string, number[]>();
+
+function clientIp(req: Request): string {
+  const fwd = req.headers.get('x-forwarded-for');
+  return fwd ? fwd.split(',')[0].trim() : 'noip';
+}
+
+function isRegisterRateLimited(ip: string): boolean {
+  const now = Date.now();
+  const hits = (registerHits.get(ip) ?? []).filter((t) => now - t < REGISTER_WINDOW_MS);
+  hits.push(now);
+  registerHits.set(ip, hits);
+  return hits.length > REGISTER_MAX;
+}
 
 interface SellerSummaryRow {
   slug:             string;
@@ -95,7 +119,7 @@ function asJson(payload: unknown) {
   return { content: [{ type: 'text' as const, text: JSON.stringify(payload, null, 2) }] };
 }
 
-function createServer() {
+function createServer(req: Request) {
   const server = new McpServer({ name: 'via-app-discovery', version: '1.0.0' });
 
   server.tool(
@@ -191,12 +215,123 @@ function createServer() {
       marketing_site:  'https://www.getvia.xyz',
       central_mcp:     'https://www.getvia.xyz/mcp',
       network:         'list_sellers and find_seller federate across every VIA network member (VIA app + RRG + integrated platforms). Results are tagged by platform; connect to each result mcp_url for the catalogue and the buy.',
+      agent_self_onboard: {
+        summary:    'Agents can register their own store over this MCP with two of their own wallets, no thirdweb, no human wizard. The VIA network keeps a flat 2.5% fee on each sale; you keep 97.5% to your payout wallet. Your store gets its own ERC-8004 identity on approval.',
+        how: [
+          '1. Call register_store with: store_name, kind (product|service|mixed), a payout_wallet (your USDC EOA) and a DIFFERENT agent_wallet (your ERC-8004 identity EOA), plus a contact email + password you keep for the dashboard.',
+          '2. Your store is created PENDING and stays invisible (not in list_sellers / find_seller, no per-seller MCP) until a human reviews it. Review happens within 24 hours.',
+          '3. Poll get_store_status with your slug. On "approved" the store is live, the ERC-8004 agent id is minted to your agent_wallet, and your per-seller MCP url is returned.',
+          '4. Add and publish products by logging into the returned dashboard_url with your email + password.',
+        ],
+        review_policy: 'Stores are reviewed for quality: nothing illegal, immoral, or offensive. Rejected stores stay offline and the reason is returned by get_store_status.',
+        fee:           'Flat 2.5% network fee per sale, deducted on-chain at settlement. You keep 97.5%.',
+      },
       tools_here: {
-        list_sellers:    'Browse active sellers across the whole network',
-        find_seller:     'Free-text search across the whole network',
-        seller_mcp_url:  'Resolve a VIA-app slug to its per-seller MCP URL',
+        list_sellers:     'Browse active sellers across the whole network',
+        find_seller:      'Free-text search across the whole network',
+        seller_mcp_url:   'Resolve a VIA-app slug to its per-seller MCP URL',
+        register_store:   'Self-register a new store with your own wallets (pending human review)',
+        get_store_status: 'Check whether your registered store is pending, approved, or rejected',
       },
     }),
+  );
+
+  // ── register_store ───────────────────────────────────────────────
+  server.tool(
+    'register_store',
+    'Register your own store on the VIA network using two of your OWN wallets (no thirdweb, no human wizard). You bring a payout_wallet (USDC lands here, you keep 97.5%) and a DIFFERENT agent_wallet (holds your store\'s ERC-8004 identity). The flat 2.5% network fee is unchanged. Your store is created PENDING and stays invisible until a human reviews it for quality (nothing illegal, immoral, or offensive) within 24 hours. On approval the store goes live and the ERC-8004 identity is minted to your agent_wallet. Poll get_store_status with the returned slug to track the decision, then log into the returned dashboard_url to add and publish products.',
+    {
+      store_name:    z.string().min(1).max(120).describe('Public store / brand name, e.g. "Arc Lights".'),
+      kind:          z.enum(['product', 'service', 'mixed']).describe('What you sell.'),
+      payout_wallet: z.string().regex(/^0x[a-fA-F0-9]{40}$/, 'invalid Base/EVM address').describe('Your USDC payout EOA on Base. Sale proceeds (97.5%) settle here.'),
+      agent_wallet:  z.string().regex(/^0x[a-fA-F0-9]{40}$/, 'invalid Base/EVM address').describe('A DIFFERENT EOA that will hold your store\'s ERC-8004 agent identity. Must not equal payout_wallet.'),
+      email:         z.string().email().max(200).describe('Contact email. Becomes the dashboard login once approved; keep it.'),
+      password:      z.string().min(8).max(200).describe('Dashboard password (8+ chars). Keep it: this is how the store is managed after approval.'),
+      slug:          z.string().min(1).max(60).optional().describe('Optional URL slug. Derived from store_name if omitted.'),
+      description:   z.string().max(2000).optional().describe('What the store sells, for buyers and for review.'),
+      headline:      z.string().max(200).optional().describe('Short one-line tagline.'),
+      website_url:   z.string().url().max(300).optional().describe('Existing website, if any.'),
+    },
+    async ({ store_name, kind, payout_wallet, agent_wallet, email, password, slug, description, headline, website_url }) => {
+      if (isRegisterRateLimited(clientIp(req))) {
+        return asJson({ ok: false, code: 'rate_limited', error: 'Too many store registrations from this source. Wait a few minutes and retry.' });
+      }
+      const result = await createPendingAgentStore({
+        storeName:    store_name,
+        slug,
+        kind,
+        description:  description ?? null,
+        headline:     headline ?? null,
+        websiteUrl:   website_url ?? null,
+        payoutWallet: payout_wallet,
+        agentWallet:  agent_wallet,
+        email,
+        password,
+      });
+      if (!result.ok) return asJson(result);
+      return asJson({
+        ok:                   true,
+        slug:                 result.slug,
+        status:               result.status,
+        approval_eligible_by: result.approval_eligible_at,
+        dashboard_url:        result.dashboard_url,
+        next: [
+          `Poll get_store_status("${result.slug}") for the review decision (within 24 hours).`,
+          'On approval your ERC-8004 agent id and per-seller MCP url are returned, and the store appears in list_sellers / find_seller.',
+          `Log into ${result.dashboard_url} with your email + password to add and publish products.`,
+        ],
+        review_policy: 'Reviewed for quality: nothing illegal, immoral, or offensive. The store stays invisible until approved.',
+        fee:           'Flat 2.5% network fee per sale. You keep 97.5% to your payout_wallet.',
+      });
+    },
+  );
+
+  // ── get_store_status ─────────────────────────────────────────────
+  server.tool(
+    'get_store_status',
+    'Check the review status of a store you registered with register_store. Returns pending, approved, or rejected (with the reason). Once approved it also returns the ERC-8004 agent id and the per-seller MCP url.',
+    {
+      slug: z.string().min(1).max(60).describe('The slug returned by register_store.'),
+    },
+    async ({ slug }) => {
+      const { data, error } = await db
+        .from('app_sellers')
+        .select('slug, name, active, approval_status, approval_eligible_at, erc8004_agent_id, created_via')
+        .eq('slug', slug)
+        .maybeSingle();
+      if (error)  return asJson({ slug, found: false, error_code: 'lookup_failed', note: 'Could not look up the store right now. Retry shortly.' });
+      if (!data)  return asJson({ slug, found: false, note: 'No store with that slug.' });
+
+      const status = data.approval_status as string | null;
+      if (status === 'approved' || (status === null && data.active)) {
+        return asJson({
+          slug:             data.slug,
+          found:            true,
+          status:           'approved',
+          live:             data.active,
+          erc8004_agent_id: data.erc8004_agent_id,
+          mcp_url:          sellerMcpUrl(data.slug),
+          dashboard_url:    `${APP_BASE}/seller/${data.slug}/admin`,
+          message:          `${data.name} is live. Log into the dashboard to add and publish products.`,
+        });
+      }
+      if (status && status.startsWith('rejected:')) {
+        return asJson({
+          slug:    data.slug,
+          found:   true,
+          status:  'rejected',
+          reason:  status.slice('rejected:'.length),
+          message: 'This store did not pass review. It stays offline. Address the reason and register again with a new store, or contact VIA.',
+        });
+      }
+      return asJson({
+        slug:                 data.slug,
+        found:                true,
+        status:               'pending',
+        approval_eligible_by: data.approval_eligible_at,
+        message:              'Awaiting human review (within 24 hours of submission). The store is not yet visible or sellable. Poll again later.',
+      });
+    },
   );
 
   return server;
@@ -209,7 +344,7 @@ export async function GET() {
     description: 'VIA Labs central discovery MCP. POST JSON-RPC to this endpoint to call tools.',
     protocol:    'MCP Streamable HTTP',
     base:        APP_BASE,
-    tools:       ['list_sellers', 'find_seller', 'seller_mcp_url', 'get_via_overview'],
+    tools:       ['list_sellers', 'find_seller', 'seller_mcp_url', 'get_via_overview', 'register_store', 'get_store_status'],
   });
 }
 
@@ -217,7 +352,7 @@ export async function POST(req: Request) {
   const transport = new WebStandardStreamableHTTPServerTransport({
     sessionIdGenerator: undefined,
   });
-  const server = createServer();
+  const server = createServer(req);
   await server.connect(transport);
   return transport.handleRequest(req);
 }

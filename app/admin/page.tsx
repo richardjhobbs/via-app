@@ -3,8 +3,32 @@ import Image from 'next/image';
 import { redirect } from 'next/navigation';
 import { db } from '@/lib/app/db';
 import { isAdminFromCookies } from '@/lib/app/auth';
+import { StoreApprovalActions } from './StoreApprovalActions';
 
 export const dynamic = 'force-dynamic';
+
+interface PendingStoreRow {
+  slug:                 string;
+  name:                 string;
+  kind:                 string;
+  contact_email:        string;
+  wallet_address:       string;
+  agent_wallet_address: string | null;
+  description:          string | null;
+  website_url:          string | null;
+  submitted_at:         string | null;
+  approval_eligible_at: string | null;
+}
+
+async function loadPendingStores(): Promise<PendingStoreRow[]> {
+  const { data, error } = await db
+    .from('app_sellers')
+    .select('slug, name, kind, contact_email, wallet_address, agent_wallet_address, description, website_url, submitted_at, approval_eligible_at')
+    .eq('approval_status', 'pending')
+    .order('submitted_at', { ascending: true });
+  if (error || !data) return [];
+  return data as PendingStoreRow[];
+}
 
 interface SellerRow {
   id:               string;
@@ -171,7 +195,12 @@ export default async function AdminLandingPage() {
     redirect('/admin/login?next=/admin');
   }
 
-  const [sellers, buyers, loadStats] = await Promise.all([loadSellers(), loadBuyers(), loadLoadStats()]);
+  const [sellers, buyers, loadStats, pendingStores] = await Promise.all([
+    loadSellers(),
+    loadBuyers(),
+    loadLoadStats(),
+    loadPendingStores(),
+  ]);
 
   return (
     <main className="min-h-screen bg-neutral-50 text-neutral-900 flex flex-col">
@@ -205,6 +234,65 @@ export default async function AdminLandingPage() {
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-12">
               <StatCard label="Organic agents"   value={String(loadStats.organicAgents)} />
               <StatCard label="Synthetic agents" value={String(loadStats.syntheticAgents)} />
+            </div>
+          )}
+
+          {/* Pending store approvals (agent self-registered) */}
+          {pendingStores.length > 0 && (
+            <div className="mb-16">
+              <div className="flex items-end justify-between mb-4">
+                <h2 className="font-serif text-2xl tracking-tight">Pending store approvals</h2>
+                <span className="text-[10px] font-mono uppercase tracking-widest text-amber-700">
+                  {pendingStores.length} awaiting review
+                </span>
+              </div>
+              <p className="text-xs text-neutral-500 mb-4 max-w-2xl">
+                Agent self-registered stores (via the MCP register_store tool). Each stays invisible
+                until approved. Review for quality: nothing illegal, immoral, or offensive. Approving
+                activates the store and mints its ERC-8004 identity to the agent wallet.
+              </p>
+              <div className="bg-white border border-amber-200 rounded-lg overflow-hidden">
+                <table className="w-full text-sm">
+                  <thead className="bg-amber-50 text-xs font-mono uppercase tracking-widest text-amber-800">
+                    <tr>
+                      <th className="text-left px-4 py-3">Store</th>
+                      <th className="text-left px-4 py-3">Kind</th>
+                      <th className="text-left px-4 py-3">Contact</th>
+                      <th className="text-left px-4 py-3">Payout / agent wallet</th>
+                      <th className="text-left px-4 py-3">Submitted</th>
+                      <th className="text-right px-4 py-3">Decision</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-amber-100">
+                    {pendingStores.map((s) => (
+                      <tr key={s.slug} className="hover:bg-amber-50/40 align-top">
+                        <td className="px-4 py-3">
+                          <span className="font-mono text-xs text-neutral-900">{s.slug}</span>
+                          <span className="block text-neutral-700">{s.name}</span>
+                          {s.description && (
+                            <span className="block text-xs text-neutral-500 max-w-xs mt-1">{s.description.slice(0, 160)}</span>
+                          )}
+                          {s.website_url && (
+                            <a href={s.website_url} target="_blank" rel="noreferrer" className="block text-xs text-sky-700 underline mt-1">
+                              {s.website_url}
+                            </a>
+                          )}
+                        </td>
+                        <td className="px-4 py-3 font-mono text-xs text-neutral-700">{s.kind}</td>
+                        <td className="px-4 py-3 font-mono text-xs text-neutral-700">{s.contact_email}</td>
+                        <td className="px-4 py-3 font-mono text-xs text-neutral-500">
+                          <span title={s.wallet_address}>{truncWallet(s.wallet_address)}</span>
+                          <span className="block" title={s.agent_wallet_address ?? ''}>{truncWallet(s.agent_wallet_address)}</span>
+                        </td>
+                        <td className="px-4 py-3 font-mono text-xs text-neutral-500">{s.submitted_at ? fmtDate(s.submitted_at) : '—'}</td>
+                        <td className="px-4 py-3">
+                          <StoreApprovalActions slug={s.slug} />
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             </div>
           )}
 
