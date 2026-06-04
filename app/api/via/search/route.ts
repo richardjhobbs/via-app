@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { searchCatalog, getPublicSeller, type PublicProduct, type PublicSeller } from '@/lib/app/seller-catalog';
+import { searchCatalog, searchSellerCatalog, getPublicSeller, type PublicProduct, type PublicSeller } from '@/lib/app/seller-catalog';
 import { db } from '@/lib/app/db';
 
 export const dynamic = 'force-dynamic';
@@ -77,6 +77,19 @@ export async function GET(req: Request) {
   const url = new URL(req.url);
   const q = (url.searchParams.get('q') || '').trim();
   const limit = Math.min(Math.max(Number(url.searchParams.get('limit')) || 10, 1), 50);
+  const sellerSlug = (url.searchParams.get('seller') || '').trim();
+
+  // Seller-scoped drill-in: one seller's products (matching q if given).
+  if (sellerSlug) {
+    const scoped = await searchSellerCatalog(sellerSlug, q, limit);
+    if (!scoped) {
+      return NextResponse.json({ platform: 'via', seller: sellerSlug, results: [], products: [], note: 'seller not found or inactive' });
+    }
+    return NextResponse.json(
+      { platform: 'via', seller: sellerSlug, results: scoped.products.map(productToFlat), products: scoped.products },
+      { headers: { 'cache-control': 'public, max-age=30, s-maxage=30' } },
+    );
+  }
 
   // No query: return a sample of active sellers (a browse entrypoint).
   if (!q) {

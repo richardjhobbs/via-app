@@ -202,8 +202,45 @@ function createServer(req: Request) {
         via_sellers: local.sellers,          // VIA-app sellers matched by profile with no product hit
         network_sellers: network,            // sellers on other VIA members (e.g. RRG), connect to mcp_url for their catalogue
         next:
-          'If `products` has more than one entry, present them to the user with prices and the key differences, each with its web_url (direct product link). To purchase: connect to a product mcp_ref.seller_mcp_url and call get_product then buy_product (or get_offering_schema + request_quote when pricing_mode is "configurable"). For network_sellers, connect to mcp_url and call list_products.',
+          'If `products` has more than one entry, present them to the user with prices and the key differences, each with its web_url (direct product link). If the user named a specific seller/brand (e.g. "at Standard & Strange"), take that result\'s mcp_url and call get_seller_products to drill into just that seller\'s catalogue. To purchase: connect to a product mcp_ref.seller_mcp_url and call get_product then buy_product (or get_offering_schema + request_quote when pricing_mode is "configurable").',
       });
+    },
+  );
+
+  server.tool(
+    'get_seller_products',
+    "Drill into ONE seller's catalogue to answer 'is X available at seller Y'. Pass the seller_mcp_url from a find_seller / list_sellers result (a VIA-app seller or an RRG brand). Returns that seller's products matching your query (or its whole catalogue if query is omitted), each with price, in-stock sizes where known, and a direct web_url to the product page. Use this right after find_seller whenever the user names a specific seller or brand, e.g. 'raw denim jeans in size 36 at Standard & Strange'.",
+    {
+      seller_mcp_url: z.string().min(1).describe('The mcp_url from a find_seller / list_sellers result, e.g. https://realrealgenuine.com/brand/standard-and-strange/mcp or https://app.getvia.xyz/sellers/the-sentient-startup/mcp'),
+      query: z.string().optional().describe("What to look for in that seller's catalogue, e.g. 'raw denim jean'. Omit to list the whole catalogue."),
+      limit: z.number().int().min(1).max(50).optional().describe('Max products to return (default 15).'),
+    },
+    async ({ seller_mcp_url, query, limit }) => {
+      const max = Math.min(Math.max(limit ?? 15, 1), 50);
+      const m = seller_mcp_url.match(/^https?:\/\/([^/]+)\/(?:brand|sellers)\/([^/]+)\/mcp\/?$/i);
+      if (!m) {
+        return asJson({ error: 'unrecognised seller_mcp_url', hint: 'Pass the mcp_url exactly as returned by find_seller (…/brand/{slug}/mcp or …/sellers/{slug}/mcp).' });
+      }
+      const base = `https://${m[1]}`;
+      const slug = m[2];
+      try {
+        const u = `${base}/api/via/search?seller=${encodeURIComponent(slug)}&q=${encodeURIComponent(query ?? '')}&limit=${max}`;
+        const res = await fetch(u, { signal: AbortSignal.timeout(8000) });
+        if (!res.ok) return asJson({ seller: slug, products: [], error: `origin returned ${res.status}` });
+        const json = await res.json() as { results?: unknown; products?: unknown };
+        const products = Array.isArray(json.products) ? json.products : (Array.isArray(json.results) ? json.results : []);
+        return asJson({
+          seller: slug,
+          query: query ?? null,
+          count: products.length,
+          products,
+          next: products.length === 0
+            ? 'No matching products at this seller. Broaden the query, or omit query to list the whole catalogue.'
+            : 'Each product has a web_url (direct link); RRG products include in-stock sizes in detail. To buy, connect to the seller mcp_url and use its get_product / buy_product tools.',
+        });
+      } catch {
+        return asJson({ seller: slug, products: [], error: 'origin_unreachable' });
+      }
     },
   );
 
@@ -264,6 +301,7 @@ function createServer(req: Request) {
       },
       tools_here: {
         list_sellers:     'Browse active sellers across the whole network',
+        get_seller_products: 'Drill into one seller/brand catalogue (pass its mcp_url) to answer "is X available at seller Y", with prices, in-stock sizes, and direct product links.',
         find_seller:      'Search products and sellers across the whole network. Defined intent returns product-level results with a direct web_url and an mcp_ref to transact; multiple matches should be shown to the user with their differences. A loose / zero-match query returns need_more_info: ask a clarifying question or broaden, never say "nothing available".',
         seller_mcp_url:   'Resolve a VIA-app slug to its per-seller MCP URL',
         register_store:   'Self-register a new store with your own wallets (pending human review)',
@@ -380,7 +418,7 @@ export async function GET() {
     description: 'VIA Labs central discovery MCP. POST JSON-RPC to this endpoint to call tools.',
     protocol:    'MCP Streamable HTTP',
     base:        APP_BASE,
-    tools:       ['list_sellers', 'find_seller', 'seller_mcp_url', 'get_via_overview', 'register_store', 'get_store_status'],
+    tools:       ['list_sellers', 'find_seller', 'get_seller_products', 'seller_mcp_url', 'get_via_overview', 'register_store', 'get_store_status'],
   });
 }
 

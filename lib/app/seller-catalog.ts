@@ -207,6 +207,25 @@ async function getSellerRow(slug: string): Promise<SellerRow | null> {
 }
 
 /**
+ * Seller-scoped drill-in: one seller's buyable products, matching q if given
+ * (relevance-filtered) or the whole catalogue otherwise. Backs the network
+ * root's get_seller_products so an agent can answer "X at seller Y".
+ */
+export async function searchSellerCatalog(slug: string, q: string, max: number): Promise<{ seller: PublicSeller; products: PublicProduct[] } | null> {
+  const seller = await getSellerRow(slug);
+  if (!seller) return null;
+  const productOr = q ? buildIlikeOr(['title', 'description'], q) : null;
+  let query = buyableProducts().eq('seller_id', seller.id).order('created_at', { ascending: false });
+  query = productOr ? query.or(productOr).limit(200) : query.limit(max);
+  const { data, error } = await query;
+  if (error) console.error('[seller-catalog] searchSellerCatalog failed:', error);
+  let rows = (data ?? []) as ProductRow[];
+  if (q) rows = rows.filter((p) => matchesQuery(`${p.title} ${p.description ?? ''}`, q));
+  const products = rows.slice(0, max).map((p) => toPublicProduct(p, { slug: seller.slug, name: seller.name }));
+  return { seller: toPublicSeller(seller), products };
+}
+
+/**
  * Discovery search across the VIA-app catalogue. Matches product text
  * (title/description) AND seller text (name/headline/description), returning
  * product-level results plus any seller-level matches that had no product hit.
