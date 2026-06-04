@@ -60,6 +60,29 @@ export function matchesQuery(text: string, query: string): boolean {
 }
 
 /**
+ * Relevance score for ranking ALREADY-matched rows against each other. Counts
+ * how many distinct query tokens (or de-pluralised forms) the text contains,
+ * plus a bonus when the whole sanitised phrase appears verbatim. Used to
+ * interleave results from heterogeneous sources (VIA-app catalogue + federated
+ * network members) into one "best options" ordering. Higher is better; 0 means
+ * no token hit. Does not gate inclusion (that is `matchesQuery`'s job), only order.
+ */
+export function relevanceScore(text: string, query: string): number {
+  const safe = query.replace(/[%,()]/g, ' ').replace(/\s+/g, ' ').trim().toLowerCase();
+  const hay = (text || '').toLowerCase();
+  if (!safe) return 0;
+  let score = 0;
+  for (const token of safe.split(' ')) {
+    if (token.length < 3) continue;
+    const forms = [token];
+    if (token.endsWith('s') && token.length > 3) forms.push(token.slice(0, -1));
+    if (forms.some((f) => hay.includes(f))) score++;
+  }
+  if (hay.includes(safe)) score++;
+  return score;
+}
+
+/**
  * Build a PostgREST `.or()` filter string matching any variant against any
  * column, e.g. `name.ilike.%book%,description.ilike.%book%`. Returns null when
  * the query yields no usable tokens (caller should then list without a filter).

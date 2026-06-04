@@ -21,7 +21,8 @@ import { WebStandardStreamableHTTPServerTransport } from '@modelcontextprotocol/
 import { z } from 'zod';
 import { db } from '@/lib/app/db';
 import { createPendingAgentStore } from '@/lib/app/store-registration';
-import { searchCatalog } from '@/lib/app/seller-catalog';
+import { searchCatalog, type PublicProduct } from '@/lib/app/seller-catalog';
+import { relevanceScore } from '@/lib/app/via-search';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -119,6 +120,60 @@ async function fetchNetwork(q: string, max: number): Promise<NetworkResult[]> {
   return batches.flat();
 }
 
+// ── Unified product result ───────────────────────────────────────────
+// One shape for every product match, whether it is a VIA-app listing or a
+// federated network member's (RRG). Agentic commerce: the agent must see ALL
+// products in one ranked list, regardless of source. Every searchable product
+// has a working product page, so `page_url` is always set; `image_url` may be
+// null. Transact over `mcp_ref`.
+interface UnifiedProduct {
+  source:        string;                 // 'via' | 'rrg' | future member
+  title:         string;
+  seller:        string | null;
+  price_usdc:    number | null;
+  price_is_from: boolean;                // true when price is a configurable "from" base
+  detail:        string | null;          // stock / sizes / pricing note for the human
+  image_url:     string | null;
+  page_url:      string | null;          // direct product page
+  mcp_ref:       { seller_mcp_url: string; product_id?: string; token_id?: number | null; pricing_mode?: string };
+}
+
+function viaToUnified(p: PublicProduct): UnifiedProduct {
+  const detail = p.pricing_mode === 'configurable'
+    ? 'configurable pricing: request a quote'
+    : (typeof p.stock === 'number' ? `${p.stock} in stock` : null);
+  return {
+    source:        'via',
+    title:         p.title,
+    seller:        p.seller_name,
+    price_usdc:    p.price_usdc,
+    price_is_from: p.price_is_from,
+    detail,
+    image_url:     p.image_url,
+    page_url:      p.product_url,
+    mcp_ref:       p.mcp_ref,
+  };
+}
+
+// RRG /api/via/search returns name + a "Brand · 245.70 USDC · in stock: …"
+// detail blob. Pull the brand name and price out of it for the merged shape;
+// keep the full blob as `detail` for the sizes the human wants.
+function networkToUnified(r: NetworkResult): UnifiedProduct {
+  const brand = r.detail ? (r.detail.split('·')[0]?.trim() || null) : null;
+  const priceMatch = r.detail ? r.detail.match(/([0-9]+(?:\.[0-9]+)?)\s*USDC/i) : null;
+  return {
+    source:        r.platform,
+    title:         r.name,
+    seller:        brand,
+    price_usdc:    priceMatch ? Number(priceMatch[1]) : null,
+    price_is_from: false,
+    detail:        r.detail,
+    image_url:     r.image,
+    page_url:      r.web_url,
+    mcp_ref:       { seller_mcp_url: r.mcp_url },
+  };
+}
+
 function rowToSummary(row: SellerSummaryRow): NetworkResult & { slug: string; erc8004_agent_id: string | null } {
   return {
     platform:         'via',
@@ -170,7 +225,7 @@ function createServer(req: Request) {
   server.tool(
     'find_seller',
     "Search the VIA network (VIA app + RRG + integrated platforms) for PRODUCTS and the sellers that offer them. Matches the published product catalogue (titles, descriptions, authors, categories) AND seller profiles, so 'books', an author, a title, or a category surfaces the actual product even when the seller's name does not contain the word. " +
-      "WHEN INTENT IS DEFINED: returns product-level results. Each product carries `web_url` (a direct link to the product page on the VIA network you can give the user) and `mcp_ref` (the seller MCP url + product_id + token_id you use to transact). If more than one product matches, PRESENT THEM TO THE USER side by side with prices and the key differences explained; do not just pick one silently. " +
+      "WHEN INTENT IS DEFINED: returns `results`, ONE relevance-ranked list blending every source. Each result carries a working `page_url` (the direct product page you give the user), plus `seller`, `price_usdc`, `image_url` (or null when the listing has no picture), and `mcp_ref` to transact. If more than one matches, PRESENT THEM side by side with prices and the key differences; do not silently pick one. " +
       "WHEN INTENT IS LOOSE OR THERE IS NO MATCH: the response is `status: 'need_more_info'` with `suggested_dimensions`. DO NOT reply 'nothing is available'. Ask the user ONE clarifying question to sharpen intent (budget, brand/author, category, use), or retry this tool with a broader term, a synonym, the category, or the brand/author name. Only after a genuinely broadened retry also returns nothing should you say you could not find a match, and even then frame it as 'not found yet', not 'does not exist'.",
     {
       query: z.string().min(1).describe("What the user wants. Searches product catalogues AND seller profiles, e.g. 'raw denim jeans', 'Arnaud Frade', 'sourdough', or 'custom embroidered polo'."),
@@ -183,13 +238,43 @@ function createServer(req: Request) {
         searchCatalog(safe, max),
         fetchNetwork(safe, max),
       ]);
-      const total = local.products.length + local.sellers.length + network.length;
 
-      if (total === 0) {
+      // Split federated hits: products go into the ranked product list, anything
+      // else (brand / seller profiles) into the seller pointer list.
+      const networkProducts = network.filter((r) => r.kind === 'product');
+      const networkSellers  = network.filter((r) => r.kind !== 'product');
+
+      // One blended pool of products across every source, ranked by relevance to
+      // the query so the best options surface first regardless of platform or
+      // whether the listing has an image. Stable sort keeps VIA-app data-only
+      // listings from being drowned by the larger RRG catalogue at equal scores.
+      const pool: UnifiedProduct[] = [
+        ...local.products.map(viaToUnified),
+        ...networkProducts.map(networkToUnified),
+      ];
+      const ranked = pool
+        .map((item) => ({ item, score: relevanceScore(`${item.title} ${item.seller ?? ''} ${item.detail ?? ''}`, safe) }))
+        .sort((a, b) => b.score - a.score)
+        .map((x) => x.item)
+        .slice(0, max);
+
+      // Seller / brand profile matches with no product hit, both sources.
+      const sellers = [
+        ...local.sellers.map((s) => ({
+          source: 'via', name: s.name, kind: s.kind,
+          detail: s.headline ?? s.description, mcp_url: s.mcp_url, page_url: s.page_url,
+        })),
+        ...networkSellers.map((r) => ({
+          source: r.platform, name: r.name, kind: r.kind,
+          detail: r.detail, mcp_url: r.mcp_url, page_url: r.web_url,
+        })),
+      ];
+
+      if (ranked.length === 0 && sellers.length === 0) {
         return asJson({
           query,
           status: 'need_more_info',
-          products: [],
+          results: [],
           sellers: [],
           guidance:
             "No catalogue or directory text matched on VIA yet. This is NOT proof the item is unavailable. Do NOT tell the user nothing is available. Ask one clarifying question to sharpen intent, or call find_seller again with a broader term, a synonym, the category, or the brand/author name.",
@@ -200,12 +285,11 @@ function createServer(req: Request) {
       return asJson({
         query,
         status: 'ok',
-        count: total,
-        products: local.products,            // product-level: title, price, web_url (direct link), mcp_ref to transact
-        via_sellers: local.sellers,          // VIA-app sellers matched by profile with no product hit
-        network_sellers: network,            // sellers on other VIA members (e.g. RRG), connect to mcp_url for their catalogue
+        count: ranked.length,
+        results: ranked,        // blended, relevance-ranked products across the whole network
+        sellers,                // seller / brand profile matches with no product hit
         next:
-          'If `products` has more than one entry, present them to the user with prices and the key differences, each with its web_url (direct product link). If the user named a specific seller/brand (e.g. "at Standard & Strange"), take that result\'s mcp_url and call get_seller_products to drill into just that seller\'s catalogue. To purchase: connect to a product mcp_ref.seller_mcp_url and call get_product then buy_product (or get_offering_schema + request_quote when pricing_mode is "configurable").',
+          'Present the best matches from `results` to the user, across ALL sources, with prices and the key differences. Every result has a working `page_url` (the direct product page) you give the user, plus `image_url` when one exists. If the user named a specific seller/brand, call get_seller_products with that result\'s mcp_ref.seller_mcp_url to drill in. To purchase: connect to mcp_ref.seller_mcp_url and call get_product then buy_product (or get_offering_schema + request_quote when pricing_mode is "configurable").',
       });
     },
   );
@@ -305,7 +389,7 @@ function createServer(req: Request) {
       tools_here: {
         list_sellers:     'Browse active sellers across the whole network',
         get_seller_products: 'Drill into one seller/brand catalogue (pass its mcp_url) to answer "is X available at seller Y", with prices, in-stock sizes, and direct product links.',
-        find_seller:      'Search products and sellers across the whole network. Defined intent returns product-level results with a direct web_url and an mcp_ref to transact; multiple matches should be shown to the user with their differences. A loose / zero-match query returns need_more_info: ask a clarifying question or broaden, never say "nothing available".',
+        find_seller:      'Search products and sellers across the whole network. Defined intent returns `results`, one relevance-ranked list blending every source. Each result has a working page_url (direct product page), image_url when one exists, and an mcp_ref to transact. Multiple matches should be shown with their differences. A loose / zero-match query returns need_more_info: ask a clarifying question or broaden, never say "nothing available".',
         seller_mcp_url:   'Resolve a VIA-app slug to its per-seller MCP URL',
         register_store:   'Self-register a new store with your own wallets (pending human review)',
         get_store_status: 'Check whether your registered store is pending, approved, or rejected',
