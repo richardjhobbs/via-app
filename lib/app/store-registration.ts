@@ -286,6 +286,7 @@ export async function approveAgentStore(slug: string, reviewedBy: string): Promi
       `${seller.name} Sales Agent`,
       seller.agent_wallet_address as string,
       'sales_agent',
+      `/sellers/${seller.slug}/mcp`,
     );
     const agentId = tokenId.toString();
     await db.from('app_sellers').update({ erc8004_agent_id: agentId }).eq('id', seller.id);
@@ -364,7 +365,7 @@ export async function mintStoreIdentity(slug: string, reviewedBy: string): Promi
   }
 
   try {
-    const { tokenId, txHash } = await registerAgentIdentity(seller.id, `${seller.name} Sales Agent`, seller.agent_wallet_address as string, 'sales_agent');
+    const { tokenId, txHash } = await registerAgentIdentity(seller.id, `${seller.name} Sales Agent`, seller.agent_wallet_address as string, 'sales_agent', `/sellers/${seller.slug}/mcp`);
     const agentId = tokenId.toString();
     await db.from('app_sellers').update({ erc8004_agent_id: agentId, updated_at: new Date().toISOString() }).eq('id', seller.id);
     console.log(`[store-registration] remint minted seller=${seller.slug} tokenId=${agentId} tx=${txHash} by=${reviewedBy}`);

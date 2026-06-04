@@ -211,7 +211,14 @@ export async function registerAgentIdentity(
   agentId: string,
   agentName: string,
   walletAddress: string,
-  tier: string
+  tier: string,
+  /**
+   * The agent's real MCP path on this app, e.g. "/sellers/<slug>/mcp" or
+   * "/buyers/<handle>/mcp". Recorded on-chain as the agent's MCP service
+   * endpoint. MUST be a path that actually serves; the old "/api/agent/<id>/mcp"
+   * shape (copied from RRG) does not exist on via-app and 404s on 8004scan.
+   */
+  mcpPath: string,
 ): Promise<{ tokenId: bigint; txHash: string }> {
   // Auth to the registrar (www.getvia.xyz/mcp), which gates via_register_agent:
   // it matches the secret WE send against its own server-side map
@@ -234,7 +241,7 @@ export async function registerAgentIdentity(
     services: [
       {
         name: 'MCP',
-        endpoint: `${SITE_URL}/api/agent/${agentId}/mcp`,
+        endpoint: `${SITE_URL}${mcpPath.startsWith('/') ? mcpPath : `/${mcpPath}`}`,
         description: `VIA ${tier} concierge agent`,
       },
     ],

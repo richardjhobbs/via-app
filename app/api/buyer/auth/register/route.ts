@@ -126,6 +126,7 @@ export async function POST(req: NextRequest) {
         `${displayName} Buying Agent`,
         agentWallet,
         'buying_agent',
+        `/buyers/${buyer.handle}/mcp`,
       );
       await db.from('app_buyers')
         .update({ erc8004_agent_id: tokenId.toString() })
