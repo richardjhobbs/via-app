@@ -3,10 +3,11 @@ import { setBrandAuthCookies, supabaseAdmin } from '@/lib/app/seller-auth';
 import { db } from '@/lib/app/db';
 import { createClient } from '@supabase/supabase-js';
 import { ethers } from 'ethers';
-import { registerAgentIdentity } from '@/lib/agent/erc8004';
-import { shouldSkipErc8004, syntheticTestAgentId } from '@/lib/app/test-mode';
+import { countWalletStores, WALLET_STORE_CAP } from '@/lib/app/store-registration';
 
 export const dynamic = 'force-dynamic';
+
+const APPROVAL_WINDOW_MS = 24 * 60 * 60 * 1000; // 24h review SLA, matches the agent-MCP path
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL ?? '',
@@ -33,15 +34,20 @@ const supabase = createClient(
  * What it does:
  *   1. Creates an auto-confirmed Supabase Auth user with the supplied
  *      password and signs them in (sb-access-token / sb-refresh-token cookies).
- *   2. Inserts app_sellers (active=true) with BOTH wallets distinguished:
+ *   2. Inserts app_sellers PENDING and inactive (active=false,
+ *      approval_status='pending', created_via='web_onboard') with BOTH wallets
+ *      distinguished:
  *      wallet_address       = payout target,
  *      agent_wallet_address = Sales Agent's own EOA.
- *   3. Fires ERC-8004 registration via getvia.xyz/mcp `via_register_agent`,
- *      passing the AGENT's wallet (not the payout wallet). On success,
- *      records erc8004_agent_id on the row. Failure is non-fatal: the
- *      seller is created and can re-trigger from the dashboard.
- *   4. Returns { seller } so the wizard can redirect to the Sales Agent
- *      chat surface.
+ *      The store is invisible to list_sellers / find_seller until a human
+ *      approves it, exactly like the agent-MCP register_store path.
+ *   3. Does NOT mint ERC-8004 here. The mint is deferred to approveAgentStore
+ *      (admin approval), which links an existing identity or mints a fresh one
+ *      against the agent wallet and surfaces any failure. This removes the old
+ *      fire-and-forget mint whose silent failures left rows with a null
+ *      erc8004_agent_id.
+ *   4. Returns { seller } so the wizard can route the operator to the dashboard
+ *      to brief the Sales Agent while the store waits for review.
  */
 export async function POST(req: NextRequest) {
   let body: Record<string, unknown>;
@@ -99,6 +105,11 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: `slug "${slug}" already taken. Please choose a different business name` }, { status: 409 });
   }
 
+  // ── Per-wallet store cap ────────────────────────────────────────────
+  if ((await countWalletStores(wallet)) >= WALLET_STORE_CAP) {
+    return NextResponse.json({ error: `This wallet is already connected to ${WALLET_STORE_CAP} stores. Further stores for this wallet are blocked pending manual review by VIA.` }, { status: 409 });
+  }
+
   // ── Create or recover the Supabase auth user ────────────────────────
   let userId: string;
   let accessToken: string;
@@ -139,7 +150,15 @@ export async function POST(req: NextRequest) {
   accessToken  = signIn.session.access_token;
   refreshToken = signIn.session.refresh_token;
 
-  // ── Insert seller row ───────────────────────────────────────────────
+  // ── Insert the pending, inactive seller row ─────────────────────────
+  // Web signups go through the SAME moderation gate as agent-MCP
+  // registrations: created inactive in 'pending', invisible to list_sellers /
+  // find_seller until a human approves. The ERC-8004 mint is deferred to
+  // approval so spam never spends registrar gas and silent mint failures stop
+  // leaving live stores with a null identity.
+  const now      = new Date();
+  const eligible = new Date(now.getTime() + APPROVAL_WINDOW_MS);
+
   const { data: seller, error: sellerErr } = await db
     .from('app_sellers')
     .insert({
@@ -157,12 +176,11 @@ export async function POST(req: NextRequest) {
       shopify_domain:        catalogSource === 'shopify'     ? shopifyDomain      : null,
       squarespace_shop_url:  catalogSource === 'squarespace' ? squarespaceShopUrl : null,
       source_currency:       sourceCurrency,
-      active:               true,
-      // The Sales Agent answers buyers IN-APP from day one: the per-seller
-      // MCP ask_sales_agent tool runs DeepSeek against this seller's memory
-      // store (app_seller_memories) with per-buyer recall. No Box/Hermes
-      // provisioning step, so hermes_concierge_status is left null and the
-      // operator concierge queue stays empty.
+      active:               false,
+      approval_status:      'pending',
+      created_via:          'web_onboard',
+      submitted_at:         now.toISOString(),
+      approval_eligible_at: eligible.toISOString(),
     })
     .select('id, slug, name, kind')
     .single();
@@ -175,37 +193,14 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'failed to create seller record' }, { status: 500 });
   }
 
-  // ── ERC-8004 registration for the Sales Agent ─────────────────────
-  // Test mode (VIA_SKIP_ERC8004=1 or +test/+e2e email alias) writes a
-  // synthetic placeholder and skips the on-chain mint to spare gas on
-  // the registrar wallet during wizard testing.
-  if (shouldSkipErc8004(email)) {
-    const placeholder = syntheticTestAgentId();
-    await db.from('app_sellers').update({ erc8004_agent_id: placeholder }).eq('id', seller.id);
-    console.log(`[onboard/register] TEST MODE: skipped ERC-8004 mint for seller=${seller.slug}, placeholder=${placeholder}`);
-  } else {
-    // Real mint: calls getvia.xyz/mcp via_register_agent which signs the
-    // on-chain register() with VIA_REGISTRAR_PRIVATE_KEY and records
-    // agentWallet = the supplied wallet_address. Non-fatal on failure.
-    registerAgentIdentity(
-      seller.id,
-      `${sellerName} Sales Agent`,
-      agentWallet,
-      'sales_agent',
-    )
-      .then(async ({ tokenId, txHash }) => {
-        await db.from('app_sellers')
-          .update({ erc8004_agent_id: tokenId.toString() })
-          .eq('id', seller.id);
-        console.log(`[onboard/register] erc8004 mint ok seller=${seller.slug} tokenId=${tokenId} tx=${txHash}`);
-      })
-      .catch((err) => {
-        console.error(`[onboard/register] erc8004 mint failed seller=${seller.slug}:`, err);
-      });
-  }
+  // ERC-8004 identity is NOT minted here. It is deferred to approveAgentStore
+  // (admin approval), which links an existing identity for the agent wallet or
+  // mints a fresh one and surfaces any failure. The operator can still log in
+  // and brief the Sales Agent while the store waits for review.
 
   const response = NextResponse.json({
     seller: { id: seller.id, slug: seller.slug, name: seller.name, kind: seller.kind },
+    status: 'pending',
     redirect_to: `/seller/${seller.slug}/admin/sales-agent`,
   });
   setBrandAuthCookies(response, accessToken, refreshToken);

@@ -181,6 +181,7 @@ function createServer(seller: SellerRow, req: Request) {
         .select('id, title, description, kind, price_minor, currency, stock, url, token_id, on_chain_status, max_supply')
         .eq('seller_id', seller.id)
         .eq('on_chain_status', 'registered')
+        .eq('admin_removed', false) // superadmin kill-switch, independent of active_only
         .order('created_at', { ascending: false })
         .limit(max);
       if (active_only !== false) query = query.eq('active', true);
@@ -218,6 +219,7 @@ function createServer(seller: SellerRow, req: Request) {
         .select('id, title, description, kind, price_minor, currency, stock, url, token_id, on_chain_status, max_supply, metadata')
         .eq('id', product_id)
         .eq('seller_id', seller.id)
+        .eq('admin_removed', false) // superadmin-removed listings are invisible
         .maybeSingle();
       if (error || !data) {
         const r = asJson({ error: `product ${product_id} not found for ${seller.slug}` });
@@ -385,13 +387,20 @@ function createServer(seller: SellerRow, req: Request) {
 
       const { data: product, error: prodErr } = await db
         .from('app_seller_products')
-        .select('id, title, price_minor, currency, stock, token_id, on_chain_status, active, max_supply, kind, pricing_mode')
+        .select('id, title, price_minor, currency, stock, token_id, on_chain_status, active, max_supply, kind, pricing_mode, admin_removed')
         .eq('id', product_id)
         .eq('seller_id', seller.id)
         .maybeSingle();
       if (prodErr || !product) {
         const r = asJson({ error: `product ${product_id} not found for ${seller.slug}` });
         void logInteraction(seller.id, 'buy_product', identity, { product_id, qty, buyer_wallet }, { error: 'not_found' }, 404, Date.now() - t0);
+        return r;
+      }
+      // Superadmin takedown: a removed listing is unbuyable, even with a direct
+      // product_id. Treated as not found so it leaks nothing about the removal.
+      if (product.admin_removed) {
+        const r = asJson({ error: `product ${product_id} not found for ${seller.slug}` });
+        void logInteraction(seller.id, 'buy_product', identity, { product_id, qty, buyer_wallet }, { error: 'admin_removed' }, 404, Date.now() - t0);
         return r;
       }
       // Configurable products have no single fixed price; they settle through
@@ -623,6 +632,7 @@ function createServer(seller: SellerRow, req: Request) {
         .select('id, title, pricing_mode, option_schema, currency')
         .eq('id', product_id)
         .eq('seller_id', seller.id)
+        .eq('admin_removed', false)
         .maybeSingle();
       if (error || !product) {
         const r = asJson({ error: `product ${product_id} not found for ${seller.slug}` });
@@ -679,6 +689,7 @@ function createServer(seller: SellerRow, req: Request) {
         .select('id, title, pricing_mode, option_schema, active')
         .eq('id', product_id)
         .eq('seller_id', seller.id)
+        .eq('admin_removed', false)
         .maybeSingle();
       if (error || !product) {
         const r = asJson({ error: `product ${product_id} not found for ${seller.slug}` });

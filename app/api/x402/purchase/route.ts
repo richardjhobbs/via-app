@@ -197,38 +197,52 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  if (buyerAgentId) {
-    try {
-      reputation.buyer = await postViaReputationSignal({
-        agentId:  buyerAgentId,
-        orderRef,
-        txHash:   pay.txHash,
-        role:     'buyer',
-        nonce:    nextNonce ?? undefined,
-      });
-      if (nextNonce != null) nextNonce += 1;
-    } catch (err) {
-      console.error(`[x402/purchase] ${orderRef} buyer reputation signal failed`, err);
-    }
-  } else {
-    console.log(`[x402/purchase] ${orderRef} no buyer agent id, skipping buyer signal`);
-  }
+  // Self-dealing guard: when the buyer pays from the same wallet as the seller,
+  // or both sides resolve to the same ERC-8004 identity, the trade is one
+  // entity transacting with itself. Fire NO reputation signal. A wallet may
+  // legitimately be both a buyer and a seller on the network, but it must not
+  // farm its own reputation by buying from itself.
+  const sellerPayoutWallet = String(seller.wallet_address ?? '').toLowerCase();
+  const selfDeal =
+    (sellerPayoutWallet !== '' && buyerWalletRecorded === sellerPayoutWallet) ||
+    (buyerAgentId != null && sellerAgentId != null && buyerAgentId === sellerAgentId);
 
-  if (sellerAgentId) {
-    try {
-      reputation.seller = await postViaReputationSignal({
-        agentId:  sellerAgentId,
-        orderRef,
-        txHash:   pay.txHash,
-        role:     'seller',
-        nonce:    nextNonce ?? undefined,
-      });
-      if (nextNonce != null) nextNonce += 1;
-    } catch (err) {
-      console.error(`[x402/purchase] ${orderRef} seller reputation signal failed`, err);
-    }
+  if (selfDeal) {
+    console.log(`[x402/purchase] ${orderRef} self-dealing (buyer wallet/identity == seller); skipping both reputation signals`);
   } else {
-    console.log(`[x402/purchase] ${orderRef} seller has no agent id, skipping seller signal`);
+    if (buyerAgentId) {
+      try {
+        reputation.buyer = await postViaReputationSignal({
+          agentId:  buyerAgentId,
+          orderRef,
+          txHash:   pay.txHash,
+          role:     'buyer',
+          nonce:    nextNonce ?? undefined,
+        });
+        if (nextNonce != null) nextNonce += 1;
+      } catch (err) {
+        console.error(`[x402/purchase] ${orderRef} buyer reputation signal failed`, err);
+      }
+    } else {
+      console.log(`[x402/purchase] ${orderRef} no buyer agent id, skipping buyer signal`);
+    }
+
+    if (sellerAgentId) {
+      try {
+        reputation.seller = await postViaReputationSignal({
+          agentId:  sellerAgentId,
+          orderRef,
+          txHash:   pay.txHash,
+          role:     'seller',
+          nonce:    nextNonce ?? undefined,
+        });
+        if (nextNonce != null) nextNonce += 1;
+      } catch (err) {
+        console.error(`[x402/purchase] ${orderRef} seller reputation signal failed`, err);
+      }
+    } else {
+      console.log(`[x402/purchase] ${orderRef} seller has no agent id, skipping seller signal`);
+    }
   }
 
   // ── 5. Pay the seller their 97.5% (platform keeps 2.5%) ──────────────

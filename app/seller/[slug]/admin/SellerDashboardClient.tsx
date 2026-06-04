@@ -152,7 +152,7 @@ function Listing({ l }: { l: ListingRow }) {
 }
 
 export default function SellerDashboardClient({
-  name, slug, agentCode, mcpUrl, brands, metrics, activity, negotiations, listings,
+  name, slug, agentCode, mcpUrl, brands, metrics, activity, negotiations, listings, shippingNeedsSetup,
 }: {
   name: string;
   slug: string;
@@ -163,12 +163,14 @@ export default function SellerDashboardClient({
   activity: ActivityRow[];
   negotiations: NegotiationRow[];
   listings: ListingRow[];
+  shippingNeedsSetup: boolean;
 }) {
   const router = useRouter();
   const productsHref = `/seller/${slug}/admin/products`;
   const salesHref    = `/seller/${slug}/admin/sales`;
   const agentHref    = `/seller/${slug}/admin/sales-agent`;
   const quotesHref   = `/seller/${slug}/admin/quotes`;
+  const shippingHref = `/seller/${slug}/admin/shipping`;
 
   return (
     <div className="dash-page">
@@ -177,6 +179,7 @@ export default function SellerDashboardClient({
           <nav className="dash-nav">
             <Link href={`/seller/${slug}/admin`} className="is-active">Dashboard</Link>
             <Link href={productsHref}>Products</Link>
+            <Link href={shippingHref}>Shipping</Link>
             <Link href={quotesHref}>Quotes</Link>
             <Link href={salesHref}>Sales</Link>
           </nav>
@@ -207,6 +210,21 @@ export default function SellerDashboardClient({
       </header>
 
       <div className="dash-wrap">
+        {shippingNeedsSetup && (
+          <Link
+            href={shippingHref}
+            style={{
+              display: 'block', textDecoration: 'none',
+              border: '1px solid var(--warning)', background: 'color-mix(in srgb, var(--warning) 10%, transparent)',
+              borderRadius: 8, padding: '12px 16px', marginBottom: 20,
+            }}
+          >
+            <div className="uc-mono" style={{ fontSize: 10, color: 'var(--warning)', marginBottom: 4 }}>Action needed · Shipping</div>
+            <div style={{ fontSize: 14, color: 'var(--ink)' }}>
+              You have a live physical product but no shipping policy, so buying agents cannot complete a delivery. Set your shipping rates now →
+            </div>
+          </Link>
+        )}
         <div className="dash-subhead">
           <div>
             <span className="dash-eyebrow">· Seller</span>

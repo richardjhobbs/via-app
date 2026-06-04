@@ -110,28 +110,34 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'failed to create buyer record' }, { status: 500 });
   }
 
-  // ERC-8004 registration for the Buying Agent. Same test-mode gate as
-  // the seller register endpoint — see lib/app/test-mode.ts.
+  // ERC-8004 identity is minted ON REGISTRATION (awaited, not fire-and-forget).
+  // A registered Buying Agent must have an identity: if the mint fails we roll
+  // back the buyer row and return an error so the operator retries, rather than
+  // silently leaving a null erc8004_agent_id. Test-mode (+test/+e2e email) writes
+  // a synthetic placeholder and skips the on-chain mint — see lib/app/test-mode.ts.
   if (shouldSkipErc8004(email)) {
     const placeholder = syntheticTestAgentId();
     await db.from('app_buyers').update({ erc8004_agent_id: placeholder }).eq('id', buyer.id);
     console.log(`[onboard/buyer/register] TEST MODE — skipped ERC-8004 mint for handle=${buyer.handle}, placeholder=${placeholder}`);
   } else {
-    registerAgentIdentity(
-      buyer.id,
-      `${displayName} Buying Agent`,
-      agentWallet,
-      'buying_agent',
-    )
-      .then(async ({ tokenId, txHash }) => {
-        await db.from('app_buyers')
-          .update({ erc8004_agent_id: tokenId.toString() })
-          .eq('id', buyer.id);
-        console.log(`[onboard/buyer/register] erc8004 mint ok handle=${buyer.handle} tokenId=${tokenId} tx=${txHash}`);
-      })
-      .catch((err) => {
-        console.error(`[onboard/buyer/register] erc8004 mint failed handle=${buyer.handle}:`, err);
-      });
+    try {
+      const { tokenId, txHash } = await registerAgentIdentity(
+        buyer.id,
+        `${displayName} Buying Agent`,
+        agentWallet,
+        'buying_agent',
+      );
+      await db.from('app_buyers')
+        .update({ erc8004_agent_id: tokenId.toString() })
+        .eq('id', buyer.id);
+      console.log(`[onboard/buyer/register] erc8004 mint ok handle=${buyer.handle} tokenId=${tokenId} tx=${txHash}`);
+    } catch (err) {
+      console.error(`[onboard/buyer/register] erc8004 mint failed handle=${buyer.handle}:`, err);
+      // Roll back the half-created buyer so a retry with the same handle works
+      // (the auth user is reused by the existing-account recovery path above).
+      await db.from('app_buyers').delete().eq('id', buyer.id);
+      return NextResponse.json({ error: 'Could not mint your Buying Agent identity right now. Please retry in a moment.' }, { status: 502 });
+    }
   }
 
   const response = NextResponse.json({

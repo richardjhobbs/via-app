@@ -1,6 +1,7 @@
 import { notFound, redirect } from 'next/navigation';
 import { db } from '@/lib/app/db';
 import { getSellerUser, getUserBrands } from '@/lib/app/seller-auth';
+import { getShippingConfig, isShippingReady } from '@/lib/app/shipping';
 import SellerDashboardClient, {
   type ActivityRow, type NegotiationRow, type ListingRow,
 } from './SellerDashboardClient';
@@ -26,7 +27,7 @@ export default async function SellerAdminPage({
 
   const { data: seller, error } = await db
     .from('app_sellers')
-    .select('id, slug, name, owner_user_id')
+    .select('id, slug, name, owner_user_id, shipping')
     .eq('slug', slug)
     .maybeSingle();
 
@@ -116,6 +117,16 @@ export default async function SellerAdminPage({
   const agentCode = `${(seller.slug as string).toUpperCase().replace(/[^A-Z0-9]/g, '')}·SA`;
   const mcpUrl = `https://app.getvia.xyz/sellers/${seller.slug}/mcp`;
 
+  // Shipping gate: a live physical listing that has no usable shipping policy
+  // cannot be bought with delivery (buy_product rejects missing shipping). Flag
+  // it on the dashboard so the owner is sent to the shipping editor, which is
+  // otherwise only reachable by URL or a post-hoc buyer notification.
+  const shippingReady   = isShippingReady(getShippingConfig(seller.shipping));
+  const hasPhysicalLive = products.some(
+    (p) => p.kind === 'physical' && p.active && p.on_chain_status === 'registered',
+  );
+  const shippingNeedsSetup = hasPhysicalLive && !shippingReady;
+
   return (
     <SellerDashboardClient
       name={seller.name as string}
@@ -127,6 +138,7 @@ export default async function SellerAdminPage({
       activity={activityTop}
       negotiations={negotiations}
       listings={listings}
+      shippingNeedsSetup={shippingNeedsSetup}
     />
   );
 }

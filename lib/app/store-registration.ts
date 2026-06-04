@@ -30,6 +30,25 @@ import { deriveAgentWallet, platformAgentWalletsEnabled } from './agent-wallet';
 const APP_BASE = (process.env.NEXT_PUBLIC_APP_BASE_URL || 'https://app.getvia.xyz').replace(/\/$/, '');
 const APPROVAL_WINDOW_MS = 24 * 60 * 60 * 1000; // 24h review SLA
 
+/**
+ * A wallet may run up to WALLET_STORE_CAP stores. The next one is blocked at
+ * registration pending manual human review, so a single wallet cannot flood
+ * the network with stores. One wallet legitimately running many stores (or
+ * being both a buyer and a seller) is fine up to the cap.
+ */
+export const WALLET_STORE_CAP = 5;
+
+/** Count non-rejected stores connected to a payout wallet. */
+export async function countWalletStores(payoutWallet: string): Promise<number> {
+  const { data } = await db
+    .from('app_sellers')
+    .select('approval_status')
+    .eq('wallet_address', payoutWallet.toLowerCase());
+  return (data ?? []).filter(
+    (r) => !String((r as { approval_status: string | null }).approval_status ?? '').startsWith('rejected'),
+  ).length;
+}
+
 export interface CreatePendingStoreInput {
   storeName:    string;
   slug?:        string;
@@ -107,6 +126,11 @@ export async function createPendingAgentStore(
   const { data: existingSlug } = await db.from('app_sellers').select('id').eq('slug', slug).maybeSingle();
   if (existingSlug) {
     return { ok: false, code: 'slug_taken', error: `slug "${slug}" is already taken. Choose a different store_name or pass an explicit slug.` };
+  }
+
+  // ── Per-wallet store cap ────────────────────────────────────────────
+  if ((await countWalletStores(payout)) >= WALLET_STORE_CAP) {
+    return { ok: false, code: 'wallet_store_cap', error: `This payout wallet is already connected to ${WALLET_STORE_CAP} stores. Further stores for this wallet are blocked pending manual review by VIA.` };
   }
 
   // ── Create or recover the auth user ─────────────────────────────────

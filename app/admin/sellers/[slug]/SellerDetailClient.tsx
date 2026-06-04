@@ -49,12 +49,26 @@ interface Purchase {
   created_at: string;
 }
 
+interface Product {
+  id:                   string;
+  title:                string;
+  kind:                 string;
+  price_minor:          number;
+  currency:             string;
+  stock:                number | null;
+  token_id:             number | null;
+  on_chain_status:      string;
+  active:               boolean;
+  admin_removed:        boolean;
+  admin_removed_reason: string | null;
+}
+
 interface Props {
   seller:       Seller;
   memories:     Memory[];
   interactions: Interaction[];
   purchases:    Purchase[];
-  productCount: number;
+  products:     Product[];
 }
 
 function fmtDate(iso: string): string {
@@ -66,7 +80,7 @@ function truncWallet(w: string | null | undefined): string {
   return w.length <= 14 ? w : `${w.slice(0, 8)}…${w.slice(-4)}`;
 }
 
-export function SellerDetailClient({ seller, memories, interactions, purchases, productCount }: Props) {
+export function SellerDetailClient({ seller, memories, interactions, purchases, products }: Props) {
   const router = useRouter();
   const [editing, setEditing] = useState(false);
   const [busy, setBusy]       = useState(false);
@@ -183,9 +197,42 @@ export function SellerDetailClient({ seller, memories, interactions, purchases, 
     }
   }
 
+  async function moderateProduct(productId: string, title: string, action: 'cancel' | 'restore' | 'delete') {
+    const prompts: Record<typeof action, string> = {
+      cancel:  `Cancel "${title}"? It leaves the marketplace immediately and cannot be bought. Order history is kept and you can restore it later.`,
+      restore: `Restore "${title}" to the marketplace?`,
+      delete:  `Permanently delete "${title}"? This cannot be undone. (Blocked if it has any sales.)`,
+    };
+    if (!confirm(prompts[action])) return;
+    let reason: string | undefined;
+    if (action === 'cancel') {
+      reason = window.prompt('Reason (optional, shown in the admin record):')?.trim() || undefined;
+    }
+    setErr(''); setInfo(''); setBusy(true);
+    try {
+      const res = await fetch(`/api/admin/sellers/${seller.id}/products/${productId}`, {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ action, reason }),
+      });
+      const json = await res.json();
+      if (!res.ok) {
+        setErr(json.error || `Failed (${res.status})`);
+        return;
+      }
+      setInfo(action === 'delete' ? `Deleted "${title}".` : action === 'cancel' ? `Cancelled "${title}".` : `Restored "${title}".`);
+      router.refresh();
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : 'Network error');
+    } finally {
+      setBusy(false);
+    }
+  }
+
   const memoriesCount     = memories.length;
   const interactionsCount = interactions.length;
   const purchasesCount    = purchases.length;
+  const productCount      = products.length;
 
   return (
     <div className="space-y-10">
@@ -470,6 +517,79 @@ export function SellerDetailClient({ seller, memories, interactions, purchases, 
                     <td className="px-4 py-3 font-mono text-xs text-neutral-500 whitespace-nowrap">{fmtDate(p.created_at)}</td>
                     <td className="px-4 py-3 text-right font-mono">{p.total_usdc.toFixed(2)}</td>
                     <td className="px-4 py-3 font-mono text-xs">{p.status}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
+
+      {/* Products — superadmin moderation */}
+      <section>
+        <div className="flex items-end justify-between mb-4">
+          <h2 className="font-serif text-2xl tracking-tight">Products</h2>
+          <span className="text-[10px] font-mono uppercase tracking-widest text-neutral-400">{productCount} total</span>
+        </div>
+        {productCount === 0 ? (
+          <p className="text-sm text-neutral-500 bg-white border border-neutral-200 rounded-lg p-6">
+            No products yet.
+          </p>
+        ) : (
+          <div className="bg-white border border-neutral-200 rounded-lg overflow-hidden">
+            <table className="w-full text-sm">
+              <thead className="bg-neutral-50 text-xs font-mono uppercase tracking-widest text-neutral-500">
+                <tr>
+                  <th className="text-left px-4 py-3">Title</th>
+                  <th className="text-left px-4 py-3">Kind</th>
+                  <th className="text-right px-4 py-3">Price</th>
+                  <th className="text-left px-4 py-3">State</th>
+                  <th className="text-right px-4 py-3">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-neutral-200">
+                {products.map((p) => (
+                  <tr key={p.id} className={p.admin_removed ? 'bg-red-50' : undefined}>
+                    <td className="px-4 py-3">
+                      <span className="text-neutral-900">{p.title}</span>
+                      {p.admin_removed && p.admin_removed_reason && (
+                        <span className="block text-[10px] font-mono text-red-700 mt-0.5">{p.admin_removed_reason}</span>
+                      )}
+                    </td>
+                    <td className="px-4 py-3 font-mono text-xs text-neutral-600">{p.kind}</td>
+                    <td className="px-4 py-3 text-right font-mono text-xs">{(p.price_minor / 1_000_000).toFixed(2)} {p.currency}</td>
+                    <td className="px-4 py-3">
+                      {p.admin_removed ? (
+                        <span className="inline-block px-2 py-0.5 text-[10px] font-mono uppercase tracking-widest rounded bg-red-100 text-red-900">Cancelled</span>
+                      ) : (
+                        <span className="inline-block px-2 py-0.5 text-[10px] font-mono uppercase tracking-widest rounded bg-neutral-100 text-neutral-700">
+                          {p.on_chain_status === 'registered' && p.active ? 'Live' : p.on_chain_status}
+                        </span>
+                      )}
+                    </td>
+                    <td className="px-4 py-3 text-right whitespace-nowrap">
+                      {p.admin_removed ? (
+                        <button
+                          type="button" disabled={busy} onClick={() => void moderateProduct(p.id, p.title, 'restore')}
+                          className="text-[10px] font-mono uppercase tracking-widest text-emerald-700 underline hover:no-underline disabled:opacity-50"
+                        >
+                          Restore
+                        </button>
+                      ) : (
+                        <button
+                          type="button" disabled={busy} onClick={() => void moderateProduct(p.id, p.title, 'cancel')}
+                          className="text-[10px] font-mono uppercase tracking-widest text-red-700 underline hover:no-underline disabled:opacity-50"
+                        >
+                          Cancel
+                        </button>
+                      )}
+                      <button
+                        type="button" disabled={busy} onClick={() => void moderateProduct(p.id, p.title, 'delete')}
+                        className="ml-4 text-[10px] font-mono uppercase tracking-widest text-neutral-500 underline hover:no-underline disabled:opacity-50"
+                      >
+                        Delete
+                      </button>
+                    </td>
                   </tr>
                 ))}
               </tbody>
