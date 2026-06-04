@@ -1,23 +1,27 @@
 /**
- * Central VIA app MCP endpoint — app.getvia.xyz/mcp
+ * Central VIA app MCP endpoint, app.getvia.xyz/mcp
  *
- * Agents landing on the app's natural MCP URL discover sellers + routing
- * to per-seller endpoints here. Mirrors the discovery tools shipped on
+ * Agents landing on the app's natural MCP URL discover products + sellers and
+ * routing to per-seller endpoints here. Mirrors the discovery tools shipped on
  * the marketing-site MCP (www.getvia.xyz/mcp) but reads directly from
- * app_sellers (this app has the live data; the marketing site queries
- * the same Supabase project but is rebuilt less often).
+ * app_sellers / app_seller_products (this app has the live data; the marketing
+ * site queries the same Supabase project but is rebuilt less often).
  *
- * Tools (4):
- *   list_sellers      — active VIA sellers, paginated, with per-seller MCP URL
- *   find_seller       — ilike search over name + description + headline
- *   seller_mcp_url    — return + verify the per-seller MCP URL for a slug
- *   get_via_overview  — short pitch + entrypoint URLs for buyers / sellers
+ * Tools (6):
+ *   list_sellers      : active VIA sellers, paginated, with per-seller MCP URL
+ *   find_seller       : product + seller search; returns product-level results
+ *                       (direct web_url + mcp_ref) or need_more_info when loose
+ *   seller_mcp_url    : return + verify the per-seller MCP URL for a slug
+ *   get_via_overview  : short pitch + entrypoint URLs for buyers / sellers
+ *   register_store    : self-register a new store (pending human review)
+ *   get_store_status  : check a registered store's review status
  */
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { WebStandardStreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js';
 import { z } from 'zod';
 import { db } from '@/lib/app/db';
 import { createPendingAgentStore } from '@/lib/app/store-registration';
+import { searchCatalog } from '@/lib/app/seller-catalog';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -48,7 +52,6 @@ function isRegisterRateLimited(ip: string): boolean {
 }
 
 interface SellerSummaryRow {
-  id:               string;
   slug:             string;
   name:             string;
   kind:             string;
@@ -58,51 +61,16 @@ interface SellerSummaryRow {
   erc8004_agent_id: string | null;
 }
 
-const SELLER_COLS = 'id, slug, name, kind, headline, description, website_url, erc8004_agent_id';
-
-// Local free-text search across VIA-app sellers. Matches BOTH the seller
-// directory text (name / headline / description) AND the seller's published
-// product text (title / description), resolving product hits back to their
-// parent seller. A query for an author, title, or category that only appears
-// in the catalogue still surfaces the seller that stocks it; the result is
-// still a seller pointer (the catalogue and the buy stay at the per-seller MCP).
-async function findLocalSellers(safe: string, max: number): Promise<SellerSummaryRow[]> {
-  const pattern = `%${safe}%`;
-  const [sellerHit, productHit] = await Promise.all([
-    db
-      .from('app_sellers')
-      .select(SELLER_COLS)
-      .eq('active', true)
-      .or(`name.ilike.${pattern},description.ilike.${pattern},headline.ilike.${pattern}`)
-      .order('name', { ascending: true })
-      .limit(max),
-    db
-      .from('app_seller_products')
-      .select('seller_id')
-      .eq('active', true)
-      .or(`title.ilike.${pattern},description.ilike.${pattern}`)
-      .limit(200),
-  ]);
-  if (sellerHit.error)  console.error('[mcp/find_seller] seller match failed:', sellerHit.error);
-  if (productHit.error) console.error('[mcp/find_seller] product match failed:', productHit.error);
-
-  const bySlug = new Map<string, SellerSummaryRow>();
-  for (const row of (sellerHit.data ?? []) as SellerSummaryRow[]) bySlug.set(row.slug, row);
-
-  const productSellerIds = Array.from(
-    new Set(((productHit.data ?? []) as { seller_id: string }[]).map((r) => r.seller_id)),
-  ).filter((id) => id);
-  if (productSellerIds.length > 0) {
-    const { data, error } = await db
-      .from('app_sellers')
-      .select(SELLER_COLS)
-      .eq('active', true)
-      .in('id', productSellerIds);
-    if (error) console.error('[mcp/find_seller] product-seller resolve failed:', error);
-    else for (const row of (data ?? []) as SellerSummaryRow[]) if (!bySlug.has(row.slug)) bySlug.set(row.slug, row);
-  }
-  return Array.from(bySlug.values()).slice(0, max);
-}
+// Dimensions an assistant should ask about to turn a loose query into defined
+// intent. Returned in the need_more_info block so the model clarifies rather
+// than declaring "nothing available".
+const CLARIFY_DIMENSIONS = [
+  'category or product type',
+  'budget or price ceiling (USDC)',
+  'brand, maker, or author',
+  'intended use, occasion, or recipient',
+  'key attributes (size, material, format, etc.)',
+];
 
 function sellerMcpUrl(slug: string): string {
   return `${APP_BASE}/sellers/${encodeURIComponent(slug)}/mcp`;
@@ -198,26 +166,43 @@ function createServer(req: Request) {
 
   server.tool(
     'find_seller',
-    "Free-text search for sellers across the VIA network (VIA app + RRG + integrated platforms). Matches both each seller's directory text AND their published product catalogue (titles, descriptions, authors, categories), so a query like 'books' or a specific author/title surfaces the seller that stocks it even when the seller's name does not contain the word. Results are seller POINTERS tagged by platform: the catalogue and the buy live at each result's mcp_url. IMPORTANT: an empty result is a directory miss, not proof the item is unavailable on the network. Before telling a user 'not found', broaden the query (synonyms, the category, the brand), and connect to any plausibly-relevant seller's mcp_url to call list_products there. Each VIA-app result carries a matched_on hint ('product' means the term was found in that seller's catalogue).",
+    "Search the VIA network (VIA app + RRG + integrated platforms) for PRODUCTS and the sellers that offer them. Matches the published product catalogue (titles, descriptions, authors, categories) AND seller profiles, so 'books', an author, a title, or a category surfaces the actual product even when the seller's name does not contain the word. " +
+      "WHEN INTENT IS DEFINED: returns product-level results. Each product carries `web_url` (a direct link to the product page on the VIA network you can give the user) and `mcp_ref` (the seller MCP url + product_id + token_id you use to transact). If more than one product matches, PRESENT THEM TO THE USER side by side with prices and the key differences explained; do not just pick one silently. " +
+      "WHEN INTENT IS LOOSE OR THERE IS NO MATCH: the response is `status: 'need_more_info'` with `suggested_dimensions`. DO NOT reply 'nothing is available'. Ask the user ONE clarifying question to sharpen intent (budget, brand/author, category, use), or retry this tool with a broader term, a synonym, the category, or the brand/author name. Only after a genuinely broadened retry also returns nothing should you say you could not find a match, and even then frame it as 'not found yet', not 'does not exist'.",
     {
-      query: z.string().min(1).describe("Free-text search. Searches seller profiles AND their product catalogues, e.g. 'coffee', 'raw denim', 'Arnaud Frade', or 'paralegal services for startups'."),
-      limit: z.number().int().min(1).max(50).optional().describe('Max results per platform (default 10).'),
+      query: z.string().min(1).describe("What the user wants. Searches product catalogues AND seller profiles, e.g. 'raw denim jeans', 'Arnaud Frade', 'sourdough', or 'custom embroidered polo'."),
+      limit: z.number().int().min(1).max(50).optional().describe('Max product results to return (default 10).'),
     },
     async ({ query, limit }) => {
       const max = Math.min(Math.max(limit ?? 10, 1), 50);
       const safe = query.replace(/[%,()]/g, ' ').trim();
-      const [rows, network] = await Promise.all([
-        findLocalSellers(safe, max),
+      const [local, network] = await Promise.all([
+        searchCatalog(safe, max),
         fetchNetwork(safe, max),
       ]);
-      const sellers = [...rows.map(rowToSummary), ...network];
+      const total = local.products.length + local.sellers.length + network.length;
+
+      if (total === 0) {
+        return asJson({
+          query,
+          status: 'need_more_info',
+          products: [],
+          sellers: [],
+          guidance:
+            "No catalogue or directory text matched on VIA yet. This is NOT proof the item is unavailable. Do NOT tell the user nothing is available. Ask one clarifying question to sharpen intent, or call find_seller again with a broader term, a synonym, the category, or the brand/author name.",
+          suggested_dimensions: CLARIFY_DIMENSIONS,
+        });
+      }
+
       return asJson({
         query,
-        count: sellers.length,
-        sellers,
-        note: sellers.length === 0
-          ? 'No directory or catalogue match on the indexed fields. This does not prove the item is absent: try a broader term, the category, or the brand name, or connect to a likely seller mcp_url and call list_products.'
-          : 'Results are seller pointers. Connect to a result mcp_url to list_products and buy.',
+        status: 'ok',
+        count: total,
+        products: local.products,            // product-level: title, price, web_url (direct link), mcp_ref to transact
+        via_sellers: local.sellers,          // VIA-app sellers matched by profile with no product hit
+        network_sellers: network,            // sellers on other VIA members (e.g. RRG), connect to mcp_url for their catalogue
+        next:
+          'If `products` has more than one entry, present them to the user with prices and the key differences, each with its web_url (direct product link). To purchase: connect to a product mcp_ref.seller_mcp_url and call get_product then buy_product (or get_offering_schema + request_quote when pricing_mode is "configurable"). For network_sellers, connect to mcp_url and call list_products.',
       });
     },
   );
@@ -279,7 +264,7 @@ function createServer(req: Request) {
       },
       tools_here: {
         list_sellers:     'Browse active sellers across the whole network',
-        find_seller:      'Free-text search across the whole network, matching seller profiles AND product catalogues (author/title/category). A zero result is not proof of absence; broaden or connect to a seller and list_products.',
+        find_seller:      'Search products and sellers across the whole network. Defined intent returns product-level results with a direct web_url and an mcp_ref to transact; multiple matches should be shown to the user with their differences. A loose / zero-match query returns need_more_info: ask a clarifying question or broaden, never say "nothing available".',
         seller_mcp_url:   'Resolve a VIA-app slug to its per-seller MCP URL',
         register_store:   'Self-register a new store with your own wallets (pending human review)',
         get_store_status: 'Check whether your registered store is pending, approved, or rejected',
