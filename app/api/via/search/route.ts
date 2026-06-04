@@ -34,6 +34,7 @@ interface FlatResult {
   detail: string | null;
   mcp_url: string;
   web_url: string | null;
+  image: string | null;
   matched_on: 'seller' | 'product';
 }
 
@@ -50,6 +51,7 @@ function productToFlat(p: PublicProduct): FlatResult {
     detail: `${p.seller_name} · ${priceLabel(p)}`,
     mcp_url: p.mcp_ref.seller_mcp_url,
     web_url: p.product_url,
+    image: p.image_url,
     matched_on: 'product',
   };
 }
@@ -61,6 +63,7 @@ function sellerToFlat(s: PublicSeller): FlatResult {
     detail: s.headline || s.description || null,
     mcp_url: s.mcp_url,
     web_url: s.page_url,
+    image: null,
     matched_on: 'seller',
   };
 }

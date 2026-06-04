@@ -90,6 +90,7 @@ interface NetworkResult {
   detail:      string | null;
   mcp_url:     string;
   web_url:     string | null;
+  image:       string | null;
 }
 
 async function fetchMember(member: { platform: string; searchUrl: string }, q: string, max: number): Promise<NetworkResult[]> {
@@ -106,6 +107,7 @@ async function fetchMember(member: { platform: string; searchUrl: string }, q: s
       detail:   r?.detail ?? null,
       mcp_url:  String(r?.mcp_url ?? ''),
       web_url:  r?.web_url ?? null,
+      image:    r?.image ?? null,
     })).filter((r) => r.name && r.mcp_url);
   } catch {
     return [];
@@ -127,6 +129,7 @@ function rowToSummary(row: SellerSummaryRow): NetworkResult & { slug: string; er
     erc8004_agent_id: row.erc8004_agent_id,
     web_url:          row.website_url,
     mcp_url:          sellerMcpUrl(row.slug),
+    image:            null,
   };
 }
 
