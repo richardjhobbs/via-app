@@ -33,13 +33,16 @@ export function searchVariants(query: string): string[] {
 }
 
 /**
- * Precision filter applied AFTER the broad `buildIlikeOr` recall query: a row
- * matches only when EVERY significant query token (or its de-pluralised form)
- * appears in the given text. Stops "unicorn slippers" from matching a book that
- * merely contains the word "unicorn". Single-token queries behave like a plain
- * substring match; a query with no significant tokens matches on the raw phrase.
+ * Relevance filter applied AFTER the broad `buildIlikeOr` recall query. A row
+ * is relevant when it matches at least `min(tokenCount, 2)` distinct query
+ * tokens (or their de-pluralised form). For two-word queries that means both
+ * ("unicorn slippers" needs unicorn AND slipper, so it does not match a book
+ * that merely says "unicorn"); for three or more, at least two ("raw denim
+ * jean" keeps denim+jean even when "raw" is absent from the text). One-token
+ * queries match on that single token; a query with no significant tokens
+ * matches on the raw phrase.
  */
-export function matchesAllTokens(text: string, query: string): boolean {
+export function matchesQuery(text: string, query: string): boolean {
   const safe = query.replace(/[%,()]/g, ' ').replace(/\s+/g, ' ').trim().toLowerCase();
   const hay = (text || '').toLowerCase();
   const groups: string[][] = [];
@@ -50,7 +53,10 @@ export function matchesAllTokens(text: string, query: string): boolean {
     groups.push(forms);
   }
   if (groups.length === 0) return safe ? hay.includes(safe) : true;
-  return groups.every((forms) => forms.some((f) => hay.includes(f)));
+  const need = Math.min(groups.length, 2);
+  let matched = 0;
+  for (const forms of groups) if (forms.some((f) => hay.includes(f))) matched++;
+  return matched >= need;
 }
 
 /**
