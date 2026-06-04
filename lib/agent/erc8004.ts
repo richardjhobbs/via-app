@@ -213,9 +213,17 @@ export async function registerAgentIdentity(
   walletAddress: string,
   tier: string
 ): Promise<{ tokenId: bigint; txHash: string }> {
-  const platformSecret = process.env.VIA_PLATFORM_SECRET;
+  // The registrar (www.getvia.xyz/mcp) gates via_register_agent against
+  // VIA_PLATFORM_SECRETS: source_platform must be a registered key AND
+  // platform_secret must match. The registered platform for these mints is
+  // 'rrg' (overridable via VIA_SOURCE_PLATFORM once another slug is registered);
+  // 'via' is NOT registered and was rejected with "unknown source_platform".
+  // The caller secret is read under either name (VIA_PLATFORM_SECRET or the
+  // VIA_PLATFORM_SECRETS that is actually set on this project).
+  const platformSecret = process.env.VIA_PLATFORM_SECRET ?? process.env.VIA_PLATFORM_SECRETS;
+  const sourcePlatform = process.env.VIA_SOURCE_PLATFORM || 'rrg';
   if (!platformSecret) {
-    console.warn('[erc8004] VIA_PLATFORM_SECRET not set. Call will be rejected once via-labs enforces gating');
+    console.warn('[erc8004] No VIA_PLATFORM_SECRET / VIA_PLATFORM_SECRETS set; the registrar will reject the mint with "invalid platform_secret".');
   }
 
   const result = await callViaTool('via_register_agent', {
@@ -229,7 +237,7 @@ export async function registerAgentIdentity(
         description: `VIA ${tier} concierge agent`,
       },
     ],
-    source_platform: 'via',
+    source_platform: sourcePlatform,
     platform_secret: platformSecret,
     chain: 'base',
   });

@@ -48,6 +48,7 @@ function isRegisterRateLimited(ip: string): boolean {
 }
 
 interface SellerSummaryRow {
+  id:               string;
   slug:             string;
   name:             string;
   kind:             string;
@@ -55,6 +56,52 @@ interface SellerSummaryRow {
   description:      string | null;
   website_url:      string | null;
   erc8004_agent_id: string | null;
+}
+
+const SELLER_COLS = 'id, slug, name, kind, headline, description, website_url, erc8004_agent_id';
+
+// Local free-text search across VIA-app sellers. Matches BOTH the seller
+// directory text (name / headline / description) AND the seller's published
+// product text (title / description), resolving product hits back to their
+// parent seller. A query for an author, title, or category that only appears
+// in the catalogue still surfaces the seller that stocks it; the result is
+// still a seller pointer (the catalogue and the buy stay at the per-seller MCP).
+async function findLocalSellers(safe: string, max: number): Promise<SellerSummaryRow[]> {
+  const pattern = `%${safe}%`;
+  const [sellerHit, productHit] = await Promise.all([
+    db
+      .from('app_sellers')
+      .select(SELLER_COLS)
+      .eq('active', true)
+      .or(`name.ilike.${pattern},description.ilike.${pattern},headline.ilike.${pattern}`)
+      .order('name', { ascending: true })
+      .limit(max),
+    db
+      .from('app_seller_products')
+      .select('seller_id')
+      .eq('active', true)
+      .or(`title.ilike.${pattern},description.ilike.${pattern}`)
+      .limit(200),
+  ]);
+  if (sellerHit.error)  console.error('[mcp/find_seller] seller match failed:', sellerHit.error);
+  if (productHit.error) console.error('[mcp/find_seller] product match failed:', productHit.error);
+
+  const bySlug = new Map<string, SellerSummaryRow>();
+  for (const row of (sellerHit.data ?? []) as SellerSummaryRow[]) bySlug.set(row.slug, row);
+
+  const productSellerIds = Array.from(
+    new Set(((productHit.data ?? []) as { seller_id: string }[]).map((r) => r.seller_id)),
+  ).filter((id) => id);
+  if (productSellerIds.length > 0) {
+    const { data, error } = await db
+      .from('app_sellers')
+      .select(SELLER_COLS)
+      .eq('active', true)
+      .in('id', productSellerIds);
+    if (error) console.error('[mcp/find_seller] product-seller resolve failed:', error);
+    else for (const row of (data ?? []) as SellerSummaryRow[]) if (!bySlug.has(row.slug)) bySlug.set(row.slug, row);
+  }
+  return Array.from(bySlug.values()).slice(0, max);
 }
 
 function sellerMcpUrl(slug: string): string {
@@ -151,29 +198,27 @@ function createServer(req: Request) {
 
   server.tool(
     'find_seller',
-    'Search active sellers across the VIA network (VIA app + RRG + integrated platforms) by free-text query. Results are tagged with their platform; connect to each result\'s mcp_url for the catalogue and the buy.',
+    "Free-text search for sellers across the VIA network (VIA app + RRG + integrated platforms). Matches both each seller's directory text AND their published product catalogue (titles, descriptions, authors, categories), so a query like 'books' or a specific author/title surfaces the seller that stocks it even when the seller's name does not contain the word. Results are seller POINTERS tagged by platform: the catalogue and the buy live at each result's mcp_url. IMPORTANT: an empty result is a directory miss, not proof the item is unavailable on the network. Before telling a user 'not found', broaden the query (synonyms, the category, the brand), and connect to any plausibly-relevant seller's mcp_url to call list_products there. Each VIA-app result carries a matched_on hint ('product' means the term was found in that seller's catalogue).",
     {
-      query: z.string().min(1).describe("Free-text search, e.g. 'coffee', 'pendant lighting', or 'paralegal services for startups'."),
+      query: z.string().min(1).describe("Free-text search. Searches seller profiles AND their product catalogues, e.g. 'coffee', 'raw denim', 'Arnaud Frade', or 'paralegal services for startups'."),
       limit: z.number().int().min(1).max(50).optional().describe('Max results per platform (default 10).'),
     },
     async ({ query, limit }) => {
       const max = Math.min(Math.max(limit ?? 10, 1), 50);
       const safe = query.replace(/[%,()]/g, ' ').trim();
-      const pattern = `%${safe}%`;
-      const [{ data, error }, network] = await Promise.all([
-        db
-          .from('app_sellers')
-          .select('slug, name, kind, headline, description, website_url, erc8004_agent_id')
-          .eq('active', true)
-          .or(`name.ilike.${pattern},description.ilike.${pattern},headline.ilike.${pattern}`)
-          .order('name', { ascending: true })
-          .limit(max),
+      const [rows, network] = await Promise.all([
+        findLocalSellers(safe, max),
         fetchNetwork(safe, max),
       ]);
-      if (error) console.error('[mcp/find_seller] query failed:', error);
-      const rows = (data ?? []) as SellerSummaryRow[];
       const sellers = [...rows.map(rowToSummary), ...network];
-      return asJson({ query, count: sellers.length, sellers });
+      return asJson({
+        query,
+        count: sellers.length,
+        sellers,
+        note: sellers.length === 0
+          ? 'No directory or catalogue match on the indexed fields. This does not prove the item is absent: try a broader term, the category, or the brand name, or connect to a likely seller mcp_url and call list_products.'
+          : 'Results are seller pointers. Connect to a result mcp_url to list_products and buy.',
+      });
     },
   );
 
@@ -214,7 +259,7 @@ function createServer(req: Request) {
       per_seller_mcp:  `${APP_BASE}/sellers/{slug}/mcp`,
       marketing_site:  'https://www.getvia.xyz',
       central_mcp:     'https://www.getvia.xyz/mcp',
-      network:         'list_sellers and find_seller federate across every VIA network member (VIA app + RRG + integrated platforms). Results are tagged by platform; connect to each result mcp_url for the catalogue and the buy.',
+      network:         'list_sellers and find_seller federate across every VIA network member (VIA app + RRG + integrated platforms). find_seller matches both seller profiles and their product catalogues, so author/title/category queries resolve to the seller that stocks them. Results are seller pointers tagged by platform; connect to each result mcp_url for the catalogue and the buy. A zero result is a directory/catalogue-index miss, not proof of absence: broaden the query or connect to a likely seller and call list_products before concluding the item is unavailable.',
       agent_self_onboard: {
         summary:    'Agents can register their own store over this MCP with two of their own wallets, no thirdweb, no human wizard. The VIA network keeps a flat 2.5% fee on each sale; you keep 97.5% to your payout wallet. Your store gets its own ERC-8004 identity on approval.',
         how: [
@@ -234,7 +279,7 @@ function createServer(req: Request) {
       },
       tools_here: {
         list_sellers:     'Browse active sellers across the whole network',
-        find_seller:      'Free-text search across the whole network',
+        find_seller:      'Free-text search across the whole network, matching seller profiles AND product catalogues (author/title/category). A zero result is not proof of absence; broaden or connect to a seller and list_products.',
         seller_mcp_url:   'Resolve a VIA-app slug to its per-seller MCP URL',
         register_store:   'Self-register a new store with your own wallets (pending human review)',
         get_store_status: 'Check whether your registered store is pending, approved, or rejected',

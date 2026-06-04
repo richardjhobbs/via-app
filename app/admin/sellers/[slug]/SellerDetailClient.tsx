@@ -178,6 +178,25 @@ export function SellerDetailClient({ seller, memories, interactions, purchases, 
     }
   }
 
+  async function mintIdentity() {
+    if (!confirm(`Mint the ERC-8004 identity for ${seller.name}? This calls the VIA registrar.`)) return;
+    setErr(''); setInfo(''); setBusy(true);
+    try {
+      const res = await fetch(`/api/admin/sellers/${seller.id}/mint-identity`, { method: 'POST' });
+      const json = await res.json();
+      if (!res.ok) {
+        setErr(json.error || `Mint failed (${res.status})`);
+        return;
+      }
+      setInfo(json.already ? `Already minted: agent ${json.erc8004_agent_id}.` : `Minted ERC-8004 agent ${json.erc8004_agent_id}.`);
+      router.refresh();
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : 'Network error');
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function resetMemories() {
     if (!confirm(`Wipe ALL ${memories.length} memories for ${seller.name}? Their Sales Agent will lose every fact it has been trained on. This cannot be undone.`)) return;
     setErr(''); setInfo(''); setBusy(true);
@@ -257,6 +276,14 @@ export function SellerDetailClient({ seller, memories, interactions, purchases, 
         >
           Drive Sales Agent &rarr;
         </Link>
+        {!seller.erc8004_agent_id && (
+          <button
+            type="button" disabled={busy} onClick={() => void mintIdentity()}
+            className="px-2.5 py-1 text-[10px] font-mono uppercase tracking-widest rounded bg-amber-100 text-amber-900 hover:bg-amber-200 disabled:opacity-50"
+          >
+            Mint ERC-8004 identity
+          </button>
+        )}
         <span className="ml-auto text-[10px] font-mono uppercase tracking-widest text-neutral-400">
           {productCount} products · {memoriesCount} memories · {purchasesCount} purchases
         </span>

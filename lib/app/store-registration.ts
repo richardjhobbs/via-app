@@ -319,3 +319,59 @@ export async function rejectAgentStore(slug: string, reason: string, reviewedBy:
   if (!data)  return { ok: false, slug, error: `store "${slug}" not found or not pending` };
   return { ok: true, slug: data.slug };
 }
+
+export interface MintStoreIdentityResult {
+  ok:                boolean;
+  slug:              string;
+  erc8004_agent_id?: string | null;
+  already?:          boolean;
+  mint_error?:       string;
+  error?:            string;
+}
+
+/**
+ * Mint (or link) the ERC-8004 identity for an approved store that has no
+ * erc8004_agent_id yet, e.g. because the registrar mint failed at approval
+ * time. Idempotent: returns early if an id is already present. Surfaces the
+ * registrar error verbatim so a failure is diagnosable rather than silent.
+ */
+export async function mintStoreIdentity(slug: string, reviewedBy: string): Promise<MintStoreIdentityResult> {
+  const { data: seller, error } = await db
+    .from('app_sellers')
+    .select('id, slug, name, contact_email, agent_wallet_address, erc8004_agent_id')
+    .eq('slug', slug)
+    .maybeSingle();
+  if (error || !seller)            return { ok: false, slug, error: `store "${slug}" not found` };
+  if (seller.erc8004_agent_id)     return { ok: true, slug, erc8004_agent_id: seller.erc8004_agent_id as string, already: true };
+  if (!seller.agent_wallet_address) return { ok: false, slug, error: 'store has no agent_wallet_address to mint against' };
+
+  if (shouldSkipErc8004(seller.contact_email)) {
+    const placeholder = syntheticTestAgentId();
+    await db.from('app_sellers').update({ erc8004_agent_id: placeholder, updated_at: new Date().toISOString() }).eq('id', seller.id);
+    return { ok: true, slug, erc8004_agent_id: placeholder };
+  }
+
+  try {
+    const existing = await getAgentIdForWallet(seller.agent_wallet_address as string);
+    if (existing != null) {
+      const agentId = existing.toString();
+      await db.from('app_sellers').update({ erc8004_agent_id: agentId, updated_at: new Date().toISOString() }).eq('id', seller.id);
+      console.log(`[store-registration] remint linked existing erc8004 seller=${seller.slug} tokenId=${agentId} by=${reviewedBy}`);
+      return { ok: true, slug, erc8004_agent_id: agentId };
+    }
+  } catch (e) {
+    console.warn(`[store-registration] remint getAgentIdForWallet failed for ${seller.slug}:`, e instanceof Error ? e.message : e);
+  }
+
+  try {
+    const { tokenId, txHash } = await registerAgentIdentity(seller.id, `${seller.name} Sales Agent`, seller.agent_wallet_address as string, 'sales_agent');
+    const agentId = tokenId.toString();
+    await db.from('app_sellers').update({ erc8004_agent_id: agentId, updated_at: new Date().toISOString() }).eq('id', seller.id);
+    console.log(`[store-registration] remint minted seller=${seller.slug} tokenId=${agentId} tx=${txHash} by=${reviewedBy}`);
+    return { ok: true, slug, erc8004_agent_id: agentId };
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    console.error(`[store-registration] remint mint failed seller=${seller.slug}:`, msg);
+    return { ok: false, slug, erc8004_agent_id: null, mint_error: msg };
+  }
+}
