@@ -218,12 +218,28 @@ export async function registerAgentIdentity(
   // platform_secret must match. The registered platform for these mints is
   // 'rrg' (overridable via VIA_SOURCE_PLATFORM once another slug is registered);
   // 'via' is NOT registered and was rejected with "unknown source_platform".
-  // The caller secret is read under either name (VIA_PLATFORM_SECRET or the
-  // VIA_PLATFORM_SECRETS that is actually set on this project).
-  const platformSecret = process.env.VIA_PLATFORM_SECRET ?? process.env.VIA_PLATFORM_SECRETS;
   const sourcePlatform = process.env.VIA_SOURCE_PLATFORM || 'rrg';
+
+  // Resolve the single caller secret. Accept either:
+  //   VIA_PLATFORM_SECRET  — the plain secret string for this platform, or
+  //   VIA_PLATFORM_SECRETS — the registrar-style JSON map {platform: secret}
+  //                          (this project's env was set with the plural map),
+  //                          from which we pick this platform's entry.
+  // Sending the whole map as the secret is what produced "invalid platform_secret".
+  let platformSecret: string | undefined = process.env.VIA_PLATFORM_SECRET;
+  const rawSecrets = process.env.VIA_PLATFORM_SECRETS;
+  if (!platformSecret && rawSecrets) {
+    try {
+      const parsed = JSON.parse(rawSecrets.trim());
+      platformSecret = (parsed && typeof parsed === 'object' && !Array.isArray(parsed))
+        ? (parsed as Record<string, string>)[sourcePlatform]
+        : rawSecrets.trim();
+    } catch {
+      platformSecret = rawSecrets.trim();
+    }
+  }
   if (!platformSecret) {
-    console.warn('[erc8004] No VIA_PLATFORM_SECRET / VIA_PLATFORM_SECRETS set; the registrar will reject the mint with "invalid platform_secret".');
+    console.warn(`[erc8004] No platform secret resolved for source_platform="${sourcePlatform}" (set VIA_PLATFORM_SECRET, or include "${sourcePlatform}" in the VIA_PLATFORM_SECRETS map).`);
   }
 
   const result = await callViaTool('via_register_agent', {
