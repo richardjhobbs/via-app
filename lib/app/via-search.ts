@@ -33,6 +33,27 @@ export function searchVariants(query: string): string[] {
 }
 
 /**
+ * Precision filter applied AFTER the broad `buildIlikeOr` recall query: a row
+ * matches only when EVERY significant query token (or its de-pluralised form)
+ * appears in the given text. Stops "unicorn slippers" from matching a book that
+ * merely contains the word "unicorn". Single-token queries behave like a plain
+ * substring match; a query with no significant tokens matches on the raw phrase.
+ */
+export function matchesAllTokens(text: string, query: string): boolean {
+  const safe = query.replace(/[%,()]/g, ' ').replace(/\s+/g, ' ').trim().toLowerCase();
+  const hay = (text || '').toLowerCase();
+  const groups: string[][] = [];
+  for (const token of safe.split(' ')) {
+    if (token.length < 3) continue;
+    const forms = [token];
+    if (token.endsWith('s') && token.length > 3) forms.push(token.slice(0, -1));
+    groups.push(forms);
+  }
+  if (groups.length === 0) return safe ? hay.includes(safe) : true;
+  return groups.every((forms) => forms.some((f) => hay.includes(f)));
+}
+
+/**
  * Build a PostgREST `.or()` filter string matching any variant against any
  * column, e.g. `name.ilike.%book%,description.ilike.%book%`. Returns null when
  * the query yields no usable tokens (caller should then list without a filter).

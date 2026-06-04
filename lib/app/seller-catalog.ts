@@ -17,7 +17,7 @@
  * read from `url`.
  */
 import { db } from './db';
-import { buildIlikeOr } from './via-search';
+import { buildIlikeOr, matchesAllTokens } from './via-search';
 
 const APP_BASE = (process.env.NEXT_PUBLIC_APP_BASE_URL || 'https://app.getvia.xyz').replace(/\/$/, '');
 
@@ -228,8 +228,12 @@ export async function searchCatalog(q: string, max: number): Promise<{ products:
   if (productHit.error) console.error('[seller-catalog] searchCatalog product match failed:', productHit.error);
   if (sellerHit.error)  console.error('[seller-catalog] searchCatalog seller match failed:', sellerHit.error);
 
-  const productRows = (productHit.data ?? []) as ProductRow[];
-  const sellerRows = (sellerHit.data ?? []) as SellerRow[];
+  // The ilike OR is recall; require ALL query tokens to be present (precision)
+  // so "unicorn slippers" does not match a book that merely says "unicorn".
+  const productRows = ((productHit.data ?? []) as ProductRow[])
+    .filter((p) => matchesAllTokens(`${p.title} ${p.description ?? ''}`, q));
+  const sellerRows = ((sellerHit.data ?? []) as SellerRow[])
+    .filter((s) => matchesAllTokens(`${s.name} ${s.headline ?? ''} ${s.description ?? ''}`, q));
 
   // Resolve product rows to their active sellers.
   const sellerIds = Array.from(new Set(productRows.map((p) => p.seller_id))).filter(Boolean);
