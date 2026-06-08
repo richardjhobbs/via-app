@@ -200,10 +200,10 @@ function createServer(req: Request) {
     'List active sellers across the VIA network (VIA app + RRG + integrated platforms). Each result is tagged with its platform and includes the per-seller MCP URL to connect to for deeper interaction (list_products, ask_sales_agent, buy_product).',
     {
       category: z.enum(['product', 'service', 'mixed']).optional().describe('Optional kind filter (applies to VIA-app sellers only).'),
-      limit:    z.number().int().min(1).max(100).optional().describe('Max sellers to return per platform (default 25).'),
+      limit:    z.number().int().min(1).max(500).optional().describe('Max sellers to return per platform (default 200, enough to enumerate the whole network).'),
     },
     async ({ category, limit }) => {
-      const max = Math.min(Math.max(limit ?? 25, 1), 100);
+      const max = Math.min(Math.max(limit ?? 200, 1), 500);
       let query = db
         .from('app_sellers')
         .select('slug, name, kind, headline, description, website_url, erc8004_agent_id')
