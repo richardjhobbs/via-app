@@ -4,6 +4,7 @@ import { redirect } from 'next/navigation';
 import { db } from '@/lib/app/db';
 import { isAdminFromCookies } from '@/lib/app/auth';
 import { StoreApprovalActions } from './StoreApprovalActions';
+import ThemeToggle from '@/components/app/ThemeToggle';
 
 export const dynamic = 'force-dynamic';
 
@@ -203,24 +204,27 @@ export default async function AdminLandingPage() {
   ]);
 
   return (
-    <main className="min-h-screen bg-neutral-50 text-neutral-900 flex flex-col">
+    <main className="min-h-screen bg-background text-ink flex flex-col">
       <header className="bg-neutral-900 text-neutral-100">
         <div className="max-w-6xl mx-auto px-6 py-5 flex items-center justify-between">
           <Link href="/" aria-label="VIA home" className="inline-flex items-center gap-3">
             <Image src="/vialogowhite.png" alt="VIA" width={72} height={28} priority className="h-7 w-auto" />
             <span className="text-xs font-mono tracking-widest uppercase text-neutral-400">Superadmin</span>
           </Link>
-          <form action="/api/admin/auth/logout" method="post">
-            <button className="text-xs font-mono tracking-widest uppercase text-neutral-400 hover:text-neutral-100 transition-colors">
-              Sign out
-            </button>
-          </form>
+          <div className="flex items-center gap-5">
+            <ThemeToggle className="on-dark" />
+            <form action="/api/admin/auth/logout" method="post">
+              <button className="text-xs font-mono tracking-widest uppercase text-neutral-400 hover:text-neutral-100 transition-colors">
+                Sign out
+              </button>
+            </form>
+          </div>
         </div>
       </header>
 
       <section className="flex-1 px-6 py-12">
         <div className="max-w-6xl mx-auto">
-          <p className="text-xs font-mono tracking-widest text-neutral-500 mb-3 uppercase">Admin</p>
+          <p className="text-xs font-mono tracking-widest text-ink-3 mb-3 uppercase">Admin</p>
           <h1 className="font-serif text-4xl leading-[1.1] tracking-tight mb-8">Overview</h1>
 
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
@@ -246,12 +250,12 @@ export default async function AdminLandingPage() {
                   {pendingStores.length} awaiting review
                 </span>
               </div>
-              <p className="text-xs text-neutral-500 mb-4 max-w-2xl">
+              <p className="text-xs text-ink-3 mb-4 max-w-2xl">
                 Agent self-registered stores (via the MCP register_store tool). Each stays invisible
                 until approved. Review for quality: nothing illegal, immoral, or offensive. Approving
                 activates the store and mints its ERC-8004 identity to the agent wallet.
               </p>
-              <div className="bg-white border border-amber-200 rounded-lg overflow-hidden">
+              <div className="bg-paper border border-amber-200 rounded-lg overflow-hidden">
                 <table className="w-full text-sm">
                   <thead className="bg-amber-50 text-xs font-mono uppercase tracking-widest text-amber-800">
                     <tr>
@@ -267,10 +271,10 @@ export default async function AdminLandingPage() {
                     {pendingStores.map((s) => (
                       <tr key={s.slug} className="hover:bg-amber-50/40 align-top">
                         <td className="px-4 py-3">
-                          <span className="font-mono text-xs text-neutral-900">{s.slug}</span>
-                          <span className="block text-neutral-700">{s.name}</span>
+                          <span className="font-mono text-xs text-ink">{s.slug}</span>
+                          <span className="block text-ink-2">{s.name}</span>
                           {s.description && (
-                            <span className="block text-xs text-neutral-500 max-w-xs mt-1">{s.description.slice(0, 160)}</span>
+                            <span className="block text-xs text-ink-3 max-w-xs mt-1">{s.description.slice(0, 160)}</span>
                           )}
                           {s.website_url && (
                             <a href={s.website_url} target="_blank" rel="noreferrer" className="block text-xs text-sky-700 underline mt-1">
@@ -278,13 +282,13 @@ export default async function AdminLandingPage() {
                             </a>
                           )}
                         </td>
-                        <td className="px-4 py-3 font-mono text-xs text-neutral-700">{s.kind}</td>
-                        <td className="px-4 py-3 font-mono text-xs text-neutral-700">{s.contact_email}</td>
-                        <td className="px-4 py-3 font-mono text-xs text-neutral-500">
+                        <td className="px-4 py-3 font-mono text-xs text-ink-2">{s.kind}</td>
+                        <td className="px-4 py-3 font-mono text-xs text-ink-2">{s.contact_email}</td>
+                        <td className="px-4 py-3 font-mono text-xs text-ink-3">
                           <span title={s.wallet_address}>{truncWallet(s.wallet_address)}</span>
                           <span className="block" title={s.agent_wallet_address ?? ''}>{truncWallet(s.agent_wallet_address)}</span>
                         </td>
-                        <td className="px-4 py-3 font-mono text-xs text-neutral-500">{s.submitted_at ? fmtDate(s.submitted_at) : '—'}</td>
+                        <td className="px-4 py-3 font-mono text-xs text-ink-3">{s.submitted_at ? fmtDate(s.submitted_at) : '—'}</td>
                         <td className="px-4 py-3">
                           <StoreApprovalActions slug={s.slug} />
                         </td>
@@ -300,18 +304,18 @@ export default async function AdminLandingPage() {
           <div className="mb-16">
             <div className="flex items-end justify-between mb-4">
               <h2 className="font-serif text-2xl tracking-tight">Sellers</h2>
-              <span className="text-[10px] font-mono uppercase tracking-widest text-neutral-500">
+              <span className="text-[10px] font-mono uppercase tracking-widest text-ink-3">
                 {sellers.length} total
               </span>
             </div>
             {sellers.length === 0 ? (
-              <p className="text-sm text-neutral-500 bg-white border border-neutral-200 rounded-lg p-6">
+              <p className="text-sm text-ink-3 bg-paper border border-line rounded-lg p-6">
                 No sellers onboarded yet.
               </p>
             ) : (
-              <div className="bg-white border border-neutral-200 rounded-lg overflow-hidden">
+              <div className="bg-paper border border-line rounded-lg overflow-hidden">
                 <table className="w-full text-sm">
-                  <thead className="bg-neutral-50 text-xs font-mono uppercase tracking-widest text-neutral-500">
+                  <thead className="bg-background text-xs font-mono uppercase tracking-widest text-ink-3">
                     <tr>
                       <th className="text-left px-4 py-3">Slug</th>
                       <th className="text-left px-4 py-3">Name</th>
@@ -323,20 +327,20 @@ export default async function AdminLandingPage() {
                       <th className="text-left px-4 py-3">Status</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-neutral-200">
+                  <tbody className="divide-y divide-[color:var(--line)]">
                     {sellers.map((s) => (
-                      <tr key={s.id} className="hover:bg-neutral-50">
+                      <tr key={s.id} className="hover:bg-background">
                         <td className="px-4 py-3 font-mono text-xs">
-                          <Link href={`/admin/sellers/${s.slug}`} className="text-neutral-900 underline hover:no-underline">
+                          <Link href={`/admin/sellers/${s.slug}`} className="text-ink underline hover:no-underline">
                             {s.slug}
                           </Link>
                         </td>
                         <td className="px-4 py-3">{s.name}</td>
-                        <td className="px-4 py-3 font-mono text-xs text-neutral-700">{s.contact_email}</td>
+                        <td className="px-4 py-3 font-mono text-xs text-ink-2">{s.contact_email}</td>
                         <td className="px-4 py-3 text-right font-mono">{s.product_count}</td>
                         <td className="px-4 py-3 text-right font-mono">{s.sales_count}</td>
-                        <td className="px-4 py-3 font-mono text-xs text-neutral-700">{s.erc8004_agent_id ?? '—'}</td>
-                        <td className="px-4 py-3 font-mono text-xs text-neutral-500">{fmtDate(s.created_at)}</td>
+                        <td className="px-4 py-3 font-mono text-xs text-ink-2">{s.erc8004_agent_id ?? '—'}</td>
+                        <td className="px-4 py-3 font-mono text-xs text-ink-3">{fmtDate(s.created_at)}</td>
                         <td className="px-4 py-3">
                           <span className={`inline-block px-2 py-0.5 text-[10px] font-mono uppercase tracking-widest rounded ${
                             s.active ? 'bg-emerald-100 text-emerald-900' : 'bg-neutral-200 text-neutral-700'
@@ -356,18 +360,18 @@ export default async function AdminLandingPage() {
           <div>
             <div className="flex items-end justify-between mb-4">
               <h2 className="font-serif text-2xl tracking-tight">Buyers</h2>
-              <span className="text-[10px] font-mono uppercase tracking-widest text-neutral-500">
+              <span className="text-[10px] font-mono uppercase tracking-widest text-ink-3">
                 {buyers.length} total
               </span>
             </div>
             {buyers.length === 0 ? (
-              <p className="text-sm text-neutral-500 bg-white border border-neutral-200 rounded-lg p-6">
+              <p className="text-sm text-ink-3 bg-paper border border-line rounded-lg p-6">
                 No buyers onboarded yet.
               </p>
             ) : (
-              <div className="bg-white border border-neutral-200 rounded-lg overflow-hidden">
+              <div className="bg-paper border border-line rounded-lg overflow-hidden">
                 <table className="w-full text-sm">
-                  <thead className="bg-neutral-50 text-xs font-mono uppercase tracking-widest text-neutral-500">
+                  <thead className="bg-background text-xs font-mono uppercase tracking-widest text-ink-3">
                     <tr>
                       <th className="text-left px-4 py-3">Handle</th>
                       <th className="text-left px-4 py-3">Display name</th>
@@ -378,21 +382,21 @@ export default async function AdminLandingPage() {
                       <th className="text-left px-4 py-3">Card</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-neutral-200">
+                  <tbody className="divide-y divide-[color:var(--line)]">
                     {buyers.map((b) => (
-                      <tr key={b.id} className="hover:bg-neutral-50">
+                      <tr key={b.id} className="hover:bg-background">
                         <td className="px-4 py-3 font-mono text-xs">
-                          <Link href={`/admin/buyers/${b.handle}`} className="text-neutral-900 underline hover:no-underline">
+                          <Link href={`/admin/buyers/${b.handle}`} className="text-ink underline hover:no-underline">
                             {b.handle}
                           </Link>
                         </td>
                         <td className="px-4 py-3">{b.display_name ?? '—'}</td>
-                        <td className="px-4 py-3 font-mono text-xs text-neutral-700" title={b.wallet_address}>
+                        <td className="px-4 py-3 font-mono text-xs text-ink-2" title={b.wallet_address}>
                           {truncWallet(b.wallet_address)}
                         </td>
                         <td className="px-4 py-3 text-right font-mono">{b.intents_count}</td>
-                        <td className="px-4 py-3 font-mono text-xs text-neutral-700">{b.erc8004_agent_id ?? '—'}</td>
-                        <td className="px-4 py-3 font-mono text-xs text-neutral-500">{fmtDate(b.created_at)}</td>
+                        <td className="px-4 py-3 font-mono text-xs text-ink-2">{b.erc8004_agent_id ?? '—'}</td>
+                        <td className="px-4 py-3 font-mono text-xs text-ink-3">{fmtDate(b.created_at)}</td>
                         <td className="px-4 py-3">
                           <span className={`inline-block px-2 py-0.5 text-[10px] font-mono uppercase tracking-widest rounded ${
                             b.public ? 'bg-sky-100 text-sky-900' : 'bg-neutral-200 text-neutral-700'
@@ -413,13 +417,13 @@ export default async function AdminLandingPage() {
             <div className="mt-16">
               <div className="flex items-end justify-between mb-4">
                 <h2 className="font-serif text-2xl tracking-tight">Network load tests</h2>
-                <span className="text-[10px] font-mono uppercase tracking-widest text-neutral-500">
+                <span className="text-[10px] font-mono uppercase tracking-widest text-ink-3">
                   synthetic agents, latest {loadStats.runs.length}
                 </span>
               </div>
-              <div className="bg-white border border-neutral-200 rounded-lg overflow-hidden">
+              <div className="bg-paper border border-line rounded-lg overflow-hidden">
                 <table className="w-full text-sm">
-                  <thead className="bg-neutral-50 text-xs font-mono uppercase tracking-widest text-neutral-500">
+                  <thead className="bg-background text-xs font-mono uppercase tracking-widest text-ink-3">
                     <tr>
                       <th className="text-left px-4 py-3">When</th>
                       <th className="text-left px-4 py-3">Target</th>
@@ -432,15 +436,15 @@ export default async function AdminLandingPage() {
                       <th className="text-right px-4 py-3">Req/s</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-neutral-200">
+                  <tbody className="divide-y divide-[color:var(--line)]">
                     {loadStats.runs.map((run) => (
-                      <tr key={run.id} className="hover:bg-neutral-50">
-                        <td className="px-4 py-3 font-mono text-xs text-neutral-500">{fmtDate(run.started_at)}</td>
+                      <tr key={run.id} className="hover:bg-background">
+                        <td className="px-4 py-3 font-mono text-xs text-ink-3">{fmtDate(run.started_at)}</td>
                         <td className="px-4 py-3 font-mono text-xs">{run.target}</td>
                         <td className="px-4 py-3 text-right font-mono">{run.agent_count}</td>
                         <td className="px-4 py-3 text-right font-mono">{run.concurrency}</td>
                         <td className="px-4 py-3 text-right font-mono">{run.total_requests}</td>
-                        <td className={`px-4 py-3 text-right font-mono ${run.error_count > 0 ? 'text-red-700' : 'text-neutral-500'}`}>
+                        <td className={`px-4 py-3 text-right font-mono ${run.error_count > 0 ? 'text-red-700' : 'text-ink-3'}`}>
                           {run.error_count}
                         </td>
                         <td className="px-4 py-3 text-right font-mono">{fmtMs(run.p50_ms)}</td>
@@ -463,9 +467,9 @@ export default async function AdminLandingPage() {
 
 function StatCard({ label, value }: { label: string; value: string }) {
   return (
-    <div className="bg-white border border-neutral-200 rounded-lg p-4">
-      <p className="text-[10px] font-mono uppercase tracking-widest text-neutral-500 mb-1">{label}</p>
-      <p className="text-2xl font-serif tracking-tight text-neutral-900">{value}</p>
+    <div className="bg-paper border border-line rounded-lg p-4">
+      <p className="text-[10px] font-mono uppercase tracking-widest text-ink-3 mb-1">{label}</p>
+      <p className="text-2xl font-serif tracking-tight text-ink">{value}</p>
     </div>
   );
 }

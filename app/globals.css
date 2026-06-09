@@ -256,6 +256,10 @@ body {
   transition: border-color 0.15s;
 }
 .theme-toggle:hover { border-color: var(--ink); }
+/* Variant for placement on the always-dark admin masthead, where var(--ink)
+   would render the icon near-invisible in light theme. */
+.theme-toggle.on-dark { color: #e8e3da; border-color: rgba(255, 255, 255, 0.24); }
+.theme-toggle.on-dark:hover { color: #fff; border-color: #fff; }
 
 /* ─── Nav search ─────────────────────────────────────────────────────── */
 .nav-search { position: relative; width: 220px; }
