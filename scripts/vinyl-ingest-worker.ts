@@ -210,9 +210,11 @@ async function ingestStore(slug: string, url: string) {
     }
   }
 
+  // 200-row chunks: the search_tsv generated column + GIN index make larger
+  // inserts slow enough to hit Supabase's statement_timeout under load.
   let inserted = 0;
-  for (let i = 0; i < toInsert.length; i += 500) {
-    const chunk = toInsert.slice(i, i + 500);
+  for (let i = 0; i < toInsert.length; i += 200) {
+    const chunk = toInsert.slice(i, i + 200);
     const { error } = await db.from('app_seller_products').insert(chunk);
     if (error) console.error(`  insert chunk @${i}: ${error.message}`); else inserted += chunk.length;
   }
