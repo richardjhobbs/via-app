@@ -109,9 +109,9 @@ export async function POST(req: NextRequest) {
   const xPayment      = typeof body.x_payment === 'string' ? body.x_payment.trim() : '';
   const paymentTxHash = typeof body.payment_tx_hash === 'string' ? body.payment_tx_hash.trim() : '';
   if (!orderRef) return NextResponse.json({ settled: false, error: 'order_ref is required' }, { status: 400 });
-  if (!xPayment && !paymentTxHash) {
-    return NextResponse.json({ settled: false, error: 'provide either x_payment (x402 permit) or payment_tx_hash (raw USDC transfer)' }, { status: 400 });
-  }
+  // Note: a payment proof (x_payment / payment_tx_hash) is required only for a
+  // fresh settlement; a recovery re-POST of an already-paid order needs just
+  // order_ref. That check lives in the non-recovery branch below.
 
   // ── 1. Load the purchase + its seller + product ──────────────────────
   const { data: purchase, error: loadErr } = await db
@@ -172,6 +172,9 @@ export async function POST(req: NextRequest) {
     pay = { verified: true, txHash: storedTx, buyerWallet: buyerWalletRecorded, error: null };
     settledVia = 'recovery';
   } else {
+    if (!xPayment && !paymentTxHash) {
+      return NextResponse.json({ settled: false, error: 'provide either x_payment (x402 permit) or payment_tx_hash (raw USDC transfer)' }, { status: 400 });
+    }
     //   a) x_payment       → x402 "exact" permit; we execute it on-chain (pull).
     //   b) payment_tx_hash  → buyer already sent a raw USDC transfer; we attest it.
     if (xPayment) {
