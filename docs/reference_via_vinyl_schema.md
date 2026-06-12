@@ -52,12 +52,17 @@ Enforced where the existing publish gate lives, `lib/app/publish-product.ts`, on
 draft -> registered transition:
 
 1. `price_minor > 0` (existing rule, unchanged)
-2. `metadata.vinyl.media_grade` and `metadata.vinyl.sleeve_grade` are present and in the enum
-3. `discogs_release_id` is NOT gated in v1 (soft, seller-entered)
+2. `metadata.vinyl.media_grade` is present and in the enum
+3. `metadata.vinyl.sleeve_grade` is optional; if present it must be in the enum, if
+   absent it is surfaced to buyers as "not specified"
+4. `discogs_release_id` is NOT gated in v1 (soft, seller-entered)
 
-Grades plus price are the integrity guarantee for v1. For a detail-obsessed buyer an
-agent reading a specific pressing's catalogue number, year, country and condition grade
-has more verifiable information than a photo gives a human.
+The media grade (the record grade, which governs playability) plus price are the v1
+integrity guarantee. Sleeve grade is optional because most 12"/DJ dealers (e.g.
+recycle-vinyl) grade the record only and ship generic sleeves; requiring a sleeve grade
+they never gave would either block the whole catalogue or invite invented grades. For a
+detail-obsessed buyer an agent reading a specific pressing's catalogue number, year,
+country and record grade has more verifiable information than a photo gives a human.
 
 ## Ingestion (v1)
 

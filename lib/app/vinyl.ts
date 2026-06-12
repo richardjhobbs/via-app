@@ -96,6 +96,20 @@ export function parseShopifyVinyl(p: ShopifyProduct): VinylBlock {
     const sleeve = normaliseGrade(gp[2]);
     if (media)  v.media_grade  = media;
     if (sleeve) v.sleeve_grade = sleeve;
+  } else {
+    // Many dealers list a single overall (record) grade at the end of the
+    // title, e.g. "Artist - Title (SF PROG) VG+". Capture it as the media
+    // grade; the sleeve grade stays unset for the seller to complete.
+    const single = title.trim().match(new RegExp(`(?:^|[\\s)])(${GRADE_TOKEN})\\s*$`, 'i'));
+    const g = single ? normaliseGrade(single[1]) : null;
+    if (g) {
+      v.media_grade = g;
+      // Strip the trailing grade (and any "(shelf code)" before it) from the
+      // parsed record title so it reads cleanly.
+      if (v.title) {
+        v.title = v.title.replace(new RegExp(`(?:\\s*\\([^)]*\\))?\\s*(?:${GRADE_TOKEN})\\s*$`, 'i'), '').trim() || v.title;
+      }
+    }
   }
 
   // Vinyl stores commonly set the variant SKU to the catalogue number.
@@ -207,17 +221,27 @@ export function sanitiseVinylInput(
 //
 // Called from publishProduct with metadata.vinyl. A row with no vinyl block
 // is not a vinyl listing and passes untouched. A vinyl listing must carry a
-// valid media and sleeve grade before it can be minted on-chain.
+// valid media_grade (the record grade, which governs playability) before it
+// can be minted on-chain. sleeve_grade is optional: most 12"/DJ dealers grade
+// the record only and ship generic sleeves, so an absent sleeve grade is
+// surfaced to buyers as "not specified" rather than blocking the listing. A
+// sleeve_grade that IS present must still be a valid grade.
 
 export function validateVinylForPublish(
   vinyl: unknown,
 ): { ok: true } | { ok: false; error: string } {
   if (!vinyl || typeof vinyl !== 'object') return { ok: true };
   const v = vinyl as Record<string, unknown>;
-  if (!isVinylGrade(v.media_grade) || !isVinylGrade(v.sleeve_grade)) {
+  if (!isVinylGrade(v.media_grade)) {
     return {
       ok: false,
-      error: `Vinyl listings require a valid media_grade and sleeve_grade (Goldmine scale: ${VINYL_GRADES.join(', ')}) before publishing.`,
+      error: `Vinyl listings require a valid media_grade (Goldmine scale: ${VINYL_GRADES.join(', ')}) before publishing.`,
+    };
+  }
+  if (v.sleeve_grade !== undefined && v.sleeve_grade !== null && v.sleeve_grade !== '' && !isVinylGrade(v.sleeve_grade)) {
+    return {
+      ok: false,
+      error: `sleeve_grade "${String(v.sleeve_grade)}" is not a recognised grade (Goldmine scale: ${VINYL_GRADES.join(', ')}). Leave it blank if the sleeve is not graded.`,
     };
   }
   return { ok: true };

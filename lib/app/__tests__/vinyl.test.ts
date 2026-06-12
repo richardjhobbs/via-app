@@ -68,6 +68,20 @@ test('parseShopifyVinyl leaves grades unset when not present (gate will block)',
   assert.equal(v.sleeve_grade, undefined);
 });
 
+test('parseShopifyVinyl captures a single trailing grade as media, cleans title (recycle-vinyl shape)', () => {
+  const v = parseShopifyVinyl(shopifyProduct({
+    title: "Dual - Give It To 'Em  (SF PROG) VG+",
+    tags: ['12"', 'House'],
+    variants: [{ id: 1, title: 'Default', price: '8.00', compare_at_price: null, sku: '4200745818', available: true, position: 1 }],
+  }));
+  assert.equal(v.artist, 'Dual');
+  assert.equal(v.title, "Give It To 'Em"); // grade + shelf code stripped
+  assert.equal(v.format, '12"');
+  assert.equal(v.media_grade, 'VG+');
+  assert.equal(v.sleeve_grade, undefined); // single grade: sleeve left for the seller
+  assert.equal(v.catalogue_number, '4200745818');
+});
+
 test('vinylFromCsvRow maps columns and aliases; null when no vinyl cells', () => {
   const block = vinylFromCsvRow({
     artist: 'Burial',
@@ -102,11 +116,12 @@ test('sanitiseVinylInput rejects bad grades, coerces year and id', () => {
   }
 });
 
-test('validateVinylForPublish: non-vinyl passes, vinyl needs both grades', () => {
+test('validateVinylForPublish: non-vinyl passes, vinyl needs media grade, sleeve optional', () => {
   assert.equal(validateVinylForPublish(undefined).ok, true);
   assert.equal(validateVinylForPublish(null).ok, true);
-  assert.equal(validateVinylForPublish({ artist: 'X' }).ok, false);          // vinyl block, no grades
-  assert.equal(validateVinylForPublish({ media_grade: 'VG+' }).ok, false);   // sleeve missing
+  assert.equal(validateVinylForPublish({ artist: 'X' }).ok, false);          // vinyl block, no media grade
+  assert.equal(validateVinylForPublish({ media_grade: 'VG+' }).ok, true);    // media only is enough
   assert.equal(validateVinylForPublish({ media_grade: 'VG+', sleeve_grade: 'VG' }).ok, true);
-  assert.equal(validateVinylForPublish({ media_grade: 'bogus', sleeve_grade: 'VG' }).ok, false);
+  assert.equal(validateVinylForPublish({ media_grade: 'bogus', sleeve_grade: 'VG' }).ok, false); // bad media
+  assert.equal(validateVinylForPublish({ media_grade: 'VG+', sleeve_grade: 'bogus' }).ok, false); // bad sleeve rejected
 });
