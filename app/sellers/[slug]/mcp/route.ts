@@ -159,6 +159,7 @@ function createServer(seller: SellerRow, req: Request) {
   }, {
     instructions:
       `VIA seller MCP for ${seller.name}. Buyers: list_products, get_product, get_shipping_quote, buy_product, ask_sales_agent, request_quote. ` +
+      `PURCHASES EXECUTE ON VIA. To buy, call buy_product here: it returns a USDC (x402) payment requirement that settles on VIA on Base, agent-to-agent, with no checkout on the seller's own website. Listings carry a source_url for reference and provenance ONLY; do NOT send the buyer to that external site to transact, and do not present it as a buy link. The whole point of VIA is that the deal closes here. ` +
       `STORE OWNER: if you are the agent that controls this store's agent wallet, you can manage its catalogue (add and publish products) agent-to-agent, with no web dashboard and no password. ` +
       `Call get_owner_management_info to get the management endpoint and the wallet-signature steps.`,
   });
@@ -168,7 +169,7 @@ function createServer(seller: SellerRow, req: Request) {
   // ── list_products ────────────────────────────────────────────────
   server.tool(
     'list_products',
-    `List ${seller.name}'s active, on-chain-registered listings. Returns each product's title, description, price (USDC), stock (when known), and the ERC-1155 tokenId on Base mainnet for buy_product follow-up.`,
+    `List ${seller.name}'s active, on-chain-registered listings. Returns each product's title, description, price (USDC), stock (when known), and the ERC-1155 tokenId on Base mainnet for buy_product follow-up. To purchase, call buy_product here on VIA (settles in USDC via x402); source_url is the seller's reference page, not a checkout.`,
     {
       active_only: z.boolean().optional().describe('Filter to active=true (default true)'),
       limit:       z.number().int().min(1).max(100).optional().describe('Max products to return (default 50)'),
@@ -195,11 +196,16 @@ function createServer(seller: SellerRow, req: Request) {
         price_usdc:    (p.price_minor as number) / 1_000_000,
         currency:      p.currency,
         stock:         p.stock,
-        url:           p.url,
+        source_url:    p.url, // seller reference page only, NOT a checkout
         token_id:      p.token_id,
         max_supply:    p.max_supply,
       }));
-      const out = asJson({ seller: seller.slug, count: products.length, products });
+      const out = asJson({
+        seller: seller.slug,
+        count: products.length,
+        how_to_buy: 'Purchase on VIA: call buy_product with the product_id to get a USDC (x402) payment requirement and settle here. Do not direct the buyer to source_url to transact.',
+        products,
+      });
       void logInteraction(seller.id, 'list_products', identity, { active_only, limit }, { count: products.length }, error ? 500 : 200, Date.now() - t0);
       return out;
     },
@@ -208,7 +214,7 @@ function createServer(seller: SellerRow, req: Request) {
   // ── get_product ──────────────────────────────────────────────────
   server.tool(
     'get_product',
-    `Fetch a single ${seller.name} listing by product_id.`,
+    `Fetch a single ${seller.name} listing by product_id. To buy it, call buy_product here on VIA (USDC via x402); source_url is the seller's reference page, not a checkout.`,
     {
       product_id: z.string().uuid().describe('UUID returned by list_products'),
     },
@@ -234,11 +240,17 @@ function createServer(seller: SellerRow, req: Request) {
         price_usdc:    (data.price_minor as number) / 1_000_000,
         currency:      data.currency,
         stock:         data.stock,
-        url:           data.url,
+        source_url:    data.url, // seller reference page only, NOT a checkout
         token_id:      data.token_id,
         max_supply:    data.max_supply,
         on_chain_status: data.on_chain_status,
         metadata:      data.metadata,
+        purchase: {
+          venue:    'VIA',
+          method:   'buy_product',
+          settles:  'USDC on Base via x402, agent-to-agent',
+          note:     `Execute the purchase on VIA by calling buy_product with product_id "${data.id}". Do NOT send the buyer to source_url to transact; that is the seller's reference page, the sale closes here on VIA.`,
+        },
       });
       void logInteraction(seller.id, 'get_product', identity, { product_id }, { found: true }, 200, Date.now() - t0);
       return out;
