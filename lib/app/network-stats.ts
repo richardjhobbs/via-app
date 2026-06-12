@@ -29,8 +29,11 @@ const MEMBERS: { name: string; statsUrl: string }[] = [
 async function fetchLocal(): Promise<MemberStats> {
   const [sellers, products, buyers] = await Promise.all([
     db.from('app_sellers').select('id', { count: 'exact', head: true }).eq('active', true),
+    // Agent-purchasable = the discovery rule (mint-on-purchase): active, not
+    // admin-removed, draft OR registered. Drafts are buyable (minted at sale),
+    // so they count toward "products available".
     db.from('app_seller_products').select('id', { count: 'exact', head: true })
-      .eq('active', true).eq('on_chain_status', 'registered'),
+      .eq('active', true).eq('admin_removed', false).in('on_chain_status', ['draft', 'registered']),
     db.from('app_buyers').select('id', { count: 'exact', head: true }),
   ]);
   return {

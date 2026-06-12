@@ -112,13 +112,26 @@ function deriveSlug(host: string): string {
   return base.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
 }
 
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+// Retries transient failures (429 + 5xx + network) with increasing backoff so a
+// large catalogue fetch survives Shopify/Cloudflare rate limiting. Fails fast
+// on permanent 4xx (e.g. 404 = not a Shopify store).
 async function getJson<T = unknown>(url: string): Promise<T> {
-  const res = await fetch(url, {
-    headers: { 'User-Agent': 'VIA-Vinyl-Onboarder/1.0', 'Accept': 'application/json', 'Accept-Language': '' },
-    cache: 'no-store',
-  });
-  if (!res.ok) throw new Error(`HTTP ${res.status} on ${url}`);
-  return res.json() as Promise<T>;
+  let lastErr: unknown;
+  for (let attempt = 0; attempt < 5; attempt++) {
+    let res: Response;
+    try {
+      res = await fetch(url, {
+        headers: { 'User-Agent': 'Mozilla/5.0 (compatible; VIA-Vinyl-Onboarder/1.0)', 'Accept': 'application/json', 'Accept-Language': '' },
+        cache: 'no-store',
+      });
+    } catch (e) { lastErr = e; await sleep(1500 * (attempt + 1)); continue; }
+    if (res.status === 429 || res.status >= 500) { lastErr = new Error(`HTTP ${res.status} on ${url}`); await sleep(2500 * (attempt + 1)); continue; }
+    if (!res.ok) throw new Error(`HTTP ${res.status} on ${url}`);
+    return res.json() as Promise<T>;
+  }
+  throw lastErr ?? new Error(`failed after retries: ${url}`);
 }
 
 async function fetchProducts(host: string, want: number): Promise<ShopifyProduct[]> {
@@ -277,30 +290,40 @@ function totalStock(p: ShopifyProduct): number | null {
     });
   }
 
+  let alreadyPresent = 0;
   if (DRY_RUN) {
     synced = rows.length;
   } else {
-    const { count: existingCount } = await db
-      .from('app_seller_products')
-      .select('id', { count: 'exact', head: true })
-      .eq('seller_id', sellerId);
-    if ((existingCount ?? 0) > 0) {
-      console.warn(`Seller already has ${existingCount} products; skipping bulk insert to avoid duplicates. For incremental re-sync use POST /api/seller/${sellerId}/products/sync-shopify?category=vinyl.`);
-    } else {
-      for (let i = 0; i < rows.length; i += 500) {
-        const chunk = rows.slice(i, i + 500);
-        const { error } = await db.from('app_seller_products').insert(chunk);
-        if (error) errors.push(`insert chunk @${i} (${chunk.length}): ${error.message}`);
-        else synced += chunk.length;
-        console.log(`  inserted ${Math.min(i + 500, rows.length)}/${rows.length}`);
-      }
+    // Dedup against rows already on this seller so a re-run / balance-load only
+    // inserts NEW products. The (seller_id, external_id) unique index is
+    // partial, so PostgREST upsert can't use it; we filter instead.
+    const existingIds = new Set<string>();
+    for (let off = 0; ; off += 1000) {
+      const { data: ex } = await db
+        .from('app_seller_products')
+        .select('external_id')
+        .eq('seller_id', sellerId)
+        .range(off, off + 999);
+      if (!ex || ex.length === 0) break;
+      for (const e of ex) if (e.external_id) existingIds.add(e.external_id as string);
+      if (ex.length < 1000) break;
+    }
+    const fresh = rows.filter((r) => !existingIds.has(r.external_id as string));
+    alreadyPresent = rows.length - fresh.length;
+    if (alreadyPresent) console.log(`  ${alreadyPresent} already present, inserting ${fresh.length} new`);
+    for (let i = 0; i < fresh.length; i += 500) {
+      const chunk = fresh.slice(i, i + 500);
+      const { error } = await db.from('app_seller_products').insert(chunk);
+      if (error) errors.push(`insert chunk @${i} (${chunk.length}): ${error.message}`);
+      else synced += chunk.length;
+      console.log(`  inserted ${Math.min(i + 500, fresh.length)}/${fresh.length}`);
     }
   }
 
   console.log();
   console.log('──── Stage 1 complete ────');
   console.log(`Seller MCP:    ${APP_BASE}/sellers/${slug}/mcp`);
-  console.log(`Imported:      ${synced} inserted, ${skipped} skipped`);
+  console.log(`Imported:      ${synced} inserted, ${alreadyPresent} already present, ${skipped} skipped`);
   console.log(`Publish-ready: ${publishReady} (media grade parsed), ${needGrades} need a media grade before they can publish`);
   if (errors.length) {
     console.log(`Errors (${errors.length}):`);
