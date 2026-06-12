@@ -82,6 +82,12 @@ test('parseShopifyVinyl captures a single trailing grade as media, cleans title 
   assert.equal(v.catalogue_number, '4200745818');
 });
 
+test('parseShopifyVinyl normalises a lowercase format token', () => {
+  const v = parseShopifyVinyl(shopifyProduct({ title: 'Someone - A Record ep VG' }));
+  assert.equal(v.format, 'EP');
+  assert.equal(v.media_grade, 'VG');
+});
+
 test('vinylFromCsvRow maps columns and aliases; null when no vinyl cells', () => {
   const block = vinylFromCsvRow({
     artist: 'Burial',

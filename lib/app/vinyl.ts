@@ -87,7 +87,7 @@ export function parseShopifyVinyl(p: ShopifyProduct): VinylBlock {
   }
 
   const fm = hay.match(FORMAT_RE);
-  if (fm) v.format = fm[0].replace(/\s+/g, '').replace('×', 'x');
+  if (fm) v.format = fm[0].replace(/\s+/g, '').replace('×', 'x').replace(/lp$/i, 'LP').replace(/ep$/i, 'EP');
 
   // A media/sleeve grade pair, e.g. "VG+/VG".
   const gp = hay.match(GRADE_PAIR_RE);

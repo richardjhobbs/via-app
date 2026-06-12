@@ -89,16 +89,20 @@ const flag = (name: string): string | true | null => {
   const i = args.indexOf(name);
   return i >= 0 ? (args[i + 1] || true) : null;
 };
-const URL_IN  = flag('--url');
-const SLUG_IN  = flag('--slug');
-const COUNT_IN = flag('--count');
-const DRY_RUN  = args.includes('--dry-run');
+const URL_IN   = flag('--url');
+const SLUG_IN   = flag('--slug');
+const COUNT_IN  = flag('--count');
+const SAMPLE_IN = flag('--sample');
+const DRY_RUN   = args.includes('--dry-run');
 
 if (!URL_IN || typeof URL_IN !== 'string') {
-  console.error('Usage: node --experimental-strip-types scripts/onboard-vinyl-store.ts --url <url> [--slug <slug>] [--count <n>] [--dry-run]');
+  console.error('Usage: node --experimental-strip-types scripts/onboard-vinyl-store.ts --url <url> [--slug <slug>] [--count <n> | --sample <n>] [--dry-run]');
   process.exit(1);
 }
-const COUNT = typeof COUNT_IN === 'string' ? Math.max(1, parseInt(COUNT_IN, 10)) : Infinity;
+const COUNT  = typeof COUNT_IN === 'string' ? Math.max(1, parseInt(COUNT_IN, 10)) : Infinity;
+// --sample N imports N random products from a wide pool (controlled test runs);
+// --count N (or neither) takes the first N (or the whole catalogue).
+const SAMPLE = typeof SAMPLE_IN === 'string' ? Math.max(1, parseInt(SAMPLE_IN, 10)) : null;
 
 // ── Helpers ───────────────────────────────────────────────────────────
 function deriveSlug(host: string): string {
@@ -159,9 +163,20 @@ function totalStock(p: ShopifyProduct): number | null {
   console.log(`Shop:     ${shopName} (${meta.country || 'unknown'}, base ${shopCurrency})`);
   console.log(`Slug:     ${slug}`);
 
-  const products = await fetchProducts(host, COUNT === Infinity ? Number.MAX_SAFE_INTEGER : COUNT);
-  const picked = COUNT === Infinity ? products : products.slice(0, COUNT);
-  console.log(`Catalogue: ${products.length} fetched, importing ${picked.length}`);
+  let picked: ShopifyProduct[];
+  if (SAMPLE) {
+    const pool = await fetchProducts(host, Math.max(SAMPLE * 25, 1250));
+    for (let i = pool.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [pool[i], pool[j]] = [pool[j], pool[i]];
+    }
+    picked = pool.slice(0, SAMPLE);
+    console.log(`Catalogue: ${pool.length} fetched, randomly sampled ${picked.length}`);
+  } else {
+    const products = await fetchProducts(host, COUNT === Infinity ? Number.MAX_SAFE_INTEGER : COUNT);
+    picked = COUNT === Infinity ? products : products.slice(0, COUNT);
+    console.log(`Catalogue: ${products.length} fetched, importing ${picked.length}`);
+  }
   if (picked.length === 0) {
     console.error(`FATAL: ${host} returned zero products from /products.json`);
     process.exit(1);
