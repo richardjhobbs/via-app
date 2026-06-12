@@ -3,7 +3,7 @@ import { requireBrandAuth } from '@/lib/app/seller-auth';
 import { db } from '@/lib/app/db';
 import { getUsdcRate } from '@/lib/app/fx';
 import { importCatalog } from '@/lib/app/catalog-import';
-import { parseFile, validateRows, toShopifyShape, buildCsvStockMap } from '@/lib/app/csv-import';
+import { parseFile, validateRows, toShopifyShape, buildCsvStockMap, buildCsvVinylMap } from '@/lib/app/csv-import';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -86,6 +86,7 @@ export async function POST(
   // the CSV carries per-row are stashed in a side-channel map so the
   // mapper's totalStockFor / kind-resolution can recover them.
   const stockMap = buildCsvStockMap(validation.products);
+  const vinylMap = buildCsvVinylMap(validation.products);
   const shaped   = toShopifyShape(validation.products);
 
   const result = await importCatalog(shaped, {
@@ -98,6 +99,7 @@ export async function POST(
     },
     totalStockFor: (p) => stockMap.get(p.handle)?.stock      ?? null,
     kindFor:       (p) => stockMap.get(p.handle)?.kind       ?? 'physical',
+    vinylFor:      (p) => vinylMap.get(p.handle)             ?? null,
     fx,
   });
 

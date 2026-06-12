@@ -21,6 +21,7 @@ import { getRRGContract, toUsdc6dp } from './contract';
 import { PLATFORM_WALLET } from './splits';
 import { isTestEmail, shouldSkipErc8004 } from './test-mode';
 import { FREE_LISTED_CAP, countListedFor, listedCapReachedMessage } from './limits';
+import { validateVinylForPublish } from './vinyl';
 
 const UNLIMITED_SUPPLY = 10_000; // RRG.sol caps edition size at 1-10000
 
@@ -41,7 +42,7 @@ export async function publishProduct(
 ): Promise<PublishProductResult> {
   const { data: product, error: prodErr } = await db
     .from('app_seller_products')
-    .select('id, seller_id, title, price_minor, max_supply, on_chain_status, token_id')
+    .select('id, seller_id, title, price_minor, max_supply, on_chain_status, token_id, metadata')
     .eq('id', productId)
     .eq('seller_id', sellerId)
     .maybeSingle();
@@ -58,6 +59,14 @@ export async function publishProduct(
       error: 'Product has a reserved token_id from a prior publish attempt that did not complete. Reconcile the on-chain state before re-publishing to avoid a duplicate mint.',
       extra: { token_id: product.token_id, on_chain_status: product.on_chain_status },
     };
+  }
+
+  // Vinyl integrity gate: a listing carrying a metadata.vinyl block must have
+  // a valid media and sleeve grade before it can be minted. Non-vinyl rows
+  // pass untouched. See docs/reference_via_vinyl_schema.md.
+  const vinylCheck = validateVinylForPublish((product.metadata as Record<string, unknown> | null)?.vinyl);
+  if (!vinylCheck.ok) {
+    return { ok: false, status: 422, code: 'vinyl_grades_required', error: vinylCheck.error };
   }
 
   // Free-tier cap: max FREE_LISTED_CAP active + registered products per seller.

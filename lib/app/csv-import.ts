@@ -7,24 +7,31 @@
  * validateRows) but stripped to the data-only VIA shape per
  * feedback_via_is_data_not_images.md.
  *
- * Schema (8 columns, see reference_via_csv_schema.md):
- *   title           required, 2–200 chars
+ * Schema (8 core columns, see reference_via_csv_schema.md):
+ *   title           required, 2-200 chars
  *   price           required, number in seller.source_currency, > 0
- *   description     optional, ≤4000 chars
+ *   description     optional, <=4000 chars
  *   stock           optional integer, blank = unlimited
  *   max_supply      optional integer
  *   url             optional URL
  *   external_id     optional stable upsert key
  *   kind            optional enum (physical|digital|service), default physical
  *
+ * Optional vinyl columns (see docs/reference_via_vinyl_schema.md): artist,
+ * format, label, catalogue_number (or barcode), pressing_country,
+ * pressing_year, media_grade, sleeve_grade, condition_notes, matrix_runout,
+ * play_tested, discogs_release_id. Any present build a metadata.vinyl block;
+ * a row with no vinyl columns is a plain listing, untouched.
+ *
  * Pipeline:
- *   buffer → parseFile → RawRow[] → validateRows → CsvValidationResult
- *           → toShopifyShape → ShopifyProduct[] → importCatalog
+ *   buffer -> parseFile -> RawRow[] -> validateRows -> CsvValidationResult
+ *           -> toShopifyShape -> ShopifyProduct[] -> importCatalog
  */
 
 import Papa from 'papaparse';
 import * as XLSX from 'xlsx';
 import type { ShopifyProduct, ShopifyVariant } from '../shopify/products-json';
+import { vinylFromCsvRow, normaliseGrade, VINYL_GRADES, type VinylBlock } from './vinyl';
 
 // ── Raw row shape ─────────────────────────────────────────────────────
 
@@ -47,6 +54,7 @@ export interface NormalisedCsvProduct {
   maxSupply:    number | null;
   url:          string | null;
   kind:         ProductKind;
+  vinyl:        VinylBlock | null;   // metadata.vinyl block, null for non-vinyl rows
 }
 
 export interface RowError {
@@ -244,6 +252,19 @@ export function validateRows(rows: RawRow[]): CsvValidationResult {
       }
     }
 
+    // Optional: vinyl columns. Reject grade cells that are present but
+    // unrecognised so the seller fixes them before import, rather than the
+    // listing silently failing the publish gate later.
+    const rawMedia  = (v.media_grade  ?? v.media  ?? '').trim();
+    const rawSleeve = (v.sleeve_grade ?? v.sleeve ?? '').trim();
+    if (rawMedia && !normaliseGrade(rawMedia)) {
+      errors.push({ row: rowRef, field: 'media_grade', message: `Row ${rowRef}: media_grade "${rawMedia}" is not a recognised grade (${VINYL_GRADES.join(', ')}).` });
+    }
+    if (rawSleeve && !normaliseGrade(rawSleeve)) {
+      errors.push({ row: rowRef, field: 'sleeve_grade', message: `Row ${rowRef}: sleeve_grade "${rawSleeve}" is not a recognised grade (${VINYL_GRADES.join(', ')}).` });
+    }
+    const vinyl = vinylFromCsvRow(v);
+
     products.push({
       sourceRef:    rowRef,
       externalId,
@@ -254,6 +275,7 @@ export function validateRows(rows: RawRow[]): CsvValidationResult {
       maxSupply:    typeof maxSupply === 'number' ? maxSupply : null,
       url:          urlRaw,
       kind,
+      vinyl,
     });
   });
 
@@ -302,6 +324,18 @@ export function buildCsvStockMap(products: NormalisedCsvProduct[]): Map<string, 
   products.forEach((p, idx) => {
     const handle = p.externalId ?? `csv-row-${p.sourceRef}-${idx + 1}`;
     m.set(handle, { stock: p.stock, maxSupply: p.maxSupply, kind: p.kind });
+  });
+  return m;
+}
+
+// Per-row vinyl block lookup, keyed on the same synthesised handle as
+// buildCsvStockMap, so importCatalog's vinylFor closure can recover it.
+export function buildCsvVinylMap(products: NormalisedCsvProduct[]): Map<string, VinylBlock> {
+  const m = new Map<string, VinylBlock>();
+  products.forEach((p, idx) => {
+    if (!p.vinyl) return;
+    const handle = p.externalId ?? `csv-row-${p.sourceRef}-${idx + 1}`;
+    m.set(handle, p.vinyl);
   });
   return m;
 }

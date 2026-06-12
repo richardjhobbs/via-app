@@ -16,6 +16,7 @@
 import type { ShopifyProduct } from '../shopify/products-json';
 import { stripHtml } from '../shopify/products-json';
 import { priceToUsdcMinor, type UsdcRate } from './fx';
+import type { VinylBlock } from './vinyl';
 import { db } from './db';
 
 export type CatalogSource = 'shopify' | 'squarespace' | 'csv';
@@ -49,6 +50,15 @@ export interface MapperOptions {
    * 'physical' by default.
    */
   kindFor?:        (product: ShopifyProduct) => 'physical' | 'digital' | 'service';
+  /**
+   * Optional vinyl extension block per row. When it returns a non-empty
+   * object it is attached at metadata.vinyl. Used by the vinyl category
+   * (Shopify title parse / CSV columns); omitted for every other seller, so
+   * the generic import path is unchanged. On re-sync the parsed block is
+   * merged over the existing one, preserving grades the seller completed by
+   * hand. See lib/app/vinyl.ts and docs/reference_via_vinyl_schema.md.
+   */
+  vinylFor?:       (product: ShopifyProduct) => VinylBlock | null;
   /** Source for the FX rate applied to native prices. */
   fx:              UsdcRate;
 }
@@ -99,14 +109,24 @@ export async function importCatalog(
 
       const { data: existing } = await db
         .from('app_seller_products')
-        .select('id, on_chain_status')
+        .select('id, on_chain_status, metadata')
         .eq('seller_id', opts.sellerId)
         .eq('external_id', externalId)
         .maybeSingle();
 
-      const kind = opts.kindFor?.(p) ?? 'physical';
+      const kind     = opts.kindFor?.(p) ?? 'physical';
+      const newVinyl = opts.vinylFor?.(p) ?? null;
 
       if (existing) {
+        // Merge the freshly-parsed vinyl block over whatever is on the row so
+        // a re-sync does not wipe grades the seller completed by hand.
+        const existingVinyl = (existing.metadata as Record<string, unknown> | null)?.vinyl;
+        const mergedVinyl = {
+          ...(existingVinyl && typeof existingVinyl === 'object' ? existingVinyl : {}),
+          ...(newVinyl ?? {}),
+        };
+        if (Object.keys(mergedVinyl).length > 0) metadata.vinyl = mergedVinyl;
+
         const updates: Record<string, unknown> = {
           title:       p.title,
           description,
@@ -127,6 +147,7 @@ export async function importCatalog(
         if (error) result.errors.push(`Update ${externalId}: ${error.message}`);
         else       result.updated++;
       } else {
+        if (newVinyl && Object.keys(newVinyl).length > 0) metadata.vinyl = newVinyl;
         const { error } = await db
           .from('app_seller_products')
           .insert({

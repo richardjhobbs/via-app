@@ -4,6 +4,7 @@ import { db } from '@/lib/app/db';
 import { fetchShopifyProducts, type ShopifyProduct } from '@/lib/shopify/products-json';
 import { getUsdcRate } from '@/lib/app/fx';
 import { importCatalog, shopifyTotalStock } from '@/lib/app/catalog-import';
+import { parseShopifyVinyl } from '@/lib/app/vinyl';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
@@ -19,14 +20,20 @@ export const maxDuration = 60;
  *
  * VIA is data-only: image fields on Shopify products are ignored. See
  * feedback_via_is_data_not_images.md.
+ *
+ * Pass ?category=vinyl to parse each product's title / tags / SKU into a
+ * metadata.vinyl block (see docs/reference_via_vinyl_schema.md). Without it
+ * the import is the generic, category-agnostic path.
  */
 export async function POST(
-  _req: NextRequest,
+  req: NextRequest,
   { params }: { params: Promise<{ sellerId: string }> },
 ) {
   const { sellerId } = await params;
   const auth = await requireBrandAuth(sellerId);
   if ('error' in auth) return auth.error;
+
+  const isVinyl = req.nextUrl.searchParams.get('category') === 'vinyl';
 
   const { data: seller, error: sellerErr } = await db
     .from('app_sellers')
@@ -65,8 +72,9 @@ export async function POST(
     source: 'shopify',
     productUrlFor: (p) => `https://${domain}/products/${p.handle}`,
     totalStockFor: shopifyTotalStock,
+    vinylFor: isVinyl ? parseShopifyVinyl : undefined,
     fx,
   });
 
-  return NextResponse.json({ domain, ...result });
+  return NextResponse.json({ domain, category: isVinyl ? 'vinyl' : null, ...result });
 }

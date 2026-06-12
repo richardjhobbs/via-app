@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireBrandAuth } from '@/lib/app/seller-auth';
 import { db } from '@/lib/app/db';
+import { sanitiseVinylInput } from '@/lib/app/vinyl';
 
 export const dynamic = 'force-dynamic';
 
@@ -11,6 +12,7 @@ interface UpdateBody {
   stock?: number | null;
   max_supply?: number | null;
   url?: string | null;
+  vinyl?: Record<string, unknown>; // partial metadata.vinyl block, merged in
 }
 
 /**
@@ -36,7 +38,7 @@ export async function PUT(
 
   const { data: existing, error: readErr } = await db
     .from('app_seller_products')
-    .select('id, seller_id, on_chain_status')
+    .select('id, seller_id, on_chain_status, metadata')
     .eq('id', productId)
     .eq('seller_id', sellerId)
     .maybeSingle();
@@ -46,6 +48,16 @@ export async function PUT(
   const isRegistered = existing.on_chain_status === 'registered';
 
   const update: Record<string, unknown> = { updated_at: new Date().toISOString() };
+
+  // Vinyl block: validate + merge the partial into metadata.vinyl so a seller
+  // can complete the grades an import could not parse. See lib/app/vinyl.ts.
+  if (body.vinyl !== undefined) {
+    const sanitised = sanitiseVinylInput(body.vinyl);
+    if (!sanitised.ok) return NextResponse.json({ error: sanitised.error }, { status: 400 });
+    const existingMeta  = (existing.metadata as Record<string, unknown> | null) ?? {};
+    const existingVinyl = (existingMeta.vinyl as Record<string, unknown> | null) ?? {};
+    update.metadata = { ...existingMeta, vinyl: { ...existingVinyl, ...sanitised.vinyl } };
+  }
 
   if (typeof body.title === 'string') {
     const t = body.title.trim();
@@ -79,7 +91,7 @@ export async function PUT(
     .update(update)
     .eq('id', productId)
     .eq('seller_id', sellerId)
-    .select('id, kind, title, description, price_minor, currency, stock, max_supply, url, active, on_chain_status, on_chain_tx_hash, token_id, created_at, updated_at')
+    .select('id, kind, title, description, price_minor, currency, stock, max_supply, url, active, on_chain_status, on_chain_tx_hash, token_id, metadata, created_at, updated_at')
     .single();
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
