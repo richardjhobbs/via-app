@@ -25,6 +25,7 @@ export interface VinylBlock {
   title?:              string;
   format?:             string;   // "LP", "12\"", "7\"", "2xLP", etc.
   label?:              string;
+  genres?:             string[];
   catalogue_number?:   string;
   pressing_country?:   string;
   pressing_year?:      number;
@@ -116,7 +117,22 @@ export function parseShopifyVinyl(p: ShopifyProduct): VinylBlock {
   const sku = p.variants?.[0]?.sku?.trim();
   if (sku) v.catalogue_number = sku;
 
-  if (p.vendor) v.label = p.vendor.trim();
+  // Label / genres. Some dealers (e.g. recycle-vinyl) pack the Shopify vendor
+  // as "genre, genre : Label,Label". Split on the first " : ": the left side
+  // is genres, the right side the label(s), de-duplicated. No " : " means the
+  // whole vendor is the label.
+  if (p.vendor) {
+    const vendor = p.vendor.trim();
+    const ci = vendor.indexOf(' : ');
+    if (ci >= 0) {
+      const genres = vendor.slice(0, ci).split(',').map((s) => s.trim()).filter(Boolean);
+      const labels = [...new Set(vendor.slice(ci + 3).split(',').map((s) => s.trim()).filter(Boolean))];
+      if (genres.length) v.genres = genres;
+      if (labels.length) v.label = labels.join(', ');
+    } else {
+      v.label = vendor;
+    }
+  }
 
   return v;
 }

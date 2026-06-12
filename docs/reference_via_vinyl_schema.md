@@ -31,6 +31,7 @@ metadata.vinyl = {
   title              string
   format             string    // "LP", "12\"", "7\"", "2xLP", etc.
   label              string
+  genres             string[]  optional, parsed when a dealer packs the vendor as "genre, genre : label"
   catalogue_number   string
   pressing_country   string
   pressing_year      int

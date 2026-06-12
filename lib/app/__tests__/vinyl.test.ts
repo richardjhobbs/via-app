@@ -88,6 +88,20 @@ test('parseShopifyVinyl normalises a lowercase format token', () => {
   assert.equal(v.media_grade, 'VG');
 });
 
+test('parseShopifyVinyl splits a "genre : label" vendor and dedupes labels', () => {
+  const a = parseShopifyVinyl(shopifyProduct({ title: 'X - Y 12" VG', vendor: 'Electro, Techno : Last Gang Records' }));
+  assert.deepEqual(a.genres, ['Electro', 'Techno']);
+  assert.equal(a.label, 'Last Gang Records');
+
+  const b = parseShopifyVinyl(shopifyProduct({ title: 'X - Y 12" VG', vendor: 'House, Tribal House : Strictly Rhythm,Strictly Rhythm' }));
+  assert.deepEqual(b.genres, ['House', 'Tribal House']);
+  assert.equal(b.label, 'Strictly Rhythm'); // duplicate collapsed
+
+  const c = parseShopifyVinyl(shopifyProduct({ title: 'X - Y 12" VG', vendor: 'Acme Records' }));
+  assert.equal(c.label, 'Acme Records');
+  assert.equal(c.genres, undefined);
+});
+
 test('vinylFromCsvRow maps columns and aliases; null when no vinyl cells', () => {
   const block = vinylFromCsvRow({
     artist: 'Burial',
