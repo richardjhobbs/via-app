@@ -123,12 +123,13 @@ async function getJson<T = unknown>(url: string): Promise<T> {
 
 async function fetchProducts(host: string, want: number): Promise<ShopifyProduct[]> {
   const all: ShopifyProduct[] = [];
-  for (let page = 1; page <= 40; page++) {
+  for (let page = 1; page <= 250; page++) {
     const json = await getJson<{ products?: ShopifyProduct[] }>(`https://${host}/products.json?limit=250&page=${page}`);
     const batch: ShopifyProduct[] = json.products ?? [];
     all.push(...batch);
     if (batch.length < 250) break;
     if (all.length >= want) break;
+    await new Promise((r) => setTimeout(r, 250)); // politeness between pages
   }
   return all;
 }
@@ -236,76 +237,70 @@ function totalStock(p: ShopifyProduct): number | null {
     }
   }
 
-  // ── Import products as draft vinyl listings ─────────────────────────
-  let synced = 0, updated = 0, skipped = 0, publishReady = 0, needGrades = 0;
+  // ── Import products as draft vinyl listings (chunked insert) ────────
+  // First-load operator tool: build every row, then plain-insert in chunks.
+  // The (seller_id, external_id) unique index is PARTIAL, so PostgREST upsert
+  // can't use it; instead we refuse to bulk-load a seller that already has
+  // products (a re-load would duplicate). Incremental, merge-preserving
+  // re-sync is the route path (POST /sync-shopify?category=vinyl).
+  let synced = 0, skipped = 0, publishReady = 0, needGrades = 0;
   const errors: string[] = [];
+  const rows: Record<string, unknown>[] = [];
 
   for (const p of picked) {
-    try {
-      const firstVariant = p.variants?.[0];
-      if (!firstVariant) { skipped++; continue; }
-      const nativePrice = Number(firstVariant.price ?? '0');
-      if (!Number.isFinite(nativePrice) || nativePrice < 0) {
-        skipped++; errors.push(`${p.title}: invalid price ${firstVariant.price}`); continue;
+    const firstVariant = p.variants?.[0];
+    if (!firstVariant) { skipped++; continue; }
+    const nativePrice = Number(firstVariant.price ?? '0');
+    if (!Number.isFinite(nativePrice) || nativePrice < 0) {
+      skipped++; errors.push(`${p.title}: invalid price ${firstVariant.price}`); continue;
+    }
+    const vinyl = parseShopifyVinyl(p);
+    if (isVinylGrade(vinyl.media_grade)) publishReady++;
+    else needGrades++;
+    rows.push({
+      seller_id:   sellerId,
+      external_id: `shopify:${p.id || p.handle}`,
+      kind:        'physical',
+      title:       p.title,
+      description: stripHtml(p.body_html).slice(0, 4000) || null,
+      price_minor: priceToUsdcMinor(nativePrice, fx.rate),
+      currency:    'USDC',
+      stock:       totalStock(p),
+      url:         `https://${host}/products/${p.handle}`,
+      metadata: {
+        source: 'shopify', handle: p.handle, vendor: p.vendor ?? null,
+        product_type: p.product_type ?? null, tags: p.tags ?? [],
+        variant_count: p.variants.length, fx_note: fx.note,
+        native_price: nativePrice, vinyl,
+      },
+      active: p.variants.some((v) => v.available),
+    });
+  }
+
+  if (DRY_RUN) {
+    synced = rows.length;
+  } else {
+    const { count: existingCount } = await db
+      .from('app_seller_products')
+      .select('id', { count: 'exact', head: true })
+      .eq('seller_id', sellerId);
+    if ((existingCount ?? 0) > 0) {
+      console.warn(`Seller already has ${existingCount} products; skipping bulk insert to avoid duplicates. For incremental re-sync use POST /api/seller/${sellerId}/products/sync-shopify?category=vinyl.`);
+    } else {
+      for (let i = 0; i < rows.length; i += 500) {
+        const chunk = rows.slice(i, i + 500);
+        const { error } = await db.from('app_seller_products').insert(chunk);
+        if (error) errors.push(`insert chunk @${i} (${chunk.length}): ${error.message}`);
+        else synced += chunk.length;
+        console.log(`  inserted ${Math.min(i + 500, rows.length)}/${rows.length}`);
       }
-      const externalId = `shopify:${p.id || p.handle}`;
-      const priceMinor = priceToUsdcMinor(nativePrice, fx.rate);
-      const stock = totalStock(p);
-      const anyAvailable = p.variants.some((v) => v.available);
-      const vinyl = parseShopifyVinyl(p);
-      // Publish gate requires a media grade; sleeve is optional.
-      if (isVinylGrade(vinyl.media_grade)) publishReady++;
-      else needGrades++;
-
-      const metadata: Record<string, unknown> = {
-        source: 'shopify',
-        handle: p.handle,
-        vendor: p.vendor ?? null,
-        product_type: p.product_type ?? null,
-        tags: p.tags ?? [],
-        variant_count: p.variants.length,
-        fx_note: fx.note,
-        native_price: nativePrice,
-        vinyl,
-      };
-
-      if (DRY_RUN) { synced++; continue; }
-
-      const { data: existRow } = await db
-        .from('app_seller_products')
-        .select('id, on_chain_status, metadata')
-        .eq('seller_id', sellerId)
-        .eq('external_id', externalId)
-        .maybeSingle();
-
-      const description = stripHtml(p.body_html).slice(0, 4000) || null;
-      const url = `https://${host}/products/${p.handle}`;
-
-      if (existRow) {
-        // Preserve grades a seller completed by hand: merge over existing vinyl.
-        const existingVinyl = (existRow.metadata as Record<string, unknown> | null)?.vinyl;
-        metadata.vinyl = { ...(existingVinyl && typeof existingVinyl === 'object' ? existingVinyl : {}), ...vinyl };
-        const updates: Record<string, unknown> = { title: p.title, description, url, stock, metadata, updated_at: new Date().toISOString() };
-        if (existRow.on_chain_status === 'draft') updates.price_minor = priceMinor;
-        const { error } = await db.from('app_seller_products').update(updates).eq('id', existRow.id);
-        if (error) errors.push(`update ${externalId}: ${error.message}`); else updated++;
-      } else {
-        const { error } = await db.from('app_seller_products').insert({
-          seller_id: sellerId, external_id: externalId, kind: 'physical',
-          title: p.title, description, price_minor: priceMinor, currency: 'USDC',
-          stock, url, metadata, active: anyAvailable,
-        });
-        if (error) errors.push(`insert ${externalId}: ${error.message}`); else synced++;
-      }
-    } catch (e) {
-      errors.push(`${p.id || p.handle}: ${e instanceof Error ? e.message : String(e)}`);
     }
   }
 
   console.log();
   console.log('──── Stage 1 complete ────');
   console.log(`Seller MCP:    ${APP_BASE}/sellers/${slug}/mcp`);
-  console.log(`Imported:      ${synced} new, ${updated} updated, ${skipped} skipped`);
+  console.log(`Imported:      ${synced} inserted, ${skipped} skipped`);
   console.log(`Publish-ready: ${publishReady} (media grade parsed), ${needGrades} need a media grade before they can publish`);
   if (errors.length) {
     console.log(`Errors (${errors.length}):`);
