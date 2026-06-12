@@ -16,6 +16,24 @@
 
 import type { ShopifyProduct } from '../shopify/products-json';
 
+// Local, dependency-free HTML strip (mirrors lib/shopify/products-json
+// stripHtml). Kept inline so this module imports only a type from that file,
+// which keeps both the Next build and the node --experimental-strip-types test
+// runner happy with an extensionless type-only import.
+function stripHtmlText(html: string | null | undefined): string {
+  if (!html) return '';
+  return html
+    .replace(/<[^>]*>/g, ' ')
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 /** Goldmine condition scale, best (M) to worst (P). */
 export const VINYL_GRADES = ['M', 'NM', 'VG+', 'VG', 'G+', 'G', 'F', 'P'] as const;
 export type VinylGrade = (typeof VINYL_GRADES)[number];
@@ -73,6 +91,67 @@ const FORMAT_RE = /(\d+\s*[x×]\s*)?(LP|12"|10"|7"|EP)/i;
 // Longer tokens first so "VG+" wins over "VG", "G+" over "G", "M-" over "M".
 const GRADE_TOKEN = 'M-|NM|VG\\+|VG|G\\+|G|MINT|NEAR ?MINT|EX|M|F|P';
 const GRADE_PAIR_RE = new RegExp(`(${GRADE_TOKEN})\\s*/\\s*(${GRADE_TOKEN})`, 'i');
+
+// Serious vinyl dealers sync from Discogs, so the product body is a labelled
+// "Media Condition: ... Sleeve Condition: ... Catalogue Number: ... Country:
+// ... Released: ... Matrix / Runout ..." block. This pulls the structured,
+// provenance-critical fields out of that body. A non-Discogs body simply
+// matches nothing and returns {}.
+const BODY_LABELS = [
+  'Media Condition:', 'Sleeve Condition:', 'Location:', 'Label:',
+  'Catalogue Number:', 'Country:', 'Released:', 'Genre:', 'Style:',
+  'Comments:', 'Notes:', 'Tracklist:', 'Barcode and Other Identifiers:',
+];
+
+function gradeFromCondition(s: string): VinylGrade | null {
+  if (!s) return null;
+  const paren = s.match(/\(([^)]+)\)/);
+  if (paren) {
+    const g = normaliseGrade(paren[1]) ?? normaliseGrade(paren[1].split(/\s+/)[0]);
+    if (g) return g;
+  }
+  return normaliseGrade(s.split(/\s{2,}|,/)[0]);
+}
+
+export function parseDiscogsBody(bodyHtml: string | null | undefined): VinylBlock {
+  const out: VinylBlock = {};
+  const text = stripHtmlText(bodyHtml);
+  if (!text) return out;
+
+  const field = (label: string): string => {
+    const i = text.indexOf(label);
+    if (i < 0) return '';
+    const start = i + label.length;
+    let end = text.length;
+    for (const l of BODY_LABELS) {
+      if (l === label) continue;
+      const j = text.indexOf(l, start);
+      if (j >= 0 && j < end) end = j;
+    }
+    return text.slice(start, end).trim();
+  };
+
+  const media  = gradeFromCondition(field('Media Condition:'));  if (media)  out.media_grade = media;
+  const sleeve = gradeFromCondition(field('Sleeve Condition:')); if (sleeve) out.sleeve_grade = sleeve;
+
+  const country = field('Country:'); if (country) out.pressing_country = country.split(/\s{2,}/)[0].trim();
+  const released = field('Released:'); const ym = released.match(/\b(19|20)\d{2}\b/); if (ym) out.pressing_year = parseInt(ym[0], 10);
+  const cat = field('Catalogue Number:'); if (cat) out.catalogue_number = cat.split(',')[0].trim();
+
+  // Matrix / runout: capture from the first marker to the next credits label.
+  const mi = text.indexOf('Matrix / Runout');
+  if (mi >= 0) {
+    let mend = text.length;
+    for (const l of ['Rights Society', 'Phonographic Copyright', 'Copyright (c)', 'Pressed By', 'Lacquer Cut', 'Manufactured By', 'Marketed By', 'Distributed By', 'Data provided by Discogs']) {
+      const j = text.indexOf(l, mi);
+      if (j >= 0 && j < mend) mend = j;
+    }
+    const m = text.slice(mi, mend).replace(/\s+/g, ' ').trim();
+    if (m) out.matrix_runout = m.slice(0, 500);
+  }
+
+  return out;
+}
 
 export function parseShopifyVinyl(p: ShopifyProduct): VinylBlock {
   const v: VinylBlock = {};
@@ -133,6 +212,17 @@ export function parseShopifyVinyl(p: ShopifyProduct): VinylBlock {
       v.label = vendor;
     }
   }
+
+  // Overlay the Discogs-formatted body. It is authoritative for the structured
+  // provenance fields, including the real catalogue number (the variant SKU is
+  // the dealer's internal stock id, not the pressing's cat number).
+  const body = parseDiscogsBody(p.body_html);
+  if (body.media_grade)      v.media_grade      = body.media_grade;
+  if (body.sleeve_grade)     v.sleeve_grade     = body.sleeve_grade;
+  if (body.pressing_country) v.pressing_country = body.pressing_country;
+  if (body.pressing_year)    v.pressing_year    = body.pressing_year;
+  if (body.matrix_runout)    v.matrix_runout    = body.matrix_runout;
+  if (body.catalogue_number) v.catalogue_number = body.catalogue_number;
 
   return v;
 }

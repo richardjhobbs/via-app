@@ -14,6 +14,7 @@ import assert from 'node:assert/strict';
 import {
   normaliseGrade,
   parseShopifyVinyl,
+  parseDiscogsBody,
   vinylFromCsvRow,
   sanitiseVinylInput,
   validateVinylForPublish,
@@ -100,6 +101,31 @@ test('parseShopifyVinyl splits a "genre : label" vendor and dedupes labels', () 
   const c = parseShopifyVinyl(shopifyProduct({ title: 'X - Y 12" VG', vendor: 'Acme Records' }));
   assert.equal(c.label, 'Acme Records');
   assert.equal(c.genres, undefined);
+});
+
+test('parseDiscogsBody pulls structured provenance fields from the body', () => {
+  const body = 'Media Condition: Very Good Plus (VG+) Sleeve Condition: Near Mint (NM or M-) Location: SF ELECTRO Label: Last Gang Records Catalogue Number: Q101358LP Country: UK Released: 24 Apr 2012 Genre: Electronic Style: Electro, Techno Comments: Notes: A1. Cryptocracy Matrix / Runout Q1 01358LP-A 97555M1/A Matrix / Runout Q1 01358LP-B 97555M2/A Phonographic Copyright (p) Last Gang Records Data provided by Discogs';
+  const b = parseDiscogsBody(body);
+  assert.equal(b.media_grade, 'VG+');
+  assert.equal(b.sleeve_grade, 'NM');           // "(NM or M-)" folds to NM
+  assert.equal(b.pressing_country, 'UK');
+  assert.equal(b.pressing_year, 2012);
+  assert.equal(b.catalogue_number, 'Q101358LP'); // real cat number, not the SKU
+  assert.ok((b.matrix_runout ?? '').includes('Q1 01358LP-A'));
+  assert.equal(parseDiscogsBody('just a plain description').media_grade, undefined);
+});
+
+test('parseShopifyVinyl: body overrides SKU cat-number and adds sleeve grade', () => {
+  const v = parseShopifyVinyl(shopifyProduct({
+    title: 'Huoratron - Cryptocracy (SF ELECTRO) VG+',
+    vendor: 'Electro, Techno : Last Gang Records',
+    variants: [{ id: 1, title: 'Default', price: '48', compare_at_price: null, sku: '4174958931', available: true, position: 1 }],
+    body_html: 'Media Condition: Very Good Plus (VG+) Sleeve Condition: Generic Catalogue Number: Q101358LP Country: UK Released: 2012',
+  }));
+  assert.equal(v.catalogue_number, 'Q101358LP'); // not the SKU 4174958931
+  assert.equal(v.pressing_country, 'UK');
+  assert.equal(v.pressing_year, 2012);
+  assert.equal(v.sleeve_grade, undefined); // "Generic" is not a grade
 });
 
 test('vinylFromCsvRow maps columns and aliases; null when no vinyl cells', () => {

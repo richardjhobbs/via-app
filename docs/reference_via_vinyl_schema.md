@@ -74,7 +74,11 @@ Shopify first, following VIA's existing integration process; CSV second.
   `metadata.vinyl` block. Catalogue number, format and grades are commonly embedded in a
   vinyl dealer's Shopify product title or tags. This mirrors RRG's
   `onboard-brand.mjs` -> `brand-mirror.mjs` pattern but writes `app_seller_products` rows
-  with no image handling.
+  with no image handling. Dealers that sync from Discogs expose a labelled body ("Media
+  Condition / Sleeve Condition / Catalogue Number / Country / Released / Matrix / Runout");
+  `parseDiscogsBody` extracts those structured provenance fields, and the body's catalogue
+  number is authoritative over the variant SKU (the SKU is the dealer's internal stock id,
+  not the pressing's cat number).
 
 - **CSV (secondary).** Extend the existing 8-column sync-csv schema
   (`lib/app/csv-import.ts`, endpoint `app/api/seller/[sellerId]/products/sync-csv`) with
