@@ -139,14 +139,19 @@ function toPublicProduct(p: ProductRow, seller: { slug: string; name: string }):
   };
 }
 
-/** A buyable product is active, not admin-removed, and on-chain registered. */
+/**
+ * A discoverable product is active, not admin-removed, and not paused/sold_out.
+ * Mint-on-purchase: 'draft' listings ARE discoverable and buyable (the on-chain
+ * drop is created at settlement, not before), so discovery spans draft +
+ * registered. paused / sold_out are excluded.
+ */
 function buyableProducts() {
   return db
     .from('app_seller_products')
     .select(PRODUCT_PUBLIC_COLS)
     .eq('active', true)
     .eq('admin_removed', false)
-    .eq('on_chain_status', 'registered');
+    .in('on_chain_status', ['draft', 'registered']);
 }
 
 export async function getPublicSeller(slug: string): Promise<PublicSeller | null> {

@@ -30,6 +30,7 @@ import { getShippingConfig, computeShippingQuote, type ShippingConfig } from '@/
 import { insertNotification } from '@/lib/app/notifications';
 import { runSalesAgentAnswer, recordBuyerNote, type BuyerAnswerContext } from '@/lib/app/sales-agent';
 import { parseOfferingSchema, computeQuote, type Selections } from '@/lib/app/quote-pricing';
+import { validateVinylForPublish } from '@/lib/app/vinyl';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -181,7 +182,7 @@ function createServer(seller: SellerRow, req: Request) {
         .from('app_seller_products')
         .select('id, title, description, kind, price_minor, currency, stock, url, token_id, on_chain_status, max_supply')
         .eq('seller_id', seller.id)
-        .eq('on_chain_status', 'registered')
+        .in('on_chain_status', ['draft', 'registered']) // mint-on-purchase: drafts are discoverable; minted at sale
         .eq('admin_removed', false) // superadmin kill-switch, independent of active_only
         .order('created_at', { ascending: false })
         .limit(max);
@@ -399,7 +400,7 @@ function createServer(seller: SellerRow, req: Request) {
 
       const { data: product, error: prodErr } = await db
         .from('app_seller_products')
-        .select('id, title, price_minor, currency, stock, token_id, on_chain_status, active, max_supply, kind, pricing_mode, admin_removed')
+        .select('id, title, price_minor, currency, stock, token_id, on_chain_status, active, max_supply, kind, pricing_mode, admin_removed, metadata')
         .eq('id', product_id)
         .eq('seller_id', seller.id)
         .maybeSingle();
@@ -428,7 +429,17 @@ function createServer(seller: SellerRow, req: Request) {
         void logInteraction(seller.id, 'buy_product', identity, { product_id, qty, buyer_wallet }, { error: 'quote_required' }, 409, Date.now() - t0);
         return r;
       }
-      if (!product.active || product.on_chain_status !== 'registered') {
+      // Vinyl integrity gate: a record listing must carry a valid media grade
+      // before it can be sold (the schema's integrity guarantee). With
+      // mint-on-purchase there is no publish step to enforce it, so it is
+      // enforced here. Non-vinyl listings have no vinyl block and pass.
+      const vinylCheck = validateVinylForPublish((product.metadata as Record<string, unknown> | null)?.vinyl);
+      if (!vinylCheck.ok) {
+        const r = asJson({ error: 'not_sellable', message: vinylCheck.error, product_id: product.id });
+        void logInteraction(seller.id, 'buy_product', identity, { product_id, qty, buyer_wallet }, { error: 'not_sellable' }, 409, Date.now() - t0);
+        return r;
+      }
+      if (!product.active || !['draft', 'registered'].includes(product.on_chain_status as string)) {
         const r = asJson({ error: `product ${product_id} is not currently purchasable (status=${product.on_chain_status}, active=${product.active})` });
         void logInteraction(seller.id, 'buy_product', identity, { product_id, qty, buyer_wallet }, { error: 'not_purchasable' }, 409, Date.now() - t0);
         return r;

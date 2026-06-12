@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/app/db';
 import { extractPaymentProof, verifyAndExecutePayment, verifyUsdcTransfer } from '@/lib/app/x402-server';
-import { getRRGContract } from '@/lib/app/contract';
-import { calculateSplit } from '@/lib/app/splits';
+import { getRRGContract, toUsdc6dp } from '@/lib/app/contract';
+import { calculateSplit, PLATFORM_WALLET } from '@/lib/app/splits';
 import { insertDistributionAndPay } from '@/lib/app/auto-payout';
+import { shouldSkipErc8004 } from '@/lib/app/test-mode';
 import { postViaReputationSignal, parseAgentId } from '@/lib/app/via-reputation';
 import { lookupAgentIdByWallet } from '@/lib/app/erc8004';
 import { insertNotification } from '@/lib/app/notifications';
@@ -32,7 +33,70 @@ export const dynamic = 'force-dynamic';
  * Steps 3-5 are non-fatal once payment has settled: the buyer's funds are
  * already in, so a mint or signal hiccup is logged but the purchase still
  * records as paid and the seller is still paid out.
+ *
+ * Mint-on-purchase: listings are discoverable as drafts (no token_id). The
+ * on-chain drop is created HERE, at the moment of sale (registerDrop then
+ * operatorMint), so we mint only what actually sells. If an on-chain step
+ * fails after payment, the order stays 'paid' with a NEEDS_MINT note and the
+ * seller is NOT paid out; re-POSTing the order_ref resumes from the mint.
  */
+
+const UNLIMITED_SUPPLY = 10_000; // RRG.sol caps edition size at 1-10000
+
+/**
+ * Create the on-chain drop for a draft listing at point of sale and flip it to
+ * 'registered'. Claims a global token_id, reserves it on the row with a
+ * compare-and-set (so two concurrent settlements can't double-register), then
+ * registerDrop with creator = PLATFORM_WALLET (the split invariant; see
+ * lib/app/contract.ts). Test-mode sellers skip the chain and record a TEST tx.
+ */
+async function registerDropAtSale(
+  productId: string,
+  priceMinor: number,
+  maxSupply: number | null,
+  skipChain: boolean,
+): Promise<number> {
+  const { data: tokenIdData, error: tokErr } = await db.rpc('app_next_token_id');
+  if (tokErr || tokenIdData == null) throw new Error(`claim token_id failed: ${tokErr?.message ?? 'null'}`);
+  const tokenId = Number(tokenIdData);
+
+  const { data: reserved, error: resErr } = await db
+    .from('app_seller_products')
+    .update({ token_id: tokenId, updated_at: new Date().toISOString() })
+    .eq('id', productId)
+    .is('token_id', null)
+    .neq('on_chain_status', 'registered')
+    .select('id')
+    .maybeSingle();
+  if (resErr) throw new Error(`reserve token_id failed: ${resErr.message}`);
+  if (!reserved) {
+    // A concurrent settlement won the token; reuse whatever it registered.
+    const { data: row } = await db.from('app_seller_products').select('token_id').eq('id', productId).maybeSingle();
+    if (row?.token_id != null) return Number(row.token_id);
+    throw new Error('token reservation lost with no resolved token_id');
+  }
+
+  let txHash: string;
+  if (skipChain) {
+    txHash = `TEST-registerDrop-${tokenId}`;
+  } else {
+    const contract = getRRGContract();
+    const price6dp = toUsdc6dp(priceMinor / 1_000_000);
+    const tx = await (contract.registerDrop as (
+      tokenId: bigint, creator: string, price6dp: bigint, maxSupply: bigint,
+    ) => Promise<{ wait: (n?: number) => Promise<{ hash: string }> }>)(
+      BigInt(tokenId), PLATFORM_WALLET, price6dp, BigInt(maxSupply ?? UNLIMITED_SUPPLY),
+    );
+    const receipt = await tx.wait(1);
+    txHash = receipt.hash;
+  }
+
+  await db.from('app_seller_products')
+    .update({ on_chain_status: 'registered', on_chain_tx_hash: txHash, updated_at: new Date().toISOString() })
+    .eq('id', productId);
+  return tokenId;
+}
+
 export async function POST(req: NextRequest) {
   let body: { order_ref?: unknown; x_payment?: unknown; payment_tx_hash?: unknown };
   try {
@@ -54,9 +118,9 @@ export async function POST(req: NextRequest) {
     .from('app_purchases')
     .select(`
       id, status, total_usdc, buyer_wallet, buyer_agent_id, qty,
-      mint_tx_hash, payout_tx_hash, order_ref,
-      product:product_id ( id, title, token_id ),
-      seller:seller_id ( id, slug, name, wallet_address, seller_pct_override, erc8004_agent_id, owner_user_id )
+      mint_tx_hash, payout_tx_hash, payment_tx_hash, order_ref,
+      product:product_id ( id, title, token_id, price_minor, max_supply ),
+      seller:seller_id ( id, slug, name, wallet_address, seller_pct_override, erc8004_agent_id, owner_user_id, contact_email )
     `)
     .eq('order_ref', orderRef)
     .maybeSingle();
@@ -92,79 +156,133 @@ export async function POST(req: NextRequest) {
   const tokenId   = product.token_id != null ? Number(product.token_id) : null;
   const buyerWalletRecorded = String(purchase.buyer_wallet).toLowerCase();
 
-  // ── 2. Verify payment (two accepted methods) ─────────────────────────
-  //   a) x_payment       → x402 "exact" permit; we execute it on-chain (pull).
-  //   b) payment_tx_hash  → buyer already sent a raw USDC transfer; we only
-  //                         attest the on-chain Transfer landed on platform.
-  // Sellers accept both so any buyer agent can settle, whether or not its
-  // wallet can sign an EIP-2612 permit.
+  // ── 2. Verify payment, OR resume an already-paid order (recovery) ────
+  // A purchase already in 'paid' (payment captured on a prior attempt, but
+  // register/mint/payout did not complete) is resumed WITHOUT re-charging:
+  // re-POST the order_ref and we pick up at register + mint + payout below.
+  const alreadyPaid = purchase.status === 'paid';
   let pay: { verified: boolean; txHash: string | null; buyerWallet: string | null; error: string | null };
-  let settledVia: 'permit' | 'transfer';
+  let settledVia: 'permit' | 'transfer' | 'recovery';
 
-  if (xPayment) {
-    settledVia = 'permit';
-    const headers = new Headers();
-    headers.set('x-payment', xPayment);
-    const proof = extractPaymentProof(headers);
-    if (!proof) {
-      return NextResponse.json({ settled: false, error: 'x_payment could not be parsed as an x402 payment proof' }, { status: 400 });
+  if (alreadyPaid) {
+    const storedTx = purchase.payment_tx_hash as string | null;
+    if (!storedTx) {
+      return NextResponse.json({ settled: false, order_ref: orderRef, error: 'order is marked paid but has no payment_tx_hash to resume from' }, { status: 409 });
     }
-    const r = await verifyAndExecutePayment(proof, totalUsdc);
-    pay = { verified: r.verified, txHash: r.txHash, buyerWallet: r.buyerWallet, error: r.error };
+    pay = { verified: true, txHash: storedTx, buyerWallet: buyerWalletRecorded, error: null };
+    settledVia = 'recovery';
   } else {
-    settledVia = 'transfer';
-    // Anti-replay: a given transfer can settle at most one order. The
-    // payment_tx_hash column has a unique index as the hard backstop.
-    const { data: dupe } = await db
-      .from('app_purchases')
-      .select('order_ref')
-      .ilike('payment_tx_hash', paymentTxHash)
-      .neq('id', purchase.id)
-      .maybeSingle();
-    if (dupe) {
-      return NextResponse.json({ settled: false, order_ref: orderRef, error: `payment_tx_hash already used to settle order ${dupe.order_ref}` }, { status: 409 });
+    //   a) x_payment       → x402 "exact" permit; we execute it on-chain (pull).
+    //   b) payment_tx_hash  → buyer already sent a raw USDC transfer; we attest it.
+    if (xPayment) {
+      settledVia = 'permit';
+      const headers = new Headers();
+      headers.set('x-payment', xPayment);
+      const proof = extractPaymentProof(headers);
+      if (!proof) {
+        return NextResponse.json({ settled: false, error: 'x_payment could not be parsed as an x402 payment proof' }, { status: 400 });
+      }
+      const r = await verifyAndExecutePayment(proof, totalUsdc);
+      pay = { verified: r.verified, txHash: r.txHash, buyerWallet: r.buyerWallet, error: r.error };
+    } else {
+      settledVia = 'transfer';
+      // Anti-replay: a given transfer can settle at most one order. The
+      // payment_tx_hash column has a unique index as the hard backstop.
+      const { data: dupe } = await db
+        .from('app_purchases')
+        .select('order_ref')
+        .ilike('payment_tx_hash', paymentTxHash)
+        .neq('id', purchase.id)
+        .maybeSingle();
+      if (dupe) {
+        return NextResponse.json({ settled: false, order_ref: orderRef, error: `payment_tx_hash already used to settle order ${dupe.order_ref}` }, { status: 409 });
+      }
+      const r = await verifyUsdcTransfer(paymentTxHash, totalUsdc, buyerWalletRecorded);
+      pay = { verified: r.verified, txHash: r.txHash, buyerWallet: r.buyerWallet, error: r.error };
     }
-    const r = await verifyUsdcTransfer(paymentTxHash, totalUsdc, buyerWalletRecorded);
-    pay = { verified: r.verified, txHash: r.txHash, buyerWallet: r.buyerWallet, error: r.error };
+
+    if (!pay.verified || !pay.txHash) {
+      return NextResponse.json({ settled: false, order_ref: orderRef, error: pay.error ?? 'payment verification failed' }, { status: 402 });
+    }
+
+    // The wallet the buyer paid from must match the wallet on the order.
+    if (pay.buyerWallet && pay.buyerWallet.toLowerCase() !== buyerWalletRecorded) {
+      console.warn(`[x402/purchase] ${orderRef} payer ${pay.buyerWallet} differs from recorded buyer_wallet ${buyerWalletRecorded}`);
+    }
+
+    // Payment is in. From here failures are non-fatal; record paid first.
+    await db.from('app_purchases')
+      .update({ status: 'paid', payment_tx_hash: pay.txHash, notes: `settled via ${settledVia}; payment tx ${pay.txHash}` })
+      .eq('id', purchase.id);
   }
 
-  if (!pay.verified || !pay.txHash) {
-    return NextResponse.json({ settled: false, order_ref: orderRef, error: pay.error ?? 'payment verification failed' }, { status: 402 });
+  // Both branches above guarantee a non-null payment tx hash; narrow it here.
+  if (!pay.txHash) {
+    return NextResponse.json({ settled: false, order_ref: orderRef, error: 'internal: missing payment tx hash after verification' }, { status: 500 });
   }
 
-  // The wallet the buyer paid from must match the wallet on the order.
-  if (pay.buyerWallet && pay.buyerWallet.toLowerCase() !== buyerWalletRecorded) {
-    console.warn(`[x402/purchase] ${orderRef} payer ${pay.buyerWallet} differs from recorded buyer_wallet ${buyerWalletRecorded}`);
-  }
-
-  // Payment is in. From here failures are non-fatal; record paid first.
-  await db.from('app_purchases')
-    .update({ status: 'paid', payment_tx_hash: pay.txHash, notes: `settled via ${settledVia}; payment tx ${pay.txHash}` })
-    .eq('id', purchase.id);
-
-  // ── 3. operatorMint the ERC-1155 receipt to the buyer ────────────────
+  // ── 3. Mint at point of sale: registerDrop (if draft) then operatorMint ─
+  const skipChain = shouldSkipErc8004(String(seller.contact_email ?? ''));
+  let effectiveTokenId = tokenId;
   let mintTxHash: string | null = null;
   let signalBaseNonce: number | null = null;
-  if (tokenId != null) {
+
+  // 3a. Register the on-chain drop now if this listing was still a draft.
+  if (effectiveTokenId == null) {
     try {
-      const contract = getRRGContract();
-      const mintTx   = await (contract.operatorMint as (
-        tokenId: number, buyer: string,
-      ) => Promise<{ hash: string; nonce: number; wait: (n?: number) => Promise<unknown> }>)(
-        tokenId,
-        buyerWalletRecorded,
+      effectiveTokenId = await registerDropAtSale(
+        product.id as string,
+        Number(product.price_minor ?? 0),
+        product.max_supply != null ? Number(product.max_supply) : null,
+        skipChain,
       );
-      signalBaseNonce = mintTx.nonce + 1;
-      await mintTx.wait(1);
-      mintTxHash = mintTx.hash;
-      await db.from('app_purchases')
-        .update({ status: 'minted', mint_tx_hash: mintTxHash })
-        .eq('id', purchase.id);
     } catch (err) {
-      console.error(`[x402/purchase] ${orderRef} operatorMint failed`, err);
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error(`[x402/purchase] ${orderRef} registerDropAtSale failed`, err);
+      await db.from('app_purchases')
+        .update({ notes: `NEEDS_MINT: register failed (${msg}); payment ${pay.txHash}` })
+        .eq('id', purchase.id);
+      return NextResponse.json({
+        settled: true, order_ref: orderRef, settled_via: settledVia,
+        payment_tx_hash: pay.txHash, mint_tx_hash: null, needs_mint: true,
+        note: 'Payment settled but on-chain registration failed; re-POST this order_ref to resume. Seller payout is held until mint completes.',
+      });
     }
-  } else {
-    console.warn(`[x402/purchase] ${orderRef} product has no token_id, skipping mint`);
+  }
+
+  // 3b. Mint the ERC-1155 receipt to the buyer.
+  if (effectiveTokenId != null) {
+    if (skipChain) {
+      mintTxHash = `TEST-operatorMint-${effectiveTokenId}`;
+      await db.from('app_purchases').update({ status: 'minted', mint_tx_hash: mintTxHash }).eq('id', purchase.id);
+    } else {
+      try {
+        const contract = getRRGContract();
+        const mintTx   = await (contract.operatorMint as (
+          tokenId: number, buyer: string,
+        ) => Promise<{ hash: string; nonce: number; wait: (n?: number) => Promise<unknown> }>)(
+          effectiveTokenId,
+          buyerWalletRecorded,
+        );
+        signalBaseNonce = mintTx.nonce + 1;
+        await mintTx.wait(1);
+        mintTxHash = mintTx.hash;
+        await db.from('app_purchases')
+          .update({ status: 'minted', mint_tx_hash: mintTxHash })
+          .eq('id', purchase.id);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.error(`[x402/purchase] ${orderRef} operatorMint failed`, err);
+        await db.from('app_purchases')
+          .update({ notes: `NEEDS_MINT: operatorMint failed (${msg}); payment ${pay.txHash}; token ${effectiveTokenId}` })
+          .eq('id', purchase.id);
+        return NextResponse.json({
+          settled: true, order_ref: orderRef, settled_via: settledVia,
+          payment_tx_hash: pay.txHash, mint_tx_hash: null, needs_mint: true,
+          note: 'Payment settled and drop registered, but minting failed; re-POST this order_ref to resume. Seller payout is held until mint completes.',
+        });
+      }
+    }
   }
 
   // ── 4. Fire BOTH ERC-8004 reputation signals (buyer + seller) ────────
@@ -207,8 +325,8 @@ export async function POST(req: NextRequest) {
     (sellerPayoutWallet !== '' && buyerWalletRecorded === sellerPayoutWallet) ||
     (buyerAgentId != null && sellerAgentId != null && buyerAgentId === sellerAgentId);
 
-  if (selfDeal) {
-    console.log(`[x402/purchase] ${orderRef} self-dealing (buyer wallet/identity == seller); skipping both reputation signals`);
+  if (selfDeal || skipChain) {
+    console.log(`[x402/purchase] ${orderRef} ${skipChain ? 'test-mode' : 'self-dealing (buyer wallet/identity == seller)'}; skipping both reputation signals`);
   } else {
     if (buyerAgentId) {
       try {
@@ -253,20 +371,24 @@ export async function POST(req: NextRequest) {
   });
 
   let payout = { distributionId: null as string | null, sellerTxHash: null as string | null };
-  if (tokenId != null) {
+  if (skipChain) {
+    console.log(`[x402/purchase] ${orderRef} test-mode; skipping on-chain payout`);
+  } else if (effectiveTokenId != null && mintTxHash) {
     try {
       payout = await insertDistributionAndPay({
         purchaseId: purchase.id,
         sellerId:   seller.id as string,
         split,
-        tokenId,
+        tokenId:    effectiveTokenId,
         mintMethod: 'operator',
       });
     } catch (err) {
       console.error(`[x402/purchase] ${orderRef} auto-payout failed`, err);
     }
   } else {
-    console.warn(`[x402/purchase] ${orderRef} no token_id, skipping auto-payout (manual review)`);
+    // Mint did not complete: hold payout. The order keeps its NEEDS_MINT note
+    // (set above) and is resolved by re-POSTing the order_ref.
+    console.warn(`[x402/purchase] ${orderRef} mint incomplete (token=${effectiveTokenId}, mint=${mintTxHash}); holding payout for recovery`);
   }
 
   // Tie the reputation hashes to the purchase record for traceability.
