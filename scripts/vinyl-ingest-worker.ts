@@ -32,11 +32,17 @@ import { parseVinylFromText } from '../lib/app/vinyl.ts';
 
 // ── Config ────────────────────────────────────────────────────────────
 const STORES: Array<{ slug: string; url: string }> = [
-  { slug: 'recycle-vinyl',   url: 'https://recycle-vinyl.co.uk' },
-  { slug: 'goldmine-records', url: 'https://www.goldminerecords.com.au' },
-  { slug: 'hitman-records',  url: 'https://hitmanrecords.de' },
-  { slug: 'comeback-vinyl',  url: 'https://comebackvinyl.com' },
-  { slug: 'atlas-records',   url: 'https://atlasrecords.co.uk' },
+  { slug: 'recycle-vinyl',     url: 'https://recycle-vinyl.co.uk' },
+  { slug: 'goldmine-records',  url: 'https://www.goldminerecords.com.au' },
+  { slug: 'hitman-records',    url: 'https://hitmanrecords.de' },
+  { slug: 'comeback-vinyl',    url: 'https://comebackvinyl.com' },
+  { slug: 'atlas-records',     url: 'https://atlasrecords.co.uk' },
+  // batch 2
+  { slug: 'ella-records',      url: 'https://ellarecords.jp' },
+  { slug: 'cleopatra-records', url: 'https://cleorecs.com' },
+  { slug: 'greville-records',  url: 'https://grevillerecords.com.au' },
+  { slug: 'dear-vinyl',        url: 'https://dearvinyl.com' },
+  { slug: 'brooklynvegan-store', url: 'https://shop.brooklynvegan.com' },
 ];
 
 const HOLDING_OWNER_USER_ID = '96d37e66-d1c3-4ce3-9ccf-6e1bc99f2ea5';
