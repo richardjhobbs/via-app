@@ -47,23 +47,22 @@ metadata.vinyl = {
 Grades use the Goldmine scale: Mint (M), Near Mint (NM), Very Good Plus (VG+), Very Good
 (VG), Good Plus (G+), Good (G), Fair (F), Poor (P).
 
-## Validation gate (v1)
+## No quality gate (integrity, not gatekeeping)
 
-Enforced where the existing publish gate lives, `lib/app/publish-product.ts`, on the
-draft -> registered transition:
+There is NO hard requirement on condition/grade to discover or sell a listing. The only
+sell-time rule is the existing `price_minor > 0`. Missing condition or provenance never
+hides a listing or blocks a sale; it just gives the buyer's agent less to act on, which
+naturally lowers the odds of a sale. A seller who cares about selling will be specific.
 
-1. `price_minor > 0` (existing rule, unchanged)
-2. `metadata.vinyl.media_grade` is present and in the enum
-3. `metadata.vinyl.sleeve_grade` is optional; if present it must be in the enum, if
-   absent it is surfaced to buyers as "not specified"
-4. `discogs_release_id` is NOT gated in v1 (soft, seller-entered)
-
-The media grade (the record grade, which governs playability) plus price are the v1
-integrity guarantee. Sleeve grade is optional because most 12"/DJ dealers (e.g.
-recycle-vinyl) grade the record only and ship generic sleeves; requiring a sleeve grade
-they never gave would either block the whole catalogue or invite invented grades. For a
-detail-obsessed buyer an agent reading a specific pressing's catalogue number, year,
-country and record grade has more verifiable information than a photo gives a human.
+The integrity goal (no images, so the TEXT must be trustworthy) is met by EXTRACTION, not
+gatekeeping: `parseVinylFromText` pulls as much structured, verifiable data as each
+dealer states, condition (media + sleeve, plus the raw `condition_notes` verbatim),
+catalogue number, label, country, year, format, genres, matrix/runout, barcode, pressing
+notes, in whatever format/language the dealer writes (recycle-vinyl titles, Hitman's
+`Vinyl NM | Cover NM` + German labels, Goldmine's `Condition: New/Sealed/Mint`). Grades
+map to the Goldmine enum when the wording maps cleanly; anything unmapped is still kept in
+`condition_notes` so no information is lost. `discogs_release_id` stays soft (resolver is
+phase 2).
 
 ## Ingestion (v1)
 

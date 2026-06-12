@@ -21,7 +21,6 @@ import { getRRGContract, toUsdc6dp } from './contract';
 import { PLATFORM_WALLET } from './splits';
 import { isTestEmail, shouldSkipErc8004 } from './test-mode';
 import { FREE_LISTED_CAP, countListedFor, listedCapReachedMessage } from './limits';
-import { validateVinylForPublish } from './vinyl';
 
 const UNLIMITED_SUPPLY = 10_000; // RRG.sol caps edition size at 1-10000
 
@@ -61,13 +60,6 @@ export async function publishProduct(
     };
   }
 
-  // Vinyl integrity gate: a listing carrying a metadata.vinyl block must have
-  // a valid media and sleeve grade before it can be minted. Non-vinyl rows
-  // pass untouched. See docs/reference_via_vinyl_schema.md.
-  const vinylCheck = validateVinylForPublish((product.metadata as Record<string, unknown> | null)?.vinyl);
-  if (!vinylCheck.ok) {
-    return { ok: false, status: 422, code: 'vinyl_grades_required', error: vinylCheck.error };
-  }
 
   // Free-tier cap: max FREE_LISTED_CAP active + registered products per seller.
   const listedCount = await countListedFor(sellerId);

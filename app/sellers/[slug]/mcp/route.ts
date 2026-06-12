@@ -30,7 +30,6 @@ import { getShippingConfig, computeShippingQuote, type ShippingConfig } from '@/
 import { insertNotification } from '@/lib/app/notifications';
 import { runSalesAgentAnswer, recordBuyerNote, type BuyerAnswerContext } from '@/lib/app/sales-agent';
 import { parseOfferingSchema, computeQuote, type Selections } from '@/lib/app/quote-pricing';
-import { validateVinylForPublish } from '@/lib/app/vinyl';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -427,16 +426,6 @@ function createServer(seller: SellerRow, req: Request) {
           product_id: product.id,
         });
         void logInteraction(seller.id, 'buy_product', identity, { product_id, qty, buyer_wallet }, { error: 'quote_required' }, 409, Date.now() - t0);
-        return r;
-      }
-      // Vinyl integrity gate: a record listing must carry a valid media grade
-      // before it can be sold (the schema's integrity guarantee). With
-      // mint-on-purchase there is no publish step to enforce it, so it is
-      // enforced here. Non-vinyl listings have no vinyl block and pass.
-      const vinylCheck = validateVinylForPublish((product.metadata as Record<string, unknown> | null)?.vinyl);
-      if (!vinylCheck.ok) {
-        const r = asJson({ error: 'not_sellable', message: vinylCheck.error, product_id: product.id });
-        void logInteraction(seller.id, 'buy_product', identity, { product_id, qty, buyer_wallet }, { error: 'not_sellable' }, 409, Date.now() - t0);
         return r;
       }
       if (!product.active || !['draft', 'registered'].includes(product.on_chain_status as string)) {
