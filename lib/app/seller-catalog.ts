@@ -232,26 +232,41 @@ export async function searchSellerCatalog(slug: string, q: string, max: number):
  * Product results carry a human product_url and an MCP ref for the agent.
  */
 export async function searchCatalog(q: string, max: number): Promise<{ products: PublicProduct[]; sellers: PublicSeller[] }> {
-  const productOr = buildIlikeOr(['title', 'description'], q);
+  // ── Product hits: weighted full-text search over title + description + the
+  // metadata.vinyl block (search_app_products_fts RPC, migration 0017), already
+  // relevance-ranked. The ILIKE path remains only as a fallback if the RPC
+  // errors — never on a zero-result match, where FTS is authoritative.
+  let productRows: ProductRow[] = [];
+  let ftsRan = false;
+  if (q && q.trim().length >= 2) {
+    const { data: hits, error } = await db.rpc('search_app_products_fts', { q, result_limit: Math.min(max * 2, 100) });
+    if (error) {
+      console.error('[seller-catalog] FTS rpc failed, falling back to ilike:', error);
+    } else {
+      ftsRan = true;
+      const ids = ((hits ?? []) as { id: string }[]).map((h) => h.id);
+      if (ids.length > 0) {
+        const { data } = await buyableProducts().in('id', ids);
+        const byId = new Map(((data ?? []) as ProductRow[]).map((r) => [r.id, r]));
+        productRows = ids.map((id) => byId.get(id)).filter((r): r is ProductRow => Boolean(r)); // preserve FTS rank order
+      }
+    }
+  }
+  if (!ftsRan) {
+    const productOr = buildIlikeOr(['title', 'description'], q);
+    const res = productOr
+      ? await buyableProducts().or(productOr).limit(Math.min(max * 4, 200))
+      : { data: [] as ProductRow[], error: null };
+    if (res.error) console.error('[seller-catalog] searchCatalog product match failed:', res.error);
+    productRows = ((res.data ?? []) as ProductRow[]).filter((p) => matchesQuery(`${p.title} ${p.description ?? ''}`, q));
+  }
+
+  // ── Seller-level hits (name / headline / description) via ILIKE recall + relevance.
   const sellerOr = buildIlikeOr(['name', 'description', 'headline'], q);
-
-  const [productHit, sellerHit] = await Promise.all([
-    productOr
-      ? buyableProducts().or(productOr).limit(Math.min(max * 4, 200))
-      : Promise.resolve({ data: [] as ProductRow[], error: null }),
-    sellerOr
-      ? db.from('app_sellers').select(SELLER_PUBLIC_COLS).eq('active', true).or(sellerOr).order('name').limit(max)
-      : Promise.resolve({ data: [] as SellerRow[], error: null }),
-  ]);
-
-  if (productHit.error) console.error('[seller-catalog] searchCatalog product match failed:', productHit.error);
-  if (sellerHit.error)  console.error('[seller-catalog] searchCatalog seller match failed:', sellerHit.error);
-
-  // The ilike OR is recall; keep rows relevant by query-token coverage
-  // (min(tokens,2)) so "unicorn slippers" does not match a book that merely
-  // says "unicorn", while "raw denim jean" still keeps denim+jean matches.
-  const productRows = ((productHit.data ?? []) as ProductRow[])
-    .filter((p) => matchesQuery(`${p.title} ${p.description ?? ''}`, q));
+  const sellerHit = sellerOr
+    ? await db.from('app_sellers').select(SELLER_PUBLIC_COLS).eq('active', true).or(sellerOr).order('name').limit(max)
+    : { data: [] as SellerRow[], error: null };
+  if (sellerHit.error) console.error('[seller-catalog] searchCatalog seller match failed:', sellerHit.error);
   const sellerRows = ((sellerHit.data ?? []) as SellerRow[])
     .filter((s) => matchesQuery(`${s.name} ${s.headline ?? ''} ${s.description ?? ''}`, q));
 
