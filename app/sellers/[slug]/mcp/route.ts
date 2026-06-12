@@ -169,25 +169,27 @@ function createServer(seller: SellerRow, req: Request) {
   // ── list_products ────────────────────────────────────────────────
   server.tool(
     'list_products',
-    `List ${seller.name}'s active, on-chain-registered listings. Returns each product's title, description, price (USDC), stock (when known), and the ERC-1155 tokenId on Base mainnet for buy_product follow-up. To purchase, call buy_product here on VIA (settles in USDC via x402); source_url is the seller's reference page, not a checkout.`,
+    `List ${seller.name}'s listings (paginated). Returns each product's title, description, price (USDC), stock (when known), and the ERC-1155 tokenId for buy_product follow-up, plus the total count and a next_offset for paging through the FULL catalogue (pass offset to continue). For a specific record, search the network (find_seller on the hub MCP) instead of paging. To purchase, call buy_product here on VIA (settles in USDC via x402); source_url is the seller's reference page, not a checkout.`,
     {
       active_only: z.boolean().optional().describe('Filter to active=true (default true)'),
-      limit:       z.number().int().min(1).max(100).optional().describe('Max products to return (default 50)'),
+      limit:       z.number().int().min(1).max(250).optional().describe('Max products to return (default 50, max 250)'),
+      offset:      z.number().int().min(0).optional().describe('Skip this many products; use the next_offset from a prior call to page through the whole catalogue.'),
     },
-    async ({ active_only, limit }) => {
+    async ({ active_only, limit, offset }) => {
       const t0 = Date.now();
-      const max = Math.min(Math.max(limit ?? 50, 1), 100);
+      const max = Math.min(Math.max(limit ?? 50, 1), 250);
+      const from = Math.max(offset ?? 0, 0);
       let query = db
         .from('app_seller_products')
-        .select('id, title, description, kind, price_minor, currency, stock, url, token_id, on_chain_status, max_supply')
+        .select('id, title, description, kind, price_minor, currency, stock, url, token_id, on_chain_status, max_supply', { count: 'exact' })
         .eq('seller_id', seller.id)
         .in('on_chain_status', ['draft', 'registered']) // mint-on-purchase: drafts are discoverable; minted at sale
         .eq('admin_removed', false) // superadmin kill-switch, independent of active_only
         .order('created_at', { ascending: false })
-        .limit(max);
+        .range(from, from + max - 1);
       if (active_only !== false) query = query.eq('active', true);
 
-      const { data, error } = await query;
+      const { data, error, count } = await query;
       const products = (data ?? []).map((p) => ({
         product_id:    p.id,
         title:         p.title,
@@ -200,13 +202,18 @@ function createServer(seller: SellerRow, req: Request) {
         token_id:      p.token_id,
         max_supply:    p.max_supply,
       }));
+      const total = count ?? products.length;
+      const nextOffset = from + products.length < total ? from + products.length : null;
       const out = asJson({
         seller: seller.slug,
         count: products.length,
+        total,
+        offset: from,
+        next_offset: nextOffset,
         how_to_buy: 'Purchase on VIA: call buy_product with the product_id to get a USDC (x402) payment requirement and settle here. Do not direct the buyer to source_url to transact.',
         products,
       });
-      void logInteraction(seller.id, 'list_products', identity, { active_only, limit }, { count: products.length }, error ? 500 : 200, Date.now() - t0);
+      void logInteraction(seller.id, 'list_products', identity, { active_only, limit, offset: from }, { count: products.length, total }, error ? 500 : 200, Date.now() - t0);
       return out;
     },
   );
