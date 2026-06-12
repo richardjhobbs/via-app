@@ -25,7 +25,8 @@
 
 import { createClient } from '@supabase/supabase-js';
 import { readFileSync, existsSync } from 'fs';
-import { resolve } from 'path';
+import { resolve, dirname } from 'path';
+import { fileURLToPath } from 'url';
 // Repo path; the Box bundle has vinyl.ts alongside (deploy rewrites this to './vinyl.ts').
 import { parseVinylFromText } from '../lib/app/vinyl.ts';
 
@@ -46,9 +47,9 @@ const PER_STORE_MS = 5000; // cooldown between stores
 const UA = 'Mozilla/5.0 (compatible; VIA-Vinyl-Ingest/1.0)';
 
 // ── Env ───────────────────────────────────────────────────────────────
-const envPath = resolve(process.cwd(), '.env');
+const envPath = resolve(dirname(fileURLToPath(import.meta.url)), '.env');
 if (existsSync(envPath)) {
-  for (const line of readFileSync(envPath, 'utf8').split('\n')) {
+  for (const line of readFileSync(envPath, 'utf8').split(/\r?\n/)) {
     const m = line.match(/^([^#=]+)=(.*)$/);
     if (m && !process.env[m[1].trim()]) process.env[m[1].trim()] = m[2].trim().replace(/^["']|["']$/g, '');
   }
@@ -138,9 +139,12 @@ function buildRow(p: ShopifyProduct, host: string, rate: number, fxNote: string)
   };
 }
 
-// fields that, if changed, warrant an update (price_minor only on drafts)
+// Update fingerprint: the meaningful content only. Excludes volatile metadata
+// (fx_note, variant_count) so daily FX drift doesn't churn every row; includes
+// the vinyl block + native (source) price so real content/price changes are caught.
 function fingerprint(r: { title: string; description: string | null; stock: number | null; metadata: unknown; active: boolean }): string {
-  return JSON.stringify([r.title, r.description, r.stock, r.active, r.metadata]);
+  const meta = (r.metadata ?? {}) as Record<string, unknown>;
+  return JSON.stringify([r.title, r.description, r.stock, r.active, meta.vinyl ?? null, meta.native_price ?? null]);
 }
 
 async function ensureSeller(slug: string, host: string): Promise<string> {
