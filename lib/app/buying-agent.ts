@@ -13,6 +13,8 @@
  */
 import OpenAI from 'openai';
 import { db } from './db';
+import { matchIntent } from './buyer-matching';
+import { hasCredits } from './buyer-credits';
 
 // ── Types ────────────────────────────────────────────────────────────
 
@@ -48,16 +50,21 @@ function buildSystemPrompt(ctx: BuyingAgentContext): string {
 
 You represent the buyer's interests when seller agents pitch you. The person you are talking to now is the authenticated owner of this profile (actor: ${ctx.actorLabel}). They are briefing you on their taste, budget, constraints, and hard nos so you can act on their behalf.
 
+You handle two different things, and you must tell them apart:
+
+A. TRAINING , how the owner buys IN GENERAL: lasting taste, a standing budget ceiling, conditions they require, sellers they favour or avoid. This is durable and applies to every future brief. Store it with store_buyer_memory.
+
+B. A BRIEF , a SPECIFIC thing the owner wants you to go and source NOW (e.g. "find me a first pressing of London Calling under $80", "I need raw selvedge denim around 32 waist this week"). This is a one-off hunt. Create it with craft_intent, which immediately searches the whole VIA network and puts any matches on the owner's dashboard.
+
 Your job in this conversation:
 
-1. Understand what the owner is telling you about how they want to buy. Ask one clarifying question only if something critical is ambiguous. Otherwise proceed.
-2. Extract the structured signal (a price ceiling, a category they love, a category they refuse, a brand affinity, a delivery constraint) from free-form speech.
-3. Store it via the store_buyer_memory tool with a clear title, body, structured JSON, and the right type.
-4. After the tool call, reply with a single line starting with "Locked in:" describing what you stored.
-5. If the owner asks to see current preferences, use list_buyer_memories.
-6. If the owner wants to change a stored preference, use update_buyer_memory with its id. If they want it gone, use forget_buyer_memory.
+1. Work out whether the owner is teaching you durable training (A) or asking you to source a specific thing now (B). Ask one clarifying question only if something critical is ambiguous. Otherwise proceed.
+2. For TRAINING: extract the structured signal (a price ceiling, a category they love, a category they refuse, a brand affinity, a delivery constraint) from free-form speech, then store it via store_buyer_memory with a clear title, body, structured JSON, and the right type. After storing, reply with a single line starting with "Locked in:" describing what you stored.
+3. For a BRIEF: first echo back, in one short line, the specific thing you are about to hunt for including any hard requirements and budget, so the owner can correct you. Once it is right, call craft_intent with a complete, self-contained brief in the owner's voice. After it returns, tell the owner plainly how many matches it found and that they can see them on their dashboard.
+4. If the owner asks to see current preferences, use list_buyer_memories.
+5. If the owner wants to change a stored preference, use update_buyer_memory with its id. If they want it gone, use forget_buyer_memory.
 
-Apply stored preferences, constraints, and delegation caps when you reason about offers. Reject anything that violates a cap. Never invent preferences the buyer has not stated.
+Apply stored preferences, constraints, and delegation caps when you reason about offers. Reject anything that violates a cap. Never invent preferences the buyer has not stated, and never invent details in a brief the owner did not give you.
 
 Pick the right type:
 - preference (styles, materials, qualities they want)
@@ -143,6 +150,25 @@ const TOOLS: OpenAI.Chat.Completions.ChatCompletionTool[] = [
       },
     },
   },
+  {
+    type: 'function',
+    function: {
+      name: 'craft_intent',
+      description: 'Create a live buying BRIEF for a specific thing the owner wants to source NOW, and immediately search the whole VIA network for it. Matches land on the owner\'s dashboard. Use this only for a concrete one-off hunt, NOT for durable taste or budget (that is store_buyer_memory). Confirm the brief with the owner in chat before calling.',
+      parameters: {
+        type: 'object',
+        properties: {
+          brief: {
+            type: 'string',
+            minLength: 3,
+            maxLength: 2000,
+            description: 'The complete, self-contained brief in natural language, in the owner\'s voice. Include the hard requirements and any budget, e.g. "First pressing of London Calling by The Clash, near mint, under $80".',
+          },
+        },
+        required: ['brief'],
+      },
+    },
+  },
 ];
 
 // ── Tool dispatch (Supabase RPCs that match migration 0002) ──
@@ -205,6 +231,52 @@ async function callForget(
   return data ? `Forgotten. id=${args.id}` : `No preference with id ${args.id} owned by @${ctx.handle}.`;
 }
 
+/**
+ * Spin up a live brief from the chat: insert an app_buyer_intents row for this
+ * buyer, then source it against the whole network via matchIntent (which caches
+ * the extracted intent, writes matches, and notifies the owner). Mirrors the
+ * structured Briefs page POST, so a brief crafted in chat behaves identically.
+ */
+async function callCraftIntent(
+  ctx: BuyingAgentContext,
+  args: { brief?: string },
+): Promise<string> {
+  const brief = (args.brief ?? '').trim();
+  if (brief.length < 3) return 'Error: the brief is too short to search. Ask the owner for the specific thing they want.';
+
+  // Sourcing spends platform DeepSeek (extract + judge) even on a BYO key, so it
+  // is always metered against credits. Block cleanly when the balance is spent.
+  if (!(await hasCredits(ctx.buyerId))) {
+    return 'Error: out of credits. Tell the owner they need to top up (or connect their own LLM key) before you can source a brief.';
+  }
+
+  const { data, error } = await db
+    .from('app_buyer_intents')
+    .insert({ buyer_id: ctx.buyerId, intent_text: brief.slice(0, 2000), structured: {}, status: 'open' })
+    .select('id, intent_text, structured, status')
+    .single();
+  if (error || !data) return `Error creating the brief: ${error?.message ?? 'insert failed'}`;
+
+  let matches = { found: 0, inserted: 0 };
+  try {
+    matches = await matchIntent({
+      id:          data.id as string,
+      buyer_id:    ctx.buyerId,
+      intent_text: data.intent_text as string,
+      status:      data.status as string,
+      structured:  data.structured as Record<string, unknown> | null,
+    });
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    return `Brief created (id=${data.id}) but the network search errored: ${msg}. It stays open and will match automatically as sellers list stock.`;
+  }
+
+  if (matches.found === 0) {
+    return `Brief created and the whole network was searched. Nothing is listed for it yet , it stays open and will match automatically when a seller lists it. id=${data.id}`;
+  }
+  return `Brief created and sourced. Found ${matches.found} match${matches.found === 1 ? '' : 'es'} across the network, now on the owner's dashboard. id=${data.id}`;
+}
+
 async function dispatchTool(
   ctx: BuyingAgentContext,
   name: string,
@@ -220,6 +292,8 @@ async function dispatchTool(
         return await callStore(ctx, args as Parameters<typeof callStore>[1]);
       case 'forget_buyer_memory':
         return await callForget(ctx, args as { id: string });
+      case 'craft_intent':
+        return await callCraftIntent(ctx, args as { brief?: string });
       default:
         return `Error: unknown tool "${name}"`;
     }
@@ -236,23 +310,39 @@ export interface ChatTurnResult {
   toolCalls: { name: string; input: unknown; result: string }[];
   stopReason: string | null;
   tokensUsed: number;
+  isByo: boolean;
+}
+
+/** LLM config for a turn. Defaults to the platform DeepSeek model. */
+export interface TurnLlm {
+  apiKey: string;
+  baseURL: string;
+  model: string;
+  isByo: boolean;
 }
 
 export async function runBuyingAgentTurn(
   ctx: BuyingAgentContext,
   messages: ChatMessage[],
+  llm?: TurnLlm,
 ): Promise<ChatTurnResult> {
-  const apiKey = process.env.DEEPSEEK_API_KEY;
-  if (!apiKey) {
+  const cfg: TurnLlm = llm ?? {
+    apiKey:  process.env.DEEPSEEK_API_KEY ?? '',
+    baseURL: BASE_URL,
+    model:   MODEL,
+    isByo:   false,
+  };
+  if (!cfg.apiKey) {
     return {
-      reply: 'Buying Agent chat is not configured (missing DEEPSEEK_API_KEY).',
+      reply: 'Buying Agent chat is not configured (no LLM key available).',
       toolCalls: [],
       stopReason: null,
       tokensUsed: 0,
+      isByo: cfg.isByo,
     };
   }
 
-  const client = new OpenAI({ apiKey, baseURL: BASE_URL });
+  const client = new OpenAI({ apiKey: cfg.apiKey, baseURL: cfg.baseURL });
   const system = buildSystemPrompt(ctx);
 
   const convo: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
@@ -267,7 +357,7 @@ export async function runBuyingAgentTurn(
 
   for (let iter = 0; iter < 6; iter++) {
     const resp = await client.chat.completions.create({
-      model: MODEL,
+      model: cfg.model,
       messages: convo,
       tools: TOOLS,
       max_tokens: 1024,
@@ -311,5 +401,5 @@ export async function runBuyingAgentTurn(
     }
   }
 
-  return { reply: replyText, toolCalls, stopReason: finishReason, tokensUsed };
+  return { reply: replyText, toolCalls, stopReason: finishReason, tokensUsed, isByo: cfg.isByo };
 }

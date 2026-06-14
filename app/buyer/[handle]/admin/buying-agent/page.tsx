@@ -3,7 +3,7 @@ import Link from 'next/link';
 import { db } from '@/lib/app/db';
 import { getBuyerUser } from '@/lib/app/buyer-auth';
 import { BuyingAgentChatClient } from './BuyingAgentChatClient';
-import { Wordmark } from '@/components/app/Wordmark';
+import { BuyerSubHeader } from '@/components/app/BuyerSubHeader';
 
 export const dynamic = 'force-dynamic';
 
@@ -35,26 +35,13 @@ export default async function BuyerBuyingAgentPage({
   const seedGreeting =
     `I am your Buying Agent, @${buyer.handle}.\n\n` +
     `Tell me how you like to buy: the qualities you want, the things you will not touch, your budget, ` +
-    `and any sellers you favour or avoid. I will lock those in as preferences and apply them when ` +
-    `seller agents negotiate with me on your behalf.`;
+    `and any sellers you favour or avoid. I will learn these as your training and apply them to every ` +
+    `brief , ranking what I find by your taste , and when seller agents negotiate with me on your behalf.\n\n` +
+    `Or just tell me to find something specific now and I will start a brief and search the whole network for it.`;
 
   return (
     <main className="min-h-screen bg-background text-ink flex flex-col">
-      <header className="border-b border-line">
-        <div className="max-w-5xl mx-auto px-6 py-5 flex items-center justify-between">
-          <Link href={`/buyer/${handle}/admin`} aria-label="Back to dashboard" className="inline-flex items-center gap-3">
-            <Wordmark />
-            <span className="text-xs font-mono tracking-widest uppercase text-ink-3">
-              <span aria-hidden>&larr;</span> Dashboard
-            </span>
-          </Link>
-          <form action="/api/buyer/auth/logout" method="post">
-            <button className="text-xs font-mono tracking-widest uppercase text-ink-3 hover:text-ink transition-colors">
-              Sign out
-            </button>
-          </form>
-        </div>
-      </header>
+      <BuyerSubHeader handle={handle} buyerId={buyer.id as string} />
 
       <section className="flex-1 px-6 py-12">
         <div className="max-w-3xl mx-auto">
@@ -63,9 +50,13 @@ export default async function BuyerBuyingAgentPage({
             {displayName}
           </h1>
           <p className="text-sm text-ink-2 mb-8">
-            Brief your agent in plain language. It will extract your preferences, lock them in, and
-            apply them when seller agents reach you at{' '}
-            <code className="font-mono text-ink">{`/buyers/${buyer.handle}/mcp`}</code>.
+            This is your <strong>training</strong> , how you buy in general: your taste, budget,
+            conditions, and sellers you favour or avoid. Tell the agent in plain language and it locks
+            these in. Training shapes everything your agent does: it learns your taste to rank the
+            products your briefs surface, and guides how it negotiates with sellers at{' '}
+            <code className="font-mono text-ink">{`/buyers/${buyer.handle}/mcp`}</code>. To pursue one
+            specific item now, just ask the agent to find it and it will start a{' '}
+            <Link href={`/buyer/${handle}/admin/intents`} className="underline hover:text-ink">brief</Link> and search for it.
           </p>
 
           <BuyingAgentChatClient

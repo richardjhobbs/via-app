@@ -5,9 +5,17 @@
  * owner flips public=true. Seller agents that have negotiated terms can
  * reach the buyer's agent here.
  *
- * Tools (3):
+ * Tools (6):
  *   get_buyer_preferences — public-safe slice of the buyer's preferences
  *                           (PII and delegation caps stripped).
+ *   get_buyer_briefs      — the buyer's open briefs as structured intent
+ *                           (category/requirements/budget; never raw wording),
+ *                           only those left visible to sellers.
+ *   pitch_against_brief   — a seller pitches one product at a brief; the agent
+ *                           judges fit, records it, notifies the buyer.
+ *   submit_intent         — source products across the VIA network for this
+ *                           buyer, shaped by their saved taste + budget
+ *                           (the agentic matcher; genuine matches only).
  *   negotiate             — DeepSeek call in the buyer's voice. The agent
  *                           applies preferences and refuses anything that
  *                           breaks a delegation cap.
@@ -23,6 +31,10 @@ import { WebStandardStreamableHTTPServerTransport } from '@modelcontextprotocol/
 import { z } from 'zod';
 import { db } from '@/lib/app/db';
 import { insertNotification } from '@/lib/app/notifications';
+import { hasCredits, deductCredits } from '@/lib/app/buyer-credits';
+import { resolveBuyerLlm } from '@/lib/app/buyer-llm';
+import { dryRunMatchForBuyer, judgeProductAgainstBrief, briefIntentFromStructured } from '@/lib/app/buyer-matching';
+import { listBuyerBriefs } from '@/lib/app/demand';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -45,12 +57,15 @@ interface BuyerRow {
   public:           boolean;
   delegation_caps:  DelegationCaps;
   owner_user_id:    string;
+  llm_byo_provider:      string | null;
+  llm_byo_key_encrypted: string | null;
+  llm_byo_model:         string | null;
 }
 
 async function loadBuyer(handle: string): Promise<BuyerRow | null> {
   const { data, error } = await db
     .from('app_buyers')
-    .select('id, handle, display_name, public, delegation_caps, owner_user_id')
+    .select('id, handle, display_name, public, delegation_caps, owner_user_id, llm_byo_provider, llm_byo_key_encrypted, llm_byo_model')
     .eq('handle', handle)
     .maybeSingle();
   if (error || !data || !data.public) return null;
@@ -144,9 +159,16 @@ async function loadPublicPreferences(handle: string): Promise<PublicMemory[]> {
 // ── negotiate backend (lightweight DeepSeek call) ────────────────────
 
 async function negotiateReply(buyer: BuyerRow, offerText: string): Promise<string> {
-  const apiKey = process.env.DEEPSEEK_API_KEY;
-  if (!apiKey) {
-    return `[@${buyer.handle}'s Buying Agent is being trained. DEEPSEEK_API_KEY not yet provisioned on this deployment.]`;
+  const llm = resolveBuyerLlm(buyer);
+  if (!llm.apiKey) {
+    return `[@${buyer.handle}'s Buying Agent is being trained. No LLM key provisioned on this deployment.]`;
+  }
+
+  // Negotiation on the PLATFORM model runs on the buyer's credits. When the
+  // balance is spent the agent stops engaging rather than burning un-billable
+  // LLM calls. BYO key runs on the owner's own provider , no credit gate.
+  if (!llm.isByo && !(await hasCredits(buyer.id))) {
+    return `[@${buyer.handle}'s Buying Agent is paused , its owner needs to top up credits before it can negotiate. Please try again later.]`;
   }
 
   const prefs = await loadPublicPreferences(buyer.handle);
@@ -176,11 +198,11 @@ ${prefBlock}${capBlock}
 A seller agent is pitching you. Respond on the buyer's behalf: say whether the offer fits the buyer's preferences, ask for any missing detail you need, and state your position. If it breaks a limit, decline plainly without disclosing the exact cap.`;
 
   try {
-    const res = await fetch('https://api.deepseek.com/v1/chat/completions', {
+    const res = await fetch(`${llm.baseURL}/chat/completions`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${llm.apiKey}` },
       body: JSON.stringify({
-        model: 'deepseek-chat',
+        model: llm.model,
         messages: [
           { role: 'system', content: systemPrompt },
           { role: 'user',   content: offerText },
@@ -194,7 +216,15 @@ A seller agent is pitching you. Respond on the buyer's behalf: say whether the o
       console.warn(`[buyer-mcp/negotiate] DeepSeek ${res.status}: ${text.slice(0, 200)}`);
       return `[Buying Agent transient error. Please retry.]`;
     }
-    const json = await res.json() as { choices?: Array<{ message?: { content?: string } }> };
+    const json = await res.json() as {
+      choices?: Array<{ message?: { content?: string } }>;
+      usage?: { total_tokens?: number };
+    };
+    const tokens = json.usage?.total_tokens ?? 0;
+    if (!llm.isByo && tokens > 0) {
+      try { await deductCredits(buyer.id, tokens); }
+      catch (err) { console.error('[buyer-mcp/negotiate] credit deduction failed:', err); }
+    }
     return json.choices?.[0]?.message?.content?.trim() ?? '[empty response]';
   } catch (err) {
     console.error('[buyer-mcp/negotiate] fetch threw:', err);
@@ -247,6 +277,20 @@ function createServer(buyer: BuyerRow, req: Request) {
       const prefs = await loadPublicPreferences(buyer.handle);
       const out = asJson({ handle: buyer.handle, count: prefs.length, preferences: prefs });
       void logInteraction(buyer.id, 'get_buyer_preferences', identity, {}, { count: prefs.length }, 200, Date.now() - t0);
+      return out;
+    },
+  );
+
+  // ── get_buyer_briefs ─────────────────────────────────────────────
+  server.tool(
+    'get_buyer_briefs',
+    `Read @${buyer.handle}'s OPEN briefs , what they are actively looking for right now. Each brief is the buyer's structured intent (category, hard requirements, preferences, budget); the raw wording is never shared. Use this to see if you have anything that fits their live demand, then pitch_against_brief or negotiate. Only briefs the buyer has left visible to sellers appear.`,
+    {},
+    async () => {
+      const t0 = Date.now();
+      const briefs = await listBuyerBriefs(buyer.id);
+      const out = asJson({ handle: buyer.handle, count: briefs.length, briefs });
+      void logInteraction(buyer.id, 'get_buyer_briefs', identity, {}, { count: briefs.length }, 200, Date.now() - t0);
       return out;
     },
   );
@@ -304,6 +348,87 @@ function createServer(buyer: BuyerRow, req: Request) {
         });
       }
       return out;
+    },
+  );
+
+  // ── submit_intent ────────────────────────────────────────────────
+  server.tool(
+    'submit_intent',
+    `Source products for @${buyer.handle} across the VIA network, shaped by THIS buyer's saved taste and budget. Give the brief in plain words; the agentic matcher reads each product's data and returns only genuine matches (hard requirements enforced), ranked with the buyer's preferences applied. Returns seller, price, a direct page_url, and the mcp_url to transact. Use this to find things for the buyer; use negotiate / accept_offer to then transact on a specific offer.`,
+    {
+      brief: z.string().min(2).max(2000).describe("What to source for the buyer, e.g. 'first pressing acid jazz vinyl' or 'raw selvedge denim, 32 waist'."),
+    },
+    async ({ brief }) => {
+      const t0 = Date.now();
+      // Sourcing always spends platform DeepSeek (the matcher never uses a BYO
+      // key), metered against this buyer inside dryRunMatchForBuyer. Gate first so
+      // a spent buyer is not driven negative.
+      if (!(await hasCredits(buyer.id))) {
+        void logInteraction(buyer.id, 'submit_intent', identity, { brief: brief.slice(0, 200) }, { error: 'insufficient_credits' }, 402, Date.now() - t0);
+        return asJson({ handle: buyer.handle, brief, status: 'paused', message: `@${buyer.handle}'s agent is paused , its owner needs to top up credits before it can source new briefs.` });
+      }
+      const { intent, results } = await dryRunMatchForBuyer(buyer.id, brief);
+      const out = asJson({
+        handle: buyer.handle,
+        brief,
+        understood: intent,
+        count: results.length,
+        results,
+        next: results.length
+          ? 'Present these to the buyer. To transact, connect to a result\'s mcp_url and call get_product then buy_product, or negotiate with this buyer on a specific offer.'
+          : 'No matches yet. Sharpen the brief or retry; new listings will match as sellers join.',
+      });
+      void logInteraction(buyer.id, 'submit_intent', identity, { brief: brief.slice(0, 200) }, { count: results.length }, 200, Date.now() - t0);
+      return out;
+    },
+  );
+
+  // ── pitch_against_brief ──────────────────────────────────────────
+  server.tool(
+    'pitch_against_brief',
+    `Pitch ONE product against a specific open brief of @${buyer.handle} (get the brief_id from get_buyer_briefs or find_buyers). The buyer's agent judges whether your product genuinely fits the brief's hard requirements and returns a verdict; the buyer is notified and sees your pitch. Only genuine fits help , a near-miss is judged "does not fit". To close, follow up with negotiate / accept_offer.`,
+    {
+      brief_id:       z.string().min(1).describe('The brief_id from get_buyer_briefs / find_buyers.'),
+      title:          z.string().min(1).max(300).describe('Product title.'),
+      description:    z.string().max(2000).optional().describe('Product description / details the judge should reason over.'),
+      price_usdc:     z.number().min(0).optional().describe('Price in USDC.'),
+      url:            z.string().max(500).optional().describe('Direct product page URL.'),
+      seller_mcp_url: z.string().max(500).optional().describe('Your seller MCP URL, so the buyer can transact.'),
+      tags:           z.array(z.string()).optional().describe('Attribute tags (material, label, size, etc.).'),
+    },
+    async ({ brief_id, title, description, price_usdc, url, seller_mcp_url, tags }) => {
+      const t0 = Date.now();
+      const { data: intent } = await db
+        .from('app_buyer_intents')
+        .select('id, intent_text, structured, status, discoverable')
+        .eq('id', brief_id).eq('buyer_id', buyer.id)
+        .in('status', ['open', 'broadcast', 'matched'])
+        .eq('discoverable', true)
+        .maybeSingle();
+      if (!intent) {
+        return asJson({ status: 'not_found', message: 'No such open, visible brief for this buyer. Call get_buyer_briefs for current brief_ids.' });
+      }
+
+      const brief = briefIntentFromStructured(intent.structured as Record<string, unknown> | null);
+      const verdict = await judgeProductAgainstBrief(
+        intent.intent_text as string, brief,
+        { title, description: description ?? null, price_usdc: price_usdc ?? null, tags: tags ?? [] },
+      );
+
+      const product = { title, description: description ?? null, price_usdc: price_usdc ?? null, url: url ?? null, seller_mcp_url: seller_mcp_url ?? null, tags: tags ?? [] };
+      await db.from('app_buyer_brief_pitches').insert({
+        intent_id: intent.id, buyer_id: buyer.id, seller_identity: identity, product, verdict,
+      });
+      void insertNotification({
+        ownerUserId: buyer.owner_user_id,
+        kind:        'enquiry',
+        title:       verdict.fits ? 'A seller pitched a match for your brief' : 'A seller pitched your brief',
+        body:        `${title}${typeof price_usdc === 'number' ? ` · ${price_usdc} USDC` : ''} , ${verdict.fits ? 'fits' : 'does not fit'}: ${verdict.reason}`.slice(0, 240),
+        link:        `/buyer/${buyer.handle}/admin`,
+        metadata:    { tool_name: 'pitch_against_brief', agent_identity: identity, brief_id, fits: verdict.fits, buyer_id: buyer.id },
+      });
+      void logInteraction(buyer.id, 'pitch_against_brief', identity, { brief_id, title }, verdict, 200, Date.now() - t0);
+      return asJson({ handle: buyer.handle, brief_id, verdict, next: verdict.fits ? 'The buyer has been notified. Follow up with negotiate / accept_offer to close.' : 'Not a fit for this brief , try a brief that matches your stock (get_buyer_briefs).' });
     },
   );
 

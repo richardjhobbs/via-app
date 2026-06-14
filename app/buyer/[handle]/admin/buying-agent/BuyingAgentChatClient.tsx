@@ -32,6 +32,11 @@ interface Memory {
 
 const WRITE_TOOLS = ['store_buyer_memory', 'update_buyer_memory', 'forget_buyer_memory'];
 
+/** A craft_intent tool call that did not error means a live brief was created. */
+function craftedBrief(toolCalls?: ToolCall[]): boolean {
+  return !!toolCalls?.some((c) => c.name === 'craft_intent' && !c.result.startsWith('Error'));
+}
+
 export function BuyingAgentChatClient({ buyerId, handle, displayName, seedGreeting }: Props) {
   const [turns, setTurns]       = useState<Turn[]>([{ role: 'assistant', content: seedGreeting }]);
   const [input, setInput]       = useState('');
@@ -127,6 +132,16 @@ export function BuyingAgentChatClient({ buyerId, handle, displayName, seedGreeti
               <div className={`text-sm whitespace-pre-wrap leading-relaxed ${t.role === 'user' ? 'text-ink' : 'text-ink'}`}>
                 {t.content}
               </div>
+              {craftedBrief(t.toolCalls) && (
+                <a
+                  href={`/buyer/${handle}/admin`}
+                  className="mt-2 inline-flex items-center gap-1.5 text-xs font-mono tracking-widest uppercase hover:underline"
+                  style={{ color: 'var(--live)' }}
+                >
+                  <span style={{ width: 6, height: 6, borderRadius: 99, display: 'inline-block', background: 'var(--live)' }} />
+                  Brief live , view matches on dashboard &rarr;
+                </a>
+              )}
               {t.toolCalls && t.toolCalls.length > 0 && (
                 <details className="mt-2 text-[11px] font-mono text-ink-3">
                   <summary className="cursor-pointer hover:text-ink">
@@ -159,7 +174,7 @@ export function BuyingAgentChatClient({ buyerId, handle, displayName, seedGreeti
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={onKey}
-            placeholder={`Tell your agent what you want, what you will not buy, your budget. Enter to send, Shift+Enter for newline.`}
+            placeholder={`Teach your agent how you buy, or ask it to find something specific now. Enter to send, Shift+Enter for newline.`}
             rows={3}
             disabled={sending}
             className="w-full bg-paper border border-line-strong rounded-md px-3 py-2 text-sm font-sans outline-none focus:border-ink transition-colors disabled:opacity-50"
