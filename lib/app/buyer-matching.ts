@@ -384,9 +384,23 @@ export async function runMatch(
   // judge's budget , otherwise one source's volume (e.g. local vinyl that merely
   // mentions "coffee") starves the other (a member's actual coffee) before the
   // judge sees it.
-  const recallTerms = Array.from(new Set(
-    [...brief.terms, ...brief.type_terms, ...brief.requirements, ...alignedTerms].map((t) => t.trim()).filter((t) => t.length >= 2),
-  ));
+  // Build the recall net from the brief's phrases AND the individual words within
+  // them. The catalogue FTS is AND/phrase based: a multi-word term the extractor
+  // emits ("web3 fashion document", "sourdough bread") matches NOTHING when no
+  // single product carries every word, so recall would come back empty and the
+  // judge would never see the right item. Adding the atomic words ("web3",
+  // "fashion", "sourdough") guarantees coverage; the cross-vertical gate + judge
+  // remain the precision filter. Capped so we don't fan out into too many fetches.
+  const recallSet = new Set<string>();
+  for (const t of [...brief.terms, ...brief.type_terms, ...brief.requirements, ...alignedTerms]) {
+    const phrase = t.trim().toLowerCase();
+    if (phrase.length >= 2) recallSet.add(phrase);
+    for (const w of phrase.split(/\s+/)) {
+      const word = w.replace(/[^a-z0-9]/g, '');
+      if (word.length >= 3) recallSet.add(word);
+    }
+  }
+  const recallTerms = Array.from(recallSet).slice(0, 16);
   const localPool = new Map<string, UnifiedProduct>();
   const memberPool = new Map<string, UnifiedProduct>();
   const addTo = (m: Map<string, UnifiedProduct>, u: UnifiedProduct) => {
