@@ -91,5 +91,14 @@ export async function POST(
     .single();
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+
+  // Keep the admin Sellers cached product_count (migration 0020) in step for
+  // dashboard-managed stores. The ingest worker maintains it for ingested
+  // catalogues; manually added products would otherwise never increment it, so
+  // the superadmin list showed 0 products for a store with live listings. A new
+  // row is admin_removed=false, so it always counts. Non-fatal.
+  await db.rpc('app_bump_seller_product_count', { p_seller_id: sellerId, p_delta: 1 })
+    .then(({ error: rpcErr }) => { if (rpcErr) console.error('[products] product_count bump failed', rpcErr); });
+
   return NextResponse.json({ product: data }, { status: 201 });
 }
