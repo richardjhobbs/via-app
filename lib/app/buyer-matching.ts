@@ -391,16 +391,28 @@ export async function runMatch(
   // judge would never see the right item. Adding the atomic words ("web3",
   // "fashion", "sourdough") guarantees coverage; the cross-vertical gate + judge
   // remain the precision filter. Capped so we don't fan out into too many fetches.
-  const recallSet = new Set<string>();
+  const phrases: string[] = [];
+  const words: string[] = [];
   for (const t of [...brief.terms, ...brief.type_terms, ...brief.requirements, ...alignedTerms]) {
     const phrase = t.trim().toLowerCase();
-    if (phrase.length >= 2) recallSet.add(phrase);
+    if (phrase.length >= 2 && !phrases.includes(phrase)) phrases.push(phrase);
     for (const w of phrase.split(/\s+/)) {
       const word = w.replace(/[^a-z0-9]/g, '');
-      if (word.length >= 3) recallSet.add(word);
+      if (word.length >= 3 && !words.includes(word)) words.push(word);
     }
   }
-  const recallTerms = Array.from(recallSet).slice(0, 16);
+  // 2-word AND-pairs of the brief's content words. These NARROW past a
+  // high-volume catalogue: bare "fashion" returns 50 vinyl records and buries a
+  // niche essay, but "digital fashion" (AND) returns ~20 and surfaces it. Pairs
+  // are tried BEFORE bare singles for that reason; singles still recall the cases
+  // where one word is already discriminating ("sourdough"). Order-independent
+  // under FTS AND, so only unordered pairs.
+  const pairWords = words.slice(0, 5);
+  const pairs: string[] = [];
+  for (let i = 0; i < pairWords.length; i++)
+    for (let j = i + 1; j < pairWords.length; j++)
+      pairs.push(`${pairWords[i]} ${pairWords[j]}`);
+  const recallTerms = Array.from(new Set([...phrases, ...pairs, ...words])).slice(0, 16);
   const localPool = new Map<string, UnifiedProduct>();
   const memberPool = new Map<string, UnifiedProduct>();
   const addTo = (m: Map<string, UnifiedProduct>, u: UnifiedProduct) => {
@@ -416,8 +428,12 @@ export async function runMatch(
     if (!briefDomain || !u.category) return true;
     return u.category.split('/')[0].trim().toLowerCase() === briefDomain;
   };
-  for (const term of recallTerms) {
-    const { local, members } = await recallNetwork(term, RECALL_LOCAL, RECALL_MEMBER);
+  // Fan out the recall terms concurrently; one slow member never serialises the
+  // others, and the wider term set (phrases + pairs + words) stays fast.
+  const batches = await Promise.all(
+    recallTerms.map((term) => recallNetwork(term, RECALL_LOCAL, RECALL_MEMBER)),
+  );
+  for (const { local, members } of batches) {
     for (const u of local) if (sameDomain(u)) addTo(localPool, u);
     for (const u of members) if (sameDomain(u)) addTo(memberPool, u);
   }
