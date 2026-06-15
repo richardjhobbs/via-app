@@ -26,7 +26,7 @@ interface X402PaymentRequired {
   accepts: X402PaymentOption[];
 }
 
-export interface X402PaymentOption {
+interface X402PaymentOption {
   scheme: string;        // "exact" = EIP-2612 permit
   network: string;       // "eip155:8453" = Base mainnet
   amount: string;        // USDC smallest units (e.g. "1000" = 0.001 USDC)
@@ -39,7 +39,7 @@ export interface X402PaymentOption {
   };
 }
 
-export interface X402PaymentResponse {
+interface X402PaymentResponse {
   scheme: string;
   network: string;
   payload: {
@@ -303,7 +303,7 @@ export async function fetchWithX402(
 
 // ── Permit Signing ─────────────────────────────────────────────────────────
 
-export async function signX402Permit(
+async function signX402Permit(
   privateKey: string,
   option: X402PaymentOption,
 ): Promise<X402PaymentResponse> {
