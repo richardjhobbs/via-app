@@ -8,6 +8,7 @@ import { shouldSkipErc8004 } from '@/lib/app/test-mode';
 import { postViaReputationSignal, parseAgentId } from '@/lib/app/via-reputation';
 import { lookupAgentIdByWallet } from '@/lib/app/erc8004';
 import { insertNotification } from '@/lib/app/notifications';
+import { getDigitalFiles, buildDeliverables, type Deliverable } from '@/lib/app/digital-delivery';
 
 export const dynamic = 'force-dynamic';
 
@@ -404,6 +405,26 @@ export async function POST(req: NextRequest) {
     })
     .eq('id', purchase.id);
 
+  // ── Digital delivery: sign download links for digital deliverables ───
+  // RRG parity (confirm_purchase returns download links). If this product
+  // carries digital files, the buyer receives signed URLs in the settlement
+  // response. Non-fatal: the sale already settled, so a signing hiccup just
+  // omits the links (recoverable via get_download_links on the seller MCP).
+  let download: Deliverable[] | null = null;
+  try {
+    const { data: prodMeta } = await db
+      .from('app_seller_products')
+      .select('kind, metadata')
+      .eq('id', product.id)
+      .maybeSingle();
+    const files = getDigitalFiles(prodMeta?.metadata);
+    if (prodMeta?.kind === 'digital' && files.length > 0) {
+      download = await buildDeliverables(files);
+    }
+  } catch (err) {
+    console.warn(`[x402/purchase] ${orderRef} digital delivery link signing failed (non-fatal)`, err);
+  }
+
   void insertNotification({
     ownerUserId: seller.owner_user_id as string,
     kind:        'sale',
@@ -429,5 +450,6 @@ export async function POST(req: NextRequest) {
     platform_usdc:   split.platformUsdc,
     payout:          { distribution_id: payout.distributionId, seller_tx_hash: payout.sellerTxHash },
     reputation,
+    ...(download ? { download } : {}),
   });
 }
