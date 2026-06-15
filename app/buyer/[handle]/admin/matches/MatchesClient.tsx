@@ -28,10 +28,20 @@ interface Settled {
   reputation: { buyer: string | null; seller: string | null } | null;
 }
 
+interface Delivery {
+  name: string; address_line1: string; city: string; postcode: string; country: string; phone: string;
+}
+
+// Demo default: Eli's ships SG-only and its policy needs a Singapore phone.
+const DEFAULT_DELIVERY: Delivery = {
+  name: 'VIA Demo Buyer', address_line1: '1 Raffles Place', city: 'Singapore',
+  postcode: '048616', country: 'SG', phone: '+65 8000 0000',
+};
+
 type RowState =
   | { phase: 'idle' }
   | { phase: 'working' }
-  | { phase: 'confirm'; amount: number; seller: string }
+  | { phase: 'confirm'; amount: number; seller: string; requiresDelivery: boolean; policy: string | null }
   | { phase: 'settled'; receipt: Settled }
   | { phase: 'message'; text: string };
 
@@ -45,20 +55,25 @@ function priceLabel(m: MatchRow): string {
 
 export function MatchesClient({ buyerId, handle, matches }: Props) {
   const [states, setStates] = useState<Record<string, RowState>>({});
+  const [delivery, setDelivery] = useState<Delivery>(DEFAULT_DELIVERY);
   const setRow = (id: string, s: RowState) => setStates((prev) => ({ ...prev, [id]: s }));
 
-  async function purchase(m: MatchRow, confirm: boolean) {
+  async function purchase(m: MatchRow, confirm: boolean, withDelivery?: Delivery) {
     setRow(m.id, { phase: 'working' });
     try {
       const res = await fetch(`/api/buyer/${buyerId}/purchase`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ match_id: m.id, confirm }),
+        body: JSON.stringify({
+          match_id: m.id,
+          confirm,
+          ...(withDelivery ? { delivery: withDelivery, buyer_country: withDelivery.country } : {}),
+        }),
       });
       const j = await res.json().catch(() => ({}));
       switch (j.status) {
         case 'needs_confirmation':
-          setRow(m.id, { phase: 'confirm', amount: j.amount_usdc, seller: j.seller_name ?? m.seller_name });
+          setRow(m.id, { phase: 'confirm', amount: j.amount_usdc, seller: j.seller_name ?? m.seller_name, requiresDelivery: !!j.requires_delivery, policy: j.purchase_policy ?? null });
           break;
         case 'settled':
           setRow(m.id, { phase: 'settled', receipt: j as Settled });
@@ -127,8 +142,27 @@ export function MatchesClient({ buyerId, handle, matches }: Props) {
                     Your agent is ready to buy <strong>{m.title}</strong> from {st.seller} for{' '}
                     <strong>${st.amount.toFixed(2)} USDC</strong> and settle it on-chain. Confirm?
                   </p>
+                  {st.requiresDelivery && (
+                    <div className="mt-3 grid grid-cols-2 gap-2">
+                      <div className="col-span-2 text-[10px] font-mono uppercase tracking-widest text-ink-3">Deliver to</div>
+                      {([
+                        ['name', 'Name'], ['address_line1', 'Address'], ['city', 'City'],
+                        ['postcode', 'Postcode'], ['country', 'Country'], ['phone', 'Phone'],
+                      ] as [keyof Delivery, string][]).map(([k, label]) => (
+                        <input
+                          key={k}
+                          value={delivery[k]}
+                          onChange={(e) => setDelivery({ ...delivery, [k]: e.target.value })}
+                          placeholder={label}
+                          aria-label={label}
+                          className="bg-paper border border-line-strong rounded-md px-2.5 py-1.5 text-xs outline-none focus:border-ink transition-colors"
+                        />
+                      ))}
+                      {st.policy && <p className="col-span-2 text-[11px] text-ink-3">Seller note: {st.policy}</p>}
+                    </div>
+                  )}
                   <div className="flex gap-2 mt-2.5">
-                    <button type="button" onClick={() => void purchase(m, true)}
+                    <button type="button" onClick={() => void purchase(m, true, st.requiresDelivery ? delivery : undefined)}
                       className="px-3 py-1.5 text-xs font-mono tracking-widest uppercase rounded-md text-background" style={{ background: 'var(--live)' }}>
                       Confirm &amp; settle
                     </button>

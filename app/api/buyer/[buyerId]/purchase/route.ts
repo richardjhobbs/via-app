@@ -16,7 +16,7 @@
  */
 import { NextRequest, NextResponse } from 'next/server';
 import { requireBuyerAuth } from '@/lib/app/buyer-auth';
-import { fulfilMatchById } from '@/lib/app/buyer-fulfilment';
+import { fulfilMatchById, type DeliveryInput } from '@/lib/app/buyer-fulfilment';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
@@ -29,13 +29,22 @@ export async function POST(
   const auth = await requireBuyerAuth(buyerId);
   if ('error' in auth) return auth.error;
 
-  let body: { match_id?: unknown; confirm?: unknown };
+  let body: { match_id?: unknown; confirm?: unknown; delivery?: unknown; buyer_country?: unknown };
   try { body = await req.json(); } catch { return NextResponse.json({ status: 'error', message: 'invalid JSON body' }, { status: 400 }); }
 
   const matchId = String(body.match_id ?? '').trim();
   if (!matchId) return NextResponse.json({ status: 'error', message: 'match_id is required' }, { status: 400 });
 
-  const result = await fulfilMatchById(buyerId, matchId, { confirmedByOwner: body.confirm === true });
+  const delivery = body.delivery && typeof body.delivery === 'object' && !Array.isArray(body.delivery)
+    ? (body.delivery as DeliveryInput)
+    : null;
+  const buyerCountry = typeof body.buyer_country === 'string' ? body.buyer_country : null;
+
+  const result = await fulfilMatchById(buyerId, matchId, {
+    confirmedByOwner: body.confirm === true,
+    delivery,
+    buyerCountry,
+  });
 
   const httpStatus =
     result.status === 'settled'           ? 200 :
