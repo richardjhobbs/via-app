@@ -373,12 +373,17 @@ export async function runMatch(
   const budget = compoundBudget(brief.budget_usd, prefs.maxUsd);
 
   // RECALL: cast a wide net across the WHOLE network using the brief's broad
-  // terms, its hard requirements, and aligned training terms. Keep LOCAL and
-  // MEMBER candidates in separate pools, then INTERLEAVE them into the judge's
-  // budget , otherwise one source's volume (e.g. local vinyl that merely mentions
-  // "coffee") starves the other (a member's actual coffee) before the judge sees it.
+  // terms, its product-type nouns/synonyms, its hard requirements, and aligned
+  // training terms. type_terms matter because `terms` can be a multi-word phrase
+  // ("sourdough bread") that matches NOTHING under the catalogue's AND/phrase FTS
+  // when no single product carries every word; the single-word type_terms
+  // ("sourdough", "bread", "loaf") are what actually recall the candidates. Keep
+  // LOCAL and MEMBER candidates in separate pools, then INTERLEAVE them into the
+  // judge's budget , otherwise one source's volume (e.g. local vinyl that merely
+  // mentions "coffee") starves the other (a member's actual coffee) before the
+  // judge sees it.
   const recallTerms = Array.from(new Set(
-    [...brief.terms, ...brief.requirements, ...alignedTerms].map((t) => t.trim()).filter((t) => t.length >= 2),
+    [...brief.terms, ...brief.type_terms, ...brief.requirements, ...alignedTerms].map((t) => t.trim()).filter((t) => t.length >= 2),
   ));
   const localPool = new Map<string, UnifiedProduct>();
   const memberPool = new Map<string, UnifiedProduct>();
