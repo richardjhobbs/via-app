@@ -453,6 +453,20 @@ export async function dryRunMatch(intentText: string): Promise<{ intent: BriefIn
   return { intent: brief, results: serializeMatches(ranked) };
 }
 
+/**
+ * Agentic network search backing the discovery MCP's find_seller: extract intent,
+ * run the full matcher (network recall + cross-vertical gate + AI judge), and
+ * return ranked UnifiedProducts. This is why "sourdough bread" returns Eli's
+ * sourdough and NOT "Bread" the band: lexical FTS cannot disambiguate the food
+ * intent from the popular vinyl term; the judge can. Returns the rich product
+ * shape (image_url, mcp_ref, category) the discovery tool already speaks.
+ */
+export async function agenticNetworkSearch(query: string, max: number): Promise<{ intent: BriefIntent; products: UnifiedProduct[] }> {
+  const brief = await extractIntent(query);
+  const ranked = await runMatch(query, brief, { maxUsd: null, preferredTerms: [] });
+  return { intent: brief, products: ranked.slice(0, max).map((r) => r.u) };
+}
+
 /** Read a cached structured intent into a BriefIntent (no re-extraction). */
 export function briefIntentFromStructured(structured: Record<string, unknown> | null): BriefIntent {
   const si = ((structured ?? {})['search_intent'] ?? {}) as Record<string, unknown>;

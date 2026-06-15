@@ -7,10 +7,14 @@
  * app_sellers / app_seller_products (this app has the live data; the marketing
  * site queries the same Supabase project but is rebuilt less often).
  *
- * Tools (6):
+ * Tools (8):
  *   list_sellers      : active VIA sellers, paginated, with per-seller MCP URL
  *   find_seller       : product + seller search; returns product-level results
  *                       (direct web_url + mcp_ref) or need_more_info when loose
+ *   submit_intent     : submit a buyer's intent; the full agentic matcher returns
+ *                       genuine matches (requirements enforced) across the network
+ *   find_buyers       : discover live DEMAND , buyers whose open briefs match what
+ *                       you sell (redacted structured intent + buyer mcp_url)
  *   seller_mcp_url    : return + verify the per-seller MCP URL for a slug
  *   get_via_overview  : short pitch + entrypoint URLs for buyers / sellers
  *   register_store    : self-register a new store (pending human review)
@@ -21,8 +25,9 @@ import { WebStandardStreamableHTTPServerTransport } from '@modelcontextprotocol/
 import { z } from 'zod';
 import { db } from '@/lib/app/db';
 import { createPendingAgentStore } from '@/lib/app/store-registration';
-import { searchCatalog, type PublicProduct } from '@/lib/app/seller-catalog';
-import { relevanceScore } from '@/lib/app/via-search';
+import { fetchNetwork, searchNetwork, type NetworkResult } from '@/lib/app/network-search';
+import { dryRunMatch, agenticNetworkSearch } from '@/lib/app/buyer-matching';
+import { findOpenBriefs } from '@/lib/app/demand';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -77,102 +82,10 @@ function sellerMcpUrl(slug: string): string {
   return `${APP_BASE}/sellers/${encodeURIComponent(slug)}/mcp`;
 }
 
-// VIA network members federated over HTTP. Each exposes GET /api/via/search?q=&limit=
-// returning { platform, results:[{name,kind,detail,mcp_url,web_url}] }. The catalogue
-// and the buy stay at origin; the network layer only routes. Append future platforms here.
-const NETWORK_MEMBERS: { platform: string; searchUrl: string }[] = [
-  { platform: 'rrg', searchUrl: 'https://realrealgenuine.com/api/via/search' },
-];
-
-interface NetworkResult {
-  platform:    string;
-  name:        string;
-  kind:        string;
-  detail:      string | null;
-  mcp_url:     string;
-  web_url:     string | null;
-  image:       string | null;
-}
-
-async function fetchMember(member: { platform: string; searchUrl: string }, q: string, max: number): Promise<NetworkResult[]> {
-  try {
-    const url = `${member.searchUrl}?q=${encodeURIComponent(q)}&limit=${max}`;
-    const res = await fetch(url, { signal: AbortSignal.timeout(6000) });
-    if (!res.ok) return [];
-    const json = await res.json() as { platform?: string; results?: unknown };
-    const rows = Array.isArray(json.results) ? json.results : [];
-    return rows.map((r: any) => ({
-      platform: json.platform ?? member.platform,
-      name:     String(r?.name ?? ''),
-      kind:     String(r?.kind ?? 'brand'),
-      detail:   r?.detail ?? null,
-      mcp_url:  String(r?.mcp_url ?? ''),
-      web_url:  r?.web_url ?? null,
-      image:    r?.image ?? null,
-    })).filter((r) => r.name && r.mcp_url);
-  } catch {
-    return [];
-  }
-}
-
-async function fetchNetwork(q: string, max: number): Promise<NetworkResult[]> {
-  const batches = await Promise.all(NETWORK_MEMBERS.map((m) => fetchMember(m, q, max)));
-  return batches.flat();
-}
-
-// ── Unified product result ───────────────────────────────────────────
-// One shape for every product match, whether it is a VIA-app listing or a
-// federated network member's (RRG). Agentic commerce: the agent must see ALL
-// products in one ranked list, regardless of source. Every searchable product
-// has a working product page, so `page_url` is always set; `image_url` may be
-// null. Transact over `mcp_ref`.
-interface UnifiedProduct {
-  source:        string;                 // 'via' | 'rrg' | future member
-  title:         string;
-  seller:        string | null;
-  price_usdc:    number | null;
-  price_is_from: boolean;                // true when price is a configurable "from" base
-  detail:        string | null;          // stock / sizes / pricing note for the human
-  image_url:     string | null;
-  page_url:      string | null;          // direct product page
-  mcp_ref:       { seller_mcp_url: string; product_id?: string; token_id?: number | null; pricing_mode?: string };
-}
-
-function viaToUnified(p: PublicProduct): UnifiedProduct {
-  const detail = p.pricing_mode === 'configurable'
-    ? 'configurable pricing: request a quote'
-    : (typeof p.stock === 'number' ? `${p.stock} in stock` : null);
-  return {
-    source:        'via',
-    title:         p.title,
-    seller:        p.seller_name,
-    price_usdc:    p.price_usdc,
-    price_is_from: p.price_is_from,
-    detail,
-    image_url:     p.image_url,
-    page_url:      p.product_url,
-    mcp_ref:       p.mcp_ref,
-  };
-}
-
-// RRG /api/via/search returns name + a "Brand · 245.70 USDC · in stock: …"
-// detail blob. Pull the brand name and price out of it for the merged shape;
-// keep the full blob as `detail` for the sizes the human wants.
-function networkToUnified(r: NetworkResult): UnifiedProduct {
-  const brand = r.detail ? (r.detail.split('·')[0]?.trim() || null) : null;
-  const priceMatch = r.detail ? r.detail.match(/([0-9]+(?:\.[0-9]+)?)\s*USDC/i) : null;
-  return {
-    source:        r.platform,
-    title:         r.name,
-    seller:        brand,
-    price_usdc:    priceMatch ? Number(priceMatch[1]) : null,
-    price_is_from: false,
-    detail:        r.detail,
-    image_url:     r.image,
-    page_url:      r.web_url,
-    mcp_ref:       { seller_mcp_url: r.mcp_url },
-  };
-}
+// Federation lives in lib/app/network-search.ts (NETWORK_MEMBERS, fetchNetwork,
+// searchNetwork, UnifiedProduct) so the buyer sourcing loop and this MCP tool
+// search the same network. list_sellers below still fans out with fetchNetwork
+// directly (it lists sellers, not products); find_seller uses searchNetwork.
 
 function rowToSummary(row: SellerSummaryRow): NetworkResult & { slug: string; erc8004_agent_id: string | null } {
   return {
@@ -185,6 +98,8 @@ function rowToSummary(row: SellerSummaryRow): NetworkResult & { slug: string; er
     web_url:          row.website_url,
     mcp_url:          sellerMcpUrl(row.slug),
     image:            null,
+    description:      row.description ?? null,
+    tags:             [],
   };
 }
 
@@ -233,42 +148,18 @@ function createServer(req: Request) {
     },
     async ({ query, limit }) => {
       const max = Math.min(Math.max(limit ?? 10, 1), 50);
-      const safe = query.replace(/[%,()]/g, ' ').trim();
-      const [local, network] = await Promise.all([
-        searchCatalog(safe, max),
-        fetchNetwork(safe, max),
+      // Products come from the AGENTIC matcher (extract -> network recall ->
+      // cross-vertical gate -> AI judge), so a natural-language query like
+      // "sourdough bread" returns Eli's sourdough and not "Bread" the band, which
+      // lexical FTS cannot disambiguate. Seller/brand profile hits (a seller whose
+      // NAME or description matches, e.g. "a bakery") still come from the lexical
+      // network search, run in parallel.
+      const [agentic, net] = await Promise.all([
+        agenticNetworkSearch(query, max),
+        searchNetwork(query, max),
       ]);
-
-      // Split federated hits: products go into the ranked product list, anything
-      // else (brand / seller profiles) into the seller pointer list.
-      const networkProducts = network.filter((r) => r.kind === 'product');
-      const networkSellers  = network.filter((r) => r.kind !== 'product');
-
-      // One blended pool of products across every source, ranked by relevance to
-      // the query so the best options surface first regardless of platform or
-      // whether the listing has an image. Stable sort keeps VIA-app data-only
-      // listings from being drowned by the larger RRG catalogue at equal scores.
-      const pool: UnifiedProduct[] = [
-        ...local.products.map(viaToUnified),
-        ...networkProducts.map(networkToUnified),
-      ];
-      const ranked = pool
-        .map((item) => ({ item, score: relevanceScore(`${item.title} ${item.seller ?? ''} ${item.detail ?? ''}`, safe) }))
-        .sort((a, b) => b.score - a.score)
-        .map((x) => x.item)
-        .slice(0, max);
-
-      // Seller / brand profile matches with no product hit, both sources.
-      const sellers = [
-        ...local.sellers.map((s) => ({
-          source: 'via', name: s.name, kind: s.kind,
-          detail: s.headline ?? s.description, mcp_url: s.mcp_url, page_url: s.page_url,
-        })),
-        ...networkSellers.map((r) => ({
-          source: r.platform, name: r.name, kind: r.kind,
-          detail: r.detail, mcp_url: r.mcp_url, page_url: r.web_url,
-        })),
-      ];
+      const ranked = agentic.products;
+      const sellers = net.sellers;
 
       if (ranked.length === 0 && sellers.length === 0) {
         return asJson({
@@ -290,6 +181,66 @@ function createServer(req: Request) {
         sellers,                // seller / brand profile matches with no product hit
         next:
           'Present the best matches from `results` to the user, across ALL sources, with prices and the key differences. Every result has a working `page_url` (the direct product page) you give the user, plus `image_url` when one exists. If the user named a specific seller/brand, call get_seller_products with that result\'s mcp_ref.seller_mcp_url to drill in. To purchase: connect to mcp_ref.seller_mcp_url and call get_product then buy_product (or get_offering_schema + request_quote when pricing_mode is "configurable").',
+      });
+    },
+  );
+
+  server.tool(
+    'submit_intent',
+    "Submit a buyer's INTENT in their own words and get back the products across the VIA network that genuinely match it , the full agentic matcher (it reads each product's data and reasons, it is not keyword search). Use this when you are buying ON BEHALF of someone and want defined matches, not a raw search. State the brief naturally, including any hard requirements (\"raw selvedge denim, 32 waist\", \"first pressing on the Stiff label\", \"a gift of coffee\"). Hard requirements are enforced (a product that fails one is excluded); broad briefs return on-category options. Returns matches with seller, price, a direct page_url, and the mcp_url to transact. For matching tied to a specific VIA buyer's saved taste and budget, call submit_intent on that buyer's MCP (/buyers/{handle}/mcp) instead.",
+    {
+      brief: z.string().min(2).max(2000).describe("What the buyer wants, in plain words, e.g. 'made in japan raw selvedge denim around 32 waist' or 'a gift of coffee for a family member'."),
+    },
+    async ({ brief }) => {
+      const { intent, results } = await dryRunMatch(brief);
+      if (results.length === 0) {
+        return asJson({
+          brief,
+          status: 'need_more_info',
+          understood: intent,
+          results: [],
+          guidance:
+            'Nothing on the network matches this intent yet. This is NOT proof it is unavailable. Ask one clarifying question to sharpen the brief, or retry with a broader phrasing. The brief stays valid; new listings will match it as sellers join.',
+          suggested_dimensions: CLARIFY_DIMENSIONS,
+        });
+      }
+      return asJson({
+        brief,
+        status: 'ok',
+        understood: intent,        // how the matcher read the brief (requirements vs preferences)
+        count: results.length,
+        results,                   // genuine matches, ranked; each has seller, price, page_url, mcp_url
+        next: 'Present these to the buyer with prices and key differences. To purchase, connect to a result\'s mcp_url and call get_product then buy_product.',
+      });
+    },
+  );
+
+  server.tool(
+    'find_buyers',
+    "Discover live DEMAND: buyers who are actively looking for what you sell. Search by what you have ('raw selvedge denim', 'first pressing acid jazz vinyl', 'cold brew coffee') and get back buyers whose open briefs match, each with the buyer's structured intent (category, hard requirements, budget , never their raw wording) and the buyer's mcp_url. This is the demand mirror of find_seller: instead of a buyer searching catalogues, a seller finds buyers who want their stock. Omit query to browse recent open demand. To act: connect to a buyer's mcp_url and call pitch_against_brief (judged) or negotiate.",
+    {
+      query: z.string().optional().describe("What you have to offer, e.g. 'raw selvedge denim' or 'acid jazz vinyl'. Omit to browse recent demand."),
+      limit: z.number().int().min(1).max(50).optional().describe('Max buyers to return (default 10).'),
+    },
+    async ({ query, limit }) => {
+      const max = Math.min(Math.max(limit ?? 10, 1), 50);
+      const buyers = await findOpenBriefs((query ?? '').replace(/[%,()]/g, ' ').trim(), max);
+      if (buyers.length === 0) {
+        return asJson({
+          query: query ?? '',
+          status: 'need_more_info',
+          buyers: [],
+          guidance:
+            'No open demand matched yet. This is NOT proof no one wants it. Retry with a broader term, a synonym, the category, or omit the query to browse all current demand. Buyers post briefs continuously.',
+          suggested_dimensions: CLARIFY_DIMENSIONS,
+        });
+      }
+      return asJson({
+        query: query ?? '',
+        status: 'ok',
+        count: buyers.length,
+        buyers,
+        next: 'Each buyer has open briefs (structured intent) and an mcp_url. If you have a genuine match, connect to mcp_url and call pitch_against_brief with the brief_id and your product , the buyer\'s agent judges the fit and notifies the buyer. Or call negotiate to make an offer.',
       });
     },
   );
