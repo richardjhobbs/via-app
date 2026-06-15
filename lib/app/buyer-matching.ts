@@ -368,7 +368,7 @@ export async function runMatch(
   brief: BriefIntent,
   prefs: BuyerPrefs,
   meter?: TokenMeter,
-): Promise<{ u: UnifiedProduct; score: number }[]> {
+): Promise<{ ranked: { u: UnifiedProduct; score: number }[]; judged: boolean }> {
   const alignedTerms = alignedTrainingTerms(brief, prefs.preferredTerms);
   const budget = compoundBudget(brief.budget_usd, prefs.maxUsd);
 
@@ -418,16 +418,21 @@ export async function runMatch(
   // deterministic scoring + a floor if the judge is unavailable.
   const verdict = await judgeCandidates(intentText, brief, prefs.preferredTerms, candidateList, meter);
   if (verdict) {
-    return candidateList
+    const ranked = candidateList
       .filter((c) => verdict.has(c.key))
       .map((c) => ({ u: c.u, score: verdict.get(c.key)! }))
       .sort((a, b) => b.score - a.score)
       .slice(0, MATCH_LIMIT);
+    return { ranked, judged: true };
   }
+  // No AI verdict: keyword fallback ONLY so an interactive search degrades to
+  // something rather than nothing. judged=false signals callers NOT to persist
+  // this (it is cross-vertical-noisy); the matcher must be LLM-judged to write.
   const scored = candidateList.map((c) => ({ u: c.u, score: intentScore(c.u, brief, alignedTerms, budget) }));
   const topScore = scored.reduce((m, c) => Math.max(m, c.score), 0);
   const floor = topScore > 0 ? topScore * MATCH_FLOOR_FRACTION : -Infinity;
-  return scored.filter((c) => c.score >= floor).sort((a, b) => b.score - a.score).slice(0, MATCH_LIMIT);
+  const ranked = scored.filter((c) => c.score >= floor).sort((a, b) => b.score - a.score).slice(0, MATCH_LIMIT);
+  return { ranked, judged: false };
 }
 
 export interface MatchResult {
@@ -449,7 +454,7 @@ function serializeMatches(ranked: { u: UnifiedProduct; score: number }[]): Match
  *  inbound submit_intent (network MCP + /api/via/match) and the eval battery. */
 export async function dryRunMatch(intentText: string): Promise<{ intent: BriefIntent; results: MatchResult[] }> {
   const brief = await extractIntent(intentText);
-  const ranked = await runMatch(intentText, brief, { maxUsd: null, preferredTerms: [] });
+  const { ranked } = await runMatch(intentText, brief, { maxUsd: null, preferredTerms: [] });
   return { intent: brief, results: serializeMatches(ranked) };
 }
 
@@ -463,7 +468,7 @@ export async function dryRunMatch(intentText: string): Promise<{ intent: BriefIn
  */
 export async function agenticNetworkSearch(query: string, max: number): Promise<{ intent: BriefIntent; products: UnifiedProduct[] }> {
   const brief = await extractIntent(query);
-  const ranked = await runMatch(query, brief, { maxUsd: null, preferredTerms: [] });
+  const { ranked } = await runMatch(query, brief, { maxUsd: null, preferredTerms: [] });
   return { intent: brief, products: ranked.slice(0, max).map((r) => r.u) };
 }
 
@@ -542,7 +547,7 @@ export async function dryRunMatchForBuyer(buyerId: string, intentText: string): 
   const meter: TokenMeter = { tokens: 0 };
   const brief = await extractIntent(intentText, meter);
   const prefs = await loadBuyerPrefs(buyerId);
-  const ranked = await runMatch(intentText, brief, prefs, meter);
+  const { ranked } = await runMatch(intentText, brief, prefs, meter);
   await meterAgainstBuyer(buyerId, meter);
   return { intent: brief, results: serializeMatches(ranked) };
 }
@@ -574,23 +579,46 @@ export async function matchIntent(intent: IntentLite): Promise<{ found: number; 
   // only nudges over-budget items down, never filters them out (hard only at
   // negotiation / purchase).
   const prefs = await loadBuyerPrefs(intent.buyer_id);
-  const ranked = await runMatch(q, brief, prefs, meter);
+  const { ranked, judged } = await runMatch(q, brief, prefs, meter);
 
   // Meter the platform DeepSeek spend (extract + judge) against this buyer's
   // credits. All LLM calls are done by this point, so charge once here.
   await meterAgainstBuyer(intent.buyer_id, meter);
+
+  // Matching MUST be LLM-judged to persist. With no AI verdict (DeepSeek down),
+  // runMatch falls back to keyword scoring, which is cross-vertical-noisy (e.g.
+  // "Digital" albums for a "digital document" brief). Never write that. Leave the
+  // existing matches untouched; a later judged run reconciles them.
+  if (!judged) {
+    console.warn(`[buyer-matching] judge unavailable for intent ${intent.id}; matches left unchanged`);
+    return { found: 0, inserted: 0 };
+  }
+
+  // RECONCILE to the judged set: the judge is authoritative, so PRUNE any
+  // persisted match that is no longer a genuine match (stale rows from earlier or
+  // looser runs) before inserting new hits. Without this, matches only ever
+  // accumulate and bad rows linger on the dashboard forever.
+  const rankedKeys = new Set(
+    ranked.map(({ u }) => u.mcp_ref.product_id ?? u.page_url).filter((k): k is string => Boolean(k)),
+  );
+  const { data: priorRows } = await db
+    .from('app_buyer_intent_matches')
+    .select('id, product_id')
+    .eq('intent_id', intent.id);
+  const prior = (priorRows ?? []) as { id: string; product_id: string }[];
+  const staleIds = prior.filter((r) => !rankedKeys.has(r.product_id)).map((r) => r.id);
+  if (staleIds.length > 0) {
+    const { error: delErr } = await db.from('app_buyer_intent_matches').delete().in('id', staleIds);
+    if (delErr) console.error('[buyer-matching] prune stale matches failed:', delErr.message);
+  }
 
   if (ranked.length === 0) {
     await db.from('app_buyer_intents').update({ broadcast_at: nowIso }).eq('id', intent.id);
     return { found: 0, inserted: 0 };
   }
 
-  // Skip products already matched to this intent (dedup across re-runs).
-  const { data: existing } = await db
-    .from('app_buyer_intent_matches')
-    .select('product_id')
-    .eq('intent_id', intent.id);
-  const seen = new Set(((existing ?? []) as { product_id: string }[]).map((r) => r.product_id));
+  // Dedup inserts against the matches that survived the prune.
+  const seen = new Set(prior.filter((r) => rankedKeys.has(r.product_id)).map((r) => r.product_id));
 
   const rows = ranked
     .map(({ u, score }) => ({ key: u.mcp_ref.product_id ?? u.page_url!, u, score }))
