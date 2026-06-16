@@ -42,6 +42,14 @@ const DEEPSEEK_URL = 'https://api.deepseek.com/v1/chat/completions';
 const USDC_ADDRESS = '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913';
 const BASE_NETWORK = 'base'; // x402 friendly network name for Base mainnet
 
+// Offer policy. Every offer costs a micro-fee, so the seller shows its best few,
+// not everything that vaguely fits. If MORE genuine fits remain, it invites the
+// buyer to give direction (one negotiate call, which costs the BUYER credits) and
+// then offers up to a few MORE matching that direction , each still a paid offer.
+const MIN_OFFER_SCORE = 60;       // only offer items the seller genuinely backs for THIS brief
+const MAX_INITIAL_OFFERS = 3;     // best 3 up front
+const MAX_FOLLOWUP_OFFERS = 3;    // at most this many more after the buyer steers
+
 if (!DEEPSEEK_KEY) { console.error('DEEPSEEK_API_KEY required (the seller\'s own LLM key)'); process.exit(1); }
 
 // Per-seller x402 signing material is resolved at RUNTIME, never read from disk:
@@ -94,8 +102,8 @@ function keyFor(seller) {
 // Verified against app_sellers + scripts/place-seller-keys.mjs, 2026-06-16.
 const ROSTER = [
   { slug: 'drhobbs-knowledge',       name: 'DrHobbs Knowledge',       source: 'via', erc8004_id: '55552', store_id: 'dd0e81fd-586b-4196-99f3-5f3ed2974ad6', expect: '0x35bcf708834d1c38187a49705dfd7997b551d418' },
-  { slug: 'eli-s-artisan-bakery',    name: "Eli's Artisan Bakery",    source: 'via', erc8004_id: '53846', store_id: 'e6a32d65-c452-4e07-9393-4fd4c8e8fd6e', expect: '0x437432ec24f0f216bd5280d77664e1d7692a71c3' },
-  { slug: 'the-sentient-startup',    name: 'The Sentient Startup',    source: 'via', erc8004_id: '54476', store_id: '0296cc76-6e88-4459-b978-aea036a893d7', expect: '0x580706c5813304c9f03367843ac4d47ca838e105' },
+  { slug: 'eli-s-artisan-bakery',    name: "Eli's Artisan Bakery",    source: 'via', erc8004_id: '55593', store_id: 'e6a32d65-c452-4e07-9393-4fd4c8e8fd6e', expect: '0xca11b205de3e4f52cc9b6ba4be1276a88b7cc33f' },
+  { slug: 'the-sentient-startup',    name: 'The Sentient Startup',    source: 'via', erc8004_id: '55594', store_id: '0296cc76-6e88-4459-b978-aea036a893d7', expect: '0xbfa26fba52fe8bd4d2dd28a25f85220cd5e5b3bc' },
   { slug: 'clooudie',                name: 'Clooudie',                source: 'rrg', erc8004_id: '45691', env_key: 'CLOOUDIE_WALLET_PRIVATE_KEY' },
   { slug: 'nolo',                    name: 'Nolo',                    source: 'rrg', erc8004_id: '45690', env_key: 'NOLO_WALLET_PRIVATE_KEY' },
   { slug: 'jennys',                  name: "Jenny's",                 source: 'rrg', erc8004_id: '55583', env_key: 'JENNYS_WALLET_PRIVATE_KEY' },
@@ -225,17 +233,23 @@ async function ownStock(seller) {
     .filter((p) => seller.source === 'via' || p.inStock !== false) // honest offers: skip RRG sold-out stock
     .map((p) => toCandidate(p, seller, mcp))
     .filter((c) => c && typeof c.title === 'string' && c.title.trim());
-  return candidates.slice(0, 250); // bound the LLM payload; roster catalogues are well under this
+  // HARD RULE: a brand agent MUST consider EVERY product on its own MCP. No
+  // positional cap , the old slice(250) silently dropped the tail of large
+  // catalogues (pitchers-only's caps sit at indices 256-273 of 274, so they were
+  // cut before the LLM ever saw them). decide() chunks the full set for the LLM,
+  // so size is bounded by chunk count, never by dropping products.
+  return candidates;
 }
 
-/** The seller's OWN decision: which of its candidates to offer, scored 0-100. */
-async function decide(brief, candidates, sellerName) {
+/** Decide over ONE chunk of the seller's stock (one LLM call). `i` indexes the chunk. */
+async function decideChunk(brief, candidates, sellerName) {
   const list = candidates.map((c, i) => ({ i, title: c.title, description: c.description ? c.description.slice(0, 400) : null, tags: c.tags.slice(0, 12), attributes: c.attributes, price_usdc: c.price_usdc }));
   const sys =
-    `You are the sales agent for ${sellerName}. A buyer broadcast a brief and you are deciding which items from YOUR OWN stock (the list) are genuinely worth offering. ` +
-    'Reason over each product\'s real data. Be commercially sensible and reasonably generous: offer anything a reasonable buyer with this brief would plausibly consider , the buyer ranks what you send, so you do not need every stated detail proven. ' +
-    'Do NOT offer items that are clearly the wrong product or category, or that plainly contradict a stated must-have. If nothing genuinely fits, offer nothing. ' +
-    'For each item you would offer, give a fit score 0-100 and a one-line reason to the buyer. Respond as JSON: {"offers":[{"i":<index>,"score":<0-100>,"reason":"<one line>"}]}.';
+    `You are the sales agent for ${sellerName}. A buyer broadcast a brief and you are deciding which items from YOUR OWN stock (the list) genuinely satisfy it. Each offer you make costs a fee, so be honest, not generous. ` +
+    'Offer an item ONLY if it matches the brief\'s PRODUCT TYPE and every explicitly stated hard requirement (colour, gender, size, material, etc.). ' +
+    'A request for a hoodie is NOT satisfied by a sweatshirt, crewneck, or jacket; a request for an olive or green item is NOT satisfied by a black one. Do not stretch to a near-miss the buyer did not ask for , it wastes a paid offer and the buyer rejects it. ' +
+    'Quality over quantity: offer only items you would stand behind for THIS exact brief. If nothing genuinely fits, offer nothing. ' +
+    'For each item you would offer, give a fit score 0-100 (use the full range; reserve 80+ for a strong match on product type AND every hard requirement) and a one-line reason to the buyer. Respond as JSON: {"offers":[{"i":<index>,"score":<0-100>,"reason":"<one line>"}]}.';
   const user = JSON.stringify({ brief: { title: brief.title, category: brief.category, looking_for: brief.type_terms, must_haves: brief.requirements, nice_to_haves: brief.preferences, budget_usd: brief.budget_usd }, your_stock: list });
   const res = await fetch(DEEPSEEK_URL, {
     method: 'POST',
@@ -256,18 +270,55 @@ async function decide(brief, candidates, sellerName) {
   return picks;
 }
 
+/** The seller's OWN decision over ALL its candidates, scored 0-100. A large
+ *  catalogue is CHUNKED so EVERY product is reasoned over: a single positional
+ *  cap silently dropped the tail and the matching item with it (pitchers-only's
+ *  caps sit at indices 256-273 of 274, so its green/olive caps were never seen
+ *  and it offered nothing on a cap brief). Picks map back to the full array. */
+async function decide(brief, candidates, sellerName) {
+  const CHUNK = 80;
+  if (candidates.length <= CHUNK) return decideChunk(brief, candidates, sellerName);
+  const chunks = [];
+  for (let off = 0; off < candidates.length; off += CHUNK) chunks.push({ off, items: candidates.slice(off, off + CHUNK) });
+  // Chunks run concurrently so a big catalogue costs ~one LLM round-trip, not N.
+  const results = await Promise.all(chunks.map((c) => decideChunk(brief, c.items, sellerName)));
+  const out = [];
+  results.forEach((picks, ci) => { for (const p of picks) out.push({ ...p, i: p.i + chunks[ci].off }); });
+  return out;
+}
+
 /** Self-selection on the FREE teaser (category + product type + one attribute):
  *  could this seller plausibly fulfil this demand? Decides whether to pay the
  *  unlock micro-fee at all. One small LLM call over the teaser + a compact view of
  *  the seller's own catalogue. Fail-closed: on any error, do NOT bid (don't pay to
  *  read a brief we are not sure about). */
 async function shouldBid(teaser, stock, sellerName) {
-  const titles = uniq(stock.map((c) => c.title)).slice(0, 120); // full product-name list = the reliable category signal
+  // The gate sees the WHOLE catalogue as two signals: every product NAME, plus the
+  // distinct tags/types/categories across the catalogue. Names carry brands and
+  // specifics; tags carry the semantic type/topic (so a digital or topical product
+  // whose name is a subject, not a form, still matches). Both, deduped, no head-cut.
+  const titles = uniq(stock.map((c) => c.title));
+  const tagSet = new Set();
+  for (const c of stock) {
+    if (Array.isArray(c.tags)) for (const t of c.tags) if (typeof t === 'string' && t) tagSet.add(t);
+    const a = c.attributes && typeof c.attributes === 'object' ? c.attributes : {};
+    for (const v of [a.category, a.product_type]) if (typeof v === 'string' && v) tagSet.add(v);
+    for (const k of ['tags', 'style_tags', 'occasion_fit', 'shopify_tags']) if (Array.isArray(a[k])) for (const t of a[k]) if (typeof t === 'string' && t) tagSet.add(t);
+  }
+  const tags = [...tagSet].slice(0, 80);
+  // General, vertical-agnostic self-select. No fixed synonym list: reason from the
+  // actual catalogue. Handles a brand/artist/label named in any teaser field, and
+  // any kind of merchant (goods, food, music, digital, services). Always decides.
   const sys =
-    `You are the sales agent for ${sellerName}. A buyer broadcast a teaser of what they want. Below is the full list of product names in YOUR catalogue. ` +
-    'Bid YES if your catalogue plausibly contains items in the same category or spirit as the teaser (e.g. the teaser wants a hoodie and you have hoodies, sweatshirts, or similar apparel). ' +
-    'Bid NO if your products are clearly a different world (food, drink, supplements, etc. vs apparel). Respond JSON {"bid": true|false}.';
-  const user = JSON.stringify({ teaser: { category: teaser.category, product_type: teaser.product_type, attribute: teaser.attribute }, my_product_names: titles });
+    `You are the autonomous sales agent for "${sellerName}". A buyer has broadcast a short, free teaser of what they want. It has up to three fields , a category, a product type, and one attribute , and any of them may be empty, or may name a brand, label, maker, artist, or title instead of a generic word. You are given the COMPLETE list of your product names plus the distinct tags/types across your catalogue. ` +
+    'Reading the buyer\'s full brief costs you a fee, so judge from this teaser alone: could you plausibly supply what this buyer wants from your own stock? You MUST return a decision every time, for any kind of request and any kind of catalogue , never refuse to decide. ' +
+    'Reason from your ACTUAL catalogue, like a shopkeeper who knows their stock: ' +
+    '1) If the request points to a PRODUCT TYPE: bid YES when your catalogue holds that product , including the same thing under a different word, a sub-type, a variant, or a regional name (judge by meaning, not spelling). A product name often describes its topic, contents, or use rather than its form, so use the tags/types too , an informational or digital item (report, guide, dataset, course) still matches a request for a "document" or a subject when its subject fits. Bid NO when you simply do not stock that kind of product; being in the same broad sector is not enough , selling some things in a sector does not mean you sell this thing. ' +
+    '2) If the request names a BRAND, label, maker, designer, artist, or title (common , it may appear in ANY field): bid YES only if you ARE that name, or your catalogue actually carries it (it appears among your product names/tags, or is unmistakably part of what you stock). Bid NO if it is a name you do not offer , do not bid YES on a brand you cannot supply just because you sell the same category. ' +
+    '3) If only a broad category or attribute is given, with no specific type or brand: bid YES if your catalogue clearly works in that space, NO if you are a different domain. ' +
+    'When genuinely unsure, bid YES only if at least one real product of yours could honestly be the answer; otherwise NO. Wasted reads cost money, missed real matches cost sales , weigh both. ' +
+    'Respond with JSON only: {"bid": true} or {"bid": false}.';
+  const user = JSON.stringify({ teaser: { category: teaser.category, product_type: teaser.product_type, attribute: teaser.attribute }, my_product_names: titles, my_catalogue_tags: tags });
   const res = await fetch(DEEPSEEK_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${DEEPSEEK_KEY}` },
@@ -327,10 +378,26 @@ async function payWithX402(url, options, privkey) {
   return { ok: retry.ok, status: retry.status, body, paid: Number(BigInt(req.maxAmountRequired)) / 1e6 };
 }
 
+/** Submit one paid offer. Returns { ok, txHash } , the settlement tx is the
+ *  seller's ticket to negotiate/ask the buyer for more direction afterwards. */
 async function postOffer(doorUrl, seller, p, key) {
   const body = JSON.stringify({ title: p.title, description: p.description, price_usdc: p.price_usdc, url: p.url, seller_mcp_url: p.mcp_url, seller_slug: seller.slug, seller_name: seller.name, tags: p.tags, attributes: p.attributes, seller_erc8004_id: key.erc8004_id ?? null });
   const res = await payWithX402(`${doorUrl}/offer`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body }, key.privkey);
-  return res.ok;
+  let txHash = null;
+  try { txHash = JSON.parse(res.body)?.payment_tx ?? null; } catch { /* non-JSON body */ }
+  return { ok: res.ok, txHash };
+}
+
+/** Post-door, paid-offer-gated: tell the buyer's agent we have more and ask for
+ *  direction. Returns the buyer agent's reply text, or null. Best-effort , any
+ *  failure (transport, no reply) just skips the follow-up. Costs the BUYER
+ *  credits, so it is called at most once per brief, only when more genuine fits
+ *  remain. buyerMcpUrl + the paid offer's txHash come from the unlocked brief. */
+async function askForDirection(buyerMcpUrl, briefId, paymentTxHash, message) {
+  if (!buyerMcpUrl || !paymentTxHash) return null;
+  const out = await callSellerMcp(buyerMcpUrl, 'negotiate', { brief_id: briefId, payment_tx_hash: paymentTxHash, offer_text: message });
+  const reply = out && typeof out.reply === 'string' ? out.reply.trim() : null;
+  return reply || null;
 }
 
 // Watermark: the newest broadcast_at this agent has already processed. Each pass
@@ -390,16 +457,46 @@ async function run() {
       // 1. PAY the micro-fee to unlock the FULL brief at the door (per seller).
       const unlock = await payWithX402(t.door_url, { method: 'GET' }, key.privkey);
       if (!unlock.ok) { console.log(`[${seller.slug}] unlock failed (${unlock.status}): ${String(unlock.body).slice(0, 80)}`); continue; }
-      let brief; try { brief = JSON.parse(unlock.body).brief; } catch { brief = null; }
+      let brief = null, buyerMcpUrl = null;
+      try { const u = JSON.parse(unlock.body); brief = u.brief ?? null; buyerMcpUrl = u.buyer_mcp_url ?? null; } catch { /* bad body */ }
       if (!brief) continue;
 
-      // 2. Decide over OWN stock (one LLM call). 3. PAY per item put forward.
-      const picks = await decide(brief, stock, seller.name);
-      for (const pick of picks) {
+      // 2. Decide over OWN stock; keep only genuine fits, best first.
+      const ranked = (await decide(brief, stock, seller.name))
+        .filter((pk) => pk.score >= MIN_OFFER_SCORE)
+        .sort((a, b) => b.score - a.score);
+      if (ranked.length === 0) { console.log(`[${seller.slug}] unlocked brief ${t.brief_id}, nothing genuinely fits , no offer`); continue; }
+
+      // 3. Offer the best few (capped). Each is a paid offer; hold the rest back.
+      let lastTx = null;
+      for (const pick of ranked.slice(0, MAX_INITIAL_OFFERS)) {
         const p = stock[pick.i];
-        if (p && await postOffer(t.door_url, seller, p, key)) {
-          offers++;
-          console.log(`[${seller.slug}] paid + offered "${p.title}" (seller score ${pick.score}) on brief ${t.brief_id}`);
+        if (!p) continue;
+        const r = await postOffer(t.door_url, seller, p, key);
+        if (r.ok) { offers++; lastTx = r.txHash ?? lastTx; console.log(`[${seller.slug}] paid + offered "${p.title}" (score ${pick.score}) on brief ${t.brief_id}`); }
+      }
+
+      // 4. More genuine fits than we showed? Tell the buyer and invite direction
+      // ONCE (costs the buyer credits), then offer up to a few MORE matching the
+      // reply , each still a paid offer the seller weighs against the response.
+      const held = ranked.slice(MAX_INITIAL_OFFERS);
+      if (held.length > 0 && lastTx && buyerMcpUrl) {
+        const msg = `We have ${held.length} more item(s) in stock you might like. If you would like more options, help us by giving a little more direction on what you would prefer to see , style, colour, budget, or use.`;
+        const reply = await askForDirection(buyerMcpUrl, t.brief_id, lastTx, msg);
+        if (!reply) {
+          console.log(`[${seller.slug}] offered ${Math.min(ranked.length, MAX_INITIAL_OFFERS)}, invited more direction; no reply , holding ${held.length} back`);
+        } else {
+          const heldStock = held.map((h) => stock[h.i]).filter(Boolean);
+          const refined = (await decide({ ...brief, requirements: [...(brief.requirements ?? []), reply] }, heldStock, seller.name))
+            .filter((pk) => pk.score >= MIN_OFFER_SCORE)
+            .sort((a, b) => b.score - a.score)
+            .slice(0, MAX_FOLLOWUP_OFFERS);
+          for (const pick of refined) {
+            const p = heldStock[pick.i];
+            if (!p) continue;
+            const r = await postOffer(t.door_url, seller, p, key);
+            if (r.ok) { offers++; console.log(`[${seller.slug}] follow-up offer "${p.title}" (score ${pick.score}) after buyer direction`); }
+          }
         }
       }
     }
