@@ -1,0 +1,416 @@
+/**
+ * scripts/seller-agent.mjs
+ *
+ * The SELLER side of the VIA exchange. Each entry in ROSTER is one real, onboarded
+ * seller; this process runs a reference agent for each, reasoning ONLY over that
+ * seller's own stock. It is NOT the old platform proxy: it is bounded to onboarded
+ * sellers, one decision per seller over its own catalogue, and any seller can lift
+ * its entry out and run it themselves.
+ *
+ * The seller's journey (from the plan), per seller, per broadcast brief:
+ *   1. Watch the broadcast , poll the public demand feed for teasers. No LLM.
+ *   2. Open the full brief at the door (GET). (Phase 4 adds the micro-fee here.)
+ *   3. Look at ITS OWN stock and decide, with its OWN LLM (one call), what is worth
+ *      offering , generous but honest.
+ *   4. Submit each offer to the door (POST). The buyer's agent ranks what arrives.
+ *
+ * Run on a host with an LLM key + the seller wallet secrets (the VPS, alongside
+ * RRG; previously the Box). Loop it on a timer to keep responding to new
+ * broadcasts. Offers are idempotent server side, so re-polling never duplicates.
+ *
+ * Env:
+ *   DEEPSEEK_API_KEY  (required) the seller's own LLM key.
+ *   AGENT_WALLET_SEED (required for the 3 VIA sellers) platform seed; their agent
+ *                     wallets are derived in-memory, never stored on disk.
+ *   <SLUG>_WALLET_PRIVATE_KEY (one per RRG brand seller, e.g.
+ *                     GUMBALL_3000_WALLET_PRIVATE_KEY) that brand's payer key.
+ *   VIA_BASE, RRG_BASE  optional base-url overrides (defaults are prod).
+ *   VIA_AGENT_DRY_RUN=1  resolve keys + self-select but pay nothing (host smoke test).
+ * A seller whose key is not resolvable on this host is simply skipped.
+ */
+
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import crypto from 'node:crypto';
+import { ethers } from 'ethers';
+
+const VIA_BASE = (process.env.VIA_BASE || 'https://app.getvia.xyz').replace(/\/$/, '');
+const RRG_BASE = (process.env.RRG_BASE || 'https://realrealgenuine.com').replace(/\/$/, '');
+const DEEPSEEK_KEY = process.env.DEEPSEEK_API_KEY;
+const DEEPSEEK_URL = 'https://api.deepseek.com/v1/chat/completions';
+const USDC_ADDRESS = '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913';
+const BASE_NETWORK = 'base'; // x402 friendly network name for Base mainnet
+
+if (!DEEPSEEK_KEY) { console.error('DEEPSEEK_API_KEY required (the seller\'s own LLM key)'); process.exit(1); }
+
+// Per-seller x402 signing material is resolved at RUNTIME, never read from disk:
+//  - VIA platform sellers: the agent wallet is DERIVED in-memory from the one
+//    platform seed (AGENT_WALLET_SEED) + the store id, the same HMAC the app uses
+//    (lib/app/agent-wallet.ts). No key is stored at rest; the only secret is the seed.
+//  - RRG brand sellers: the brand's payer key is read from a named env var
+//    (<SLUG>_WALLET_PRIVATE_KEY), supplied by the host env (.env.local on the VPS).
+// A seller whose key cannot be resolved (seed absent / env var unset) simply cannot
+// pay and is skipped, so the roster degrades gracefully as keys are added.
+const DRY_RUN = process.env.VIA_AGENT_DRY_RUN === '1' || process.env.VIA_AGENT_DRY_RUN === 'true';
+
+// Same derivation as lib/app/agent-wallet.ts: HMAC-SHA256(seed, "agent-wallet|<id>|<i>"),
+// first counter that yields a valid secp256k1 key. Returns an ethers.Wallet or null.
+function deriveAgentWallet(storeId) {
+  const seed = process.env.AGENT_WALLET_SEED;
+  if (!seed) return null;
+  for (let i = 0; i < 8; i++) {
+    const pk = '0x' + crypto.createHmac('sha256', seed).update(`agent-wallet|${storeId}|${i}`).digest('hex');
+    try { return new ethers.Wallet(pk); } catch { /* out of curve order, try next */ }
+  }
+  return null;
+}
+
+// Resolve { privkey, erc8004_id } for one roster seller, or null if its key is not
+// available on this host. VIA = derive from the seed; RRG = read the named env var.
+function keyFor(seller) {
+  if (seller.source === 'via') {
+    const w = deriveAgentWallet(seller.store_id);
+    if (!w) return null; // AGENT_WALLET_SEED not set, or derivation failed
+    if (seller.expect && w.address.toLowerCase() !== seller.expect.toLowerCase()) {
+      console.error(`[${seller.slug}] derived ${w.address} but on record is ${seller.expect} - wrong AGENT_WALLET_SEED; skipping`);
+      return null; // fail-closed: never pay from an unexpected wallet
+    }
+    return { privkey: w.privateKey, erc8004_id: seller.erc8004_id };
+  }
+  const pk = process.env[seller.env_key];
+  if (!pk || !/^0x[0-9a-fA-F]{64}$/.test(pk.trim())) return null; // no/!valid brand key in env
+  return { privkey: pk.trim(), erc8004_id: seller.erc8004_id };
+}
+
+// The onboarded sellers this process runs an agent for. ONE source of truth: each
+// entry carries everything needed to run + pay for that seller, so adding a partner
+// is a single line here (DB-driven roster is the next step; see the transfer brief).
+//   source     - 'via' (catalogue on app.getvia.xyz, MCP /sellers/<slug>/mcp) or
+//                'rrg' (catalogue on realrealgenuine.com, MCP /brand/<slug>/mcp).
+//   erc8004_id - on-chain identity id stamped onto each offer.
+//   VIA only:  store_id (derivation input) + expect (on-record agent wallet, self-check).
+//   RRG only:  env_key  (the named env var holding that brand's payer private key).
+// Verified against app_sellers + scripts/place-seller-keys.mjs, 2026-06-16.
+const ROSTER = [
+  { slug: 'drhobbs-knowledge',       name: 'DrHobbs Knowledge',       source: 'via', erc8004_id: '55552', store_id: 'dd0e81fd-586b-4196-99f3-5f3ed2974ad6', expect: '0x35bcf708834d1c38187a49705dfd7997b551d418' },
+  { slug: 'eli-s-artisan-bakery',    name: "Eli's Artisan Bakery",    source: 'via', erc8004_id: '53846', store_id: 'e6a32d65-c452-4e07-9393-4fd4c8e8fd6e', expect: '0x437432ec24f0f216bd5280d77664e1d7692a71c3' },
+  { slug: 'the-sentient-startup',    name: 'The Sentient Startup',    source: 'via', erc8004_id: '54476', store_id: '0296cc76-6e88-4459-b978-aea036a893d7', expect: '0x580706c5813304c9f03367843ac4d47ca838e105' },
+  { slug: 'clooudie',                name: 'Clooudie',                source: 'rrg', erc8004_id: '45691', env_key: 'CLOOUDIE_WALLET_PRIVATE_KEY' },
+  { slug: 'nolo',                    name: 'Nolo',                    source: 'rrg', erc8004_id: '45690', env_key: 'NOLO_WALLET_PRIVATE_KEY' },
+  { slug: 'jennys',                  name: "Jenny's",                 source: 'rrg', erc8004_id: '55583', env_key: 'JENNYS_WALLET_PRIVATE_KEY' },
+  { slug: 'unknown-union',           name: 'Unknown Union',           source: 'rrg', erc8004_id: '44897', env_key: 'UNKNOWN_UNION_WALLET_PRIVATE_KEY' },
+  { slug: 'tyo',                     name: 'The Year Of...',          source: 'rrg', erc8004_id: '47353', env_key: 'TYO_WALLET_PRIVATE_KEY' },
+  { slug: 'university-of-diversity', name: 'University of Diversity', source: 'rrg', erc8004_id: '47320', env_key: 'UNIVERSITY_OF_DIVERSITY_WALLET_PRIVATE_KEY' },
+  { slug: 'les-basics',              name: 'LES BASICS',              source: 'rrg', erc8004_id: '51037', env_key: 'LES_BASICS_WALLET_PRIVATE_KEY' },
+  { slug: 'frey-tailored',           name: 'Frey Tailored',           source: 'rrg', erc8004_id: '45686', env_key: 'FREY_TAILORED_WALLET_PRIVATE_KEY' },
+  { slug: 'gumball-3000',            name: 'Gumball 3000',            source: 'rrg', erc8004_id: '51174', env_key: 'GUMBALL_3000_WALLET_PRIVATE_KEY' },
+  { slug: 'livvium',                 name: 'LIVVIUM',                 source: 'rrg', erc8004_id: '55582', env_key: 'LIVVIUM_WALLET_PRIVATE_KEY' },
+  { slug: 'philleywood',             name: 'Philleywood',             source: 'rrg', erc8004_id: '50992', env_key: 'PHILLEYWOOD_WALLET_PRIVATE_KEY' },
+  { slug: 'pitchers-only',           name: 'Pitchers Only',           source: 'rrg', erc8004_id: '54261', env_key: 'PITCHERS_ONLY_WALLET_PRIVATE_KEY' },
+];
+
+const catalogBase = (source) => (source === 'via' ? VIA_BASE : RRG_BASE);
+
+// The seller's OWN MCP endpoint: VIA = /sellers/<slug>/mcp, RRG = /brand/<slug>/mcp.
+const sellerMcpUrl = (seller) =>
+  `${catalogBase(seller.source)}/${seller.source === 'via' ? 'sellers' : 'brand'}/${encodeURIComponent(seller.slug)}/mcp`;
+
+/**
+ * Call a tool on a seller's MCP server over HTTP. These are stateless MCP
+ * (Streamable HTTP, no session) , a single JSON-RPC POST with no initialize
+ * handshake is accepted, and the result comes back SSE-framed. Same shape the
+ * platform's own MCP QA runner uses. Returns the parsed tool payload, or null.
+ */
+async function callSellerMcp(mcpUrl, name, args) {
+  const res = await fetch(mcpUrl, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Accept: 'application/json, text/event-stream' },
+    body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name, arguments: args ?? {} } }),
+    // Generous: list_products overlays LIVE Shopify stock, so a big catalogue
+    // (e.g. Unknown Union ~10s standalone) is slow, and slower again under load.
+    signal: AbortSignal.timeout(45000),
+  }).catch(() => null);
+  if (!res || !res.ok) return null;
+  const text = await res.text();
+  const m = text.match(/data: (\{[\s\S]*\})/); // SSE framing; fall back to raw JSON
+  let outer;
+  try { outer = JSON.parse(m ? m[1] : text); } catch { return null; }
+  if (!outer || outer.error) return null;
+  const inner = outer.result?.content?.[0]?.text;
+  if (typeof inner !== 'string') return null;
+  try { return JSON.parse(inner); } catch { return null; }
+}
+
+const uniq = (arr) => [...new Set(arr.filter((x) => x !== null && x !== undefined && x !== ''))];
+
+/** Normalise one MCP list_products item (RRG agent-product shape OR VIA shape)
+ *  into the candidate the seller's LLM reasons over AND forwards to the buyer's
+ *  judge. The `attributes` block is the point: it carries the STRUCTURED facets
+ *  (colours, sizes, product_type, tags, SKUs) that answer a buyer's hard
+ *  requirements like "black" / "men's", which a bare title never could. */
+function toCandidate(p, seller, mcpUrl) {
+  if (seller.source === 'via') {
+    const tags = Array.isArray(p.tags) && p.tags.length ? p.tags
+      : (typeof p.kind === 'string' && p.kind ? [p.kind] : []);
+    const attributes = {
+      ...(p.attributes && typeof p.attributes === 'object' && !Array.isArray(p.attributes) ? p.attributes : {}),
+      ...(typeof p.category === 'string' && p.category ? { category: p.category } : {}),
+      ...(tags.length ? { tags } : {}),
+    };
+    return {
+      title: p.title,
+      description: typeof p.description === 'string' ? p.description : null,
+      tags,
+      attributes,
+      price_usdc: typeof p.price_usdc === 'number' ? p.price_usdc : null,
+      url: p.source_url || null,
+      mcp_url: mcpUrl,
+    };
+  }
+  // RRG agent-product shape (toAgentProduct): full enhanced data on the wire.
+  const variants = Array.isArray(p.variants) ? p.variants : [];
+  const colors = uniq(variants.map((v) => (v && typeof v.color === 'string' ? v.color : null)));
+  const sizes = uniq(variants.map((v) => (v && v.size != null ? String(v.size) : null)));
+  const skus = uniq(variants.map((v) => (v && typeof v.sku === 'string' ? v.sku : null))).slice(0, 6);
+  const pa = p.productAttributes && typeof p.productAttributes === 'object' ? p.productAttributes : {};
+  const productType = typeof pa.product_type === 'string' ? pa.product_type : null;
+  const shopifyTags = Array.isArray(pa.shopify_tags) ? pa.shopify_tags : [];
+  const attributes = {
+    ...(colors.length ? { colors } : {}),
+    ...(sizes.length ? { sizes } : {}),
+    ...(skus.length ? { skus } : {}),
+    ...(productType ? { product_type: productType } : {}),
+    ...(shopifyTags.length ? { shopify_tags: shopifyTags } : {}),
+    ...(typeof p.category === 'string' && p.category ? { category: p.category } : {}),
+    ...(Array.isArray(p.styleTags) && p.styleTags.length ? { style_tags: p.styleTags } : {}),
+    ...(Array.isArray(p.occasionFit) && p.occasionFit.length ? { occasion_fit: p.occasionFit } : {}),
+  };
+  // Also fold the key facets into tags so a tags-only reader still sees colour/type.
+  const tags = uniq([
+    ...(Array.isArray(p.styleTags) ? p.styleTags : []),
+    ...(Array.isArray(p.occasionFit) ? p.occasionFit : []),
+    ...colors,
+    ...(productType ? [productType] : []),
+    ...(typeof p.category === 'string' && p.category ? [p.category] : []),
+  ]);
+  const price = typeof p.priceUsdc === 'number' ? p.priceUsdc : Number(p.priceUsdc);
+  return {
+    title: p.title,
+    description: typeof p.agentDescription === 'string' && p.agentDescription
+      ? p.agentDescription
+      : (typeof p.description === 'string' ? p.description : null),
+    tags,
+    attributes,
+    price_usdc: Number.isFinite(price) ? price : null,
+    url: p.rrgUrl || p.ecommerceUrl || (p.tokenId != null ? `${RRG_BASE}/rrg/drop/${p.tokenId}` : null),
+    mcp_url: mcpUrl,
+  };
+}
+
+/**
+ * Pull THIS seller's OWN stock from its OWN MCP server (`list_products`). The MCP
+ * is the enhanced-data product surface , the entire VIA thesis , and its agent
+ * visibility is BROADER than the storefront/federation search (e.g. Unknown Union
+ * exposes 86 products incl. hoodies via MCP, but only 10 via /api/via/search). The
+ * seller hands its whole MCP catalogue to its own LLM, the only matcher. We never
+ * read the federation search and filter client-side: that is a thin UI-visible
+ * projection and it is the search VIA is not building.
+ */
+async function ownStock(seller) {
+  const mcp = sellerMcpUrl(seller);
+  const data = await callSellerMcp(mcp, 'list_products', seller.source === 'via' ? { limit: 250 } : {});
+  const rows = Array.isArray(data?.products) ? data.products : [];
+  const candidates = rows
+    .filter((p) => seller.source === 'via' || p.inStock !== false) // honest offers: skip RRG sold-out stock
+    .map((p) => toCandidate(p, seller, mcp))
+    .filter((c) => c && typeof c.title === 'string' && c.title.trim());
+  return candidates.slice(0, 250); // bound the LLM payload; roster catalogues are well under this
+}
+
+/** The seller's OWN decision: which of its candidates to offer, scored 0-100. */
+async function decide(brief, candidates, sellerName) {
+  const list = candidates.map((c, i) => ({ i, title: c.title, description: c.description ? c.description.slice(0, 400) : null, tags: c.tags.slice(0, 12), attributes: c.attributes, price_usdc: c.price_usdc }));
+  const sys =
+    `You are the sales agent for ${sellerName}. A buyer broadcast a brief and you are deciding which items from YOUR OWN stock (the list) are genuinely worth offering. ` +
+    'Reason over each product\'s real data. Be commercially sensible and reasonably generous: offer anything a reasonable buyer with this brief would plausibly consider , the buyer ranks what you send, so you do not need every stated detail proven. ' +
+    'Do NOT offer items that are clearly the wrong product or category, or that plainly contradict a stated must-have. If nothing genuinely fits, offer nothing. ' +
+    'For each item you would offer, give a fit score 0-100 and a one-line reason to the buyer. Respond as JSON: {"offers":[{"i":<index>,"score":<0-100>,"reason":"<one line>"}]}.';
+  const user = JSON.stringify({ brief: { title: brief.title, category: brief.category, looking_for: brief.type_terms, must_haves: brief.requirements, nice_to_haves: brief.preferences, budget_usd: brief.budget_usd }, your_stock: list });
+  const res = await fetch(DEEPSEEK_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${DEEPSEEK_KEY}` },
+    body: JSON.stringify({ model: 'deepseek-chat', temperature: 0, max_tokens: 600, response_format: { type: 'json_object' }, messages: [{ role: 'system', content: sys }, { role: 'user', content: user }] }),
+    signal: AbortSignal.timeout(30000),
+  }).catch(() => null);
+  if (!res || !res.ok) return [];
+  const content = (await res.json().catch(() => ({})))?.choices?.[0]?.message?.content ?? '{}';
+  let parsed;
+  try { parsed = JSON.parse(content); } catch { return []; } // a malformed reply skips this seller, never crashes the pass
+  const picks = [];
+  for (const o of parsed.offers ?? []) {
+    const i = typeof o.i === 'number' ? o.i : Number(o.i);
+    if (!Number.isInteger(i) || i < 0 || i >= candidates.length) continue;
+    picks.push({ i, score: Math.max(0, Math.min(100, Number(o.score) || 0)), reason: String(o.reason || '').slice(0, 300) });
+  }
+  return picks;
+}
+
+/** Self-selection on the FREE teaser (category + product type + one attribute):
+ *  could this seller plausibly fulfil this demand? Decides whether to pay the
+ *  unlock micro-fee at all. One small LLM call over the teaser + a compact view of
+ *  the seller's own catalogue. Fail-closed: on any error, do NOT bid (don't pay to
+ *  read a brief we are not sure about). */
+async function shouldBid(teaser, stock, sellerName) {
+  const titles = uniq(stock.map((c) => c.title)).slice(0, 120); // full product-name list = the reliable category signal
+  const sys =
+    `You are the sales agent for ${sellerName}. A buyer broadcast a teaser of what they want. Below is the full list of product names in YOUR catalogue. ` +
+    'Bid YES if your catalogue plausibly contains items in the same category or spirit as the teaser (e.g. the teaser wants a hoodie and you have hoodies, sweatshirts, or similar apparel). ' +
+    'Bid NO if your products are clearly a different world (food, drink, supplements, etc. vs apparel). Respond JSON {"bid": true|false}.';
+  const user = JSON.stringify({ teaser: { category: teaser.category, product_type: teaser.product_type, attribute: teaser.attribute }, my_product_names: titles });
+  const res = await fetch(DEEPSEEK_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${DEEPSEEK_KEY}` },
+    body: JSON.stringify({ model: 'deepseek-chat', temperature: 0, max_tokens: 20, response_format: { type: 'json_object' }, messages: [{ role: 'system', content: sys }, { role: 'user', content: user }] }),
+    signal: AbortSignal.timeout(20000),
+  }).catch(() => null);
+  if (!res || !res.ok) return false; // fail-closed: don't pay if we couldn't decide
+  try { const j = JSON.parse((await res.json())?.choices?.[0]?.message?.content ?? '{}'); return j.bid === true; }
+  catch { return false; }
+}
+
+// ── x402 client: pay the door's micro-fee from the SELLER's own wallet ────────
+// True x402: the seller signs an EIP-3009 transferWithAuthorization (gasless), the
+// door's CDP facilitator verifies + settles it on-chain and SPONSORS the gas. The
+// seller holds only USDC, never ETH; we never pay or sign a settlement tx.
+const TRANSFER_AUTH_TYPES = { TransferWithAuthorization: [
+  { name: 'from', type: 'address' }, { name: 'to', type: 'address' },
+  { name: 'value', type: 'uint256' }, { name: 'validAfter', type: 'uint256' },
+  { name: 'validBefore', type: 'uint256' }, { name: 'nonce', type: 'bytes32' },
+] };
+
+/** Build a base64 X-PAYMENT header for one x402 PaymentRequirements `req`
+ *  (the 402 body's accepts entry), signing an EIP-3009 authorization. Offline. */
+async function buildXPayment(privkey, req) {
+  const wallet = new ethers.Wallet(privkey);
+  const value = BigInt(req.maxAmountRequired);
+  const validAfter = 0n;
+  const validBefore = BigInt(Math.floor(Date.now() / 1000) + (Number(req.maxTimeoutSeconds) || 300));
+  const nonce = ethers.hexlify(ethers.randomBytes(32));
+  const domain = { name: req.extra?.name || 'USD Coin', version: req.extra?.version || '2', chainId: 8453, verifyingContract: req.asset };
+  const signature = await wallet.signTypedData(domain, TRANSFER_AUTH_TYPES,
+    { from: wallet.address, to: req.payTo, value, validAfter, validBefore, nonce });
+  const payload = { x402Version: 1, scheme: 'exact', network: req.network, payload: { signature, authorization: {
+    from: wallet.address, to: req.payTo, value: value.toString(), validAfter: validAfter.toString(), validBefore: validBefore.toString(), nonce,
+  } } };
+  return Buffer.from(JSON.stringify(payload)).toString('base64');
+}
+
+/** Fetch a door endpoint; on a 402, sign an EIP-3009 authorization with the
+ *  seller's key and retry with the X-PAYMENT header. */
+async function payWithX402(url, options, privkey) {
+  const first = await fetch(url, { ...options, signal: AbortSignal.timeout(20000) }).catch(() => null);
+  if (!first) return { ok: false, status: null, body: null };
+  if (first.status !== 402) { const body = await first.text().catch(() => ''); return { ok: first.ok, status: first.status, body }; }
+  let chal = null;
+  try { chal = JSON.parse(await first.text()); } catch { return { ok: false, status: 402, body: 'no x402 challenge' }; }
+  const req = Array.isArray(chal?.accepts)
+    ? chal.accepts.find((a) => a.scheme === 'exact' && a.network === BASE_NETWORK && String(a.asset).toLowerCase() === USDC_ADDRESS.toLowerCase())
+    : null;
+  if (!req) return { ok: false, status: 402, body: 'no base-usdc exact option' };
+  if (Number(BigInt(req.maxAmountRequired)) / 1e6 > 0.01) return { ok: false, status: 402, body: 'over $0.01 safety cap' };
+  let xpay;
+  try { xpay = await buildXPayment(privkey, req); } catch (e) { return { ok: false, status: 402, body: 'sign failed: ' + e.message }; }
+  const retry = await fetch(url, { ...options, headers: { ...(options.headers || {}), 'X-PAYMENT': xpay }, signal: AbortSignal.timeout(30000) }).catch(() => null);
+  if (!retry) return { ok: false, status: null, body: null };
+  const body = await retry.text().catch(() => '');
+  return { ok: retry.ok, status: retry.status, body, paid: Number(BigInt(req.maxAmountRequired)) / 1e6 };
+}
+
+async function postOffer(doorUrl, seller, p, key) {
+  const body = JSON.stringify({ title: p.title, description: p.description, price_usdc: p.price_usdc, url: p.url, seller_mcp_url: p.mcp_url, seller_slug: seller.slug, seller_name: seller.name, tags: p.tags, attributes: p.attributes, seller_erc8004_id: key.erc8004_id ?? null });
+  const res = await payWithX402(`${doorUrl}/offer`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body }, key.privkey);
+  return res.ok;
+}
+
+// Watermark: the newest broadcast_at this agent has already processed. Each pass
+// asks the feed only for briefs (re)broadcast AFTER it, so we react to NEW
+// broadcasts once, never re-scanning all open demand every pass. First run (no
+// watermark) catches up on everything, then steady-state passes are tiny.
+const WATERMARK_FILE = path.join(os.homedir(), '.via-seller-agent-watermark');
+const readWatermark = () => { try { return fs.readFileSync(WATERMARK_FILE, 'utf8').trim() || null; } catch { return null; } };
+const writeWatermark = (ts) => { try { fs.writeFileSync(WATERMARK_FILE, ts); } catch (e) { console.error('[seller-agents] watermark write failed:', e.message); } };
+
+async function run() {
+  const since = readWatermark();
+  const url = `${VIA_BASE}/api/via/demand?limit=50` + (since ? `&since=${encodeURIComponent(since)}` : '');
+  const feedRes = await fetch(url, { signal: AbortSignal.timeout(8000) }).catch(() => null);
+  if (!feedRes || !feedRes.ok) { console.error('[seller-agents] feed unreachable'); return; }
+  const teasers = (await feedRes.json()).teasers ?? [];
+  console.log(`[seller-agents] ${teasers.length} new teaser(s) since ${since ?? 'start'}; ${ROSTER.length} sellers`);
+  if (teasers.length === 0) { console.log('[seller-agents] no new broadcasts , nothing to do'); return; }
+
+  // Each seller's catalogue is brief-independent, so pull every roster seller's
+  // own MCP catalogue ONCE per pass, then reason it against each new brief. Fetch
+  // in small concurrent batches, NOT all at once: list_products overlays live
+  // Shopify stock and 13 simultaneous calls stress the catalogue host's DB pool.
+  const stockBySlug = new Map();
+  const BATCH = 4;
+  for (let i = 0; i < ROSTER.length; i += BATCH) {
+    const batch = ROSTER.slice(i, i + BATCH);
+    const got = await Promise.all(batch.map(async (s) => [s.slug, await ownStock(s)]));
+    for (const [slug, stock] of got) stockBySlug.set(slug, stock);
+  }
+  for (const s of ROSTER) console.log(`[${s.slug}] ${(stockBySlug.get(s.slug) ?? []).length} item(s) in own MCP catalogue`);
+
+  let offers = 0;
+  for (const t of teasers) {
+    for (const seller of ROSTER) {
+      const key = keyFor(seller);
+      if (!key) continue; // no resolvable wallet key on this host , this seller cannot pay, skip
+      const stock = stockBySlug.get(seller.slug) ?? [];
+      if (stock.length === 0) continue; // empty catalogue , nothing to offer
+
+      // 0. SELF-SELECT on the FREE teaser before paying anything: the teaser IS the
+      // filter. Only a seller that believes it could fulfil this demand pays to
+      // unlock the full brief , a coffee brand never pays to read a hoodie brief.
+      if (!(await shouldBid(t, stock, seller.name))) {
+        console.log(`[${seller.slug}] teaser not relevant , skipped (no unlock fee)`);
+        continue;
+      }
+
+      // Dry-run smoke test (VIA_AGENT_DRY_RUN): the key resolved and the seller
+      // would bid, but pay NOTHING. Lets a new host (the VPS) be verified end to
+      // end without spending while the live host keeps running. No offers persist.
+      if (DRY_RUN) {
+        console.log(`[${seller.slug}] [dry-run] key OK + would unlock/decide on brief ${t.brief_id} (no payment)`);
+        continue;
+      }
+
+      // 1. PAY the micro-fee to unlock the FULL brief at the door (per seller).
+      const unlock = await payWithX402(t.door_url, { method: 'GET' }, key.privkey);
+      if (!unlock.ok) { console.log(`[${seller.slug}] unlock failed (${unlock.status}): ${String(unlock.body).slice(0, 80)}`); continue; }
+      let brief; try { brief = JSON.parse(unlock.body).brief; } catch { brief = null; }
+      if (!brief) continue;
+
+      // 2. Decide over OWN stock (one LLM call). 3. PAY per item put forward.
+      const picks = await decide(brief, stock, seller.name);
+      for (const pick of picks) {
+        const p = stock[pick.i];
+        if (p && await postOffer(t.door_url, seller, p, key)) {
+          offers++;
+          console.log(`[${seller.slug}] paid + offered "${p.title}" (seller score ${pick.score}) on brief ${t.brief_id}`);
+        }
+      }
+    }
+  }
+  // Advance the watermark to the newest broadcast we just handled, so the next
+  // pass starts after it. Re-broadcasts (a buyer agent bumping broadcast_at) sort
+  // newer than the watermark, so they are picked up again , exactly as intended.
+  let maxTs = since;
+  for (const t of teasers) { if (t.broadcast_at && (!maxTs || t.broadcast_at > maxTs)) maxTs = t.broadcast_at; }
+  if (maxTs && maxTs !== since) writeWatermark(maxTs);
+  console.log(`[seller-agents] done , ${offers} offer(s) submitted; watermark=${maxTs ?? 'none'}`);
+}
+
+run().then(() => process.exit(0)).catch((e) => { console.error(e); process.exit(1); });
