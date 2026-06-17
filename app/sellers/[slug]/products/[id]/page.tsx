@@ -2,6 +2,12 @@ import { notFound } from 'next/navigation';
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { getPublicProduct, type PublicProduct } from '@/lib/app/seller-catalog';
+import { db } from '@/lib/app/db';
+import { getBuyerUser } from '@/lib/app/buyer-auth';
+import { Wordmark } from '@/components/app/Wordmark';
+import ThemeToggle from '@/components/app/ThemeToggle';
+import { CheckoutBox } from './CheckoutBox';
+import { CopyField } from './CopyField';
 
 export const dynamic = 'force-dynamic';
 
@@ -36,14 +42,47 @@ export default async function ProductPage({ params }: { params: Promise<{ slug: 
   const { seller, product } = found;
   const configurable = product.pricing_mode === 'configurable';
 
+  // A store is transactable on VIA once it has a store agent wallet (mirrors
+  // isIntegrated in the seller MCP). Human checkout only shows for transactable
+  // stores selling a fixed-price USDC product.
+  const { data: sellerRow } = await db
+    .from('app_sellers')
+    .select('agent_wallet_address')
+    .eq('slug', seller.slug)
+    .maybeSingle();
+  const buyable = !configurable && product.price_usdc !== null && Boolean(sellerRow?.agent_wallet_address);
+
+  // If a VIA buyer is logged in, recognise their funding wallet so the checkout
+  // can greet them and confirm when their connected wallet is the VIA one they
+  // onboarded with (the platform-provisioned email/Google wallet, or their own).
+  let buyerWallet: string | null = null;
+  let buyerName: string | null = null;
+  if (buyable) {
+    const user = await getBuyerUser();
+    if (user) {
+      const { data: b } = await db
+        .from('app_buyers')
+        .select('wallet_address, display_name, handle')
+        .eq('owner_user_id', user.id)
+        .maybeSingle();
+      if (b) {
+        buyerWallet = (b.wallet_address as string | null) ?? null;
+        buyerName = (b.display_name as string | null) ?? (b.handle as string | null) ?? null;
+      }
+    }
+  }
+
   return (
     <main className="min-h-screen bg-background text-ink">
       <header className="border-b border-line">
         <div className="mx-auto flex max-w-5xl items-center justify-between px-6 py-5">
-          <Link href="/" className="wordmark">VIA</Link>
-          <Link href={`/sellers/${seller.slug}`} className="uc-mono text-ink-3 hover:text-ink">
-            {seller.name}
-          </Link>
+          <Link href="/" aria-label="VIA home" className="inline-flex items-center"><Wordmark /></Link>
+          <div className="flex items-center gap-4">
+            <Link href={`/sellers/${seller.slug}`} className="uc-mono text-ink-3 hover:text-ink">
+              {seller.name}
+            </Link>
+            <ThemeToggle />
+          </div>
         </div>
       </header>
 
@@ -54,16 +93,9 @@ export default async function ProductPage({ params }: { params: Promise<{ slug: 
           <span className="text-ink">{product.title}</span>
         </nav>
 
-        <div className="grid gap-10 md:grid-cols-2">
-          <div className="bg-[var(--bg-2)] border border-line aspect-square w-full overflow-hidden">
-            {product.image_url ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img src={product.image_url} alt={product.title} className="h-full w-full object-cover" />
-            ) : (
-              <div className="flex h-full w-full items-center justify-center uc-mono text-ink-3">No image</div>
-            )}
-          </div>
-
+        {/* Data over pictures: VIA products lead with structured detail, not
+            imagery. No image column , the agent buy path is the hero. */}
+        <div className="max-w-2xl">
           <div>
             <div className="uc-mono text-ink-3">{product.kind ?? 'product'}</div>
             <h1 className="font-serif mt-2 text-3xl leading-tight md:text-4xl">{product.title}</h1>
@@ -74,6 +106,17 @@ export default async function ProductPage({ params }: { params: Promise<{ slug: 
 
             {product.description && (
               <p className="mt-6 whitespace-pre-line leading-relaxed text-ink-2">{product.description}</p>
+            )}
+
+            {buyable && (
+              <CheckoutBox
+                slug={seller.slug}
+                productId={product.product_id}
+                priceUsdc={product.price_usdc as number}
+                kind={product.kind}
+                buyerWallet={buyerWallet}
+                buyerName={buyerName}
+              />
             )}
 
             <div className="mt-10 border border-line bg-paper p-5">
@@ -87,11 +130,11 @@ export default async function ProductPage({ params }: { params: Promise<{ slug: 
               <dl className="mt-4 space-y-2 text-sm">
                 <div className="flex gap-3">
                   <dt className="uc-mono w-24 shrink-0 text-ink-3">Seller MCP</dt>
-                  <dd className="font-mono break-all text-ink">{product.mcp_ref.seller_mcp_url}</dd>
+                  <dd><CopyField value={product.mcp_ref.seller_mcp_url} /></dd>
                 </div>
                 <div className="flex gap-3">
                   <dt className="uc-mono w-24 shrink-0 text-ink-3">Product ID</dt>
-                  <dd className="font-mono break-all text-ink">{product.mcp_ref.product_id}</dd>
+                  <dd><CopyField value={product.mcp_ref.product_id} /></dd>
                 </div>
                 {product.mcp_ref.token_id !== null && (
                   <div className="flex gap-3">
@@ -111,6 +154,12 @@ export default async function ProductPage({ params }: { params: Promise<{ slug: 
                 {seller.name} website ↗
               </a>
             )}
+
+            <div className="mt-10 border-t border-line pt-6">
+              <Link href="/faq/payment" className="uc-mono hover:underline" style={{ color: 'var(--live)', fontWeight: 600 }}>
+                How payment works · FAQ →
+              </Link>
+            </div>
           </div>
         </div>
       </div>

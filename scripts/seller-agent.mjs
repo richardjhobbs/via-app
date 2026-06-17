@@ -173,6 +173,9 @@ function toCandidate(p, seller, mcpUrl) {
       attributes,
       price_usdc: typeof p.price_usdc === 'number' ? p.price_usdc : null,
       url: p.source_url || null,
+      // The VIA product UUID. The door uses it to link the buyer's offer at the
+      // canonical buyable product page (/sellers/{slug}/products/{id}).
+      product_id: p.product_id || null,
       mcp_url: mcpUrl,
     };
   }
@@ -233,23 +236,33 @@ async function ownStock(seller) {
     .filter((p) => seller.source === 'via' || p.inStock !== false) // honest offers: skip RRG sold-out stock
     .map((p) => toCandidate(p, seller, mcp))
     .filter((c) => c && typeof c.title === 'string' && c.title.trim());
+  // brand_persona: the standard VIA-network identity field (who the brand is,
+  // what it makes, who for, the vibe). Every member platform's seller MCP emits
+  // it on list_products; the concierge reasons WITH it so it judges a brief as
+  // the brand, not from product strings alone. Falls back to the bare name
+  // (RRG's `brand` is currently a name string) or the roster name if absent.
+  const persona = (typeof data?.brand_persona === 'string' && data.brand_persona.trim())
+    ? data.brand_persona.trim()
+    : (typeof data?.brand === 'string' && data.brand.trim() ? data.brand.trim() : seller.name);
   // HARD RULE: a brand agent MUST consider EVERY product on its own MCP. No
   // positional cap , the old slice(250) silently dropped the tail of large
   // catalogues (pitchers-only's caps sit at indices 256-273 of 274, so they were
   // cut before the LLM ever saw them). decide() chunks the full set for the LLM,
   // so size is bounded by chunk count, never by dropping products.
-  return candidates;
+  return { candidates, persona };
 }
 
 /** Decide over ONE chunk of the seller's stock (one LLM call). `i` indexes the chunk. */
-async function decideChunk(brief, candidates, sellerName) {
+async function decideChunk(brief, candidates, sellerName, persona) {
   const list = candidates.map((c, i) => ({ i, title: c.title, description: c.description ? c.description.slice(0, 400) : null, tags: c.tags.slice(0, 12), attributes: c.attributes, price_usdc: c.price_usdc }));
   const sys =
-    `You are the sales agent for ${sellerName}. A buyer broadcast a brief and you are deciding which items from YOUR OWN stock (the list) genuinely satisfy it. Each offer you make costs a fee, so be honest, not generous. ` +
-    'Offer an item ONLY if it matches the brief\'s PRODUCT TYPE and every explicitly stated hard requirement (colour, gender, size, material, etc.). ' +
-    'A request for a hoodie is NOT satisfied by a sweatshirt, crewneck, or jacket; a request for an olive or green item is NOT satisfied by a black one. Do not stretch to a near-miss the buyer did not ask for , it wastes a paid offer and the buyer rejects it. ' +
-    'Quality over quantity: offer only items you would stand behind for THIS exact brief. If nothing genuinely fits, offer nothing. ' +
-    'For each item you would offer, give a fit score 0-100 (use the full range; reserve 80+ for a strong match on product type AND every hard requirement) and a one-line reason to the buyer. Respond as JSON: {"offers":[{"i":<index>,"score":<0-100>,"reason":"<one line>"}]}.';
+    `You are the Sales Agent for ${sellerName}. This is who your brand is, reason as this brand: "${persona}". ` +
+    'A buyer broadcast a brief and you are deciding which items from YOUR OWN stock (the list) genuinely satisfy it. Each offer you make costs a fee, so be honest, not generous. ' +
+    'Read the brief to tell which kind it is, and handle each on its own terms. ' +
+    '(A) SPECIFIC , it names a product type and/or hard requirements (colour, gender, size, material). Judge each item by what it FUNDAMENTALLY IS , its real product category , never by suggestive words in its title (an item named "Hero\'s Journey Tee" is a t-shirt, and a t-shirt never satisfies a request for a book). Offer only items of the SAME category as the request, including its equivalent forms: a request for a book or reading material is met by books, e-books, reports, papers, guides, documents, essays, or other printed or written matter on the subject (physical or digital); a request for a bag by bags, totes, or packs; and so on , but NEVER by a different category such as apparel, however evocative the name. Within the right category, honour every hard requirement and any specific sub-type the buyer names: a hoodie is NOT satisfied by a sweatshirt, crewneck, or jacket; an olive item is NOT satisfied by a black one. Do not cross categories or stretch to a near-miss , it wastes a paid offer and the buyer rejects it. ' +
+    '(B) INTEREST / THEME / GIFT , it names no specific product type, just an interest, occasion, recipient, or theme (e.g. "a gift for someone into rally and cars"). Judge it through your brand identity above: if your brand and catalogue genuinely speak to that interest, offer the items a knowledgeable buyer of YOUR brand would pick for it; if your brand has nothing to do with that interest, offer nothing. This is precise, not generous , the test is real relevance to the stated interest given who your brand is, never "this could be a nice gift". ' +
+    'Quality over quantity in both cases: offer only items you would stand behind for THIS brief, respect any budget, and if nothing genuinely fits, offer nothing. ' +
+    'For each item you would offer, give a fit score 0-100 (use the full range; reserve 80+ for a strong fit , an exact match on a specific brief, or a clearly on-brand-and-on-interest pick on an interest brief) and a one-line reason to the buyer. Respond as JSON: {"offers":[{"i":<index>,"score":<0-100>,"reason":"<one line>"}]}.';
   const user = JSON.stringify({ brief: { title: brief.title, category: brief.category, looking_for: brief.type_terms, must_haves: brief.requirements, nice_to_haves: brief.preferences, budget_usd: brief.budget_usd }, your_stock: list });
   const res = await fetch(DEEPSEEK_URL, {
     method: 'POST',
@@ -275,13 +288,13 @@ async function decideChunk(brief, candidates, sellerName) {
  *  cap silently dropped the tail and the matching item with it (pitchers-only's
  *  caps sit at indices 256-273 of 274, so its green/olive caps were never seen
  *  and it offered nothing on a cap brief). Picks map back to the full array. */
-async function decide(brief, candidates, sellerName) {
+async function decide(brief, candidates, sellerName, persona) {
   const CHUNK = 80;
-  if (candidates.length <= CHUNK) return decideChunk(brief, candidates, sellerName);
+  if (candidates.length <= CHUNK) return decideChunk(brief, candidates, sellerName, persona);
   const chunks = [];
   for (let off = 0; off < candidates.length; off += CHUNK) chunks.push({ off, items: candidates.slice(off, off + CHUNK) });
   // Chunks run concurrently so a big catalogue costs ~one LLM round-trip, not N.
-  const results = await Promise.all(chunks.map((c) => decideChunk(brief, c.items, sellerName)));
+  const results = await Promise.all(chunks.map((c) => decideChunk(brief, c.items, sellerName, persona)));
   const out = [];
   results.forEach((picks, ci) => { for (const p of picks) out.push({ ...p, i: p.i + chunks[ci].off }); });
   return out;
@@ -292,7 +305,7 @@ async function decide(brief, candidates, sellerName) {
  *  unlock micro-fee at all. One small LLM call over the teaser + a compact view of
  *  the seller's own catalogue. Fail-closed: on any error, do NOT bid (don't pay to
  *  read a brief we are not sure about). */
-async function shouldBid(teaser, stock, sellerName) {
+async function shouldBid(teaser, stock, sellerName, persona) {
   // The gate sees the WHOLE catalogue as two signals: every product NAME, plus the
   // distinct tags/types/categories across the catalogue. Names carry brands and
   // specifics; tags carry the semantic type/topic (so a digital or topical product
@@ -310,10 +323,10 @@ async function shouldBid(teaser, stock, sellerName) {
   // actual catalogue. Handles a brand/artist/label named in any teaser field, and
   // any kind of merchant (goods, food, music, digital, services). Always decides.
   const sys =
-    `You are the autonomous sales agent for "${sellerName}". A buyer has broadcast a short, free teaser of what they want. It has up to three fields , a category, a product type, and one attribute , and any of them may be empty, or may name a brand, label, maker, artist, or title instead of a generic word. You are given the COMPLETE list of your product names plus the distinct tags/types across your catalogue. ` +
+    `You are the autonomous Sales Agent for "${sellerName}". This is who your brand is, reason as this brand: "${persona}". A buyer has broadcast a short, free teaser of what they want. It has up to three fields , a category, a product type, and one attribute , and any of them may be empty, or may name a brand, label, maker, artist, or title instead of a generic word. You are given the COMPLETE list of your product names plus the distinct tags/types across your catalogue. ` +
     'Reading the buyer\'s full brief costs you a fee, so judge from this teaser alone: could you plausibly supply what this buyer wants from your own stock? You MUST return a decision every time, for any kind of request and any kind of catalogue , never refuse to decide. ' +
     'Reason from your ACTUAL catalogue, like a shopkeeper who knows their stock: ' +
-    '1) If the request points to a PRODUCT TYPE: bid YES when your catalogue holds that product , including the same thing under a different word, a sub-type, a variant, or a regional name (judge by meaning, not spelling). A product name often describes its topic, contents, or use rather than its form, so use the tags/types too , an informational or digital item (report, guide, dataset, course) still matches a request for a "document" or a subject when its subject fits. Bid NO when you simply do not stock that kind of product; being in the same broad sector is not enough , selling some things in a sector does not mean you sell this thing. ' +
+    '1) If the request points to a PRODUCT TYPE: judge by the actual KIND of product you stock, not by suggestive words in a product\'s name (a "Hero\'s Journey Tee" is a t-shirt, not a book). Bid YES when your catalogue holds that product or an equivalent form of the SAME category , the same thing under a different word, a sub-type, a variant, or a regional name (judge by meaning, not spelling). A product name often describes its topic, contents, or use rather than its form, so use the tags/types too , reading material counts broadly: a request for a book is met by your books, e-books, reports, papers, guides, documents, essays, or printed/written matter on the subject. Bid NO when you do not stock that KIND of product , a different category never qualifies (apparel does not satisfy a book request), and being in the same broad sector is not enough. ' +
     '2) If the request names a BRAND, label, maker, designer, artist, or title (common , it may appear in ANY field): bid YES only if you ARE that name, or your catalogue actually carries it (it appears among your product names/tags, or is unmistakably part of what you stock). Bid NO if it is a name you do not offer , do not bid YES on a brand you cannot supply just because you sell the same category. ' +
     '3) If only a broad category or attribute is given, with no specific type or brand: bid YES if your catalogue clearly works in that space, NO if you are a different domain. ' +
     'When genuinely unsure, bid YES only if at least one real product of yours could honestly be the answer; otherwise NO. Wasted reads cost money, missed real matches cost sales , weigh both. ' +
@@ -381,7 +394,7 @@ async function payWithX402(url, options, privkey) {
 /** Submit one paid offer. Returns { ok, txHash } , the settlement tx is the
  *  seller's ticket to negotiate/ask the buyer for more direction afterwards. */
 async function postOffer(doorUrl, seller, p, key) {
-  const body = JSON.stringify({ title: p.title, description: p.description, price_usdc: p.price_usdc, url: p.url, seller_mcp_url: p.mcp_url, seller_slug: seller.slug, seller_name: seller.name, tags: p.tags, attributes: p.attributes, seller_erc8004_id: key.erc8004_id ?? null });
+  const body = JSON.stringify({ title: p.title, description: p.description, price_usdc: p.price_usdc, url: p.url, product_id: p.product_id ?? null, seller_mcp_url: p.mcp_url, seller_slug: seller.slug, seller_name: seller.name, tags: p.tags, attributes: p.attributes, seller_erc8004_id: key.erc8004_id ?? null });
   const res = await payWithX402(`${doorUrl}/offer`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body }, key.privkey);
   let txHash = null;
   try { txHash = JSON.parse(res.body)?.payment_tx ?? null; } catch { /* non-JSON body */ }
@@ -422,11 +435,12 @@ async function run() {
   // in small concurrent batches, NOT all at once: list_products overlays live
   // Shopify stock and 13 simultaneous calls stress the catalogue host's DB pool.
   const stockBySlug = new Map();
+  const personaBySlug = new Map();
   const BATCH = 4;
   for (let i = 0; i < ROSTER.length; i += BATCH) {
     const batch = ROSTER.slice(i, i + BATCH);
     const got = await Promise.all(batch.map(async (s) => [s.slug, await ownStock(s)]));
-    for (const [slug, stock] of got) stockBySlug.set(slug, stock);
+    for (const [slug, r] of got) { stockBySlug.set(slug, r.candidates); personaBySlug.set(slug, r.persona); }
   }
   for (const s of ROSTER) console.log(`[${s.slug}] ${(stockBySlug.get(s.slug) ?? []).length} item(s) in own MCP catalogue`);
 
@@ -437,11 +451,14 @@ async function run() {
       if (!key) continue; // no resolvable wallet key on this host , this seller cannot pay, skip
       const stock = stockBySlug.get(seller.slug) ?? [];
       if (stock.length === 0) continue; // empty catalogue , nothing to offer
+      const persona = personaBySlug.get(seller.slug) ?? seller.name;
 
       // 0. SELF-SELECT on the FREE teaser before paying anything: the teaser IS the
       // filter. Only a seller that believes it could fulfil this demand pays to
       // unlock the full brief , a coffee brand never pays to read a hoodie brief.
-      if (!(await shouldBid(t, stock, seller.name))) {
+      // The seller judges as ITS BRAND (persona), so a rally brand self-selects a
+      // rally-gift teaser while a bakery does not , self-selection, not fee waste.
+      if (!(await shouldBid(t, stock, seller.name, persona))) {
         console.log(`[${seller.slug}] teaser not relevant , skipped (no unlock fee)`);
         continue;
       }
@@ -462,7 +479,7 @@ async function run() {
       if (!brief) continue;
 
       // 2. Decide over OWN stock; keep only genuine fits, best first.
-      const ranked = (await decide(brief, stock, seller.name))
+      const ranked = (await decide(brief, stock, seller.name, persona))
         .filter((pk) => pk.score >= MIN_OFFER_SCORE)
         .sort((a, b) => b.score - a.score);
       if (ranked.length === 0) { console.log(`[${seller.slug}] unlocked brief ${t.brief_id}, nothing genuinely fits , no offer`); continue; }
@@ -487,7 +504,7 @@ async function run() {
           console.log(`[${seller.slug}] offered ${Math.min(ranked.length, MAX_INITIAL_OFFERS)}, invited more direction; no reply , holding ${held.length} back`);
         } else {
           const heldStock = held.map((h) => stock[h.i]).filter(Boolean);
-          const refined = (await decide({ ...brief, requirements: [...(brief.requirements ?? []), reply] }, heldStock, seller.name))
+          const refined = (await decide({ ...brief, requirements: [...(brief.requirements ?? []), reply] }, heldStock, seller.name, persona))
             .filter((pk) => pk.score >= MIN_OFFER_SCORE)
             .sort((a, b) => b.score - a.score)
             .slice(0, MAX_FOLLOWUP_OFFERS);

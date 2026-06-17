@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { ConnectButton, PayEmbed, useActiveAccount } from 'thirdweb/react';
+import { PayEmbed, useActiveAccount, useConnectModal } from 'thirdweb/react';
 import { inAppWallet, createWallet } from 'thirdweb/wallets';
 import { base } from 'thirdweb/chains';
 import { thirdwebClient } from '@/lib/app/thirdwebClient';
@@ -38,15 +38,29 @@ const INPUT_CLS = 'w-full bg-background border border-line-strong px-3 py-2 text
 interface OrderInfo { order_ref: string; total_usdc: number; }
 
 export function CheckoutBox({
-  slug, productId, priceUsdc, kind,
+  slug, productId, priceUsdc, kind, buyerWallet, buyerName,
 }: {
   slug: string;
   productId: string;
   priceUsdc: number;
   kind: string | null;
+  /** The logged-in VIA buyer's funding wallet, if any. Used to greet them and
+   *  confirm when the connected wallet is the VIA one they onboarded with. */
+  buyerWallet?: string | null;
+  buyerName?: string | null;
 }) {
   const account = useActiveAccount();
+  const { connect, isConnecting } = useConnectModal();
   const isPhysical = kind === 'physical';
+
+  // "Create wallet" and "Connect wallet" open the same thirdweb modal: it offers
+  // email/Google (creates a wallet) and external wallets (connect an existing
+  // one). Two labelled buttons make the choice obvious to newcomers.
+  const openWallet = () => { void connect({ client: thirdwebClient, chain: base, wallets, size: 'compact' }); };
+
+  // True when the connected wallet is the VIA wallet the buyer onboarded with.
+  const isViaWallet = Boolean(account && buyerWallet && account.address.toLowerCase() === buyerWallet.toLowerCase());
+  const shortWallet = buyerWallet ? `${buyerWallet.slice(0, 6)}…${buyerWallet.slice(-4)}` : null;
 
   // Live USDC balance of the connected wallet (ported from RRG PurchaseFlow): a
   // raw balanceOf eth_call, so we can flag insufficient funds and offer a top-up
@@ -188,16 +202,43 @@ export function CheckoutBox({
     <div className="mt-6 border border-line bg-paper p-5">
       <div className="uc-mono text-ink-3">Buy now</div>
       <p className="mt-2 text-sm text-ink-2">
-        Pay in USDC on Base with a connected wallet, or by card (funds on-ramp to your account wallet, then settle).
+        Pay {priceUsdc.toFixed(2)} USDC on Base. Settles instantly, the seller is notified to fulfil your order.
       </p>
 
+      {/* Step 1: get a wallet. You pay from your own wallet, the one VIA makes
+          for you (sign in with email or Google), or your own (MetaMask, Coinbase).
+          Both buttons open the same chooser, labelled for new vs existing users. */}
       <div className="mt-4">
-        <ConnectButton client={thirdwebClient} chain={base} wallets={wallets} connectButton={{ label: 'Connect wallet' }} />
+        <div className="uc-mono text-ink-3" style={{ fontSize: 10 }}>Step 1 · Your wallet</div>
+        {!account ? (
+          <>
+            <p className="mt-2 text-sm text-ink-2">
+              {buyerName
+                ? <>Welcome back, {buyerName}. Sign in with the email or Google you joined VIA with to use your VIA wallet{shortWallet ? <> (<span className="font-mono">{shortWallet}</span>)</> : null}, or connect your own.</>
+                : <>New here? Create a wallet in seconds with your email or Google, you stay in control of it. Already have a wallet? Connect MetaMask, Coinbase or WalletConnect.</>}
+            </p>
+            <div className="mt-3 flex gap-3">
+              <button type="button" onClick={openWallet} disabled={isConnecting} className="btn disabled:opacity-40" style={{ flex: 1 }}>
+                Create wallet
+              </button>
+              <button type="button" onClick={openWallet} disabled={isConnecting} className="btn ghost disabled:opacity-40" style={{ flex: 1 }}>
+                Connect wallet
+              </button>
+            </div>
+            <p className="mt-2 text-xs text-ink-3">Create makes you a new wallet with email or Google. Connect links a wallet you already have.</p>
+          </>
+        ) : (
+          <div className="mt-2 text-xs">
+            {isViaWallet ? (
+              <span className="text-[color:var(--live)]">Connected · your VIA wallet {shortWallet ? <span className="font-mono">({shortWallet})</span> : null}</span>
+            ) : (
+              <span className="text-ink-3">Connected · <span className="font-mono">{account.address.slice(0, 6)}…{account.address.slice(-4)}</span></span>
+            )}
+            {balance !== null && <span className="text-ink-3"> · balance {balance.toFixed(2)} USDC</span>}
+            <button type="button" onClick={openWallet} className="ml-3 underline text-ink-3 hover:text-ink">Use a different wallet</button>
+          </div>
+        )}
       </div>
-
-      {account && balance !== null && (
-        <p className="mt-2 text-xs text-ink-3">Wallet balance: {balance.toFixed(2)} USDC</p>
-      )}
 
       {insufficient && status !== 'card' && (
         <div className="mt-4 border border-line-strong bg-background p-4">
@@ -224,7 +265,9 @@ export function CheckoutBox({
       )}
 
       {isPhysical && (
-        <div className="mt-5 grid gap-2 sm:grid-cols-2">
+        <div className="mt-5">
+        <div className="uc-mono text-ink-3" style={{ fontSize: 10 }}>Delivery address</div>
+        <div className="mt-3 grid gap-2 sm:grid-cols-2">
           <input className={`${INPUT_CLS} sm:col-span-2`} placeholder="Full name" value={delivery.name} onChange={(e) => setField('name', e.target.value)} />
           <input className={`${INPUT_CLS} sm:col-span-2`} placeholder="Address line 1" value={delivery.address_line1} onChange={(e) => setField('address_line1', e.target.value)} />
           <input className={`${INPUT_CLS} sm:col-span-2`} placeholder="Address line 2 (optional)" value={delivery.address_line2} onChange={(e) => setField('address_line2', e.target.value)} />
@@ -233,6 +276,7 @@ export function CheckoutBox({
           <input className={INPUT_CLS} placeholder="Postcode" value={delivery.postcode} onChange={(e) => setField('postcode', e.target.value)} />
           <input className={INPUT_CLS} placeholder="Country (ISO-2, e.g. GB)" maxLength={2} value={delivery.country} onChange={(e) => setField('country', e.target.value.toUpperCase())} />
           <input className={`${INPUT_CLS} sm:col-span-2`} placeholder="Phone" value={delivery.phone} onChange={(e) => setField('phone', e.target.value)} />
+        </div>
         </div>
       )}
 
@@ -254,25 +298,33 @@ export function CheckoutBox({
           <p className="mt-2 text-xs text-ink-3">After the card payment clears, your USDC is sent to settle order {order.order_ref}.</p>
         </div>
       ) : (
-        <div className="mt-5 flex flex-wrap gap-3">
-          <button
-            type="button"
-            onClick={() => void payWithUsdc()}
-            disabled={!account || status === 'working' || insufficient}
-            className="btn disabled:opacity-40 disabled:cursor-not-allowed"
-          >
-            {status === 'working' ? 'Working…' : `Pay ${priceUsdc.toFixed(2)} USDC`}
-          </button>
-          {priceUsdc >= CARD_MIN_USD && !insufficient && (
+        <div className="mt-5">
+          <div className="uc-mono text-ink-3" style={{ fontSize: 10 }}>Step 2 · Pay</div>
+          <p className="mt-2 text-xs text-ink-3">
+            {account
+              ? 'Pay directly from your wallet balance, or use a card (card funds top up your wallet in USDC, then settle).'
+              : 'Connect your wallet above to enable payment. Card payments fund your VIA wallet, then settle, so a wallet is needed either way.'}
+          </p>
+          <div className="mt-3 flex flex-wrap gap-3">
             <button
               type="button"
-              onClick={() => void startCard()}
-              disabled={!account || status === 'working'}
-              className="btn ghost disabled:opacity-40 disabled:cursor-not-allowed"
+              onClick={() => void payWithUsdc()}
+              disabled={!account || status === 'working' || insufficient}
+              className="btn disabled:opacity-40 disabled:cursor-not-allowed"
             >
-              Pay with card
+              {status === 'working' ? 'Working…' : `Pay ${priceUsdc.toFixed(2)} USDC`}
             </button>
-          )}
+            {priceUsdc >= CARD_MIN_USD && !insufficient && (
+              <button
+                type="button"
+                onClick={() => void startCard()}
+                disabled={!account || status === 'working'}
+                className="btn ghost disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                Pay with card
+              </button>
+            )}
+          </div>
         </div>
       )}
 
@@ -280,7 +332,6 @@ export function CheckoutBox({
         <p className="mt-3 text-xs text-ink-3">Card payment is available on orders of {CARD_MIN_USD} USDC or more. Use a wallet for smaller amounts.</p>
       )}
       {msg && <p className={`mt-3 text-sm ${status === 'error' ? 'text-[color:var(--danger)]' : 'text-ink-2'}`}>{msg}</p>}
-      {!account && <p className="mt-3 text-xs text-ink-3">Connect a wallet to buy. No wallet? Connect with email or Google to create one.</p>}
     </div>
   );
 }

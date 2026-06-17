@@ -1,171 +1,166 @@
 'use client';
 
-import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import ThemeToggle from '@/components/app/ThemeToggle';
 import { Wordmark } from '@/components/app/Wordmark';
 import TestAgentBadge from '@/components/app/TestAgentBadge';
+import MatchNotifyDot from '@/components/app/MatchNotifyDot';
 
 /* ──────────────────────────────────────────────────────────────────────────
-   Buyer dashboard, Maison design. Identity (name, agent code, MCP url) is real;
-   the live-activity ledger and open-negotiation cards are design seed data, a
-   visual prototype of the agent's work surface.
+   Buyer dashboard, Maison design. Every figure is real: identity plus the
+   buyer's own briefs (app_buyer_intents) and trained preferences
+   (app_buyer_memories). No fabricated activity/negotiation/spend , an untrained
+   agent is told it is untrained and pointed at its training surface.
    ────────────────────────────────────────────────────────────────────────── */
 
-const FEED = [
-  { t: '07:04', seller: 'ELI·SA',     item: 'Daily croissants, dozen',  amt: '32'  },
-  { t: '06:58', seller: 'agent/0x4c', item: 'Cold brew kegs, weekly',   amt: '180' },
-  { t: '06:45', seller: 'agent/0x90', item: 'Compostable cups, 5k',     amt: '240' },
-  { t: '06:30', seller: 'RYE·SA',     item: 'Sourdough, daily 20',      amt: '220' },
-  { t: '06:12', seller: 'agent/0x33', item: 'Oat milk, 24 cartons',     amt: '96'  },
-  { t: '05:55', seller: 'BEAN·SA',    item: 'Espresso beans, 10kg',     amt: '310' },
-  { t: '05:40', seller: 'agent/0x77', item: 'Pastry boxes, 1k',         amt: '85'  },
-];
-const FSTATUS = ['SEARCHING', 'MATCHED', 'NEGOTIATING', 'BOOKED'];
-const FCOLOR: Record<string, string> = {
-  SEARCHING: 'var(--ink-3)', MATCHED: 'var(--accent)', NEGOTIATING: 'var(--accent)', BOOKED: 'var(--live)',
-};
-
-const NEGOS = [
-  { seller: 'ELI·SA',     item: 'Daily croissants, dozen', cap: 32,  ask: 38  },
-  { seller: 'agent/0x4c', item: 'Cold brew kegs, weekly',  cap: 180, ask: 210 },
-  { seller: 'agent/0x90', item: 'Compostable cups, 5k',    cap: 240, ask: 275 },
-];
-
-const BRIEFS = [
-  { brief: 'Daily croissants for the counter', cat: 'Pastry',   budget: '32 / day',  matches: '6', status: 'NEGOTIATING' },
-  { brief: 'Cold brew kegs, weekly',           cat: 'Coffee',   budget: '180 / wk',  matches: '4', status: 'NEGOTIATING' },
-  { brief: 'Compostable cups, 5k',             cat: 'Supplies', budget: '240',       matches: '9', status: 'SEARCHING' },
-  { brief: 'Sourdough, daily 20 loaves',       cat: 'Bread',    budget: '220 / wk',  matches: '3', status: 'BOOKED' },
-  { brief: 'Oat milk, monthly',                cat: 'Dairy',    budget: '96 / mo',   matches: '5', status: 'BOOKED' },
-  { brief: 'Seasonal fruit tarts',             cat: 'Pastry',   budget: 'Open',      matches: '2', status: 'PAUSED' },
-];
-
-function useDrift(min: number, max: number, ms: number) {
-  const [v, setV] = useState(Math.round((min + max) / 2));
-  useEffect(() => {
-    const id = setInterval(() => setV(Math.floor(min + Math.random() * (max - min + 1))), ms);
-    return () => clearInterval(id);
-  }, [min, max, ms]);
-  return v;
+export interface BriefRow {
+  id: string;
+  text: string;
+  status: string;
+  createdAt: string;
+  matchCount: number;
 }
+
+export interface MatchRow {
+  id: string;
+  title: string;
+  sellerName: string;
+  priceUsdc: number | null;
+  currency: string;
+  productUrl: string;
+  createdAt: string;
+}
+
+export interface PitchRow {
+  id: string;
+  productTitle: string;
+  priceUsdc: number | null;
+  url: string | null;
+  /** Canonical buyable VIA product page (/sellers/{slug}/products/{id}). Present
+   *  only for transactable VIA sellers; drives the "Buy now" CTA. */
+  buyUrl: string | null;
+  seller: string;
+  fits: boolean;
+  score: number;
+  reason: string;
+  briefText: string;
+  createdAt: string;
+}
+
+const OPEN_STATUSES = ['open', 'broadcast', 'matched'];
 
 function LiveDot() {
   return <span className="live-dot" aria-hidden />;
 }
 
-function Metric({ label, val, sub }: { label: string; val: string | number; sub: string }) {
-  return (
-    <div className="metric-cell">
+function Metric({ label, val, sub, href }: { label: string; val: string | number; sub: string; href?: string }) {
+  const inner = (
+    <>
       <div className="metric-val tnum">{val}</div>
       <div className="uc-mono metric-lbl">{label}<span style={{ color: 'var(--ink-3)' }}> · {sub}</span></div>
+    </>
+  );
+  if (href) {
+    return (
+      <Link href={href} className="metric-cell" style={{ textDecoration: 'none', color: 'inherit', display: 'block' }}>
+        {inner}
+      </Link>
+    );
+  }
+  return <div className="metric-cell">{inner}</div>;
+}
+
+function BriefItem({ b }: { b: BriefRow }) {
+  const open = OPEN_STATUSES.includes(b.status);
+  const searchingEmpty = open && b.matchCount === 0;
+  return (
+    <div className="lst-row" style={searchingEmpty ? { display: 'block' } : undefined}>
+      {searchingEmpty ? (
+        <>
+          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'baseline' }}>
+            <span className="lst-item">{b.text}</span>
+            <span className="lst-tag uc-mono" style={{ color: 'var(--live)', borderColor: 'var(--live)' }}>{b.status}</span>
+          </div>
+          <div style={{ fontSize: 11.5, color: 'var(--ink-3)', marginTop: 4 }}>
+            Broadcast to the network. No offers yet for this brief. It stays open and sellers will offer as they find a match.
+          </div>
+        </>
+      ) : (
+        <>
+          <span className="lst-item">{b.text}</span>
+          <span className="font-mono lst-lead">{new Date(b.createdAt).toISOString().slice(0, 10)}</span>
+          <span style={{ textAlign: 'right' }}>
+            <span
+              className="lst-tag uc-mono"
+              style={{
+                color: open ? 'var(--live)' : 'var(--ink-3)',
+                borderColor: open ? 'var(--live)' : 'var(--line-strong)',
+              }}
+            >
+              {b.status}
+            </span>
+          </span>
+        </>
+      )}
     </div>
   );
 }
 
-function Ledger({ agentCode }: { agentCode: string }) {
-  const [tick, setTick] = useState(0);
-  useEffect(() => { const id = setInterval(() => setTick((t) => t + 1), 1900); return () => clearInterval(id); }, []);
-  return (
-    <div className="panel">
-      <div className="panel-head">
-        <h3>Live activity</h3>
-        <div className="uc-mono" style={{ fontSize: 9.5, color: 'var(--ink-3)', display: 'flex', alignItems: 'center', gap: 7 }}>
-          <LiveDot /> {agentCode}
-        </div>
-      </div>
-      <div className="ledger">
-        <div className="ledger-row ledger-head uc-mono">
-          <span>TIME</span><span>SELLER</span><span>ITEM</span><span style={{ textAlign: 'right' }}>STATUS</span><span style={{ textAlign: 'right' }}>USDC</span>
-        </div>
-        {FEED.map((r, i) => {
-          const st = FSTATUS[(tick + i) % FSTATUS.length];
-          return (
-            <div className="ledger-row" key={i}>
-              <span className="font-mono lg-dim">{r.t}</span>
-              <span className="font-mono lg-buyer">{r.seller}</span>
-              <span className="lg-item">{r.item}</span>
-              <span style={{ textAlign: 'right' }}>
-                <span className="font-mono lg-status" style={{ color: FCOLOR[st], borderColor: st === 'BOOKED' ? 'var(--live)' : 'var(--line-strong)' }}>{st}</span>
-              </span>
-              <span className="font-mono lg-amt" style={{ color: st === 'BOOKED' ? 'var(--ink)' : 'var(--ink-3)' }}>{r.amt}</span>
-            </div>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
-function NegoCard({ n }: { n: typeof NEGOS[number] }) {
-  const [ask, setAsk] = useState(n.ask);
-  const [status, setStatus] = useState<'open' | 'countered' | 'booked'>('open');
-  const pct = Math.min(100, Math.round((n.cap / ask) * 100));
-  const counter = () => { setAsk((a) => Math.max(n.cap, a - Math.ceil((a - n.cap) / 2))); setStatus('countered'); };
-  const accept = () => setStatus('booked');
-  return (
-    <div className="nego-card">
-      <div className="nego-top">
-        <div>
-          <div className="nego-item">{n.item}</div>
-          <div className="uc-mono nego-buyer">{n.seller}</div>
-        </div>
-        <div className={'nego-pill uc-mono ' + status}>{status === 'booked' ? 'BOOKED' : status === 'countered' ? 'COUNTERED' : 'OPEN'}</div>
-      </div>
-      <div className="nego-nums">
-        <div><span className="uc-mono nego-k">THEIR ASK</span><span className="nego-v tnum">{ask}</span></div>
-        <div className="nego-arrow">{status === 'booked' ? '·' : '←'}</div>
-        <div style={{ textAlign: 'right' }}><span className="uc-mono nego-k">YOUR CAP</span><span className="nego-v tnum">{n.cap}</span></div>
-      </div>
-      <div className="nego-bar"><span style={{ width: pct + '%', background: status === 'booked' ? 'var(--live)' : 'var(--accent)' }} /></div>
-      <div className="nego-actions">
-        {status === 'booked'
-          ? <div className="uc-mono nego-done"><span className="d" /> BOOKED AT {ask} USDC</div>
-          : <>
-              <button className="nego-btn ghost" onClick={counter}>Let agent counter</button>
-              <button className="nego-btn fill" onClick={accept} disabled={ask > n.cap} style={ask > n.cap ? { opacity: 0.45, cursor: 'not-allowed' } : undefined}>
-                {ask > n.cap ? 'Over cap' : 'Book'}
-              </button>
-            </>}
-      </div>
-    </div>
-  );
-}
-
-function Brief({ b }: { b: typeof BRIEFS[number] }) {
-  const cls = 's-' + b.status.toLowerCase().replace(/ /g, '-');
-  return (
-    <div className="lst-row">
-      <span className="lst-item">{b.brief}</span>
-      <span className="font-mono lst-cat">{b.cat}</span>
-      <span className="lst-price tnum">{b.budget}</span>
-      <span className="font-mono lst-lead">{b.matches} matches</span>
-      <span style={{ textAlign: 'right' }}><span className={'lst-tag uc-mono ' + cls}>{b.status}</span></span>
-    </div>
-  );
+function priceLabel(m: MatchRow): string {
+  if (m.priceUsdc === null) return 'price on request';
+  return `${m.priceUsdc.toFixed(2)} ${m.currency}`;
 }
 
 export default function BuyerDashboardClient({
-  name, handle, agentCode, mcpUrl,
+  name, handle, buyerId, agentCode, mcpUrl, prefsCount, openBriefs, briefs, matches, matchCount, newCount, pitches, offersCount, newPitchCount, credits,
 }: {
-  name: string; handle: string; agentCode: string; mcpUrl: string;
+  name: string;
+  handle: string;
+  buyerId: string;
+  agentCode: string;
+  mcpUrl: string;
+  prefsCount: number;
+  openBriefs: number;
+  briefs: BriefRow[];
+  matches: MatchRow[];
+  matchCount: number;
+  newCount: number;
+  pitches: PitchRow[];
+  offersCount: number;
+  newPitchCount: number;
+  credits: number;
 }) {
-  const matches = useDrift(28, 44, 2400);
+  const trainHref = `/buyer/${handle}/admin/buying-agent`;
   const intentsHref = `/buyer/${handle}/admin/intents`;
   const delegationHref = `/buyer/${handle}/admin/delegation`;
+  const creditsHref = `/buyer/${handle}/admin/credits`;
+  const matchesHref = `/buyer/${handle}/admin/matches`;
+
+  const trained = prefsCount > 0;
+  const hasBriefs = briefs.length > 0;
+  const blankSlate = !trained && !hasBriefs;
+
+  const agentLine = trained
+    ? `Your Buying Agent · ${agentCode} · ${prefsCount} ${prefsCount === 1 ? 'preference' : 'preferences'} trained`
+    : `Your Buying Agent · ${agentCode} · not yet trained`;
+
   return (
     <div className="dash-page">
       <header className="via-top">
         <div className="via-top-inner">
           <nav className="dash-nav">
-            <Link href={`/buyer/${handle}/admin`} className="is-active">Dashboard</Link>
+            <Link href={`/buyer/${handle}/admin`} className="is-active" style={{ display: 'inline-flex', alignItems: 'center' }}>Dashboard<MatchNotifyDot buyerId={buyerId} /></Link>
             <Link href={intentsHref}>Briefs</Link>
-            <Link href={intentsHref}>Bookings</Link>
+            <Link href={trainHref}>Train</Link>
+            <Link href={creditsHref}>Credits</Link>
           </nav>
           <Link href="/" aria-label="VIA home" style={{ display: 'inline-flex', justifyContent: 'center' }}><Wordmark /></Link>
           <div className="dash-right">
             <a href={mcpUrl} target="_blank" rel="noreferrer" className="dash-mcp uc-mono">MCP ↗</a>
             <div className="dash-acct"><span className="dash-avatar" />{name}</div>
+            <form action="/api/buyer/auth/logout" method="post" style={{ display: 'inline-flex' }}>
+              <button type="submit" className="dash-mcp uc-mono">Sign out</button>
+            </form>
             <ThemeToggle />
           </div>
         </div>
@@ -175,49 +170,159 @@ export default function BuyerDashboardClient({
         <div className="dash-subhead">
           <div>
             <span className="dash-eyebrow">· Buyer</span>
-            <h1 className="dash-h1">Good morning, <em>{name}</em>.</h1>
+            <h1 className="dash-h1">Welcome, <em>{name}</em>.</h1>
             <div className="dash-agentline">
-              <span className="dash-agentpill"><LiveDot /> Your Buying Agent · {agentCode} · negotiating 3 briefs now</span>
+              <span className="dash-agentpill"><LiveDot /> {agentLine}</span>
             </div>
           </div>
           <div className="dash-actions">
             <Link href={delegationHref} className="btn ghost">Adjust limits</Link>
-            <Link href={intentsHref} className="btn">New brief</Link>
+            {trained
+              ? <Link href={intentsHref} className="btn">New brief</Link>
+              : <Link href={trainHref} className="btn">Train your agent</Link>}
           </div>
         </div>
 
         <div className="dash-metrics">
-          <Metric label="BRIEFS LIVE" val="4" sub="sourcing" />
-          <Metric label="MATCHES FOUND" val={matches} sub="this week" />
-          <Metric label="IN NEGOTIATION" val="3" sub="live" />
-          <Metric label="SPENT · 30D" val="6,240" sub="USDC" />
+          <Metric label="CREDITS" val={credits.toLocaleString()} sub="balance" href={creditsHref} />
+          <Metric label="BRIEFS LIVE" val={openBriefs} sub="broadcast" href={intentsHref} />
+          <Metric label="OFFERS" val={offersCount} sub="from sellers" href={matchesHref} />
+          <Metric label="PREFERENCES" val={prefsCount} sub="trained" href={trainHref} />
         </div>
 
-        <div className="dash-main">
-          <Ledger agentCode={agentCode} />
+        {pitches.length > 0 && (
+          <div className="panel listings-panel">
+            <div className="panel-head">
+              <h3>Offers</h3>
+              <div style={{ display: 'inline-flex', alignItems: 'center', gap: 12 }}>
+                {newPitchCount > 0 && (
+                  <span className="new-results-pill"><span className="d" aria-hidden />{newPitchCount} new</span>
+                )}
+                <div className="uc-mono" style={{ fontSize: 9.5, color: 'var(--ink-3)' }}>sellers offering against your briefs</div>
+              </div>
+            </div>
+            <div className="lst">
+              {pitches.map((p) => {
+                // A fits offer is buyable at the VIA product page (buyUrl) or, for
+                // non-VIA sellers (e.g. RRG), the seller's own product page (url).
+                // The top-right pill becomes a "Buy now" CTA in place of the "fits"
+                // tag, styled identically (live green). Internal links nav in-tab;
+                // external ones open a new tab.
+                const buyTarget = p.buyUrl ?? p.url;
+                const buyInternal = Boolean(p.buyUrl);
+                const showBuy = p.fits && Boolean(buyTarget);
+                const titleHref = buyTarget;
+                const titleExternal = !buyInternal && Boolean(p.url);
+                const pillStyle = { color: 'var(--live)', borderColor: 'var(--live)', textDecoration: 'none', flexShrink: 0 } as const;
+                return (
+                  <div key={p.id} className="lst-row" style={{ display: 'block' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'baseline' }}>
+                      <span className="lst-item">
+                        {titleHref
+                          ? <a href={titleHref} {...(titleExternal ? { target: '_blank', rel: 'noreferrer' } : {})} style={{ color: 'inherit', textDecoration: 'none' }}>{p.productTitle}</a>
+                          : p.productTitle}
+                      </span>
+                      {showBuy ? (
+                        buyInternal ? (
+                          <Link href={buyTarget!} className="lst-tag uc-mono" style={pillStyle}>Buy now</Link>
+                        ) : (
+                          <a href={buyTarget!} target="_blank" rel="noreferrer" className="lst-tag uc-mono" style={pillStyle}>Buy now</a>
+                        )
+                      ) : (
+                        <span className="lst-tag uc-mono" style={{ color: p.fits ? 'var(--live)' : 'var(--ink-3)', borderColor: p.fits ? 'var(--live)' : 'var(--line-strong)' }}>
+                          {p.fits ? 'fits' : 'no fit'}
+                        </span>
+                      )}
+                    </div>
+                    <div style={{ fontSize: 11.5, color: 'var(--ink-3)', marginTop: 4 }}>
+                      {p.seller}{typeof p.priceUsdc === 'number' ? ` · ${p.priceUsdc.toFixed(2)} USDC` : ''}
+                      {p.briefText ? ` · for "${p.briefText.slice(0, 60)}"` : ''}
+                      {p.reason ? ` · ${p.reason}` : ''}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {matches.length > 0 && (
+          <div className="panel listings-panel">
+            <div className="panel-head">
+              <h3>Might also interest you</h3>
+              <div style={{ display: 'inline-flex', alignItems: 'center', gap: 12 }}>
+                {newCount > 0 && (
+                  <span className="new-results-pill"><span className="d" aria-hidden />{newCount} new</span>
+                )}
+                <div className="uc-mono" style={{ fontSize: 9.5, color: 'var(--ink-3)' }}>not an exact match to your brief, but worth a look</div>
+                <Link href={matchesHref} className="uc-mono" style={{ fontSize: 10, color: 'var(--ink-2)', textDecoration: 'none', borderBottom: '1px solid var(--line-strong)', paddingBottom: 2 }}>
+                  View all →
+                </Link>
+              </div>
+            </div>
+            <div className="lst">
+              <div className="lst-row lst-head uc-mono">
+                <span>PRODUCT</span><span>SELLER</span><span style={{ textAlign: 'right' }}>PRICE</span>
+              </div>
+              {matches.map((m) => (
+                <a
+                  key={m.id}
+                  href={m.productUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="lst-row"
+                  style={{ textDecoration: 'none', color: 'inherit' }}
+                >
+                  <span className="lst-item">{m.title}</span>
+                  <span className="font-mono lst-lead">{m.sellerName}</span>
+                  <span className="lst-price tnum" style={{ textAlign: 'right' }}>{priceLabel(m)}</span>
+                </a>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {blankSlate ? (
           <div className="panel">
             <div className="panel-head">
-              <h3>Open negotiations</h3>
-              <div className="uc-mono" style={{ fontSize: 9.5, color: 'var(--ink-3)' }}>3 live</div>
+              <h3>Get your agent working</h3>
             </div>
-            <div className="nego-list">
-              {NEGOS.map((n, i) => <NegoCard key={i} n={n} />)}
+            <div style={{ padding: '24px 20px', display: 'grid', gap: 20 }}>
+              <p style={{ color: 'var(--ink-2)', fontSize: 14, lineHeight: 1.6, maxWidth: 560 }}>
+                Your Buying Agent is live but has nothing to act on yet. Two steps to start:
+                brief it on how you like to buy, then tell it what you are looking for. Seller
+                agents reach it at <code className="font-mono" style={{ color: 'var(--ink)' }}>{`/buyers/${handle}/mcp`}</code>.
+              </p>
+              <div className="dash-actions">
+                <Link href={trainHref} className="btn">Train your agent</Link>
+                <Link href={intentsHref} className="btn ghost">Add a brief</Link>
+              </div>
             </div>
           </div>
-        </div>
-
-        <div className="panel listings-panel">
-          <div className="panel-head">
-            <h3>Your briefs</h3>
-            <Link href={intentsHref} className="uc-mono" style={{ fontSize: 10, color: 'var(--ink-2)', textDecoration: 'none', borderBottom: '1px solid var(--line-strong)', paddingBottom: 2 }}>Manage all 9 →</Link>
-          </div>
-          <div className="lst">
-            <div className="lst-row lst-head uc-mono">
-              <span>BRIEF</span><span>CATEGORY</span><span>BUDGET</span><span>MATCHES</span><span style={{ textAlign: 'right' }}>STATUS</span>
+        ) : (
+          <div className="panel listings-panel">
+            <div className="panel-head">
+              <h3>Your briefs</h3>
+              <Link href={intentsHref} className="uc-mono" style={{ fontSize: 10, color: 'var(--ink-2)', textDecoration: 'none', borderBottom: '1px solid var(--line-strong)', paddingBottom: 2 }}>
+                {hasBriefs ? 'Manage all →' : 'Add a brief →'}
+              </Link>
             </div>
-            {BRIEFS.map((b, i) => <Brief key={i} b={b} />)}
+            {hasBriefs ? (
+              <div className="lst">
+                <div className="lst-row lst-head uc-mono">
+                  <span>BRIEF</span><span>CREATED</span><span style={{ textAlign: 'right' }}>STATUS</span>
+                </div>
+                {briefs.map((b) => <BriefItem key={b.id} b={b} />)}
+              </div>
+            ) : (
+              <div style={{ padding: '24px 20px' }}>
+                <p style={{ color: 'var(--ink-3)', fontSize: 14 }}>
+                  No briefs yet. <Link href={intentsHref} style={{ color: 'var(--ink)', textDecoration: 'underline' }}>Add one</Link> to point your agent at what you want.
+                </p>
+              </div>
+            )}
           </div>
-        </div>
+        )}
       </div>
 
       <footer className="via-foot">
