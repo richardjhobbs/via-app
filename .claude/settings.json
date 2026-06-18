@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "if": "Bash(vercel *)",
+            "command": "node .claude/hooks/guard-deploy.mjs",
+            "timeout": 30,
+            "statusMessage": "Checking repo is clean + pushed before deploy"
+          }
+        ]
+      }
+    ]
+  }
+}
