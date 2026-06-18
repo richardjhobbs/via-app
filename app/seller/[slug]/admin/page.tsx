@@ -27,7 +27,7 @@ export default async function SellerAdminPage({
 
   const { data: seller, error } = await db
     .from('app_sellers')
-    .select('id, slug, name, owner_user_id, shipping')
+    .select('id, slug, name, owner_user_id, shipping, headline, description')
     .eq('slug', slug)
     .maybeSingle();
 
@@ -127,10 +127,17 @@ export default async function SellerAdminPage({
   );
   const shippingNeedsSetup = hasPhysicalLive && !shippingReady;
 
+  // Persona gate: the brand persona (app_sellers.description) is what the Sales
+  // Agent reasons with to match buyer briefs. A short/empty one makes it miss
+  // matches, so flag it on the dashboard the same way shipping is flagged.
+  const personaText = String(seller.description ?? '').trim();
+  const personaNeedsWork = personaText.length < 40;
+
   return (
     <SellerDashboardClient
       name={seller.name as string}
       slug={seller.slug as string}
+      sellerId={sellerId}
       agentCode={agentCode}
       mcpUrl={mcpUrl}
       brands={brands}
@@ -139,6 +146,9 @@ export default async function SellerAdminPage({
       negotiations={negotiations}
       listings={listings}
       shippingNeedsSetup={shippingNeedsSetup}
+      headline={String(seller.headline ?? '')}
+      description={personaText}
+      personaNeedsWork={personaNeedsWork}
     />
   );
 }

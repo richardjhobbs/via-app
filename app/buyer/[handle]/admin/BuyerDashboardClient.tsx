@@ -41,6 +41,11 @@ export interface PitchRow {
   buyUrl: string | null;
   seller: string;
   fits: boolean;
+  /** fit = every hard requirement met; partial = some met, some not; nofit = none. */
+  tier: 'fit' | 'partial' | 'nofit';
+  /** Hard requirements this product satisfies / does not , drives the partial diff text. */
+  met: string[];
+  unmet: string[];
   score: number;
   reason: string;
   briefText: string;
@@ -210,10 +215,14 @@ export default function BuyerDashboardClient({
                 // external ones open a new tab.
                 const buyTarget = p.buyUrl ?? p.url;
                 const buyInternal = Boolean(p.buyUrl);
-                const showBuy = p.fits && Boolean(buyTarget);
+                const showBuy = p.tier === 'fit' && Boolean(buyTarget);
                 const titleHref = buyTarget;
                 const titleExternal = !buyInternal && Boolean(p.url);
                 const pillStyle = { color: 'var(--live)', borderColor: 'var(--live)', textDecoration: 'none', flexShrink: 0 } as const;
+                // Three states: fit (green), partial (amber , some requirements met),
+                // no fit (grey). Partial surfaces the specific differences below.
+                const tagColor = p.tier === 'fit' ? 'var(--live)' : p.tier === 'partial' ? 'var(--warning)' : 'var(--ink-3)';
+                const tagLabel = p.tier === 'fit' ? 'fits' : p.tier === 'partial' ? 'partial' : 'no fit';
                 return (
                   <div key={p.id} className="lst-row" style={{ display: 'block' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'baseline' }}>
@@ -229,8 +238,8 @@ export default function BuyerDashboardClient({
                           <a href={buyTarget!} target="_blank" rel="noreferrer" className="lst-tag uc-mono" style={pillStyle}>Buy now</a>
                         )
                       ) : (
-                        <span className="lst-tag uc-mono" style={{ color: p.fits ? 'var(--live)' : 'var(--ink-3)', borderColor: p.fits ? 'var(--live)' : 'var(--line-strong)' }}>
-                          {p.fits ? 'fits' : 'no fit'}
+                        <span className="lst-tag uc-mono" style={{ color: tagColor, borderColor: tagColor }}>
+                          {tagLabel}
                         </span>
                       )}
                     </div>
@@ -239,6 +248,17 @@ export default function BuyerDashboardClient({
                       {p.briefText ? ` · for "${p.briefText.slice(0, 60)}"` : ''}
                       {p.reason ? ` · ${p.reason}` : ''}
                     </div>
+                    {p.tier === 'partial' && (p.met.length > 0 || p.unmet.length > 0) && (
+                      <div style={{ fontSize: 11.5, marginTop: 3 }}>
+                        {p.met.length > 0 && (
+                          <span style={{ color: 'var(--live)' }}>Matches: {p.met.join(', ')}</span>
+                        )}
+                        {p.met.length > 0 && p.unmet.length > 0 && <span style={{ color: 'var(--ink-3)' }}>{'  ·  '}</span>}
+                        {p.unmet.length > 0 && (
+                          <span style={{ color: 'var(--warning)' }}>Differs on: {p.unmet.join(', ')}</span>
+                        )}
+                      </div>
+                    )}
                   </div>
                 );
               })}

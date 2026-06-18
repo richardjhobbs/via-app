@@ -3,28 +3,36 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { ConnectEmbed, useActiveAccount, useDisconnect, useActiveWallet } from 'thirdweb/react';
-import { inAppWallet } from 'thirdweb/wallets';
+import { inAppWallet, createWallet } from 'thirdweb/wallets';
 import { thirdwebClient } from '@/lib/app/thirdwebClient';
 import { OnboardStepsBuyer } from '../../OnboardStepsBuyer';
 import { readOnboardState, writeOnboardState } from '@/lib/app/onboarding-state';
 import { isTestEmail, syntheticTestWallet } from '@/lib/app/test-mode';
 
 const ADDR_RE = /^0x[a-fA-F0-9]{40}$/;
-const wallets = [inAppWallet({ auth: { options: ['google', 'email'] } })];
+
+// Funding wallet only. This is where the owner holds the USDC their Buying Agent
+// spends; it is NOT the agent's identity wallet (that is platform-derived
+// server-side). Users without a wallet get one via email/Google; users who
+// already have one can connect it.
+const wallets = [
+  inAppWallet({ auth: { options: ['google', 'email'] } }),
+  createWallet('io.metamask'),
+  createWallet('com.coinbase.wallet'),
+  createWallet('walletConnect'),
+];
 
 export default function BuyerWallet() {
   const router = useRouter();
-  const [email,   setEmail]   = useState('');
-  const [funding, setFunding] = useState('');
-  const [err,     setErr]     = useState('');
+  const [email, setEmail] = useState('');
+  const [err,   setErr]   = useState('');
 
   const account      = useActiveAccount();
   const activeWallet = useActiveWallet();
   const { disconnect } = useDisconnect();
 
-  const testMode         = isTestEmail(email);
-  const testAgentAddress = testMode ? syntheticTestWallet(email) : '';
-  const agentAddress     = testMode ? testAgentAddress : (account?.address ?? '');
+  const testMode = isTestEmail(email);
+  const address  = testMode ? syntheticTestWallet(email) : (account?.address ?? '');
 
   useEffect(() => {
     const s = readOnboardState();
@@ -33,35 +41,24 @@ export default function BuyerWallet() {
       return;
     }
     setEmail(s.email);
-    if (s.walletAddress) setFunding(s.walletAddress);
   }, [router]);
 
+  // Persist the funding wallet as soon as it resolves. The agent identity wallet
+  // is platform-derived server-side, never set here.
   useEffect(() => {
-    if (agentAddress) writeOnboardState({ role: 'buyer', agentWalletAddress: agentAddress });
-  }, [agentAddress]);
+    if (address) writeOnboardState({ role: 'buyer', walletAddress: address });
+  }, [address]);
 
   function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     setErr('');
-    if (!ADDR_RE.test(funding.trim())) {
-      setErr('Funding wallet must be a valid 0x… address (42 chars).');
-      return;
-    }
-    if (!ADDR_RE.test(agentAddress)) {
+    if (!ADDR_RE.test(address)) {
       setErr(testMode
         ? 'Test wallet failed to derive. Please reload.'
-        : 'Sign in with email or Google to provision your Buying Agent’s wallet.');
+        : 'Sign in with email or Google, or connect a wallet, to provision your agent.');
       return;
     }
-    if (funding.trim().toLowerCase() === agentAddress.toLowerCase()) {
-      setErr('Funding wallet and agent wallet must be different EOAs.');
-      return;
-    }
-    writeOnboardState({
-      role:               'buyer',
-      walletAddress:      funding.trim(),
-      agentWalletAddress: agentAddress,
-    });
+    writeOnboardState({ role: 'buyer', walletAddress: address });
     router.push('/onboard/buyer/done');
   }
 
@@ -71,69 +68,42 @@ export default function BuyerWallet() {
         <OnboardStepsBuyer current={3} />
         <p className="text-xs font-mono tracking-widest text-ink-3 mb-3 uppercase">Step 3 of 4</p>
         <h1 className="font-serif text-4xl md:text-5xl leading-[1.1] tracking-tight mb-3">
-          Wallets.
+          Your funding wallet.
         </h1>
         <p className="text-ink-2 mb-10 max-w-lg">
-          Two wallets, two roles. Your <strong>funding wallet</strong> holds the USDC your agent
-          spends. Your <strong>Buying Agent’s wallet</strong> is its on-chain identity, registered
-          as ERC-8004 so seller agents know who they’re negotiating with.
+          This is where you hold the USDC your Buying Agent spends. Your agent&rsquo;s on-chain
+          identity is created and operated for you by VIA, you don&rsquo;t manage it. No wallet yet?
+          Sign in with email or Google and we provision a non-custodial one for you.
         </p>
 
-        <form onSubmit={onSubmit} className="space-y-10 max-w-xl">
-          <div>
-            <h2 className="text-xs font-mono tracking-widest text-ink-3 uppercase block mb-3 flex items-center gap-3">
-              <span className="text-ink-3">A</span><span>Your funding wallet</span>
-            </h2>
-            <p className="text-sm text-ink-2 mb-4">
-              Paste a wallet address you already control. Your agent never holds your funds; it
-              requests x402 payment that comes from this wallet.
-            </p>
-            <input
-              type="text" required spellCheck={false} autoComplete="off"
-              value={funding} onChange={(e) => setFunding(e.target.value)}
-              placeholder="0x… (42 chars)"
-              className="w-full bg-paper border border-line-strong px-4 py-3 text-base font-mono outline-none focus:border-ink transition-colors"
-            />
-          </div>
-
-          <div>
-            <h2 className="text-xs font-mono tracking-widest text-ink-3 uppercase block mb-3 flex items-center gap-3">
-              <span className="text-ink-3">B</span><span>Your Buying Agent’s wallet</span>
-            </h2>
-            <p className="text-sm text-ink-2 mb-4">
-              Created for you. Sign in with email or Google and we provide a non-custodial wallet
-              owned by your authorised identity. That wallet is part of your agent.
-            </p>
-
-            {testMode ? (
-              <div className="p-4 border border-[color:var(--warning)] bg-[color:var(--warning)]/10">
-                <div className="text-xs font-mono tracking-widest text-[color:var(--warning)] uppercase mb-2">Test mode</div>
-                <div className="font-mono text-sm break-all text-ink mb-2">{testAgentAddress}</div>
-                <p className="text-xs text-ink-2">
-                  Your email alias contains +test or +e2e, so we are skipping the thirdweb
-                  sign-in and using a deterministic stub wallet for this onboarding run. No
-                  OTP, no real on-chain identity. Reuse the same alias to land on the same
-                  stub wallet again.
-                </p>
-              </div>
-            ) : account?.address ? (
-              <div className="p-4 border border-ink bg-background">
-                <div className="text-xs font-mono tracking-widest text-ink-3 uppercase mb-2">Provisioned</div>
-                <div className="font-mono text-sm break-all text-ink mb-3">{account.address}</div>
-                <button
-                  type="button"
-                  onClick={() => { if (activeWallet) disconnect(activeWallet); }}
-                  className="text-xs font-mono tracking-widest uppercase text-ink-3 hover:text-ink"
-                >
-                  Use a different account
-                </button>
-              </div>
-            ) : (
-              <div className="border border-line-strong p-4">
-                <ConnectEmbed client={thirdwebClient} wallets={wallets} showAllWallets={false} showThirdwebBranding={false} />
-              </div>
-            )}
-          </div>
+        <form onSubmit={onSubmit} className="space-y-8 max-w-xl">
+          {testMode ? (
+            <div className="p-4 border border-[color:var(--warning)] bg-[color:var(--warning)]/10">
+              <div className="text-xs font-mono tracking-widest text-[color:var(--warning)] uppercase mb-2">Test mode</div>
+              <div className="font-mono text-sm break-all text-ink mb-2">{address}</div>
+              <p className="text-xs text-ink-2">
+                Your email alias contains +test or +e2e, so we are skipping the thirdweb sign-in and
+                using a deterministic stub wallet for this onboarding run. No OTP, no real on-chain
+                identity. Reuse the same alias to land on the same stub wallet again.
+              </p>
+            </div>
+          ) : account?.address ? (
+            <div className="p-4 border border-ink bg-background">
+              <div className="text-xs font-mono tracking-widest text-ink-3 uppercase mb-2">Provisioned</div>
+              <div className="font-mono text-sm break-all text-ink mb-3">{account.address}</div>
+              <button
+                type="button"
+                onClick={() => { if (activeWallet) disconnect(activeWallet); }}
+                className="text-xs font-mono tracking-widest uppercase text-ink-3 hover:text-ink"
+              >
+                Use a different account
+              </button>
+            </div>
+          ) : (
+            <div className="border border-line-strong p-4">
+              <ConnectEmbed client={thirdwebClient} wallets={wallets} showAllWallets={false} showThirdwebBranding={false} />
+            </div>
+          )}
 
           {err && <p className="text-sm text-[color:var(--danger)]">{err}</p>}
 

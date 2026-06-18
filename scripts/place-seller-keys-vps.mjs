@@ -53,8 +53,13 @@ if (!process.env.AGENT_WALLET_SEED) {
 // per-seller keys). slug -> { store id, on-record agent wallet }. (app_sellers 2026-06-16)
 const VIA_SELLERS = [
   { slug: 'drhobbs-knowledge',    id: 'dd0e81fd-586b-4196-99f3-5f3ed2974ad6', w: '0x35bcf708834d1c38187a49705dfd7997b551d418' },
-  { slug: 'eli-s-artisan-bakery', id: 'e6a32d65-c452-4e07-9393-4fd4c8e8fd6e', w: '0x437432ec24f0f216bd5280d77664e1d7692a71c3' },
-  { slug: 'the-sentient-startup', id: '0296cc76-6e88-4459-b978-aea036a893d7', w: '0x580706c5813304c9f03367843ac4d47ca838e105' },
+  { slug: 'eli-s-artisan-bakery', id: 'e6a32d65-c452-4e07-9393-4fd4c8e8fd6e', w: '0xca11b205de3e4f52cc9b6ba4be1276a88b7cc33f' },
+  { slug: 'the-sentient-startup', id: '0296cc76-6e88-4459-b978-aea036a893d7', w: '0xbfa26fba52fe8bd4d2dd28a25f85220cd5e5b3bc' },
+  // Demo VIA sellers enabled 2026-06-18 (ingested vinyl stores).
+  { slug: 'dear-vinyl',           id: '617374b8-3724-49cd-9f93-2340926df960', w: '0x5e912d07a3b3b2a2515df8a78c700f5bba737e3e' },
+  { slug: 'recycle-vinyl',        id: '5d48521a-5bd2-4d0c-aab0-cfb885106fe9', w: '0xac9daccd67e09cc12471572244d2c0f11f07ad0b' },
+  { slug: 'snow-records',         id: '7518f06d-1c46-4afb-a009-e0841272d81e', w: '0x916fd056f096475d2c69e2f9e5af2eb3ffa6dce1' },
+  { slug: 'vinyleers',            id: 'f227563f-cac5-45c8-8f66-92466b19a9f8', w: '0x4a1a393c8def1bb520743cfd9656f1774bf84abf' },
 ];
 
 function deriveAgentWallet(storeId) {
@@ -84,6 +89,9 @@ const TARGETS = {
   'jennys':                  '0xe206d575572e563a490f4f63e7f8c45b11f87dd6',
   'frey-tailored':           '0x30b1e8cc377a75d9664c26415a820c4925afa595',
   'unknown-union':           '0xe9cedf6453b61771505404b47671602eaa158881',
+  // Demo RRG sellers minted 2026-06-18 (signer EOA = new wallet_address).
+  'americanrag':             '0xf88723e81cfd736dea44a09e5987a5eeb2a57070',
+  'standard-and-strange':    '0x60de520f64af4f16c00c5a5158895a878dfd2d9c',
 };
 const envKeyFor = (slug) => slug.toUpperCase().replace(/-/g, '_') + '_WALLET_PRIVATE_KEY';
 

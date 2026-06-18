@@ -26,6 +26,8 @@ import { supabaseAdmin } from './seller-auth';
 import { registerAgentIdentity, getAgentIdForWallet } from '@/lib/agent/erc8004';
 import { shouldSkipErc8004, syntheticTestAgentId } from './test-mode';
 import { deriveAgentWallet, platformAgentWalletsEnabled } from './agent-wallet';
+import { releaseHeldDistributions } from './auto-payout';
+import { fundAgentFloat } from './agent-funding';
 
 const APP_BASE = (process.env.NEXT_PUBLIC_APP_BASE_URL || 'https://app.getvia.xyz').replace(/\/$/, '');
 const APPROVAL_WINDOW_MS = 24 * 60 * 60 * 1000; // 24h review SLA
@@ -92,7 +94,8 @@ export async function createPendingAgentStore(
   const headline     = input.headline    ? String(input.headline).trim()    : null;
   const websiteUrl   = input.websiteUrl  ? String(input.websiteUrl).trim()   : null;
   const payoutWallet = String(input.payoutWallet ?? '').trim();
-  const agentWallet  = String(input.agentWallet ?? '').trim();
+  // input.agentWallet is accepted for back-compat but IGNORED: the agent wallet
+  // is always platform-derived (see below).
 
   // ── Validate ────────────────────────────────────────────────────────
   if (!email || !email.includes('@'))                return { ok: false, code: 'invalid_email',    error: 'A valid contact email is required. The operator behind this agent uses it to manage the store once approved.' };
@@ -101,23 +104,16 @@ export async function createPendingAgentStore(
   if (!['product', 'service', 'mixed'].includes(kind)) return { ok: false, code: 'invalid_kind',   error: "kind must be 'product', 'service', or 'mixed'." };
   if (!ethers.isAddress(payoutWallet))               return { ok: false, code: 'invalid_payout_wallet', error: 'payout_wallet is not a valid Base/EVM address.' };
 
-  // agent_wallet is OPTIONAL. If supplied, it must be a valid EOA distinct from
-  // the payout wallet. If omitted, the platform derives an identity wallet from
-  // its server seed (so the user only needs one wallet); that requires
-  // AGENT_WALLET_SEED to be configured.
+  // The AGENT wallet is ALWAYS platform-derived from AGENT_WALLET_SEED: the
+  // central platform-run agent must be able to sign for it. It is derived AFTER
+  // insert (it needs the store id) and holds only the ERC-8004 identity + a tiny
+  // x402 micro-fee float; it NEVER holds the seller's payout. Any client-supplied
+  // agent_wallet is ignored. Fail closed if the seed is unconfigured , never fall
+  // back to a user-custodied (e.g. thirdweb) wallet the platform cannot sign.
   const payout = payoutWallet.toLowerCase();
-  let agent: string | null = null;
-  const agentProvided = agentWallet.length > 0;
-  if (agentProvided) {
-    if (!ethers.isAddress(agentWallet)) return { ok: false, code: 'invalid_agent_wallet', error: 'agent_wallet is not a valid Base/EVM address.' };
-    if (payout === agentWallet.toLowerCase()) {
-      return { ok: false, code: 'wallets_must_differ', error: 'payout_wallet and agent_wallet must be two different EOAs. The payout wallet receives USDC; the agent wallet holds the ERC-8004 identity. Omit agent_wallet to have the platform create one for you.' };
-    }
-    agent = agentWallet.toLowerCase();
-  } else if (!platformAgentWalletsEnabled()) {
-    return { ok: false, code: 'agent_wallet_required', error: 'Provide an agent_wallet (an EOA distinct from your payout wallet), or contact VIA: platform-managed identity wallets are not enabled.' };
+  if (!platformAgentWalletsEnabled()) {
+    return { ok: false, code: 'agent_wallet_unavailable', error: 'Platform-managed identity wallets are not enabled. Contact VIA.' };
   }
-  // else: agent stays null here and is derived after insert (needs the store id).
 
   const slug   = normaliseSlug(input.slug, storeName);
   if (!slug) return { ok: false, code: 'invalid_slug', error: 'store_name must contain alphanumeric characters.' };
@@ -139,7 +135,7 @@ export async function createPendingAgentStore(
     email,
     password,
     email_confirm: true,
-    user_metadata: { source: 'via_agent_mcp', wallet_address: payout, agent_wallet_address: agent },
+    user_metadata: { source: 'via_agent_mcp', wallet_address: payout, agent_wallet_address: null },
   });
 
   if (createErr) {
@@ -174,7 +170,7 @@ export async function createPendingAgentStore(
       description,
       headline,
       wallet_address:       payout,
-      agent_wallet_address: agent,
+      agent_wallet_address: null,
       active:               false,
       approval_status:      'pending',
       created_via:          'agent_mcp',
@@ -193,11 +189,11 @@ export async function createPendingAgentStore(
   }
 
   // ── Platform-managed agent wallet ───────────────────────────────────
-  // No agent wallet supplied: derive a dedicated identity wallet from the
-  // platform seed + this store's id and persist its address. The private key
-  // is never stored (re-derivable). This wallet holds the ERC-8004 identity
-  // only; it never touches USDC.
-  if (agent === null) {
+  // Derive the dedicated identity wallet from the platform seed + this store's
+  // id and persist its address. The private key is never stored (re-derivable).
+  // This wallet holds the ERC-8004 identity + a tiny micro-fee float only; it
+  // never holds the seller's payout.
+  {
     const derived = deriveAgentWallet(seller.id);
     if (!derived) {
       // Seed vanished between the gate and here; the store exists but has no
@@ -255,6 +251,30 @@ export async function approveAgentStore(slug: string, reviewedBy: string): Promi
     })
     .eq('id', seller.id);
   if (updErr) return { ok: false, slug, error: `failed to activate store: ${updErr.message}` };
+
+  // Release any payouts held while the store was pending (NOSTR-sourced deals
+  // that transacted provisionally). Non-fatal: a failure here is retried on the
+  // next approval/release pass and never blocks activation.
+  try {
+    const rel = await releaseHeldDistributions(seller.id);
+    if (rel.released || rel.failed) console.log(`[store-registration] ${seller.slug} released held payouts: ${rel.released} ok, ${rel.failed} failed`);
+  } catch (e) {
+    console.error(`[store-registration] releaseHeldDistributions failed for ${seller.slug}:`, e instanceof Error ? e.message : e);
+  }
+
+  // Seed the platform-derived agent wallet with a small USDC float so it can pay
+  // the x402 door micro-fee on its first offer. Non-fatal: an unfunded agent just
+  // skips the door until a float lands; it never blocks activation. Skipped in
+  // test mode (synthetic wallet) and when the treasury key is unconfigured.
+  if (!shouldSkipErc8004(seller.contact_email) && seller.agent_wallet_address) {
+    try {
+      const fund = await fundAgentFloat(seller.agent_wallet_address as string);
+      if (fund.ok)            console.log(`[store-registration] ${seller.slug} agent float ${fund.amountUsdc} USDC tx=${fund.txHash}`);
+      else if (!fund.skipped) console.warn(`[store-registration] ${seller.slug} agent float not sent: ${fund.error}`);
+    } catch (e) {
+      console.error(`[store-registration] fundAgentFloat failed for ${seller.slug}:`, e instanceof Error ? e.message : e);
+    }
+  }
 
   // ── ERC-8004 mint against the agent's own wallet ────────────────────
   const mcpUrl = `${APP_BASE}/sellers/${seller.slug}/mcp`;
@@ -375,4 +395,83 @@ export async function mintStoreIdentity(slug: string, reviewedBy: string): Promi
     console.error(`[store-registration] remint mint failed seller=${seller.slug}:`, msg);
     return { ok: false, slug, erc8004_agent_id: null, mint_error: msg };
   }
+}
+
+export interface EnableStoreAgentResult {
+  ok:                   boolean;
+  slug:                 string;
+  agent_wallet_address?: string | null;
+  erc8004_agent_id?:    string | null;
+  fund_tx?:             string | null;
+  fund_error?:          string;
+  mint_error?:          string;
+  error?:               string;
+}
+
+/**
+ * Enable agent transacting for an already-listed store that was ingested rather
+ * than registered (e.g. created_via vinyl_ingest_worker), so it has no
+ * agent_wallet_address and no ERC-8004 identity yet. Brings it to the same
+ * end-to-end state a normal approval would: derive + persist the platform agent
+ * wallet, seed it with the x402 micro-fee float, then mint (or link) its 8004
+ * identity. Idempotent on each step. Operator action, gated behind the admin
+ * route. Unlike approveAgentStore this does not touch active/approval_status:
+ * ingested stores are already active/discovery-listed.
+ */
+export async function enableStoreAgent(slug: string, reviewedBy: string): Promise<EnableStoreAgentResult> {
+  const { data: seller, error } = await db
+    .from('app_sellers')
+    .select('id, slug, name, contact_email, agent_wallet_address, erc8004_agent_id')
+    .eq('slug', slug)
+    .maybeSingle();
+  if (error || !seller) return { ok: false, slug, error: `store "${slug}" not found` };
+
+  // ── 1. Derive + persist the platform agent wallet if missing ────────
+  let agentWallet = seller.agent_wallet_address as string | null;
+  if (!agentWallet) {
+    if (!platformAgentWalletsEnabled()) {
+      return { ok: false, slug, error: 'Platform-managed identity wallets are not enabled (AGENT_WALLET_SEED unset).' };
+    }
+    const derived = deriveAgentWallet(seller.id);
+    if (!derived) return { ok: false, slug, error: 'failed to derive agent wallet (AGENT_WALLET_SEED unavailable).' };
+    agentWallet = derived.address.toLowerCase();
+    const { error: updErr } = await db
+      .from('app_sellers')
+      .update({ agent_wallet_address: agentWallet, updated_at: new Date().toISOString() })
+      .eq('id', seller.id);
+    if (updErr) return { ok: false, slug, error: `failed to persist agent wallet: ${updErr.message}` };
+    console.log(`[store-registration] enable derived agent wallet seller=${seller.slug} wallet=${agentWallet} by=${reviewedBy}`);
+  }
+
+  // ── 2. Seed the x402 micro-fee float (non-fatal) ────────────────────
+  let fundTx: string | null = null;
+  let fundError: string | undefined;
+  if (!shouldSkipErc8004(seller.contact_email)) {
+    try {
+      const fund = await fundAgentFloat(agentWallet);
+      if (fund.ok) {
+        fundTx = fund.txHash ?? null;
+        console.log(`[store-registration] enable float seller=${seller.slug} ${fund.amountUsdc} USDC tx=${fund.txHash}`);
+      } else if (!fund.skipped) {
+        fundError = fund.error;
+        console.warn(`[store-registration] enable float not sent seller=${seller.slug}: ${fund.error}`);
+      }
+    } catch (e) {
+      fundError = e instanceof Error ? e.message : String(e);
+      console.error(`[store-registration] enable fundAgentFloat failed seller=${seller.slug}:`, fundError);
+    }
+  }
+
+  // ── 3. Mint (or link) the ERC-8004 identity ─────────────────────────
+  const mint = await mintStoreIdentity(slug, reviewedBy);
+  return {
+    ok:                   mint.ok,
+    slug,
+    agent_wallet_address: agentWallet,
+    erc8004_agent_id:     mint.erc8004_agent_id ?? null,
+    fund_tx:              fundTx,
+    fund_error:           fundError,
+    mint_error:           mint.mint_error,
+    error:                mint.ok ? undefined : mint.error,
+  };
 }

@@ -17,7 +17,7 @@ export default function BuyerDone() {
 
   useEffect(() => {
     const s = readOnboardState();
-    if (!s || s.role !== 'buyer' || !s.email || !s.handle || !s.walletAddress || !s.agentWalletAddress) {
+    if (!s || s.role !== 'buyer' || !s.email || !s.handle || !s.walletAddress) {
       router.replace('/onboard?role=buyer');
       return;
     }
@@ -40,14 +40,17 @@ export default function BuyerDone() {
             handle:             state.handle,
             displayName:        state.displayName,
             walletAddress:      state.walletAddress,
-            agentWalletAddress: state.agentWalletAddress,
           }),
         });
         if (cancelled) return;
         const data = await res.json();
         if (!res.ok) { setErr(data.error || 'Could not create your Buying Agent.'); return; }
         clearOnboardState();
-        router.replace(`/buyer/${encodeURIComponent(data.buyer.handle)}/admin`);
+        // New agents land on their training surface, not the dashboard. This
+        // matches the copy on this screen ("routing you to its training
+        // surface") and means the first thing an owner does is brief their
+        // agent, rather than staring at an empty dashboard.
+        router.replace(`/buyer/${encodeURIComponent(data.buyer.handle)}/admin/buying-agent`);
       } catch (ex) {
         if (!cancelled) setErr(ex instanceof Error ? ex.message : 'network error, please retry');
       }

@@ -18,9 +18,9 @@ export interface SellerOnboardState {
   kind?:                'product' | 'service' | 'mixed';
   description?:         string;
   websiteUrl?:          string;
-  // Two distinct wallets — see app/onboard/wallet/page.tsx for the UX split.
+  // The seller provides ONE wallet: their payout EOA. The Sales Agent's identity
+  // wallet is platform-derived server-side (never collected in the wizard).
   walletAddress?:       string;       // seller's payout wallet (pasted EOA; receives USDC)
-  agentWalletAddress?:  string;       // Sales Agent's own EOA, provisioned via thirdweb inAppWallet
   catalogSource?:       'shopify' | 'csv' | 'services';
   shopifyDomain?:       string;
 }
@@ -32,7 +32,7 @@ export interface BuyerOnboardState {
   handle?:             string;
   displayName?:        string;
   walletAddress?:      string;       // buyer's funding wallet (where USDC sits for x402 payments)
-  agentWalletAddress?: string;       // Buying Agent's own EOA, provisioned via thirdweb inAppWallet
+  // The Buying Agent's identity wallet is platform-derived server-side.
 }
 
 export type OnboardState = SellerOnboardState | BuyerOnboardState;

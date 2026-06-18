@@ -31,6 +31,7 @@ import { insertNotification } from '@/lib/app/notifications';
 import { runSalesAgentAnswer, recordBuyerNote, type BuyerAnswerContext } from '@/lib/app/sales-agent';
 import { parseOfferingSchema, computeQuote, type Selections } from '@/lib/app/quote-pricing';
 import { getDigitalFiles, buyerHasPaidFor, buildDeliverables, DIGITAL_TTL_SECONDS } from '@/lib/app/digital-delivery';
+import { enrichmentFromMetadata } from '@/lib/app/via-product';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -196,42 +197,93 @@ function createServer(seller: SellerRow, req: Request) {
     `List ${seller.name}'s listings (paginated). Returns each product's title, description, price (USDC), stock (when known), and the ERC-1155 tokenId for buy_product follow-up, plus the total count and a next_offset for paging through the FULL catalogue (pass offset to continue). For a specific record, search the network (find_seller on the hub MCP) instead of paging. To purchase, call buy_product here on VIA (settles in USDC via x402); source_url is the seller's reference page, not a checkout.`,
     {
       active_only: z.boolean().optional().describe('Filter to active=true (default true)'),
-      limit:       z.number().int().min(1).max(250).optional().describe('Max products to return (default 50, max 250)'),
-      offset:      z.number().int().min(0).optional().describe('Skip this many products; use the next_offset from a prior call to page through the whole catalogue.'),
+      limit:       z.number().int().min(1).max(500).optional().describe('Max products to return (default 50; with a query, default 200, max 500)'),
+      offset:      z.number().int().min(0).optional().describe('Skip this many products; use the next_offset from a prior call to page through the whole catalogue (browse mode only).'),
+      query:       z.string().optional().describe('Full-text search across the ENTIRE catalogue (title, description, and structured facets), relevance-ranked. Use this to find the products that match a specific intent in a large catalogue, instead of paging the newest listings.'),
     },
-    async ({ active_only, limit, offset }) => {
+    async ({ active_only, limit, offset, query: q }) => {
       const t0 = Date.now();
-      const max = Math.min(Math.max(limit ?? 50, 1), 250);
+      const COLS = 'id, title, description, kind, price_minor, currency, stock, url, token_id, on_chain_status, max_supply, metadata';
       const from = Math.max(offset ?? 0, 0);
-      let query = db
-        .from('app_seller_products')
-        .select('id, title, description, kind, price_minor, currency, stock, url, token_id, on_chain_status, max_supply', { count: 'exact' })
-        .eq('seller_id', seller.id)
-        .in('on_chain_status', ['draft', 'registered']) // mint-on-purchase: drafts are discoverable; minted at sale
-        .eq('admin_removed', false) // superadmin kill-switch, independent of active_only
-        .order('created_at', { ascending: false })
-        .range(from, from + max - 1);
-      if (active_only !== false) query = query.eq('active', true);
+      const qStr = typeof q === 'string' ? q.trim() : '';
 
-      const { data, error, count } = await query;
-      const products = (data ?? []).map((p) => ({
-        product_id:    p.id,
-        title:         p.title,
-        description:   p.description,
-        kind:          p.kind,
-        price_usdc:    (p.price_minor as number) / 1_000_000,
-        currency:      p.currency,
-        stock:         p.stock,
-        // Stage-1 stores expose NO buy route: omit source_url so it can never be
-        // relayed as a checkout link. Integrated stores carry it for reference.
-        ...(integrated ? { source_url: p.url } : {}),
-        token_id:      p.token_id,
-        max_supply:    p.max_supply,
-      }));
+      let data: Record<string, unknown>[] = [];
+      let error: { message: string } | null = null;
+      let count: number | null = null;
+      const isSearch = qStr.length >= 2;
+
+      if (isSearch) {
+        // SEARCH the whole catalogue (indexed FTS, scoped to this seller) and return
+        // relevance-ranked matches , NOT a newest-N slice. This is how an agent
+        // reaches any product in a 6k-27k catalogue. Heavy `count:'exact'` is never
+        // run here, so large stores answer instead of timing out.
+        const ftsLimit = Math.min(Math.max(limit ?? 200, 1), 500);
+        const { data: hits, error: ftsErr } = await db.rpc('search_app_products_fts_seller', { q: qStr, p_seller_id: seller.id, result_limit: ftsLimit });
+        if (ftsErr) {
+          error = ftsErr;
+        } else {
+          const ids = ((hits ?? []) as { id: string }[]).map((h) => h.id);
+          if (ids.length > 0) {
+            const res = await db.from('app_seller_products').select(COLS).in('id', ids);
+            error = res.error;
+            const byId = new Map(((res.data ?? []) as Record<string, unknown>[]).map((r) => [r.id as string, r]));
+            data = ids.map((id) => byId.get(id)).filter((r): r is Record<string, unknown> => Boolean(r)); // preserve FTS rank order
+          }
+        }
+      } else {
+        // BROWSE: page the catalogue newest-first. `count:'estimated'` uses the
+        // planner (fast) instead of scanning every row to count , exact totals are
+        // not worth a timeout on a 27k-row store.
+        const max = Math.min(Math.max(limit ?? 50, 1), 250);
+        let query = db
+          .from('app_seller_products')
+          .select(COLS, { count: 'estimated' })
+          .eq('seller_id', seller.id)
+          .in('on_chain_status', ['draft', 'registered']) // mint-on-purchase: drafts are discoverable; minted at sale
+          .eq('admin_removed', false) // superadmin kill-switch, independent of active_only
+          .order('created_at', { ascending: false })
+          .range(from, from + max - 1);
+        if (active_only !== false) query = query.eq('active', true);
+        const res = await query;
+        data = (res.data ?? []) as Record<string, unknown>[];
+        error = res.error;
+        count = res.count;
+      }
+      const products = (data ?? []).map((p) => {
+        // Surface the canonical enrichment (tags / attributes / category / agent
+        // prose) so a buyer's agent can confirm requirements (colour, material,
+        // etc.) without a per-item get_product fan-out , the VIA data thesis, at
+        // parity with the RRG brand MCP.
+        const enr = enrichmentFromMetadata(p.metadata as Record<string, unknown> | null, (p.description as string | null) ?? null, (p.kind as string | null) ?? null);
+        return {
+          product_id:    p.id,
+          title:         p.title,
+          description:   enr.agentDescription ?? p.description,
+          kind:          p.kind,
+          category:      enr.category,
+          tags:          enr.tags,
+          attributes:    enr.attributes,
+          price_usdc:    (p.price_minor as number) / 1_000_000,
+          currency:      p.currency,
+          stock:         p.stock,
+          // Stage-1 stores expose NO buy route: omit source_url so it can never be
+          // relayed as a checkout link. Integrated stores carry it for reference.
+          ...(integrated ? { source_url: p.url } : {}),
+          token_id:      p.token_id,
+          max_supply:    p.max_supply,
+        };
+      });
       const total = count ?? products.length;
       const nextOffset = from + products.length < total ? from + products.length : null;
       const out = asJson({
         seller: seller.slug,
+        // brand_persona: the standard VIA-network identity field a Sales Agent
+        // reasons with (who the brand is, what it makes, who for, the vibe) when
+        // deciding which buyer briefs to answer and what to offer. Every member
+        // platform's seller MCP emits this same field; see docs/via-brand-persona.md.
+        brand_persona: [seller.name, seller.headline, seller.description]
+          .filter((x) => typeof x === 'string' && x.trim())
+          .join('. '),
         count: products.length,
         total,
         offset: from,

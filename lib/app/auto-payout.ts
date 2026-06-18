@@ -100,6 +100,22 @@ export async function insertDistributionAndPay(
     console.warn(`[auto-payout] ${dist.id} Guardrail A read failed (${mintMethod}, proceeding): ${msg}`);
   }
 
+  // ── Provisional hold ────────────────────────────────────────────────
+  // A store that is not yet live (active = false: self-onboarded, awaiting
+  // human approval) settles the sale normally — 100% of buyer USDC is already
+  // in the platform wallet — but its 97.5% payout is HELD, not released, until
+  // approveAgentStore activates the store and releases it. This secures the
+  // flat 2.5% network fee on deals sourced from the open NOSTR broadcast.
+  const { data: sellerRow } = await db
+    .from('app_sellers').select('active').eq('id', sellerId).maybeSingle();
+  if (sellerRow && sellerRow.active === false) {
+    await db.from('app_distributions')
+      .update({ status: 'held', notes: 'payout held: store pending human approval' })
+      .eq('id', dist.id);
+    console.log(`[auto-payout] ${dist.id} HELD , seller ${sellerId} not yet active; 97.5% retained in platform wallet until approval`);
+    return result;
+  }
+
   // ── 3. Send the seller's 97.5% share via USDC ERC-20 transfer ──────
   try {
     if (split.sellerUsdc <= 0 || !split.sellerWallet) {
@@ -130,4 +146,46 @@ export async function insertDistributionAndPay(
   }
 
   return result;
+}
+
+/**
+ * Release every HELD distribution for a store, once it is approved (active).
+ * Transfers each held 97.5% share to the seller's payout wallet and marks the
+ * row 'paid' + its purchase 'paid_out'. Idempotent: acts only on rows still in
+ * 'held', so a re-run after a partial failure resumes safely. Called from
+ * approveAgentStore; non-fatal there.
+ */
+export async function releaseHeldDistributions(sellerId: string): Promise<{ released: number; failed: number }> {
+  const out = { released: 0, failed: 0 };
+  const { data: seller } = await db
+    .from('app_sellers').select('wallet_address').eq('id', sellerId).maybeSingle();
+  const wallet = String(seller?.wallet_address ?? '');
+
+  const { data: held } = await db
+    .from('app_distributions')
+    .select('id, purchase_id, seller_usdc')
+    .eq('seller_id', sellerId)
+    .eq('status', 'held');
+
+  for (const d of held ?? []) {
+    const amount = Number(d.seller_usdc);
+    try {
+      if (amount <= 0 || !wallet) {
+        await db.from('app_distributions').update({ status: 'paid', notes: 'released: no seller share' }).eq('id', d.id);
+        out.released += 1;
+        continue;
+      }
+      const tx = await transferUsdc(wallet, amount);
+      await db.from('app_distributions').update({ status: 'paid', seller_tx_hash: tx.hash, notes: null }).eq('id', d.id);
+      await db.from('app_purchases').update({ payout_tx_hash: tx.hash, status: 'paid_out' }).eq('id', d.purchase_id);
+      console.log(`[auto-payout] released held ${d.id} -> ${wallet} ${amount} USDC tx=${tx.hash}`);
+      out.released += 1;
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      console.error(`[auto-payout] release held ${d.id} failed:`, msg);
+      await db.from('app_distributions').update({ notes: `release failed: ${msg.slice(0, 400)}` }).eq('id', d.id);
+      out.failed += 1;
+    }
+  }
+  return out;
 }

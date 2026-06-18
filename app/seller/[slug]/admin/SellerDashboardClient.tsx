@@ -6,6 +6,7 @@ import ThemeToggle from '@/components/app/ThemeToggle';
 import { NotificationBell } from '@/components/app/NotificationBell';
 import { Wordmark } from '@/components/app/Wordmark';
 import TestAgentBadge from '@/components/app/TestAgentBadge';
+import PersonaEditor from '@/components/app/PersonaEditor';
 
 /* ──────────────────────────────────────────────────────────────────────────
    Seller dashboard, Maison design. Every number, row and card on this surface
@@ -152,10 +153,12 @@ function Listing({ l }: { l: ListingRow }) {
 }
 
 export default function SellerDashboardClient({
-  name, slug, agentCode, mcpUrl, brands, metrics, activity, negotiations, listings, shippingNeedsSetup,
+  name, slug, sellerId, agentCode, mcpUrl, brands, metrics, activity, negotiations, listings, shippingNeedsSetup,
+  headline, description, personaNeedsWork,
 }: {
   name: string;
   slug: string;
+  sellerId: string;
   agentCode: string;
   mcpUrl: string;
   brands: BrandOption[];
@@ -164,6 +167,9 @@ export default function SellerDashboardClient({
   negotiations: NegotiationRow[];
   listings: ListingRow[];
   shippingNeedsSetup: boolean;
+  headline: string;
+  description: string;
+  personaNeedsWork: boolean;
 }) {
   const router = useRouter();
   const productsHref = `/seller/${slug}/admin/products`;
@@ -225,6 +231,21 @@ export default function SellerDashboardClient({
             </div>
           </Link>
         )}
+        {personaNeedsWork && (
+          <a
+            href="#brand-persona"
+            style={{
+              display: 'block', textDecoration: 'none',
+              border: '1px solid var(--warning)', background: 'color-mix(in srgb, var(--warning) 10%, transparent)',
+              borderRadius: 8, padding: '12px 16px', marginBottom: 20,
+            }}
+          >
+            <div className="uc-mono" style={{ fontSize: 10, color: 'var(--warning)', marginBottom: 4 }}>Action needed · Brand persona</div>
+            <div style={{ fontSize: 14, color: 'var(--ink)' }}>
+              Your brand persona is thin, so your Sales Agent has little to judge buyer briefs with and will miss matches. Tell it who your brand is →
+            </div>
+          </a>
+        )}
         <div className="dash-subhead">
           <div>
             <span className="dash-eyebrow">· Seller</span>
@@ -267,6 +288,10 @@ export default function SellerDashboardClient({
               {negotiations.map((n, i) => <NegoCard key={i} n={n} slug={slug} />)}
             </div>
           </div>
+        </div>
+
+        <div id="brand-persona" style={{ marginBottom: 24, scrollMarginTop: 80 }}>
+          <PersonaEditor sellerId={sellerId} initialHeadline={headline} initialDescription={description} />
         </div>
 
         <div className="panel listings-panel">

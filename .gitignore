@@ -61,3 +61,9 @@ data/*-images/
 
 # local working files — never commit (contains private keys, scratch data)
 tmp/
+.env*.local
+
+# scratch / one-off probe scripts and scrape artifacts (never commit)
+scripts/_*.mjs
+tmp-populate.sh
+*_ms_sellers.html

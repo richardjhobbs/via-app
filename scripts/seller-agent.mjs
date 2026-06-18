@@ -116,6 +116,15 @@ const ROSTER = [
   { slug: 'livvium',                 name: 'LIVVIUM',                 source: 'rrg', erc8004_id: '55582', env_key: 'LIVVIUM_WALLET_PRIVATE_KEY' },
   { slug: 'philleywood',             name: 'Philleywood',             source: 'rrg', erc8004_id: '50992', env_key: 'PHILLEYWOOD_WALLET_PRIVATE_KEY' },
   { slug: 'pitchers-only',           name: 'Pitchers Only',           source: 'rrg', erc8004_id: '54261', env_key: 'PITCHERS_ONLY_WALLET_PRIVATE_KEY' },
+  // Demo sellers (temporary, until formally onboarded). VIA = ingested vinyl
+  // stores enabled via /api/admin/sellers/<id>/enable-agent (2026-06-18); RRG =
+  // signer EOA minted by rrg/scripts/register-brand-agent.mjs.
+  { slug: 'dear-vinyl',              name: 'Dear Vinyl',              source: 'via', erc8004_id: '55674', store_id: '617374b8-3724-49cd-9f93-2340926df960', expect: '0x5e912d07a3b3b2a2515df8a78c700f5bba737e3e' },
+  { slug: 'recycle-vinyl',           name: 'Recycle Vinyl',           source: 'via', erc8004_id: '55675', store_id: '5d48521a-5bd2-4d0c-aab0-cfb885106fe9', expect: '0xac9daccd67e09cc12471572244d2c0f11f07ad0b' },
+  { slug: 'snow-records',            name: 'Snow Records Japan',      source: 'via', erc8004_id: '55676', store_id: '7518f06d-1c46-4afb-a009-e0841272d81e', expect: '0x916fd056f096475d2c69e2f9e5af2eb3ffa6dce1' },
+  { slug: 'vinyleers',               name: 'Vinyleers',               source: 'via', erc8004_id: '55677', store_id: 'f227563f-cac5-45c8-8f66-92466b19a9f8', expect: '0x4a1a393c8def1bb520743cfd9656f1774bf84abf' },
+  { slug: 'americanrag',             name: 'American Rag Cie',        source: 'rrg', erc8004_id: '55678', env_key: 'AMERICANRAG_WALLET_PRIVATE_KEY' },
+  { slug: 'standard-and-strange',    name: 'Standard & Strange',      source: 'rrg', erc8004_id: '55679', env_key: 'STANDARD_AND_STRANGE_WALLET_PRIVATE_KEY' },
 ];
 
 const catalogBase = (source) => (source === 'via' ? VIA_BASE : RRG_BASE);
@@ -249,7 +258,44 @@ async function ownStock(seller) {
   // catalogues (pitchers-only's caps sit at indices 256-273 of 274, so they were
   // cut before the LLM ever saw them). decide() chunks the full set for the LLM,
   // so size is bounded by chunk count, never by dropping products.
-  return { candidates, persona };
+  const total = typeof data?.total === 'number' ? data.total : candidates.length;
+  return { candidates, persona, total };
+}
+
+/** Search a seller's WHOLE catalogue (server-side FTS) for each query string and
+ *  return the union of matches as candidates, deduped by product_id. This is how a
+ *  large-catalogue seller (e.g. a 27k vinyl store) reaches the items that match a
+ *  brief , the agent can never reason over the entire catalogue, so it retrieves
+ *  the relevant slice by relevance. VIA only (the per-seller MCP `query` param). */
+/** Expand a buyer phrase into recall queries for the strict-AND FTS: the full
+ *  phrase PLUS every adjacent word-pair. A leading qualifier the catalogue does
+ *  not carry ("early Al Green", "original pressing …") would AND the whole phrase
+ *  to zero; the pairs ("Al Green") still hit. Mirrors the buyer matcher's
+ *  word/pair recall. Single-word phrases are returned as-is. */
+function recallQueries(phrase) {
+  if (typeof phrase !== 'string') return [];
+  const p = phrase.trim();
+  if (!p) return [];
+  const toks = p.split(/\s+/).filter((w) => w.length >= 2);
+  if (toks.length <= 1) return [p];
+  const pairs = [];
+  for (let i = 0; i < toks.length - 1; i++) pairs.push(`${toks[i]} ${toks[i + 1]}`);
+  return uniq([p, ...pairs]).slice(0, 5);
+}
+
+async function searchStock(seller, queries) {
+  const mcp = sellerMcpUrl(seller);
+  const byId = new Map();
+  for (const q of queries) {
+    if (!q || !q.trim()) continue;
+    const data = await callSellerMcp(mcp, 'list_products', { query: q.trim(), limit: 200 });
+    const rows = Array.isArray(data?.products) ? data.products : [];
+    for (const p of rows) {
+      const c = toCandidate(p, seller, mcp);
+      if (c && typeof c.title === 'string' && c.title.trim() && c.product_id) byId.set(c.product_id, c);
+    }
+  }
+  return [...byId.values()].slice(0, 150); // bound the set decide() reasons over
 }
 
 /** Decide over ONE chunk of the seller's stock (one LLM call). `i` indexes the chunk. */
@@ -449,18 +495,31 @@ async function run() {
     for (const seller of ROSTER) {
       const key = keyFor(seller);
       if (!key) continue; // no resolvable wallet key on this host , this seller cannot pay, skip
-      const stock = stockBySlug.get(seller.slug) ?? [];
-      if (stock.length === 0) continue; // empty catalogue , nothing to offer
       const persona = personaBySlug.get(seller.slug) ?? seller.name;
+      const loaded = stockBySlug.get(seller.slug) ?? [];
+      // A large VIA catalogue (e.g. vinyl, 6k-27k) cannot be reasoned over in full,
+      // so the agent SEARCHES its own catalogue for the brief's terms instead of a
+      // newest-N window. "Large" = the browse slice hit the cap (more exist) OR came
+      // back empty (a big catalogue whose browse timed out). A genuinely tiny VIA
+      // catalogue (a few items, fully loaded) keeps the load-everything + LLM path.
+      const isLargeVia = seller.source === 'via' && (loaded.length >= 250 || loaded.length === 0);
 
       // 0. SELF-SELECT on the FREE teaser before paying anything: the teaser IS the
       // filter. Only a seller that believes it could fulfil this demand pays to
-      // unlock the full brief , a coffee brand never pays to read a hoodie brief.
-      // The seller judges as ITS BRAND (persona), so a rally brand self-selects a
-      // rally-gift teaser while a bakery does not , self-selection, not fee waste.
-      if (!(await shouldBid(t, stock, seller.name, persona))) {
-        console.log(`[${seller.slug}] teaser not relevant , skipped (no unlock fee)`);
-        continue;
+      // unlock. Large VIA self-selects by searching its whole catalogue for the
+      // teaser's specific signal (so a vinyl store with no Fatboy Slim records skips
+      // and pays nothing); others judge as their brand (persona) over loaded stock.
+      let selfHits = null;
+      if (isLargeVia) {
+        const selfQs = recallQueries((t.attribute && t.attribute.trim()) || (t.product_type && t.product_type.trim()) || '');
+        selfHits = selfQs.length ? await searchStock(seller, selfQs) : [];
+        if (selfHits.length === 0) { console.log(`[${seller.slug}] teaser not relevant , skipped (no unlock fee)`); continue; }
+      } else {
+        if (loaded.length === 0) continue; // empty catalogue , nothing to offer
+        if (!(await shouldBid(t, loaded, seller.name, persona))) {
+          console.log(`[${seller.slug}] teaser not relevant , skipped (no unlock fee)`);
+          continue;
+        }
       }
 
       // Dry-run smoke test (VIA_AGENT_DRY_RUN): the key resolved and the seller
@@ -478,7 +537,20 @@ async function run() {
       try { const u = JSON.parse(unlock.body); brief = u.brief ?? null; buyerMcpUrl = u.buyer_mcp_url ?? null; } catch { /* bad body */ }
       if (!brief) continue;
 
-      // 2. Decide over OWN stock; keep only genuine fits, best first.
+      // Candidate set for the decision: large VIA searches the whole catalogue with
+      // the full brief's specific terms (teaser attribute + hard requirements);
+      // everyone else reasons over the fully-loaded catalogue.
+      let stock;
+      if (isLargeVia) {
+        const dqFields = [t.attribute, ...(Array.isArray(brief.requirements) ? brief.requirements : [])].filter((x) => typeof x === 'string' && x.trim());
+        const dq = uniq(dqFields.flatMap(recallQueries)).slice(0, 6);
+        stock = dq.length ? await searchStock(seller, dq) : selfHits;
+        if (stock.length === 0) { console.log(`[${seller.slug}] unlocked brief ${t.brief_id}, catalogue search found nothing , no offer`); continue; }
+      } else {
+        stock = loaded;
+      }
+
+      // 2. Decide over the candidate stock; keep only genuine fits, best first.
       const ranked = (await decide(brief, stock, seller.name, persona))
         .filter((pk) => pk.score >= MIN_OFFER_SCORE)
         .sort((a, b) => b.score - a.score);

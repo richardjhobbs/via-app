@@ -35,7 +35,16 @@ interface FlatResult {
   mcp_url: string;
   web_url: string | null;
   image: string | null;
+  description: string | null;   // enriched product text, for agentic matching across the network
+  tags: string[];               // canonical attribute facets a matcher can reason over
   matched_on: 'seller' | 'product';
+}
+
+/** Clip free text to a sane federated payload size. */
+function clip(s: string | null, n: number): string | null {
+  if (!s) return null;
+  const t = s.replace(/\s+/g, ' ').trim();
+  return t.length > n ? `${t.slice(0, n)}...` : t;
 }
 
 function priceLabel(p: PublicProduct): string {
@@ -52,6 +61,8 @@ function productToFlat(p: PublicProduct): FlatResult {
     mcp_url: p.mcp_ref.seller_mcp_url,
     web_url: p.product_url,
     image: p.image_url,
+    description: clip(p.description, 500),
+    tags: p.tags,
     matched_on: 'product',
   };
 }
@@ -64,6 +75,8 @@ function sellerToFlat(s: PublicSeller): FlatResult {
     mcp_url: s.mcp_url,
     web_url: s.page_url,
     image: null,
+    description: clip(s.description, 500),
+    tags: [],
     matched_on: 'seller',
   };
 }

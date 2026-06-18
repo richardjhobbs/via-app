@@ -1165,9 +1165,21 @@ body {
   .dash-main { grid-template-columns: 1fr; }
 }
 @media (max-width: 720px) {
-  .via-top-inner { padding: 12px 20px; }
-  .dash-nav { display: none; }
+  /* Flex (not the 3-col grid) so the nav can wrap to its own full-width row
+     below the wordmark/controls. Previously .dash-nav was display:none, which
+     left phones with no way to reach Briefs/Train/Credits at all. */
+  .via-top-inner { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; padding: 12px 20px; }
   .dash-acct span:not(.dash-avatar) { display: none; }
+  .dash-nav {
+    order: 3;
+    width: 100%;
+    margin-top: 10px;
+    gap: 22px;
+    justify-content: flex-start;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+  .dash-nav a { font-size: 14px; white-space: nowrap; padding: 2px 0; }
   .dash-wrap { padding: 28px 20px 48px; }
   .dash-subhead { flex-direction: column; align-items: flex-start; }
   .dash-metrics { grid-template-columns: repeat(2, 1fr); }
@@ -1257,4 +1269,38 @@ body {
   .via-stats { grid-template-columns: 1fr; }
   .stat-cell { border-right: none; border-bottom: 1px solid var(--line); padding: 16px 20px; }
   .stat-cell:last-child { border-bottom: none; }
+}
+
+/* New-results indicator on the buyer top nav (RRG nav-unread-dot parity).
+   Steady inner glow keeps it visible mid-cycle; the outer ring expands each
+   pulse for emphasis. Driven by the buyer's unseen match count. */
+.nav-unread-dot {
+  display: inline-block;
+  width: 9px; height: 9px;
+  border-radius: 50%;
+  background: var(--live);
+  margin-left: 6px;
+  vertical-align: middle;
+  animation: nav-unread-pulse 1.4s ease-out infinite;
+}
+@keyframes nav-unread-pulse {
+  0%   { box-shadow: 0 0 6px 1px color-mix(in srgb, var(--live) 70%, transparent), 0 0 0 0   color-mix(in srgb, var(--live) 90%, transparent); transform: scale(1); }
+  70%  { box-shadow: 0 0 6px 1px color-mix(in srgb, var(--live) 70%, transparent), 0 0 0 14px color-mix(in srgb, var(--live) 0%,  transparent); transform: scale(1.25); }
+  100% { box-shadow: 0 0 6px 1px color-mix(in srgb, var(--live) 70%, transparent), 0 0 0 14px color-mix(in srgb, var(--live) 0%,  transparent); transform: scale(1); }
+}
+.new-results-pill {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-size: 9.5px; letter-spacing: 0.12em; text-transform: uppercase;
+  color: var(--live); border: 1px solid var(--live);
+  border-radius: 999px; padding: 2px 8px;
+}
+.new-results-pill .d {
+  width: 6px; height: 6px; border-radius: 999px; background: var(--live);
+  animation: nav-unread-pulse 1.4s ease-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .nav-unread-dot, .new-results-pill .d {
+    animation: none;
+    box-shadow: 0 0 6px 1px color-mix(in srgb, var(--live) 70%, transparent), 0 0 0 3px color-mix(in srgb, var(--live) 40%, transparent);
+  }
 }

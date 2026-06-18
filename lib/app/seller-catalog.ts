@@ -18,6 +18,7 @@
  */
 import { db } from './db';
 import { buildIlikeOr, matchesQuery } from './via-search';
+import { enrichmentFromMetadata } from './via-product';
 
 const APP_BASE = (process.env.NEXT_PUBLIC_APP_BASE_URL || 'https://app.getvia.xyz').replace(/\/$/, '');
 
@@ -56,6 +57,10 @@ export interface PublicProduct {
   seller_name:  string;
   title:        string;
   description:  string | null;
+  /** canonical enrichment (metadata.via_enrichment, vinyl fallback) for agentic matching */
+  tags:         string[];
+  attributes:   Record<string, unknown>;
+  category:     string | null;
   kind:         string | null;
   /** USDC. For configurable products this is the "from" base price. */
   price_usdc:   number | null;
@@ -93,10 +98,11 @@ interface ProductRow {
   image_url:    string | null;
   token_id:     number | null;
   pricing_mode: string | null;
+  metadata:     Record<string, unknown> | null;
 }
 
 const SELLER_PUBLIC_COLS = 'id, slug, name, kind, headline, description, website_url, erc8004_agent_id';
-const PRODUCT_PUBLIC_COLS = 'id, seller_id, title, description, kind, price_minor, currency, stock, url, image_url, token_id, pricing_mode';
+const PRODUCT_PUBLIC_COLS = 'id, seller_id, title, description, kind, price_minor, currency, stock, url, image_url, token_id, pricing_mode, metadata';
 
 function toPublicSeller(row: SellerRow): PublicSeller {
   return {
@@ -115,12 +121,16 @@ function toPublicSeller(row: SellerRow): PublicSeller {
 function toPublicProduct(p: ProductRow, seller: { slug: string; name: string }): PublicProduct {
   const mode = p.pricing_mode || 'fixed';
   const priceUsdc = typeof p.price_minor === 'number' ? p.price_minor / 1_000_000 : null;
+  const enrichment = enrichmentFromMetadata(p.metadata, p.description, p.kind);
   return {
     product_id:    p.id,
     seller_slug:   seller.slug,
     seller_name:   seller.name,
     title:         p.title,
-    description:   p.description,
+    description:   enrichment.agentDescription,
+    tags:          enrichment.tags,
+    attributes:    enrichment.attributes,
+    category:      enrichment.category,
     kind:          p.kind,
     price_usdc:    priceUsdc,
     price_is_from: mode === 'configurable',

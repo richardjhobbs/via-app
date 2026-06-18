@@ -11,6 +11,7 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.52.0",
+    "@coinbase/cdp-sdk": "^1.51.0",
     "@google/generative-ai": "^0.24.0",
     "@modelcontextprotocol/sdk": "^1.27.1",
     "@openzeppelin/contracts": "^5.6.1",
@@ -25,6 +26,7 @@
     "mem0ai": "^2.4.2",
     "mppx": "^0.4.9",
     "next": "16.1.6",
+    "nostr-tools": "^2.23.5",
     "openai": "^4.104.0",
     "papaparse": "^5.5.3",
     "pinata": "^2.5.5",
@@ -38,6 +40,8 @@
     "thirdweb": "^5.119.1",
     "viem": "^2.47.0",
     "wagmi": "^3.5.0",
+    "ws": "^8.21.0",
+    "x402": "^0.7.0",
     "xlsx": "^0.18.5"
   },
   "devDependencies": {
@@ -47,6 +51,7 @@
     "@types/papaparse": "^5.5.2",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "@types/ws": "^8.18.1",
     "eslint": "^9",
     "eslint-config-next": "16.1.6",
     "hardhat": "^2.28.6",

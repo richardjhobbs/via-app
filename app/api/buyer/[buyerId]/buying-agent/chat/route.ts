@@ -14,6 +14,8 @@ import { isAdminFromCookies } from '@/lib/app/auth';
 import { getBuyerUser, isBuyerOwner } from '@/lib/app/buyer-auth';
 import { db } from '@/lib/app/db';
 import { runBuyingAgentTurn, type ChatMessage, type BuyingAgentContext } from '@/lib/app/buying-agent';
+import { hasCredits, deductCredits } from '@/lib/app/buyer-credits';
+import { resolveBuyerLlm } from '@/lib/app/buyer-llm';
 
 export const dynamic = 'force-dynamic';
 
@@ -53,7 +55,7 @@ export async function POST(
 
   const { data: buyer, error: buyerErr } = await db
     .from('app_buyers')
-    .select('id, handle, display_name')
+    .select('id, handle, display_name, llm_byo_provider, llm_byo_key_encrypted, llm_byo_model')
     .eq('id', buyerId)
     .single();
   if (buyerErr || !buyer) {
@@ -83,13 +85,42 @@ export async function POST(
     source,
   };
 
-  const result = await runBuyingAgentTurn(ctx, body.messages);
+  // BYO key runs on the owner's own provider (billed by them), so it bypasses
+  // platform credits entirely. Platform (DeepSeek) usage is metered.
+  const llm = resolveBuyerLlm(buyer);
+
+  // Credit gate , owner chat on the PLATFORM model is metered against the
+  // buyer's balance. Superadmin chat and BYO are free of platform credits.
+  // Block cleanly (402) when the balance is spent.
+  if (source === 'owner_chat' && !llm.isByo) {
+    const ok = await hasCredits(buyerId);
+    if (!ok) {
+      return NextResponse.json(
+        { error: 'Out of credits. Top up, or connect your own LLM key, to keep training your agent.', code: 'insufficient_credits' },
+        { status: 402 },
+      );
+    }
+  }
+
+  const result = await runBuyingAgentTurn(ctx, body.messages, llm);
+
+  // Deduct after the call against exact token usage (incl. 25% margin). Skipped
+  // for BYO (owner is billed directly by their provider).
+  let creditBalance: number | undefined;
+  if (source === 'owner_chat' && !result.isByo && result.tokensUsed > 0) {
+    try {
+      creditBalance = await deductCredits(buyerId, result.tokensUsed);
+    } catch (err) {
+      console.error('[buyer/chat] credit deduction failed:', err);
+    }
+  }
 
   return NextResponse.json({
     reply: result.reply,
     toolCalls: result.toolCalls,
     stopReason: result.stopReason,
     tokensUsed: result.tokensUsed,
+    creditBalance,
     sessionId,
   });
 }

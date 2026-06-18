@@ -1,56 +1,44 @@
-# CLAUDE.md — rrg
+# CLAUDE.md — via-app
 
-The main Real Real Genuine product. Next.js 16 App Router, deployed to the Hetzner VPS at 89.167.89.219 (Vercel is preview only). Source of truth for the on-chain platform agent (#33313), per-brand MCP endpoints, all brand storefronts, the marketing outreach pipeline, and the on-chain split logic.
+The VIA App at `app.getvia.xyz`: the Stage-1 Sales Agent + Buying Agent product, forked from RRG and turned into a sector-agnostic agentic-commerce surface. Next.js 16 App Router. This is its OWN project, separate from RRG and from the `getvia.xyz` marketing site. Do not assume RRG's rules apply here, the deploy path, wallets, and Supabase project are all different.
 
 ## Read before touching this repo
 
-The authoritative project knowledge lives in `~/.claude/projects/C--Users-Richard-Documents-rrg/memory/`. The single most-referenced files:
+The authoritative project knowledge lives in `~/.claude/projects/C--Users-Richard-Documents-via-app/memory/`. `MEMORY.md` there is the index. Most-referenced:
 
-- [wallet_separation.md](../../.claude/projects/C--Users-Richard-Documents-rrg/memory/wallet_separation.md) — DrHobbs (#17666) vs RRG (#33313) vs DEPLOYER (#26244) vs VIA Team Wallet. Never mix these.
-- [vps_deployment.md](../../.claude/projects/C--Users-Richard-Documents-rrg/memory/vps_deployment.md) — VPS layout, PM2 ids, deploy flow via GitHub Actions, env-var restart procedure, nginx routes.
-- [feedback_deploy_push_to_master.md](../../.claude/projects/C--Users-Richard-Documents-rrg/memory/feedback_deploy_push_to_master.md) — when Richard says "push", push to master. The GitHub Action handles VPS build + restart. Do not tell him to merge. Do not mention Vercel.
-- [feedback_register_drop_creator_must_be_platform.md](../../.claude/projects/C--Users-Richard-Documents-rrg/memory/feedback_register_drop_creator_must_be_platform.md) — `registerDrop(tokenId, creator, …)` for brand-owned drops MUST pass `PLATFORM_WALLET`, not the brand wallet. Wrong creator = 67.5% platform loss per sale via `mintWithPermit`.
-- [merchant_type_rule.md](../../.claude/projects/C--Users-Richard-Documents-rrg/memory/merchant_type_rule.md) — `merchantType` (direct_brand / reseller_authenticated / curated_consignment) drives schema and visibility.
-- [SERVICES.md](../../.claude/projects/C--Users-Richard-Documents-rrg/memory/SERVICES.md) — full third-party service inventory (Supabase, Resend, Pinata, Base RPC, Thirdweb, WalletConnect, Telegram/BlueSky/Discord bots, x402, World ID, agentmail, mem0).
-- [agent_runtime_topology.md](../../.claude/projects/C--Users-Richard-Documents-rrg/memory/agent_runtime_topology.md) — Box (100.80.225.34) NSSM services, helper scheduled tasks, who runs where.
+- [project_via_deploy_topology.md](../../.claude/projects/C--Users-Richard-Documents-via-app/memory/project_via_deploy_topology.md) — app + www `.getvia.xyz` are Vercel; production ships via `vercel --prod`.
+- [project_agent_wallet_decoupled_from_thirdweb.md](../../.claude/projects/C--Users-Richard-Documents-via-app/memory/project_agent_wallet_decoupled_from_thirdweb.md) — the AGENT identity/x402 wallet is ALWAYS platform-derived from `AGENT_WALLET_SEED`; Thirdweb only ever the human funding/payout wallet.
+- [project_seller_agents_vps_migration.md](../../.claude/projects/C--Users-Richard-Documents-via-app/memory/project_seller_agents_vps_migration.md) — the seller-agent runtime + its deploy mechanism on the VPS.
+- [project_supabase_topology.md](../../.claude/projects/C--Users-Richard-Documents-via-app/memory/project_supabase_topology.md) — via-app vs RRG are SEPARATE Supabase projects; cross-platform reads federate over HTTP, never a SQL union.
+- [project_paid_door_invariant.md](../../.claude/projects/C--Users-Richard-Documents-via-app/memory/project_paid_door_invariant.md) — VIA has ONE paid choke point (the x402 brief door); no seller-facing surface may give a full brief/pitch/offer/negotiation for free.
 
-Other useful pointers: `~/.claude/projects/C--Users-Richard-Documents-rrg/memory/MEMORY.md` is the index.
+## Deploy (this is the real topology, NOT RRG's)
 
-## Hard rules
+There are TWO independently-deployed things in this repo:
 
-- **Push to master to deploy.** GitHub Action SSHes the VPS, `git pull`, `npm ci && npm run build`, `pm2 restart rrg-app`. No manual SCP. Local = GitHub = VPS after every deploy.
-- **No em-dashes (`—`) or en-dashes (`–`) in user-facing copy.** Anywhere under `app/`, `lib/`, `components/`. Internal `.md` files are exempt. The pre-commit hook enforces this on staged source files (see Setup below).
-- **Run `tsc --noEmit` before any push.** Vercel Turbopack is stricter than the VPS bundler and will reject TS errors the VPS silently passes. The pre-commit hook has this gate wired but disabled until the existing typecheck errors (react-markdown / remark-gfm types, ChatPanel implicit-any) are resolved.
-- **Wallet rule** (from [wallet_separation.md](../../.claude/projects/C--Users-Richard-Documents-rrg/memory/wallet_separation.md)): RRG endpoints ALWAYS use `realrealgenuine.com`. NEVER `richard-hobbs.com` for RRG. RRG-Agent #33313 wallet is `0xbfd71eA27FFc99747dA2873372f84346d9A8b7ed`. DrHobbs #17666 wallet is `0xe653804032A2d51Cc031795afC601B9b1fd2c375`. Never cross these.
-- **MCP clientInfo** for outbound calls is always `RRG-Agent-33313`, never `DrHobbs-Marketing`.
-- **Brand split is flat 97.5% to brand** for direct brand products. Tiered or variable splits are co-creation only ([feedback_brand_split_flat.md](../../.claude/projects/C--Users-Richard-Documents-rrg/memory/feedback_brand_split_flat.md)).
-- **Don't infer per-brand wallets from `scripts/brand-mirror.mjs`** — the `wallet:` strings there are stale defaults ([feedback_brand_mirror_wallet_config_not_authoritative.md](../../.claude/projects/C--Users-Richard-Documents-rrg/memory/feedback_brand_mirror_wallet_config_not_authoritative.md)). Read the brand row in `rrg_submissions` instead.
-- **`hidden` vs `ui_visible`** are two different visibility flags ([feedback_ui_vs_mcp_visibility.md](../../.claude/projects/C--Users-Richard-Documents-rrg/memory/feedback_ui_vs_mcp_visibility.md)). `hidden` = global kill-switch; `ui_visible` = storefront-only curation, agents still see via MCP. Don't conflate.
+1. **The web app** (`app.getvia.xyz`). Vercel project `via-app` (`prj_jR0cJ2Kwr8IkCbzcF9Q2FuCx7bJX`). Ship with **`vercel --prod`** from the repo root. `vercel.json`'s `ignoreCommand` skips preview builds and builds production. Claude owns this deploy and runs it directly, do not ask the user to deploy. There is no "push to master to deploy" GitHub Action here (that is an RRG rule and does NOT apply).
 
-## Setup for a new clone
+2. **The standalone seller-agent runtime** on the Hetzner VPS at `agent@89.167.89.219`, living in `/home/agent/apps/via-agents/` (`seller-agent.mjs` + its own `ethers` + `run.sh`, run by system cron every ~10 min). This directory is **NOT a git checkout** and has no CI auto-deploy. The DOCUMENTED, SANCTIONED deploy mechanism is the operator (Claude) copying `scripts/seller-agent.mjs` to it by **scp**, then a `VIA_AGENT_DRY_RUN=1` smoke test over ssh:
 
-```
-npm ci
-./scripts/install-hooks.sh   # installs em-dash pre-commit hook
-cp .env.local.example .env.local  # then fill in
-npm run dev
-```
+   ```
+   scp scripts/seller-agent.mjs agent@89.167.89.219:/home/agent/apps/via-agents/seller-agent.mjs
+   ssh agent@89.167.89.219 "VIA_AGENT_DRY_RUN=1 /home/agent/apps/via-agents/run.sh"
+   ```
+
+   This dir is a plain directory, not a git checkout, so scp is the deploy mechanism (unlike RRG, whose VPS dir is a git checkout with a GitHub-Action deploy, hence RRG's "no manual scp" rule does not apply to it). Full migration brief: `docs/transfer-seller-agents-box-to-vps.md`. `AGENT_WALLET_SEED` + the RRG brand keys must be present in `/home/agent/apps/rrg/.env.local` for the VIA / RRG roster sellers to resolve their keys; placing the seed is the user's hard-walled step.
 
 ## Architecture in one paragraph
 
-Next.js App Router. `app/api/rrg/*` is the platform API surface. `app/api/seller/[sellerId]/*` is brand-side admin. `app/api/agent/*` is the consumer-agent API. `app/mcp/route.ts` is the platform MCP endpoint (`realrealgenuine.com/mcp`); per-brand MCPs live at `app/brand/[slug]/mcp/route.ts`. `lib/app/*` is the platform business logic (`splits.ts`, `auto-payout.ts`, `marketing-outreach.ts`, `marketing-discovery.ts`, `erc8004.ts`, etc.); `lib/agent/*` is the consumer-agent runtime (`brain.ts`, `core-prompt.ts`, `credits.ts`, `via-tools-spec.ts`). Production runs as `rrg-app` PM2 process on port 3001, reverse-proxied by nginx.
+Next.js App Router at `app.getvia.xyz`. Supabase project `via-agent-mcp` (id `gcxyoujubqclenrhhill`); all Stage-1/2 tables are `app_*`. `app/api/via/*` is the network API; `app/mcp/route.ts` is the network MCP; per-seller MCP at `app/sellers/[slug]/mcp/route.ts`, per-buyer at `app/buyers/[handle]/mcp/route.ts`. `lib/app/*` is the business logic (`store-registration.ts`, `auto-payout.ts`, `agent-wallet.ts`, `agent-funding.ts`, `buyer-identity.ts`, `x402-gate.ts`, the `broadcast/` NOSTR rail). The seller-side reference agent is `scripts/seller-agent.mjs`. LLM is DeepSeek. Identity is ERC-8004 on Base; payments are USDC via x402, settled by the Coinbase CDP facilitator.
 
-## Things to NEVER touch without thinking twice
+## Hard rules
 
-- `lib/app/splits.ts` and `lib/app/auto-payout.ts` — the on-chain payment routing. Wrong changes mean real USDC loss. See [via_payment_primitive_lessons.md](../../.claude/projects/C--Users-Richard-Documents-rrg/memory/via_payment_primitive_lessons.md) for the seven design lessons from the registerDrop bug.
-- `contracts/RRG.sol` — the deployed ERC-1155 contract. Address `0x9F07621f73E7CAaF2040C35833D5350F666b7177` on Base mainnet. Migrations are post-mortems waiting to happen.
-- `.env.local` on VPS — `pm2 restart` does NOT pick up env changes. Use the full sequence in [vps_deployment.md](../../.claude/projects/C--Users-Richard-Documents-rrg/memory/vps_deployment.md).
+- **No em-dashes or en-dashes in user-facing copy** anywhere under `app/`, `lib/`, `components/`. Internal `.md` files are exempt.
+- **Run `tsc --noEmit` before any deploy.** Vercel Turbopack is stricter than local.
+- **AGENT wallet = always platform-derived** ([project_agent_wallet_decoupled_from_thirdweb.md](../../.claude/projects/C--Users-Richard-Documents-via-app/memory/project_agent_wallet_decoupled_from_thirdweb.md)). Thirdweb stays ONLY for the human funding (buyer) / payout (seller) wallet + the PayEmbed card on-ramp. Never set an agent wallet to a Thirdweb in-app wallet, the platform-run agent cannot sign it. Run `node scripts/audit-agent-wallets.mjs` to catch drift.
+- **Paid-door invariant** ([project_paid_door_invariant.md](../../.claude/projects/C--Users-Richard-Documents-via-app/memory/project_paid_door_invariant.md)): the x402 brief door is the single paid choke point. Test every new agent-facing surface against it before shipping.
+- **Wallet/identity**: brand split is 97.5% seller / 2.5% platform. ERC-8004 mints go through the VIA registrar as `source_platform: 'rrg'` ([project_erc8004_mint_path.md](../../.claude/projects/C--Users-Richard-Documents-via-app/memory/project_erc8004_mint_path.md)).
 
 ## Notion Build Log
 
-Update after every meaningful deploy ([feedback_update_build_log.md](../../.claude/projects/C--Users-Richard-Documents-rrg/memory/feedback_update_build_log.md)). Format spec in [feedback_notion_build_log_format.md](../../.claude/projects/C--Users-Richard-Documents-rrg/memory/feedback_notion_build_log_format.md).
-
-There are two separate logs:
-
-- **via-app** (this repo, `app.getvia.xyz`): log to the "Build Log: Stage 1 + Superadmin" page under the "VIA APP" parent, id `36fdbc7b67f28170a3ddf14c4e6d2d07`. This is the one to update for via-app deploys.
-- **RRG + general via-labs-website builds**: the "VIA Labs - Build Log (Phase 51+)" continuation, id `366dbc7b67f281678751d79a56676e99`. The old "Phase 34+" page (`34ddbc7b67f2811690afe320fa579892`) is superseded; do not append there.
+Update after every meaningful deploy. via-app deploys log to the "Build Log: Stage 1 + Superadmin" page (id `36fdbc7b67f28170a3ddf14c4e6d2d07`) under the "VIA APP" parent. Do NOT use the RRG build-log pages for via-app work.

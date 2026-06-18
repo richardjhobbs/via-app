@@ -20,7 +20,7 @@ export default function OnboardCatalog() {
 
   useEffect(() => {
     const s = readOnboardState();
-    if (!s || s.role !== 'seller' || !s.email || !s.sellerName || !s.walletAddress || !s.agentWalletAddress) {
+    if (!s || s.role !== 'seller' || !s.email || !s.sellerName || !s.walletAddress) {
       router.replace('/onboard?role=seller');
       return;
     }
@@ -58,7 +58,6 @@ export default function OnboardCatalog() {
           description:        state.description,
           websiteUrl:         state.websiteUrl,
           walletAddress:      state.walletAddress,
-          agentWalletAddress: state.agentWalletAddress,
         }),
       });
       const data = await res.json();

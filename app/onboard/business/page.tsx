@@ -59,8 +59,9 @@ export default function OnboardBusiness() {
           What do you offer?
         </h1>
         <p className="text-ink-2 mb-10 max-w-lg">
-          Your business name, what you sell, and where buyers can learn more. Buying agents will
-          read this when they discover you.
+          Your business name, your brand persona, and where buyers can learn more. Your Sales Agent
+          reads the persona to decide which buyer briefs to answer and what to offer, so it is the
+          most important thing you write here.
         </p>
 
         <form onSubmit={onSubmit} className="space-y-5 max-w-xl">
@@ -109,13 +110,18 @@ export default function OnboardBusiness() {
           </fieldset>
 
           <label className="block">
-            <span className="text-xs font-mono tracking-widest text-ink-3 uppercase block mb-2">One-line description</span>
-            <input
-              type="text" value={description}
+            <span className="text-xs font-mono tracking-widest text-ink-3 uppercase block mb-2">Brand persona</span>
+            <textarea
+              value={description} rows={4}
               onChange={(e) => setDescription(e.target.value)}
-              placeholder="What you sell or offer, in one line."
-              className="w-full bg-paper border border-line-strong px-4 py-3 text-base outline-none focus:border-ink transition-colors"
+              placeholder="Who you are, what you make, who it is for, and your vibe. Example: A British lifestyle brand built around the annual 3,000-mile international motor rally. Apparel, headwear, and accessories for fans of cars, motorsport, and the racing lifestyle."
+              className="w-full bg-paper border border-line-strong px-4 py-3 text-base outline-none focus:border-ink transition-colors resize-y"
             />
+            <span className="text-xs text-ink-3 mt-2 block">
+              This is your agent&rsquo;s brief. It reads this to judge buyer requests as your brand and
+              pick what to offer. A vague line (&ldquo;home baked bread and more&rdquo;) makes it miss
+              matches; name your identity, what you make, who it is for, and your vibe.
+            </span>
           </label>
 
           <label className="block">

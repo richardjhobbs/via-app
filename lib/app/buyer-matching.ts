@@ -98,6 +98,10 @@ export interface BriefIntent {
   requirements: string[];
   preferences:  string[];
   budget_usd:   number | null;
+  /** The single most prominent attribute for the public teaser (colour / price /
+   *  location / material). Deliberately thin: enough for a seller to self-select,
+   *  not enough to offer well without unlocking the full brief. */
+  teaser_attribute: string | null;
 }
 
 function asStrings(v: unknown, max: number): string[] {
@@ -112,7 +116,7 @@ function asStrings(v: unknown, max: number): string[] {
  */
 export async function extractIntent(briefText: string, meter?: TokenMeter): Promise<BriefIntent> {
   const raw = briefText.trim();
-  const fallback: BriefIntent = { terms: raw ? [raw] : [], category: null, type_terms: [], requirements: [], preferences: [], budget_usd: null };
+  const fallback: BriefIntent = { terms: raw ? [raw] : [], category: null, type_terms: [], requirements: [], preferences: [], budget_usd: null, teaser_attribute: null };
   const apiKey = process.env.DEEPSEEK_API_KEY;
   if (!apiKey || raw.length < 2) return fallback;
 
@@ -126,7 +130,8 @@ export async function extractIntent(briefText: string, meter?: TokenMeter): Prom
       'CRITICAL , the SUBJECT or TOPIC of an informational product (a document, book, article, essay, report, or a record\'s theme) is NOT a hard requirement. For "a document about web3 and fashion", "a book on stoicism", "an essay on agentic commerce", the subjects (web3, fashion, stoicism, agentic commerce) go in terms/preferences so they RANK, never in requirements , an item that covers the topic, or one facet of it, must not be excluded. Reserve requirements for concrete PRODUCT ATTRIBUTES the buyer insists on: format (digital vs physical), size, material, edition/pressing, label, condition/grade, fitment, certification. A topical "about X and Y" must NEVER become a strict AND that drops an on-topic item covering only X. ' +
       'Phrases like "ideally", "preferably", "if possible" are NOT requirements, they are preferences. Use short noun phrases, [] if none.\n' +
     '  "preferences": soft nice-to-haves that should only raise ranking, never exclude (e.g. things prefixed with "ideally"). [] if none.\n' +
-    '  "budget_usd": max price in USD as a number if stated, else null.';
+    '  "budget_usd": max price in USD as a number if stated, else null.\n' +
+    '  "teaser_attribute": the SINGLE most prominent, distinguishing attribute of this brief as a short phrase (a colour, a price point, a place, a material, a maker), for a public one-line teaser. Pick the one detail a seller would most use to decide if the brief is worth their attention. Keep it under 6 words. null if nothing stands out.';
 
   try {
     const res = await fetch(DEEPSEEK_URL, {
@@ -150,14 +155,15 @@ export async function extractIntent(briefText: string, meter?: TokenMeter): Prom
     const json = await res.json() as { choices?: Array<{ message?: { content?: string } }> };
     addUsage(meter, json);
     const content = json.choices?.[0]?.message?.content ?? '';
-    const parsed = JSON.parse(content) as { terms?: unknown; category?: unknown; type_terms?: unknown; requirements?: unknown; preferences?: unknown; budget_usd?: unknown };
+    const parsed = JSON.parse(content) as { terms?: unknown; category?: unknown; type_terms?: unknown; requirements?: unknown; preferences?: unknown; budget_usd?: unknown; teaser_attribute?: unknown };
     const terms = asStrings(parsed.terms, 3);
     const category = typeof parsed.category === 'string' && parsed.category.trim().length >= 2 ? parsed.category.trim().toLowerCase() : null;
     const type_terms = asStrings(parsed.type_terms, 6).map((a) => a.toLowerCase());
     const requirements = asStrings(parsed.requirements, 8);
     const preferences = asStrings(parsed.preferences, 8);
     const budget_usd = typeof parsed.budget_usd === 'number' && parsed.budget_usd > 0 ? parsed.budget_usd : null;
-    return { terms: terms.length > 0 ? terms : [raw], category, type_terms, requirements, preferences, budget_usd };
+    const teaser_attribute = typeof parsed.teaser_attribute === 'string' && parsed.teaser_attribute.trim().length >= 2 ? parsed.teaser_attribute.trim().slice(0, 60) : null;
+    return { terms: terms.length > 0 ? terms : [raw], category, type_terms, requirements, preferences, budget_usd, teaser_attribute };
   } catch (e) {
     console.warn('[buyer-matching] DeepSeek extract threw; falling back to raw brief:', e);
     return fallback;
@@ -304,6 +310,7 @@ async function resolveIntent(intent: IntentLite, meter?: TokenMeter): Promise<{ 
         requirements: asStrings(cached.requirements, 8),
         preferences:  asStrings(cached.preferences, 8),
         budget_usd:   typeof cached.budget_usd === 'number' ? cached.budget_usd : null,
+        teaser_attribute: typeof cached.teaser_attribute === 'string' ? cached.teaser_attribute : null,
       },
       extracted: false,
     };
@@ -515,6 +522,7 @@ export function briefIntentFromStructured(structured: Record<string, unknown> | 
     requirements: asStrings(si.requirements, 8),
     preferences:  asStrings(si.preferences, 8),
     budget_usd:   typeof si.budget_usd === 'number' ? si.budget_usd : null,
+    teaser_attribute: typeof si.teaser_attribute === 'string' ? si.teaser_attribute : null,
   };
 }
 
@@ -532,22 +540,39 @@ export interface PitchProduct {
  * main judge: a stated requirement must be POSITIVELY supported by the product's
  * data or it does not fit. Falls back to the deterministic scorer with no key.
  */
+export interface PitchVerdict {
+  fits:   boolean;
+  score:  number;
+  reason: string;
+  /** The buyer's hard requirements this product DOES satisfy (directly or by equivalence). */
+  met:    string[];
+  /** The hard requirements it does NOT satisfy , the differences to surface to the buyer. */
+  unmet:  string[];
+}
+
+const strList = (v: unknown, cap: number): string[] =>
+  Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string' && x.trim().length > 0).map((x) => x.trim().slice(0, 80)).slice(0, cap) : [];
+
 export async function judgeProductAgainstBrief(
   intentText: string,
   brief: BriefIntent,
   product: PitchProduct,
-): Promise<{ fits: boolean; score: number; reason: string }> {
+): Promise<PitchVerdict> {
   const apiKey = process.env.DEEPSEEK_API_KEY;
   if (!apiKey) {
     const u = { title: product.title, seller: null, description: product.description ?? null,
       tags: product.tags ?? [], detail: null, price_usdc: product.price_usdc ?? null } as unknown as UnifiedProduct;
     const score = intentScore(u, brief, [], brief.budget_usd);
-    return { fits: score >= 5, score: Math.min(100, score * 12), reason: 'Heuristic match against the brief (LLM judge unavailable).' };
+    return { fits: score >= 5, score: Math.min(100, score * 12), reason: 'Heuristic match against the brief (LLM judge unavailable).', met: [], unmet: [] };
   }
   const sys =
-    'You are the buyer\'s personal agent. A seller is pitching ONE product against the buyer\'s brief. Decide whether it GENUINELY fits. ' +
-    'For each hard requirement the buyer stated, the product\'s own data must POSITIVELY support it (directly or by clear equivalence); if the data is silent on a stated requirement, it does NOT fit. Where the brief is broad, judge by category and spirit. ' +
-    'Respond as JSON: {"fits": <bool>, "score": <0-100>, "reason": "<one sentence to the buyer>"}.';
+    'You are the buyer\'s personal agent. A seller is pitching ONE product against the buyer\'s brief. Decide how well it fits. ' +
+    'Read the product\'s `attributes` (colours, sizes, product_type, shopify_tags, sample SKUs) as AUTHORITATIVE structured data, alongside its title and description. ' +
+    'Judge by MEANING, not literal words , map the buyer\'s intent onto the product\'s facts. Equivalences count as SATISFIED: "loose" ≈ baggy ≈ relaxed ≈ wide ≈ oversized; a named heritage denim brand (Levi\'s, Lee, Wrangler, Edwin and similar long-established makers) satisfies "heritage brand"; a Japanese maker/origin satisfies "japanese"; an "Original" pressing IS a first pressing; equivalent size, colour, condition or material wording all count. A wanted colour/size is met if it appears among the product\'s available variants (the buyer picks that variant); "men\'s" is met by that gender OR unisex. ' +
+    'Judge the product by what it FUNDAMENTALLY IS , its real product category , not by suggestive words in its title (a "Hero\'s Journey Tee" is a t-shirt, not a book). A product from a different category never fits: apparel does not satisfy a request for a book. But treat equivalent forms WITHIN one category as the same , a request for a book or reading material is satisfied by books, e-books, reports, papers, guides, documents, essays, or other printed or written matter on the subject (physical or digital). ' +
+    'For EACH hard requirement the buyer stated, decide if the product POSITIVELY supports it (directly or by the equivalences above). Put the requirements it satisfies in `met` and those it does not (contradicted, or the data is genuinely silent) in `unmet`, using the buyer\'s own wording for each. Together `met` + `unmet` must cover every hard requirement. ' +
+    'fits = true ONLY when `unmet` is empty (every hard requirement satisfied). If some but not all are satisfied it is a PARTIAL match: fits = false, but `met` still lists what it does satisfy. Reserve an empty `met` (true no-fit) for the wrong category or a product that contradicts the core of the brief. Where the brief is broad with no hard requirements, judge by category and spirit. ' +
+    'Score 0-100 by overall fit. Respond as JSON: {"fits": <bool>, "score": <0-100>, "met": [<requirement strings>], "unmet": [<requirement strings>], "reason": "<one sentence to the buyer>"}.';
   const user = JSON.stringify({
     brief: intentText,
     hard_requirements: brief.requirements,
@@ -559,17 +584,19 @@ export async function judgeProductAgainstBrief(
     const res = await fetch(DEEPSEEK_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
-      body: JSON.stringify({ model: 'deepseek-chat', temperature: 0, max_tokens: 200,
+      body: JSON.stringify({ model: 'deepseek-chat', temperature: 0, max_tokens: 320,
         response_format: { type: 'json_object' }, messages: [{ role: 'system', content: sys }, { role: 'user', content: user }] }),
     });
     if (!res.ok) throw new Error(`judge ${res.status}`);
     const json = await res.json() as { choices?: Array<{ message?: { content?: string } }> };
-    const p = JSON.parse(json.choices?.[0]?.message?.content ?? '{}') as { fits?: unknown; score?: unknown; reason?: unknown };
+    const p = JSON.parse(json.choices?.[0]?.message?.content ?? '{}') as { fits?: unknown; score?: unknown; reason?: unknown; met?: unknown; unmet?: unknown };
     const score = typeof p.score === 'number' ? Math.max(0, Math.min(100, p.score)) : 0;
-    return { fits: p.fits === true, score, reason: typeof p.reason === 'string' ? p.reason.slice(0, 300) : '' };
+    const met = strList(p.met, 12);
+    const unmet = strList(p.unmet, 12);
+    return { fits: p.fits === true && unmet.length === 0, score, reason: typeof p.reason === 'string' ? p.reason.slice(0, 300) : '', met, unmet };
   } catch (e) {
     console.warn('[buyer-matching] pitch judge failed:', e);
-    return { fits: false, score: 0, reason: 'Could not evaluate the pitch.' };
+    return { fits: false, score: 0, reason: 'Could not evaluate the pitch.', met: [], unmet: [] };
   }
 }
 

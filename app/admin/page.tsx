@@ -59,23 +59,19 @@ interface BuyerRow {
 async function loadSellers(): Promise<SellerRow[]> {
   const { data: sellers, error } = await db
     .from('app_sellers')
-    .select('id, slug, name, kind, contact_email, wallet_address, erc8004_agent_id, active, created_at')
+    .select('id, slug, name, kind, contact_email, wallet_address, erc8004_agent_id, active, created_at, product_count')
     .order('created_at', { ascending: false });
   if (error || !sellers) return [];
+  if (sellers.length === 0) return [];
 
+  // Product counts are NOT counted live: a count over the 200k-row catalogue
+  // times out / saturates the pool. They are cached on app_sellers.product_count
+  // and refreshed by the ingest worker after each store sync (and a one-time
+  // backfill). This is an internal reference view, so a per-sync-fresh number is
+  // fine. Sales are still counted live from app_purchases — a small table, well
+  // under the PostgREST ~1000-row fetch cap.
   const ids = sellers.map((s) => s.id as string);
-  if (ids.length === 0) return [];
-
-  const [{ data: products }, { data: purchases }] = await Promise.all([
-    db.from('app_seller_products').select('seller_id').in('seller_id', ids),
-    db.from('app_purchases').select('seller_id').in('seller_id', ids),
-  ]);
-
-  const pCount = new Map<string, number>();
-  for (const r of products ?? []) {
-    const k = r.seller_id as string;
-    pCount.set(k, (pCount.get(k) ?? 0) + 1);
-  }
+  const { data: purchases } = await db.from('app_purchases').select('seller_id').in('seller_id', ids);
   const sCount = new Map<string, number>();
   for (const r of purchases ?? []) {
     const k = r.seller_id as string;
@@ -92,7 +88,7 @@ async function loadSellers(): Promise<SellerRow[]> {
     erc8004_agent_id: s.erc8004_agent_id as string | null,
     active:           s.active as boolean,
     created_at:       s.created_at as string,
-    product_count:    pCount.get(s.id as string) ?? 0,
+    product_count:    (s.product_count as number) ?? 0,
     sales_count:      sCount.get(s.id as string) ?? 0,
   }));
 }
@@ -168,8 +164,13 @@ interface LoadStats {
 const RRG_ORIGIN = process.env.RRG_ORIGIN ?? 'https://realrealgenuine.com';
 
 async function loadLoadStats(): Promise<LoadStats | null> {
+  // Hard 3s cap: this is a cross-origin call to RRG inside the admin render
+  // path. Without a timeout, an RRG outage would hang the whole dashboard.
   try {
-    const r = await fetch(`${RRG_ORIGIN}/api/rrg/load-stats`, { cache: 'no-store' });
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 3000);
+    const r = await fetch(`${RRG_ORIGIN}/api/rrg/load-stats`, { cache: 'no-store', signal: controller.signal });
+    clearTimeout(timer);
     if (!r.ok) return null;
     return (await r.json()) as LoadStats;
   } catch {

@@ -14,7 +14,7 @@
 import { db } from './db';
 import { relevanceScore } from './via-search';
 import { insertNotification } from './notifications';
-import { judgeProductAgainstBrief, briefIntentFromStructured } from './buyer-matching';
+import { judgeProductAgainstBrief, briefIntentFromStructured, type PitchVerdict } from './buyer-matching';
 import { enqueueOfferSignals } from './erc8004-signal-queue';
 import { publishOfferReceiptToNostr } from './broadcast/nostr';
 
@@ -304,7 +304,7 @@ export async function paidOfferExists(briefId: string, buyerId: string, paymentT
 export interface OfferOutcome {
   status:   'recorded' | 'not_found';
   brief_id: string;
-  verdict?: { fits: boolean; score: number; reason: string };
+  verdict?: PitchVerdict;
 }
 
 interface OfferIntentRow {
@@ -327,7 +327,7 @@ export async function submitOffer(
   briefId: string,
   offer: OfferInput,
   callerIdentity: Record<string, unknown>,
-  opts?: { requireBuyerId?: string; verdict?: { fits: boolean; score: number; reason: string } },
+  opts?: { requireBuyerId?: string; verdict?: PitchVerdict },
 ): Promise<OfferOutcome> {
   let query = db
     .from('app_buyer_intents')
@@ -348,7 +348,7 @@ export async function submitOffer(
   // response , the seller already chose to submit; the buyer ranks what arrives.
   //  - If the submitter supplied a verdict (its own agent's score), use it as-is.
   //  - Otherwise the door judges this one offer against the brief for the buyer.
-  let verdict: { fits: boolean; score: number; reason: string };
+  let verdict: PitchVerdict;
   if (opts?.verdict) {
     verdict = opts.verdict;
   } else {

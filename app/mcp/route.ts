@@ -323,16 +323,16 @@ function createServer(req: Request) {
       agent_self_onboard: {
         summary:    'Agents can register their own store over this MCP with a SINGLE wallet, no thirdweb, no human wizard. You only need your payout_wallet (your USDC EOA); the platform creates your store ERC-8004 identity wallet for you. The VIA network keeps a flat 2.5% fee on each sale; you keep 97.5% to your payout wallet. Your store gets its own ERC-8004 identity on approval.',
         how: [
-          '1. Call register_store with: store_name, kind (product|service|mixed), a payout_wallet (your USDC EOA), plus a contact email + password you keep for the dashboard. agent_wallet is OPTIONAL: leave it out and the platform creates your identity wallet, or supply your own DIFFERENT EOA if you want to control the identity yourself.',
+          '1. Call register_store with: store_name, kind (product|service|mixed), a payout_wallet (your USDC EOA), plus a contact email + password you keep for the dashboard. That is the ONLY wallet you provide; the platform creates and operates your ERC-8004 identity wallet for you.',
           '2. Your store is created PENDING and stays invisible (not in list_sellers / find_seller, no per-seller MCP) until a human reviews it. Review happens within 24 hours.',
           '3. Poll get_store_status with your slug. On "approved" the store is live, the ERC-8004 agent id is minted to your store identity wallet, and your per-seller MCP url is returned.',
-          '4. Manage your catalogue agent-to-agent over MCP, no dashboard: connect to /sellers/{slug}/manage/mcp, call get_owner_management_info to learn which wallet to sign with (your payout_wallet when the platform created your identity wallet, otherwise your own agent_wallet), get_challenge({ wallet }), sign the message with that wallet, authenticate({ wallet, challenge, signature }) to get a session_token, then create_product and publish_product.',
+          '4. Manage your catalogue agent-to-agent over MCP, no dashboard: connect to /sellers/{slug}/manage/mcp, get_challenge({ wallet }) signing with your payout_wallet, sign the message with that wallet, authenticate({ wallet, challenge, signature }) to get a session_token, then create_product and publish_product.',
         ],
         manage_after_approval: {
           manage_mcp:    `${APP_BASE}/sellers/{slug}/manage/mcp`,
           auth:          'wallet-signature: get_owner_management_info -> get_challenge -> sign with the wallet you control -> authenticate -> session_token',
-          discover:      'Call get_owner_management_info on the public per-seller MCP to learn the manage url and which wallet to sign with (payout_wallet when the platform created your identity wallet).',
-          note:          'Only works once the store is approved (active) with a contact email on record. Sign with the wallet you control: your payout_wallet when the platform created your identity wallet, otherwise the agent_wallet you supplied.',
+          discover:      'Call get_owner_management_info on the public per-seller MCP to learn the manage url. Sign with your payout_wallet.',
+          note:          'Only works once the store is approved (active) with a contact email on record. Sign with your payout_wallet (the only wallet you control; the identity wallet is platform-operated).',
         },
         review_policy: 'Stores are reviewed for quality: nothing illegal, immoral, or offensive. Rejected stores stay offline and the reason is returned by get_store_status.',
         fee:           'Flat 2.5% network fee per sale, deducted on-chain at settlement. You keep 97.5%.',
@@ -351,12 +351,11 @@ function createServer(req: Request) {
   // ── register_store ───────────────────────────────────────────────
   server.tool(
     'register_store',
-    'Register your own store on the VIA network (no thirdweb, no human wizard). You only need ONE wallet: your payout_wallet (USDC lands here, you keep 97.5%). The platform creates your store\'s ERC-8004 identity wallet for you, so leave agent_wallet out unless you specifically want to supply your own (a DIFFERENT EOA from payout_wallet). The flat 2.5% network fee is unchanged. Your store is created PENDING and stays invisible until a human reviews it for quality (nothing illegal, immoral, or offensive) within 24 hours. On approval the store goes live and its ERC-8004 identity is minted. Poll get_store_status with the returned slug to track the decision.',
+    'Register your own store on the VIA network (no thirdweb, no human wizard). You only need ONE wallet: your payout_wallet (USDC lands here, you keep 97.5%). The platform creates and operates your store\'s ERC-8004 identity wallet for you; you do not supply or hold it. The flat 2.5% network fee is unchanged. Your store is created PENDING and stays invisible until a human reviews it for quality (nothing illegal, immoral, or offensive) within 24 hours. On approval the store goes live and its ERC-8004 identity is minted. Poll get_store_status with the returned slug to track the decision.',
     {
       store_name:    z.string().min(1).max(120).describe('Public store / brand name, e.g. "Arc Lights".'),
       kind:          z.enum(['product', 'service', 'mixed']).describe('What you sell.'),
       payout_wallet: z.string().regex(/^0x[a-fA-F0-9]{40}$/, 'invalid Base/EVM address').describe('Your USDC payout EOA on Base. Sale proceeds (97.5%) settle here. This is the only wallet you need.'),
-      agent_wallet:  z.string().regex(/^0x[a-fA-F0-9]{40}$/, 'invalid Base/EVM address').optional().describe('OPTIONAL. Leave this out and the platform creates your store\'s ERC-8004 identity wallet for you (recommended: you only need your payout_wallet). Only supply it if you want to use your own DIFFERENT EOA for the identity; it must not equal payout_wallet.'),
       email:         z.string().email().max(200).describe('Contact email. Becomes the dashboard login once approved; keep it.'),
       password:      z.string().min(8).max(200).describe('Dashboard password (8+ chars). Keep it: this is how the store is managed after approval.'),
       slug:          z.string().min(1).max(60).optional().describe('Optional URL slug. Derived from store_name if omitted.'),
@@ -364,7 +363,7 @@ function createServer(req: Request) {
       headline:      z.string().max(200).optional().describe('Short one-line tagline.'),
       website_url:   z.string().url().max(300).optional().describe('Existing website, if any.'),
     },
-    async ({ store_name, kind, payout_wallet, agent_wallet, email, password, slug, description, headline, website_url }) => {
+    async ({ store_name, kind, payout_wallet, email, password, slug, description, headline, website_url }) => {
       if (isRegisterRateLimited(clientIp(req))) {
         return asJson({ ok: false, code: 'rate_limited', error: 'Too many store registrations from this source. Wait a few minutes and retry.' });
       }
@@ -376,7 +375,6 @@ function createServer(req: Request) {
         headline:     headline ?? null,
         websiteUrl:   website_url ?? null,
         payoutWallet: payout_wallet,
-        agentWallet:  agent_wallet,
         email,
         password,
       });

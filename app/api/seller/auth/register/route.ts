@@ -4,6 +4,7 @@ import { db } from '@/lib/app/db';
 import { createClient } from '@supabase/supabase-js';
 import { ethers } from 'ethers';
 import { countWalletStores, WALLET_STORE_CAP } from '@/lib/app/store-registration';
+import { deriveAgentWallet, platformAgentWalletsEnabled } from '@/lib/app/agent-wallet';
 
 export const dynamic = 'force-dynamic';
 
@@ -28,17 +29,17 @@ const supabase = createClient(
  *     headline?:          string,
  *     websiteUrl?:        string,
  *     walletAddress:      string,    // seller's payout wallet (USDC lands here)
- *     agentWalletAddress: string,    // Sales Agent's own EOA (thirdweb in-app wallet)
  *   }
+ *   (agentWalletAddress is no longer accepted: the Sales Agent's wallet is always
+ *    platform-derived from AGENT_WALLET_SEED so the platform-run agent can sign.)
  *
  * What it does:
  *   1. Creates an auto-confirmed Supabase Auth user with the supplied
  *      password and signs them in (sb-access-token / sb-refresh-token cookies).
  *   2. Inserts app_sellers PENDING and inactive (active=false,
- *      approval_status='pending', created_via='web_onboard') with BOTH wallets
- *      distinguished:
- *      wallet_address       = payout target,
- *      agent_wallet_address = Sales Agent's own EOA.
+ *      approval_status='pending', created_via='web_onboard'):
+ *      wallet_address       = the human's payout wallet (thirdweb/external),
+ *      agent_wallet_address = platform-derived from AGENT_WALLET_SEED + store id.
  *      The store is invisible to list_sellers / find_seller until a human
  *      approves it, exactly like the agent-MCP register_store path.
  *   3. Does NOT mint ERC-8004 here. The mint is deferred to approveAgentStore
@@ -62,7 +63,8 @@ export async function POST(req: NextRequest) {
   const headline           = body.headline     ? String(body.headline).trim()     : null;
   const websiteUrl         = body.websiteUrl   ? String(body.websiteUrl).trim()   : null;
   const walletAddress      = String(body.walletAddress ?? '').trim();
-  const agentWalletAddress = String(body.agentWalletAddress ?? '').trim();
+  // body.agentWalletAddress is intentionally NOT read: the agent wallet is always
+  // platform-derived server-side (the wizard no longer provisions one).
 
   // Catalog source captured in the wizard's catalog step.
   const catalogSourceRaw   = body.catalogSource ? String(body.catalogSource).trim().toLowerCase() : null;
@@ -84,12 +86,13 @@ export async function POST(req: NextRequest) {
   if (!sellerName)                                    return NextResponse.json({ error: 'business name required' },         { status: 400 });
   if (!['product','service','mixed'].includes(kind))  return NextResponse.json({ error: "kind must be 'product', 'service', or 'mixed'" }, { status: 400 });
   if (!ethers.isAddress(walletAddress))               return NextResponse.json({ error: 'invalid payout wallet address' },  { status: 400 });
-  if (!ethers.isAddress(agentWalletAddress))          return NextResponse.json({ error: 'invalid agent wallet address. Provision the Sales Agent wallet in step 3' }, { status: 400 });
-  if (walletAddress.toLowerCase() === agentWalletAddress.toLowerCase()) {
-    return NextResponse.json({ error: 'payout wallet and agent wallet must be different EOAs' }, { status: 400 });
+  // The agent wallet is platform-derived from AGENT_WALLET_SEED. Fail closed if
+  // the seed is unconfigured , never fall back to a user-custodied wallet the
+  // platform cannot sign.
+  if (!platformAgentWalletsEnabled()) {
+    return NextResponse.json({ error: 'platform-managed identity wallets are not enabled; contact VIA' }, { status: 503 });
   }
-  const wallet      = walletAddress.toLowerCase();
-  const agentWallet = agentWalletAddress.toLowerCase();
+  const wallet = walletAddress.toLowerCase();
 
   // Normalise slug: alphanumerics + hyphens, max 60 chars.
   const slug = (slugInput || sellerName)
@@ -119,7 +122,7 @@ export async function POST(req: NextRequest) {
     email,
     password,
     email_confirm: true,
-    user_metadata: { source: 'via_app_onboard', wallet_address: wallet, agent_wallet_address: agentWallet },
+    user_metadata: { source: 'via_app_onboard', wallet_address: wallet, agent_wallet_address: null },
   });
 
   if (createErr) {
@@ -171,7 +174,7 @@ export async function POST(req: NextRequest) {
       description,
       headline,
       wallet_address:       wallet,
-      agent_wallet_address: agentWallet,
+      agent_wallet_address: null,
       catalog_source:        catalogSource,
       shopify_domain:        catalogSource === 'shopify'     ? shopifyDomain      : null,
       squarespace_shop_url:  catalogSource === 'squarespace' ? squarespaceShopUrl : null,
@@ -191,6 +194,22 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'slug taken (race). Pick a different name' }, { status: 409 });
     }
     return NextResponse.json({ error: 'failed to create seller record' }, { status: 500 });
+  }
+
+  // ── Platform-managed agent wallet ───────────────────────────────────
+  // The agent wallet is derived from AGENT_WALLET_SEED + the store id (needs the
+  // id, so it happens post-insert). The private key is never stored
+  // (re-derivable); the platform-run agent signs x402 micro-fees with it and it
+  // holds the ERC-8004 identity. The seller's payout stays on `wallet_address`.
+  {
+    const derived = deriveAgentWallet(seller.id);
+    if (!derived) {
+      console.error('[onboard/register] AGENT_WALLET_SEED unavailable post-insert for', seller.slug);
+    } else {
+      await db.from('app_sellers')
+        .update({ agent_wallet_address: derived.address.toLowerCase() })
+        .eq('id', seller.id);
+    }
   }
 
   // ERC-8004 identity is NOT minted here. It is deferred to approveAgentStore

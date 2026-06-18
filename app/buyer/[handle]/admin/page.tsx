@@ -156,6 +156,11 @@ export default async function BuyerAdminPage({
     const sellerName = (p.seller_name as string | null)
       ?? (typeof ident.via_agent_id === 'string' || typeof ident.via_agent_id === 'number' ? `Agent ${ident.via_agent_id}` : null)
       ?? 'A seller agent';
+    const fits = verdict.fits === true;
+    const met = Array.isArray(verdict.met) ? (verdict.met as unknown[]).filter((x): x is string => typeof x === 'string') : [];
+    const unmet = Array.isArray(verdict.unmet) ? (verdict.unmet as unknown[]).filter((x): x is string => typeof x === 'string') : [];
+    // fit = every hard requirement met; partial = some met, some not; no-fit = none.
+    const tier: 'fit' | 'partial' | 'nofit' = fits ? 'fit' : met.length > 0 ? 'partial' : 'nofit';
     return {
       id: p.id as string,
       intentId: p.intent_id as string,
@@ -164,7 +169,10 @@ export default async function BuyerAdminPage({
       url: (product.url as string | null) ?? null,
       buyUrl: offerBuyUrl(p, product),
       seller: sellerName,
-      fits: verdict.fits === true,
+      fits,
+      tier,
+      met,
+      unmet,
       score: typeof verdict.score === 'number' ? verdict.score : 0,
       reason: (verdict.reason as string) ?? '',
       briefText: brief?.intent_text ?? '',
@@ -182,11 +190,15 @@ export default async function BuyerAdminPage({
   }
   const pitches: PitchRow[] = [];
   for (const [intentId, group] of offersByIntent) {
+    // SELECTION keeps the best N per brief by fit then score (so the strongest
+    // offers survive the per-brief cap)...
     group.sort((a, b) => (Number(b.fits) - Number(a.fits)) || (b.score - a.score));
     const cap = optionCountByIntent.get(intentId) ?? DEFAULT_OPTION_COUNT;
     for (const o of group.slice(0, cap)) pitches.push(o);
   }
-  pitches.sort((a, b) => (Number(b.fits) - Number(a.fits)) || (b.score - a.score));
+  // ...but the FEED itself shows most-recent first, so a freshly-arrived offer is
+  // at the top rather than buried under older "fits"/Buy-now pitches.
+  pitches.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
   const newPitchCount = ((pitchData ?? []) as Array<{ status?: string }>).filter((p) => p.status === 'new').length;
 
   // Viewing the dashboard clears the new-results flash: mark this buyer's unseen

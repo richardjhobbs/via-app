@@ -7,6 +7,28 @@ const nextConfig: NextConfig = {
   // caused MIDDLEWARE_INVOCATION_FAILED on the first deploy.
   turbopack: {},
   serverExternalPackages: ['agentmail', 'ethers'],
+  async headers() {
+    // Agent-useful Link relations on the homepage so crawlers and agents can
+    // discover the A2A card, MCP server card, and API catalog from the root
+    // (isitagentready.com linkHeaders check). RRG gets these from nginx; on
+    // Vercel we emit them here.
+    const link = [
+      '</.well-known/agent-card.json>; rel="describedby"; type="application/json"',
+      '</.well-known/mcp/server-card.json>; rel="service-desc"; type="application/json"',
+      '</.well-known/api-catalog>; rel="api-catalog"; type="application/linkset+json"',
+      '</auth.md>; rel="describedby"; type="text/markdown"',
+      '</sitemap.xml>; rel="sitemap"; type="application/xml"',
+    ].join(', ');
+    return [
+      {
+        source: '/',
+        headers: [
+          { key: 'Link', value: link },
+          { key: 'Vary', value: 'Accept' },
+        ],
+      },
+    ];
+  },
 };
 
 export default nextConfig;

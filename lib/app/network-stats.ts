@@ -26,22 +26,46 @@ const MEMBERS: { name: string; statsUrl: string }[] = [
   { name: 'rrg', statsUrl: 'https://realrealgenuine.com/api/rrg/stats' },
 ];
 
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+// Run a head/count query, retrying on transient error. During a bulk catalogue
+// ingest the count can intermittently fail (DB contention); supabase-js then
+// returns { count: null, error }. Without a retry that null became 0, which
+// (cached for 60s) collapsed the whole local catalogue out of the headline.
+// On final failure we THROW rather than return 0, so compute() rejects and the
+// cache keeps serving the last good total instead of caching a zero.
+async function countOrThrow(
+  build: () => PromiseLike<{ count: number | null; error: unknown }>,
+  label: string,
+): Promise<number> {
+  let lastErr: unknown;
+  for (let attempt = 0; attempt < 4; attempt++) {
+    const { count, error } = await build();
+    if (!error && count !== null) return count;
+    lastErr = error;
+    await sleep(250 * (attempt + 1));
+  }
+  throw new Error(`network-stats local count failed (${label}): ${String(lastErr)}`);
+}
+
+/** Estimated product count via pg_class.reltuples (app_seller_products_estimate
+ *  RPC). An exact count(*) over the 220k-row / ~1 GB table is a ~29s seq scan on
+ *  the current instance; the estimate is ~6ms and plenty accurate for a headline. */
+async function estimateProducts(): Promise<number> {
+  const { data, error } = await db.rpc('app_seller_products_estimate');
+  if (error || data == null) throw new Error(`product estimate failed: ${String(error)}`);
+  return Number(data);
+}
+
 async function fetchLocal(): Promise<MemberStats> {
+  // sellers/buyers are tiny tables (exact counts are instant); the products
+  // table is the heavy one, so it uses the fast reltuples estimate.
   const [sellers, products, buyers] = await Promise.all([
-    db.from('app_sellers').select('id', { count: 'exact', head: true }).eq('active', true),
-    // Agent-purchasable = the discovery rule (mint-on-purchase): active, not
-    // admin-removed, draft OR registered. Drafts are buyable (minted at sale),
-    // so they count toward "products available".
-    db.from('app_seller_products').select('id', { count: 'exact', head: true })
-      .eq('active', true).eq('admin_removed', false).in('on_chain_status', ['draft', 'registered']),
-    db.from('app_buyers').select('id', { count: 'exact', head: true }),
+    countOrThrow(() => db.from('app_sellers').select('id', { count: 'exact', head: true }).eq('active', true), 'sellers'),
+    estimateProducts(),
+    countOrThrow(() => db.from('app_buyers').select('id', { count: 'exact', head: true }), 'buyers'),
   ]);
-  return {
-    sellers: sellers.count ?? 0,
-    products: products.count ?? 0,
-    buyingAgents: buyers.count ?? 0,
-    syntheticAgents: 0,
-  };
+  return { sellers, products, buyingAgents: buyers, syntheticAgents: 0 };
 }
 
 async function fetchMember(statsUrl: string): Promise<MemberStats> {
@@ -60,22 +84,53 @@ async function fetchMember(statsUrl: string): Promise<MemberStats> {
   }
 }
 
+// Last successfully computed metrics, per serverless instance. If a recompute
+// fails (fetchLocal throws after its retries during heavy ingest load), we serve
+// this instead of letting a transient failure collapse the headline to
+// members-only. Never throws to the caller: app/page.tsx renders it directly.
+let lastGood: NetworkMetrics | null = null;
+
 async function compute(): Promise<NetworkMetrics> {
-  const parts = await Promise.all([
-    fetchLocal(),
-    ...MEMBERS.map((m) => fetchMember(m.statsUrl)),
-  ]);
-  return parts.reduce<NetworkMetrics>(
-    (acc, p) => ({
-      sellers: acc.sellers + p.sellers,
-      buyingAgents: acc.buyingAgents + p.buyingAgents,
-      products: acc.products + p.products,
-      syntheticAgents: acc.syntheticAgents + p.syntheticAgents,
-    }),
-    { sellers: 0, buyingAgents: 0, products: 0, syntheticAgents: 0 },
-  );
+  try {
+    const parts = await Promise.all([
+      fetchLocal(),
+      ...MEMBERS.map((m) => fetchMember(m.statsUrl)),
+    ]);
+    const total = parts.reduce<NetworkMetrics>(
+      (acc, p) => ({
+        sellers: acc.sellers + p.sellers,
+        buyingAgents: acc.buyingAgents + p.buyingAgents,
+        products: acc.products + p.products,
+        syntheticAgents: acc.syntheticAgents + p.syntheticAgents,
+      }),
+      { sellers: 0, buyingAgents: 0, products: 0, syntheticAgents: 0 },
+    );
+    lastGood = total;
+    return total;
+  } catch (err) {
+    if (lastGood) return lastGood;
+    // Cold start with no prior value AND local counts failing: degrade to
+    // members-only rather than 500 the page. Rare and brief; the next
+    // successful revalidation replaces it.
+    console.warn('[network-stats] local compute failed, no prior value:', err);
+    const members = await Promise.all(MEMBERS.map((m) => fetchMember(m.statsUrl)));
+    return members.reduce<NetworkMetrics>(
+      (acc, p) => ({
+        sellers: acc.sellers + p.sellers,
+        buyingAgents: acc.buyingAgents + p.buyingAgents,
+        products: acc.products + p.products,
+        syntheticAgents: acc.syntheticAgents + p.syntheticAgents,
+      }),
+      { sellers: 0, buyingAgents: 0, products: 0, syntheticAgents: 0 },
+    );
+  }
 }
 
+// 30-minute cache. The local counts hit app_seller_products (large + GIN
+// index), so a short window meant the public landing page ran an expensive
+// count almost every minute , and during a catalogue ingest those counts piled
+// onto an already-stressed DB. The headline metrics move slowly; 30 min is
+// plenty fresh, and lastGood covers any recompute that fails under load.
 export const getNetworkMetrics = unstable_cache(compute, ['via-network-metrics'], {
-  revalidate: 60,
+  revalidate: 1800,
 });

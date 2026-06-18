@@ -5,23 +5,25 @@
  * owner flips public=true. Seller agents that have negotiated terms can
  * reach the buyer's agent here.
  *
- * Tools (6):
+ * Tools (5):
  *   get_buyer_preferences — public-safe slice of the buyer's preferences
  *                           (PII and delegation caps stripped).
- *   get_buyer_briefs      — the buyer's open briefs as structured intent
- *                           (category/requirements/budget; never raw wording),
- *                           only those left visible to sellers.
- *   pitch_against_brief   — a seller pitches one product at a brief; the agent
- *                           judges fit, records it, notifies the buyer.
+ *   get_buyer_briefs      — the buyer's open demand as TEASERS only (category,
+ *                           product type, one attribute, door_url). The full brief
+ *                           and offers are the PAID tier, behind the x402 door.
  *   submit_intent         — source products across the VIA network for this
  *                           buyer, shaped by their saved taste + budget
  *                           (the agentic matcher; genuine matches only).
- *   negotiate             — DeepSeek call in the buyer's voice. The agent
- *                           applies preferences and refuses anything that
- *                           breaks a delegation cap.
+ *   negotiate             — post-door only: gated on a PAID offer (brief_id +
+ *                           payment_tx_hash). DeepSeek call in the buyer's voice;
+ *                           applies preferences, refuses anything breaking a cap.
  *   accept_offer          — evaluates an offer against the delegation caps.
  *                           Auto-accepts only when caps allow; otherwise
  *                           queues for the owner's approval.
+ *
+ * NOTE: full briefs and offer submission are NOT here , they are the paid x402
+ * door (GET/POST /api/via/brief/[id]). The buyer MCP never gives a full brief or
+ * records an offer for free.
  *
  * Every call logs to app_mcp_interactions with buyer_id set. Requests are
  * rate-limited per IP + agent. Write tools notify the owner in-app.
@@ -33,8 +35,8 @@ import { db } from '@/lib/app/db';
 import { insertNotification } from '@/lib/app/notifications';
 import { hasCredits, deductCredits } from '@/lib/app/buyer-credits';
 import { resolveBuyerLlm } from '@/lib/app/buyer-llm';
-import { dryRunMatchForBuyer, judgeProductAgainstBrief, briefIntentFromStructured } from '@/lib/app/buyer-matching';
-import { listBuyerBriefs } from '@/lib/app/demand';
+import { dryRunMatchForBuyer } from '@/lib/app/buyer-matching';
+import { listBuyerTeasers, paidOfferExists, briefDoorUrl } from '@/lib/app/demand';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -284,13 +286,18 @@ function createServer(buyer: BuyerRow, req: Request) {
   // ── get_buyer_briefs ─────────────────────────────────────────────
   server.tool(
     'get_buyer_briefs',
-    `Read @${buyer.handle}'s OPEN briefs , what they are actively looking for right now. Each brief is the buyer's structured intent (category, hard requirements, preferences, budget); the raw wording is never shared. Use this to see if you have anything that fits their live demand, then pitch_against_brief or negotiate. Only briefs the buyer has left visible to sellers appear.`,
+    `See @${buyer.handle}'s OPEN demand as TEASERS , what they are actively looking for right now (category, product type, one attribute). This is the free, public tier. The FULL structured brief (hard requirements, preferences, budget) and the ability to submit an offer are PAID: each teaser carries a door_url , pay the x402 micro-fee at that door to unlock the full brief, then pay again to submit an offer. Use a teaser to decide if your stock plausibly fits, then go to the door.`,
     {},
     async () => {
       const t0 = Date.now();
-      const briefs = await listBuyerBriefs(buyer.id);
-      const out = asJson({ handle: buyer.handle, count: briefs.length, briefs });
-      void logInteraction(buyer.id, 'get_buyer_briefs', identity, {}, { count: briefs.length }, 200, Date.now() - t0);
+      const teasers = await listBuyerTeasers(buyer.id);
+      const out = asJson({
+        handle: buyer.handle,
+        count: teasers.length,
+        teasers,
+        next: 'To read a full brief and to offer, GET the teaser\'s door_url and pay the x402 fee (see its payment_options). The buyer MCP does not return full briefs or accept offers , those happen only at the paid door.',
+      });
+      void logInteraction(buyer.id, 'get_buyer_briefs', identity, {}, { count: teasers.length }, 200, Date.now() - t0);
       return out;
     },
   );
@@ -298,22 +305,35 @@ function createServer(buyer: BuyerRow, req: Request) {
   // ── negotiate ────────────────────────────────────────────────────
   server.tool(
     'negotiate',
-    `Pitch an offer to @${buyer.handle}'s Buying Agent. Describe the product, terms, and price in offer_text. The agent responds on the buyer's behalf, applying their preferences and refusing anything that breaks a limit.`,
+    `Negotiate an offer with @${buyer.handle}'s Buying Agent. This is the post-door step: you must FIRST submit a PAID offer at the brief door (POST /api/via/brief/[brief_id]/offer) , then pass that brief_id and the offer's payment_tx_hash here to discuss it. The agent replies on the buyer's behalf, applying their preferences and refusing anything that breaks a limit. Negotiation is gated to a paid offer; there is no free pre-door pitch.`,
     {
-      offer_text: z.string().min(1).max(4000).describe('Your full pitch: what you are offering, terms, and price.'),
+      brief_id:        z.string().min(1).describe('The brief you made a paid offer against.'),
+      payment_tx_hash: z.string().min(1).describe('The on-chain payment tx from your door offer , your ticket to negotiate.'),
+      offer_text:      z.string().min(1).max(4000).describe('Your full pitch: what you are offering, terms, and price.'),
     },
-    async ({ offer_text }) => {
+    async ({ brief_id, payment_tx_hash, offer_text }) => {
       const t0 = Date.now();
+      // Gate: a paid offer must already exist at the door for this buyer + tx. No
+      // free pre-door negotiation (would bypass the paid choke point and burn the
+      // buyer's credits on an unpaid pitch).
+      if (!(await paidOfferExists(brief_id, buyer.id, payment_tx_hash.trim()))) {
+        void logInteraction(buyer.id, 'negotiate', identity, { brief_id, payment_tx_hash: payment_tx_hash.slice(0, 12) }, { error: 'no_paid_offer' }, 402, Date.now() - t0);
+        return asJson({
+          status: 'payment_required',
+          message: 'No paid offer found for this brief and payment tx. Submit a paid offer at the door first, then negotiate.',
+          offer_url: `${briefDoorUrl(brief_id)}/offer`,
+        });
+      }
       const reply = await negotiateReply(buyer, offer_text);
-      const out = asJson({ handle: buyer.handle, reply });
-      void logInteraction(buyer.id, 'negotiate', identity, { offer_text: offer_text.slice(0, 200) }, { len: reply.length }, 200, Date.now() - t0);
+      const out = asJson({ handle: buyer.handle, brief_id, reply });
+      void logInteraction(buyer.id, 'negotiate', identity, { brief_id, offer_text: offer_text.slice(0, 200) }, { len: reply.length }, 200, Date.now() - t0);
       void insertNotification({
         ownerUserId: buyer.owner_user_id,
         kind:        'enquiry',
-        title:       'A seller agent pitched your Buying Agent',
+        title:       'A seller agent is negotiating a paid offer',
         body:        offer_text.slice(0, 240),
         link:        `/buyer/${buyer.handle}/admin`,
-        metadata:    { tool_name: 'negotiate', agent_identity: identity, buyer_id: buyer.id },
+        metadata:    { tool_name: 'negotiate', agent_identity: identity, buyer_id: buyer.id, brief_id, payment_tx_hash },
       });
       return out;
     },
@@ -383,54 +403,11 @@ function createServer(buyer: BuyerRow, req: Request) {
     },
   );
 
-  // ── pitch_against_brief ──────────────────────────────────────────
-  server.tool(
-    'pitch_against_brief',
-    `Pitch ONE product against a specific open brief of @${buyer.handle} (get the brief_id from get_buyer_briefs or find_buyers). The buyer's agent judges whether your product genuinely fits the brief's hard requirements and returns a verdict; the buyer is notified and sees your pitch. Only genuine fits help , a near-miss is judged "does not fit". To close, follow up with negotiate / accept_offer.`,
-    {
-      brief_id:       z.string().min(1).describe('The brief_id from get_buyer_briefs / find_buyers.'),
-      title:          z.string().min(1).max(300).describe('Product title.'),
-      description:    z.string().max(2000).optional().describe('Product description / details the judge should reason over.'),
-      price_usdc:     z.number().min(0).optional().describe('Price in USDC.'),
-      url:            z.string().max(500).optional().describe('Direct product page URL.'),
-      seller_mcp_url: z.string().max(500).optional().describe('Your seller MCP URL, so the buyer can transact.'),
-      tags:           z.array(z.string()).optional().describe('Attribute tags (material, label, size, etc.).'),
-    },
-    async ({ brief_id, title, description, price_usdc, url, seller_mcp_url, tags }) => {
-      const t0 = Date.now();
-      const { data: intent } = await db
-        .from('app_buyer_intents')
-        .select('id, intent_text, structured, status, discoverable')
-        .eq('id', brief_id).eq('buyer_id', buyer.id)
-        .in('status', ['open', 'broadcast', 'matched'])
-        .eq('discoverable', true)
-        .maybeSingle();
-      if (!intent) {
-        return asJson({ status: 'not_found', message: 'No such open, visible brief for this buyer. Call get_buyer_briefs for current brief_ids.' });
-      }
-
-      const brief = briefIntentFromStructured(intent.structured as Record<string, unknown> | null);
-      const verdict = await judgeProductAgainstBrief(
-        intent.intent_text as string, brief,
-        { title, description: description ?? null, price_usdc: price_usdc ?? null, tags: tags ?? [] },
-      );
-
-      const product = { title, description: description ?? null, price_usdc: price_usdc ?? null, url: url ?? null, seller_mcp_url: seller_mcp_url ?? null, tags: tags ?? [] };
-      await db.from('app_buyer_brief_pitches').insert({
-        intent_id: intent.id, buyer_id: buyer.id, seller_identity: identity, product, verdict,
-      });
-      void insertNotification({
-        ownerUserId: buyer.owner_user_id,
-        kind:        'enquiry',
-        title:       verdict.fits ? 'A seller pitched a match for your brief' : 'A seller pitched your brief',
-        body:        `${title}${typeof price_usdc === 'number' ? ` · ${price_usdc} USDC` : ''} , ${verdict.fits ? 'fits' : 'does not fit'}: ${verdict.reason}`.slice(0, 240),
-        link:        `/buyer/${buyer.handle}/admin`,
-        metadata:    { tool_name: 'pitch_against_brief', agent_identity: identity, brief_id, fits: verdict.fits, buyer_id: buyer.id },
-      });
-      void logInteraction(buyer.id, 'pitch_against_brief', identity, { brief_id, title }, verdict, 200, Date.now() - t0);
-      return asJson({ handle: buyer.handle, brief_id, verdict, next: verdict.fits ? 'The buyer has been notified. Follow up with negotiate / accept_offer to close.' : 'Not a fit for this brief , try a brief that matches your stock (get_buyer_briefs).' });
-    },
-  );
+  // pitch_against_brief was removed: it let a seller submit an offer for FREE,
+  // bypassing the paid x402 door (the single value-capture + reputation choke
+  // point). Offers happen ONLY at the door (POST /api/via/brief/[id]/offer), where
+  // the micro-fee is paid and the ERC-8004 signal is anchored to the payment tx.
+  // get_buyer_briefs now returns teasers carrying each brief's door_url.
 
   return server;
 }
