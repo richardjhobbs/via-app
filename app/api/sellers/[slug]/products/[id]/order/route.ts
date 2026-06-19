@@ -13,6 +13,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { ethers } from 'ethers';
 import { db } from '@/lib/app/db';
 import { getShippingConfig, computeShippingQuote } from '@/lib/app/shipping';
+import { getDigitalFiles } from '@/lib/app/digital-delivery';
 
 export const dynamic = 'force-dynamic';
 
@@ -56,12 +57,18 @@ export async function POST(
   // ── Product (purchasable, fixed-price USDC) ──
   const { data: product } = await db
     .from('app_seller_products')
-    .select('id, title, price_minor, currency, stock, on_chain_status, active, max_supply, kind, pricing_mode, admin_removed')
+    .select('id, title, price_minor, currency, stock, on_chain_status, active, max_supply, kind, pricing_mode, admin_removed, metadata')
     .eq('id', id)
     .eq('seller_id', seller.id)
     .maybeSingle();
   if (!product || product.admin_removed) {
     return NextResponse.json({ error: 'product not found' }, { status: 404 });
+  }
+  // A digital product with no deliverable attached cannot take money: the buyer
+  // would pay and get_download_links would have nothing to hand over. Mirror the
+  // MCP buy_product guard so the web and agent paths never diverge.
+  if (product.kind === 'digital' && getDigitalFiles(product.metadata).length === 0) {
+    return NextResponse.json({ error: 'this digital product has no deliverable file attached and cannot be purchased yet' }, { status: 409 });
   }
   if (product.pricing_mode === 'configurable') {
     return NextResponse.json({ error: 'this product is priced per order and is not available for instant checkout' }, { status: 409 });

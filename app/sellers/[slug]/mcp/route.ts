@@ -596,6 +596,20 @@ function createServer(seller: SellerRow, req: Request) {
         void logInteraction(seller.id, 'buy_product', identity, { product_id, qty, buyer_wallet }, { error: 'unsupported_currency' }, 400, Date.now() - t0);
         return r;
       }
+      // ── Digital deliverable gate ──────────────────────────────
+      // A digital product must have a deliverable attached before it can take
+      // money: get_download_links serves files from metadata.digital_files, so a
+      // digital listing with none hands the buyer nothing after settlement (the
+      // DANArtist Pallas Cat case). Block the buy here so funds never move
+      // against an undeliverable digital item.
+      if (product.kind === 'digital' && getDigitalFiles(product.metadata).length === 0) {
+        const r = asJson({
+          error: 'no_deliverable',
+          message: `"${product.title}" is listed as a digital product but has no deliverable file attached, so it cannot be purchased yet. The seller must attach the file before it can sell.`,
+        });
+        void logInteraction(seller.id, 'buy_product', identity, { product_id, qty, buyer_wallet }, { error: 'no_deliverable' }, 409, Date.now() - t0);
+        return r;
+      }
 
       // ── Stock / supply gate ───────────────────────────────────
       // Reject oversell before we record an intent or quote a payment.
