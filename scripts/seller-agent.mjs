@@ -123,6 +123,7 @@ const ROSTER = [
   { slug: 'recycle-vinyl',           name: 'Recycle Vinyl',           source: 'via', erc8004_id: '55675', store_id: '5d48521a-5bd2-4d0c-aab0-cfb885106fe9', expect: '0xac9daccd67e09cc12471572244d2c0f11f07ad0b' },
   { slug: 'snow-records',            name: 'Snow Records Japan',      source: 'via', erc8004_id: '55676', store_id: '7518f06d-1c46-4afb-a009-e0841272d81e', expect: '0x916fd056f096475d2c69e2f9e5af2eb3ffa6dce1' },
   { slug: 'vinyleers',               name: 'Vinyleers',               source: 'via', erc8004_id: '55677', store_id: 'f227563f-cac5-45c8-8f66-92466b19a9f8', expect: '0x4a1a393c8def1bb520743cfd9656f1774bf84abf' },
+  { slug: 'danartist',               name: 'DANArtist',               source: 'via', erc8004_id: '55628', store_id: '60a10d29-1915-4573-b0d6-0f26f3ef4816', expect: '0xdd1ad7899e37ddce4bb70eebd8fdefdf8b9bc411' },
   { slug: 'americanrag',             name: 'American Rag Cie',        source: 'rrg', erc8004_id: '55678', env_key: 'AMERICANRAG_WALLET_PRIVATE_KEY' },
   { slug: 'standard-and-strange',    name: 'Standard & Strange',      source: 'rrg', erc8004_id: '55679', env_key: 'STANDARD_AND_STRANGE_WALLET_PRIVATE_KEY' },
 ];
@@ -429,12 +430,27 @@ async function payWithX402(url, options, privkey) {
     : null;
   if (!req) return { ok: false, status: 402, body: 'no base-usdc exact option' };
   if (Number(BigInt(req.maxAmountRequired)) / 1e6 > 0.01) return { ok: false, status: 402, body: 'over $0.01 safety cap' };
-  let xpay;
-  try { xpay = await buildXPayment(privkey, req); } catch (e) { return { ok: false, status: 402, body: 'sign failed: ' + e.message }; }
-  const retry = await fetch(url, { ...options, headers: { ...(options.headers || {}), 'X-PAYMENT': xpay }, signal: AbortSignal.timeout(30000) }).catch(() => null);
-  if (!retry) return { ok: false, status: null, body: null };
-  const body = await retry.text().catch(() => '');
-  return { ok: retry.ok, status: retry.status, body, paid: Number(BigInt(req.maxAmountRequired)) / 1e6 };
+  // Pay; on a TRANSIENT facilitator failure (the CDP /settle or /verify call blips,
+  // returning 402 "could not be verified" / "settlement failed"), retry ONCE with a
+  // fresh authorization. Without this, a momentary settle blip drops this seller's
+  // offer for good: the brief falls behind the poll watermark and is never retried
+  // (this is exactly what silently lost Nolo's coffee offer). A hard rejection
+  // (insufficient funds, bad amount) won't clear on retry, so we stop after one.
+  let lastStatus = null, lastBody = null;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    let xpay;
+    try { xpay = await buildXPayment(privkey, req); } catch (e) { return { ok: false, status: 402, body: 'sign failed: ' + e.message }; }
+    const retry = await fetch(url, { ...options, headers: { ...(options.headers || {}), 'X-PAYMENT': xpay }, signal: AbortSignal.timeout(30000) }).catch(() => null);
+    if (retry) {
+      lastStatus = retry.status;
+      lastBody = await retry.text().catch(() => '');
+      if (retry.ok) return { ok: true, status: retry.status, body: lastBody, paid: Number(BigInt(req.maxAmountRequired)) / 1e6 };
+    } else { lastStatus = null; lastBody = null; }
+    const transient = lastStatus === 402 && typeof lastBody === 'string' && /could not be verified|settlement failed|failed to settle/i.test(lastBody);
+    if (!transient || attempt === 1) break;
+    await new Promise((r) => setTimeout(r, 2500));
+  }
+  return { ok: false, status: lastStatus, body: lastBody, paid: Number(BigInt(req.maxAmountRequired)) / 1e6 };
 }
 
 /** Submit one paid offer. Returns { ok, txHash } , the settlement tx is the
@@ -532,7 +548,7 @@ async function run() {
 
       // 1. PAY the micro-fee to unlock the FULL brief at the door (per seller).
       const unlock = await payWithX402(t.door_url, { method: 'GET' }, key.privkey);
-      if (!unlock.ok) { console.log(`[${seller.slug}] unlock failed (${unlock.status}): ${String(unlock.body).slice(0, 80)}`); continue; }
+      if (!unlock.ok) { console.log(`[${seller.slug}] unlock failed (${unlock.status}) brief ${t.brief_id}: ${String(unlock.body).slice(0, 400)}`); continue; }
       let brief = null, buyerMcpUrl = null;
       try { const u = JSON.parse(unlock.body); brief = u.brief ?? null; buyerMcpUrl = u.buyer_mcp_url ?? null; } catch { /* bad body */ }
       if (!brief) continue;
