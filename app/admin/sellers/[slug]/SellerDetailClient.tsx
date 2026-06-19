@@ -61,6 +61,7 @@ interface Product {
   active:               boolean;
   admin_removed:        boolean;
   admin_removed_reason: string | null;
+  image_url:            string | null;
 }
 
 interface Props {
@@ -263,12 +264,12 @@ export function SellerDetailClient({ seller, memories, interactions, purchases, 
           {seller.active ? 'Active' : 'Inactive'}
         </span>
         <Link
-          href={`/seller/${seller.slug}/admin`}
+          href={`/sellers/${seller.slug}`}
           target="_blank"
           rel="noopener noreferrer"
           className="text-[10px] font-mono uppercase tracking-widest text-neutral-700 underline hover:no-underline"
         >
-          Seller dashboard &nearr;
+          View public store ↗
         </Link>
         <Link
           href={`/admin/sellers/${seller.slug}/sales-agent`}
@@ -512,7 +513,7 @@ export function SellerDetailClient({ seller, memories, interactions, purchases, 
             className="text-[10px] font-mono uppercase tracking-widest text-neutral-700 underline hover:no-underline"
             target="_blank" rel="noopener noreferrer"
           >
-            Full ledger &nearr;
+            Full ledger ↗
           </Link>
         </div>
         {purchasesCount === 0 ? (
@@ -567,6 +568,7 @@ export function SellerDetailClient({ seller, memories, interactions, purchases, 
             <table className="w-full text-sm">
               <thead className="bg-neutral-50 text-xs font-mono uppercase tracking-widest text-neutral-500">
                 <tr>
+                  <th className="text-left px-4 py-3">Image</th>
                   <th className="text-left px-4 py-3">Title</th>
                   <th className="text-left px-4 py-3">Kind</th>
                   <th className="text-right px-4 py-3">Price</th>
@@ -577,6 +579,22 @@ export function SellerDetailClient({ seller, memories, interactions, purchases, 
               <tbody className="divide-y divide-neutral-200">
                 {products.map((p) => (
                   <tr key={p.id} className={p.admin_removed ? 'bg-red-50' : undefined}>
+                    <td className="px-4 py-3">
+                      {p.image_url ? (
+                        <a href={p.image_url} target="_blank" rel="noopener noreferrer" title="Open full image">
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img
+                            src={p.image_url}
+                            alt={p.title}
+                            className="h-14 w-14 object-cover rounded border border-neutral-200 bg-neutral-100"
+                          />
+                        </a>
+                      ) : (
+                        <span className="inline-flex h-14 w-14 items-center justify-center rounded border border-dashed border-neutral-300 text-[9px] font-mono uppercase tracking-widest text-neutral-400">
+                          No image
+                        </span>
+                      )}
+                    </td>
                     <td className="px-4 py-3">
                       <span className="text-neutral-900">{p.title}</span>
                       {p.admin_removed && p.admin_removed_reason && (

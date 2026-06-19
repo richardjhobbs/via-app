@@ -175,8 +175,9 @@ function createServer(seller: ManageSeller, req: Request) {
       stock:         z.number().int().min(0).optional(),
       max_supply:    z.number().int().min(1).max(10000).optional().describe('On-chain edition ceiling (1-10000). Omit for unlimited.'),
       url:           z.string().url().max(500).optional(),
+      image_url:     z.string().url().max(1000).optional().describe('Public URL of the product image. Shown to buyers and required for moderation review.'),
     },
-    async ({ session_token, kind, title, price_usdc, description, stock, max_supply, url }) => {
+    async ({ session_token, kind, title, price_usdc, description, stock, max_supply, url, image_url }) => {
       if (!authed(session_token)) return unauthed();
       const priceMinor = Math.round(price_usdc * 1_000_000);
       const { data, error } = await db
@@ -191,6 +192,7 @@ function createServer(seller: ManageSeller, req: Request) {
           stock:       stock      ?? null,
           max_supply:  max_supply ?? null,
           url:         url        ?? null,
+          image_url:   image_url  ?? null,
           metadata:    {},
           active:      true,
         })

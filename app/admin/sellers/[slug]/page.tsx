@@ -58,7 +58,7 @@ export default async function AdminSellerDetailPage({
       .order('created_at', { ascending: false })
       .limit(20),
     db.from('app_seller_products')
-      .select('id, title, kind, price_minor, currency, stock, token_id, on_chain_status, active, admin_removed, admin_removed_reason')
+      .select('id, title, kind, price_minor, currency, stock, token_id, on_chain_status, active, admin_removed, admin_removed_reason, image_url')
       .eq('seller_id', sellerId)
       .order('created_at', { ascending: false }),
   ]);
@@ -117,7 +117,7 @@ export default async function AdminSellerDetailPage({
               id: string; order_ref: string; total_usdc: number; status: string; created_at: string;
             }>}
             products={(productsRes.data ?? []) as Array<{
-              id: string; title: string; kind: string; price_minor: number; currency: string; stock: number | null; token_id: number | null; on_chain_status: string; active: boolean; admin_removed: boolean; admin_removed_reason: string | null;
+              id: string; title: string; kind: string; price_minor: number; currency: string; stock: number | null; token_id: number | null; on_chain_status: string; active: boolean; admin_removed: boolean; admin_removed_reason: string | null; image_url: string | null;
             }>}
           />
         </div>
