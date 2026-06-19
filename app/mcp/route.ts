@@ -173,6 +173,22 @@ function createServer(req: Request) {
         });
       }
 
+      // Seller-profile matches but no individual product hit (e.g. a seller whose
+      // description says "I sell 3D assets for web games" whose listing text does
+      // not contain the query words). The seller is a real match , surface it, and
+      // tell the agent to drill into the catalogue rather than report "nothing".
+      if (ranked.length === 0) {
+        return asJson({
+          query,
+          status: 'ok',
+          count: 0,
+          results: [],
+          sellers,              // seller / brand profile matches with no product hit
+          next:
+            'No individual product matched the query words, but the SELLERS in `sellers` match by their profile. Present them to the user by `name` with their `detail`, and offer to look inside their catalogue , do NOT say nothing is available. To see what each one actually stocks, call get_seller_products with that seller\'s `mcp_url` and the user\'s query.',
+        });
+      }
+
       return asJson({
         query,
         status: 'ok',
@@ -180,7 +196,7 @@ function createServer(req: Request) {
         results: ranked,        // blended, relevance-ranked products across the whole network
         sellers,                // seller / brand profile matches with no product hit
         next:
-          'Present the best matches from `results` to the user, across ALL sources, with prices and the key differences. Every result has a working `page_url` (the direct product page) you give the user, plus `image_url` when one exists. If the user named a specific seller/brand, call get_seller_products with that result\'s mcp_ref.seller_mcp_url to drill in. To purchase: connect to mcp_ref.seller_mcp_url and call get_product then buy_product (or get_offering_schema + request_quote when pricing_mode is "configurable").',
+          'Present the best matches from `results` to the user, across ALL sources, with prices and the key differences. Every result has a working `page_url` (the direct product page) you give the user, plus `image_url` when one exists. ALSO check `sellers`: those are profile matches with no direct product hit , mention them by name and offer to drill in. If the user named a specific seller/brand, call get_seller_products with that result\'s mcp_ref.seller_mcp_url to drill in. To purchase: connect to mcp_ref.seller_mcp_url and call get_product then buy_product (or get_offering_schema + request_quote when pricing_mode is "configurable").',
       });
     },
   );
