@@ -17,10 +17,13 @@ export async function POST(_req: NextRequest) {
     return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });
   }
 
+  // Seller bell only: never mark the user's buyer-side rows read from here
+  // (those carry metadata.buyer_id and surface on the buyer dashboard).
   const { data, error } = await db
     .from('app_notifications')
     .update({ read_at: new Date().toISOString() })
     .eq('owner_user_id', user.id)
+    .is('metadata->>buyer_id', null)
     .is('read_at', null)
     .select('id');
 
