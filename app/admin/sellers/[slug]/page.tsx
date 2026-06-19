@@ -4,6 +4,7 @@ import { notFound, redirect } from 'next/navigation';
 import { db } from '@/lib/app/db';
 import { isAdminFromCookies } from '@/lib/app/auth';
 import { supabaseAdmin } from '@/lib/app/seller-auth';
+import { getDigitalFiles, signDigitalUrl } from '@/lib/app/digital-delivery';
 import { SellerDetailClient } from './SellerDetailClient';
 
 export const dynamic = 'force-dynamic';
@@ -58,10 +59,41 @@ export default async function AdminSellerDetailPage({
       .order('created_at', { ascending: false })
       .limit(20),
     db.from('app_seller_products')
-      .select('id, title, kind, price_minor, currency, stock, token_id, on_chain_status, active, admin_removed, admin_removed_reason, image_url')
+      .select('id, title, kind, price_minor, currency, stock, token_id, on_chain_status, active, admin_removed, admin_removed_reason, image_url, metadata')
       .eq('seller_id', sellerId)
       .order('created_at', { ascending: false }),
   ]);
+
+  // For digital products the paid asset lives in the PRIVATE bucket and is never
+  // public. Sign it here so the superadmin can view it for moderation (images
+  // inline, other types as a labelled link), without exposing it to anyone else.
+  const rawProducts = (productsRes.data ?? []) as Array<Record<string, unknown>>;
+  const products = await Promise.all(rawProducts.map(async (p) => {
+    const files = getDigitalFiles(p.metadata);
+    const asset = files[0];
+    let admin_asset_url: string | null = null;
+    if (asset) {
+      try { admin_asset_url = await signDigitalUrl(asset.path); } catch { admin_asset_url = null; }
+    }
+    return {
+      id:                   p.id as string,
+      title:                p.title as string,
+      kind:                 p.kind as string,
+      price_minor:          p.price_minor as number,
+      currency:             p.currency as string,
+      stock:                p.stock as number | null,
+      token_id:             p.token_id as number | null,
+      on_chain_status:      p.on_chain_status as string,
+      active:               p.active as boolean,
+      admin_removed:        p.admin_removed as boolean,
+      admin_removed_reason: p.admin_removed_reason as string | null,
+      image_url:            p.image_url as string | null,
+      asset_filename:       asset?.filename ?? null,
+      asset_content_type:   asset?.content_type ?? null,
+      asset_is_image:       asset ? Boolean(asset.content_type?.startsWith('image/')) : false,
+      admin_asset_url,
+    };
+  }));
 
   return (
     <main className="min-h-screen bg-neutral-50 text-neutral-900 flex flex-col">
@@ -116,9 +148,7 @@ export default async function AdminSellerDetailPage({
             purchases={(purchasesRes.data ?? []) as Array<{
               id: string; order_ref: string; total_usdc: number; status: string; created_at: string;
             }>}
-            products={(productsRes.data ?? []) as Array<{
-              id: string; title: string; kind: string; price_minor: number; currency: string; stock: number | null; token_id: number | null; on_chain_status: string; active: boolean; admin_removed: boolean; admin_removed_reason: string | null; image_url: string | null;
-            }>}
+            products={products}
           />
         </div>
       </section>

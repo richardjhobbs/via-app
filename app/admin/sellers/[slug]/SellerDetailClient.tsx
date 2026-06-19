@@ -62,6 +62,11 @@ interface Product {
   admin_removed:        boolean;
   admin_removed_reason: string | null;
   image_url:            string | null;
+  // Digital deliverable (private bucket), signed for admin moderation only.
+  asset_filename:       string | null;
+  asset_content_type:   string | null;
+  asset_is_image:       boolean;
+  admin_asset_url:      string | null;
 }
 
 interface Props {
@@ -580,7 +585,27 @@ export function SellerDetailClient({ seller, memories, interactions, purchases, 
                 {products.map((p) => (
                   <tr key={p.id} className={p.admin_removed ? 'bg-red-50' : undefined}>
                     <td className="px-4 py-3">
-                      {p.image_url ? (
+                      {p.asset_is_image && p.admin_asset_url ? (
+                        // Digital image asset: private, signed for admin only.
+                        <a href={p.admin_asset_url} target="_blank" rel="noopener noreferrer" title={`Digital asset: ${p.asset_filename ?? 'image'} (admin-only)`}>
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img
+                            src={p.admin_asset_url}
+                            alt={p.title}
+                            className="h-14 w-14 object-cover rounded border border-amber-300 bg-neutral-100"
+                          />
+                        </a>
+                      ) : p.asset_filename ? (
+                        // Non-image digital asset (pdf/mp3/mp4/zip): link to the signed file.
+                        <a
+                          href={p.admin_asset_url ?? undefined}
+                          target="_blank" rel="noopener noreferrer"
+                          title={`Digital asset: ${p.asset_filename} (admin-only)`}
+                          className="inline-flex h-14 w-14 flex-col items-center justify-center rounded border border-amber-300 bg-amber-50 text-[8px] font-mono uppercase tracking-widest text-amber-800 text-center leading-tight px-1 break-all"
+                        >
+                          {(p.asset_content_type?.split('/')[1] ?? 'file').slice(0, 6)}
+                        </a>
+                      ) : p.image_url ? (
                         <a href={p.image_url} target="_blank" rel="noopener noreferrer" title="Open full image">
                           {/* eslint-disable-next-line @next/next/no-img-element */}
                           <img

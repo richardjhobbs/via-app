@@ -13,6 +13,7 @@ interface Product {
   max_supply: number | null;
   url: string | null;
   image_url: string | null;
+  metadata: { digital_files?: Array<{ filename?: string; path?: string; content_type?: string }> } | null;
   active: boolean;
   token_id: number | null;
   on_chain_status: 'draft' | 'registered' | 'paused' | 'sold_out';
@@ -177,36 +178,45 @@ export function ProductsClient({
     setImageFile(null);
   }
 
-  // Upload a product image to the public bucket and stamp image_url. Used both
-  // at create time (for the just-created row) and per-row for existing products.
-  async function uploadImage(productId: string, file: File): Promise<string | null> {
+  // Upload a file for a product. Digital products upload their MAIN ASSET (the
+  // paid deliverable) to the private bucket; physical/service upload a public
+  // product image. Used at create time and per-row for existing products.
+  async function uploadProductFile(productId: string, file: File, productKind: Product['kind']): Promise<boolean> {
+    const endpoint = productKind === 'digital' ? 'deliverable' : 'image';
     const fd = new FormData();
     fd.append('file', file);
-    const res = await fetch(`/api/seller/${sellerId}/products/${productId}/image`, {
+    const res = await fetch(`/api/seller/${sellerId}/products/${productId}/${endpoint}`, {
       method: 'POST',
       body: fd,
     });
     const json = await res.json().catch(() => ({}));
     if (!res.ok) {
-      setErr(json.error || `Image upload failed (${res.status})`);
-      return null;
+      setErr(json.error || `Upload failed (${res.status})`);
+      return false;
     }
-    return json.image_url as string;
+    return true;
   }
 
-  async function onRowImage(productId: string, file: File) {
+  async function onRowFile(productId: string, file: File, productKind: Product['kind']) {
     setErr('');
     setInfo('');
     setUploadingId(productId);
     try {
-      const url = await uploadImage(productId, file);
-      if (url) {
-        setInfo('Image updated.');
+      const ok = await uploadProductFile(productId, file, productKind);
+      if (ok) {
+        setInfo(productKind === 'digital' ? 'Asset uploaded.' : 'Image updated.');
         await refresh();
       }
     } finally {
       setUploadingId(null);
     }
+  }
+
+  // Filename of the attached digital deliverable, if any.
+  function assetName(p: Product): string | null {
+    const files = p.metadata?.digital_files;
+    if (Array.isArray(files) && files[0] && typeof files[0].filename === 'string') return files[0].filename;
+    return null;
   }
 
   async function onCreate(e: React.FormEvent) {
@@ -239,13 +249,14 @@ export function ProductsClient({
         setErr(json.error || `Create failed (${res.status})`);
         return;
       }
-      // Attach the image to the freshly-created product, if one was chosen.
+      // Attach the file to the freshly-created product, if one was chosen.
+      // Digital -> main asset (private); physical/service -> public image.
       const newId = json.product?.id as string | undefined;
       if (newId && imageFile) {
-        const url = await uploadImage(newId, imageFile);
-        if (!url) {
-          // Product was created; only the image failed. Keep the form's error
-          // visible and still refresh so the new row shows, sans image.
+        const ok = await uploadProductFile(newId, imageFile, kind);
+        if (!ok) {
+          // Product was created; only the upload failed. Keep the error visible
+          // and still refresh so the new row shows, sans file.
           await refresh();
           return;
         }
@@ -737,14 +748,25 @@ export function ProductsClient({
           </label>
 
           <label className="md:col-span-2">
-            <span className="text-xs font-mono tracking-widest uppercase text-ink-3 block mb-1">Product image (optional, JPEG/PNG/WebP, max 8 MB)</span>
+            <span className="text-xs font-mono tracking-widest uppercase text-ink-3 block mb-1">
+              {kind === 'digital'
+                ? 'Main asset (the file buyers receive: image / PDF / MP3 / MP4 / ZIP, max 50 MB)'
+                : 'Product image (optional, JPEG/PNG/WebP, max 8 MB)'}
+            </span>
             <input
-              type="file" accept="image/jpeg,image/png,image/webp"
+              type="file"
+              accept={kind === 'digital' ? undefined : 'image/jpeg,image/png,image/webp'}
               onChange={(e) => setImageFile(e.target.files?.[0] ?? null)}
               className="block w-full text-sm border border-line-strong rounded-md p-2 bg-paper file:mr-3 file:border-0 file:bg-paper file:px-3 file:py-1.5 file:text-xs file:font-mono file:uppercase file:tracking-widest"
             />
             {imageFile && (
               <span className="text-[10px] font-mono text-ink-3 mt-1 block">{imageFile.name}</span>
+            )}
+            {kind === 'digital' && (
+              <span className="text-[10px] font-mono text-ink-3 mt-1 block">
+                Private. Delivered only after a paid purchase, never shown publicly. A digital product
+                cannot be published until its asset is attached.
+              </span>
             )}
           </label>
 
@@ -813,7 +835,7 @@ export function ProductsClient({
           <table className="w-full text-sm">
             <thead className="bg-paper text-xs font-mono uppercase tracking-widest text-ink-3">
               <tr>
-                <th className="text-left px-4 py-3">Image</th>
+                <th className="text-left px-4 py-3">Image / asset</th>
                 <th className="text-left px-4 py-3">Title</th>
                 <th className="text-left px-4 py-3">Kind</th>
                 <th className="text-right px-4 py-3">Price (USDC)</th>
@@ -826,29 +848,51 @@ export function ProductsClient({
               {products.map((p) => (
                 <tr key={p.id} className={p.active ? '' : 'opacity-50'}>
                   <td className="px-4 py-3">
-                    <label className="cursor-pointer block" title={p.image_url ? 'Replace image' : 'Add image'}>
-                      <input
-                        type="file" accept="image/jpeg,image/png,image/webp" className="hidden"
-                        disabled={uploadingId === p.id}
-                        onChange={(e) => {
-                          const f = e.target.files?.[0];
-                          if (f) void onRowImage(p.id, f);
-                          e.target.value = '';
-                        }}
-                      />
-                      {p.image_url ? (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img
-                          src={p.image_url}
-                          alt={p.title}
-                          className="h-12 w-12 object-cover rounded border border-line-strong bg-paper"
+                    {p.kind === 'digital' ? (
+                      // Digital: upload the MAIN ASSET (private deliverable). Any
+                      // file type. We never show it publicly, so the tile shows
+                      // the attached filename, not a preview.
+                      <label className="cursor-pointer block" title={assetName(p) ? `Replace asset (${assetName(p)})` : 'Upload main asset'}>
+                        <input
+                          type="file" className="hidden"
+                          disabled={uploadingId === p.id}
+                          onChange={(e) => {
+                            const f = e.target.files?.[0];
+                            if (f) void onRowFile(p.id, f, p.kind);
+                            e.target.value = '';
+                          }}
                         />
-                      ) : (
-                        <span className="inline-flex h-12 w-12 items-center justify-center rounded border border-dashed border-line-strong text-[8px] font-mono uppercase tracking-widest text-ink-3 text-center leading-tight">
-                          {uploadingId === p.id ? '...' : 'Add image'}
+                        <span className={`inline-flex h-12 w-20 items-center justify-center rounded border text-[8px] font-mono uppercase tracking-widest text-center leading-tight px-1 break-all ${
+                          assetName(p) ? 'border-[color:var(--live)] text-[color:var(--live)] bg-[color:var(--live)]/10' : 'border-dashed border-[color:var(--warning)] text-[color:var(--warning)]'
+                        }`}>
+                          {uploadingId === p.id ? '...' : assetName(p) ? 'Asset set' : 'Upload asset'}
                         </span>
-                      )}
-                    </label>
+                      </label>
+                    ) : (
+                      <label className="cursor-pointer block" title={p.image_url ? 'Replace image' : 'Add image'}>
+                        <input
+                          type="file" accept="image/jpeg,image/png,image/webp" className="hidden"
+                          disabled={uploadingId === p.id}
+                          onChange={(e) => {
+                            const f = e.target.files?.[0];
+                            if (f) void onRowFile(p.id, f, p.kind);
+                            e.target.value = '';
+                          }}
+                        />
+                        {p.image_url ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img
+                            src={p.image_url}
+                            alt={p.title}
+                            className="h-12 w-12 object-cover rounded border border-line-strong bg-paper"
+                          />
+                        ) : (
+                          <span className="inline-flex h-12 w-12 items-center justify-center rounded border border-dashed border-line-strong text-[8px] font-mono uppercase tracking-widest text-ink-3 text-center leading-tight">
+                            {uploadingId === p.id ? '...' : 'Add image'}
+                          </span>
+                        )}
+                      </label>
+                    )}
                   </td>
                   <td className="px-4 py-3">
                     <div className="font-medium text-ink">{p.title}</div>
