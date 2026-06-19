@@ -12,6 +12,7 @@ interface Product {
   stock: number | null;
   max_supply: number | null;
   url: string | null;
+  image_url: string | null;
   active: boolean;
   token_id: number | null;
   on_chain_status: 'draft' | 'registered' | 'paused' | 'sold_out';
@@ -70,10 +71,12 @@ export function ProductsClient({
   const [stock, setStock]       = useState('');
   const [maxSupply, setMaxSupply] = useState('');
   const [url, setUrl]           = useState('');
+  const [imageFile, setImageFile] = useState<File | null>(null);
 
   // Per-row + global action state
   const [publishingId, setPublishingId]   = useState<string | null>(null);
   const [deletingId,   setDeletingId]     = useState<string | null>(null);
+  const [uploadingId,  setUploadingId]    = useState<string | null>(null);
   const [syncing,      setSyncing]        = useState(false);
 
   // CSV upload state
@@ -171,6 +174,39 @@ export function ProductsClient({
     setStock('');
     setMaxSupply('');
     setUrl('');
+    setImageFile(null);
+  }
+
+  // Upload a product image to the public bucket and stamp image_url. Used both
+  // at create time (for the just-created row) and per-row for existing products.
+  async function uploadImage(productId: string, file: File): Promise<string | null> {
+    const fd = new FormData();
+    fd.append('file', file);
+    const res = await fetch(`/api/seller/${sellerId}/products/${productId}/image`, {
+      method: 'POST',
+      body: fd,
+    });
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      setErr(json.error || `Image upload failed (${res.status})`);
+      return null;
+    }
+    return json.image_url as string;
+  }
+
+  async function onRowImage(productId: string, file: File) {
+    setErr('');
+    setInfo('');
+    setUploadingId(productId);
+    try {
+      const url = await uploadImage(productId, file);
+      if (url) {
+        setInfo('Image updated.');
+        await refresh();
+      }
+    } finally {
+      setUploadingId(null);
+    }
   }
 
   async function onCreate(e: React.FormEvent) {
@@ -202,6 +238,17 @@ export function ProductsClient({
       if (!res.ok) {
         setErr(json.error || `Create failed (${res.status})`);
         return;
+      }
+      // Attach the image to the freshly-created product, if one was chosen.
+      const newId = json.product?.id as string | undefined;
+      if (newId && imageFile) {
+        const url = await uploadImage(newId, imageFile);
+        if (!url) {
+          // Product was created; only the image failed. Keep the form's error
+          // visible and still refresh so the new row shows, sans image.
+          await refresh();
+          return;
+        }
       }
       resetForm();
       setAdding(false);
@@ -689,6 +736,18 @@ export function ProductsClient({
             />
           </label>
 
+          <label className="md:col-span-2">
+            <span className="text-xs font-mono tracking-widest uppercase text-ink-3 block mb-1">Product image (optional, JPEG/PNG/WebP, max 8 MB)</span>
+            <input
+              type="file" accept="image/jpeg,image/png,image/webp"
+              onChange={(e) => setImageFile(e.target.files?.[0] ?? null)}
+              className="block w-full text-sm border border-line-strong rounded-md p-2 bg-paper file:mr-3 file:border-0 file:bg-paper file:px-3 file:py-1.5 file:text-xs file:font-mono file:uppercase file:tracking-widest"
+            />
+            {imageFile && (
+              <span className="text-[10px] font-mono text-ink-3 mt-1 block">{imageFile.name}</span>
+            )}
+          </label>
+
 
           <div className="md:col-span-2 flex justify-end">
             <button
@@ -754,6 +813,7 @@ export function ProductsClient({
           <table className="w-full text-sm">
             <thead className="bg-paper text-xs font-mono uppercase tracking-widest text-ink-3">
               <tr>
+                <th className="text-left px-4 py-3">Image</th>
                 <th className="text-left px-4 py-3">Title</th>
                 <th className="text-left px-4 py-3">Kind</th>
                 <th className="text-right px-4 py-3">Price (USDC)</th>
@@ -765,6 +825,31 @@ export function ProductsClient({
             <tbody className="divide-y divide-[color:var(--line)]">
               {products.map((p) => (
                 <tr key={p.id} className={p.active ? '' : 'opacity-50'}>
+                  <td className="px-4 py-3">
+                    <label className="cursor-pointer block" title={p.image_url ? 'Replace image' : 'Add image'}>
+                      <input
+                        type="file" accept="image/jpeg,image/png,image/webp" className="hidden"
+                        disabled={uploadingId === p.id}
+                        onChange={(e) => {
+                          const f = e.target.files?.[0];
+                          if (f) void onRowImage(p.id, f);
+                          e.target.value = '';
+                        }}
+                      />
+                      {p.image_url ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img
+                          src={p.image_url}
+                          alt={p.title}
+                          className="h-12 w-12 object-cover rounded border border-line-strong bg-paper"
+                        />
+                      ) : (
+                        <span className="inline-flex h-12 w-12 items-center justify-center rounded border border-dashed border-line-strong text-[8px] font-mono uppercase tracking-widest text-ink-3 text-center leading-tight">
+                          {uploadingId === p.id ? '...' : 'Add image'}
+                        </span>
+                      )}
+                    </label>
+                  </td>
                   <td className="px-4 py-3">
                     <div className="font-medium text-ink">{p.title}</div>
                     {p.token_id != null && (

@@ -20,7 +20,7 @@ export async function GET(
 
   const { data, error } = await db
     .from('app_seller_products')
-    .select('id, external_id, kind, title, description, price_minor, currency, stock, url, metadata, active, token_id, max_supply, on_chain_status, on_chain_tx_hash, created_at, updated_at')
+    .select('id, external_id, kind, title, description, price_minor, currency, stock, url, image_url, metadata, active, token_id, max_supply, on_chain_status, on_chain_tx_hash, created_at, updated_at')
     .eq('seller_id', sellerId)
     .order('created_at', { ascending: false })
     .limit(200);
