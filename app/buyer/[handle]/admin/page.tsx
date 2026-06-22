@@ -25,7 +25,7 @@ export default async function BuyerAdminPage({
 
   const { data: buyer, error } = await db
     .from('app_buyers')
-    .select('id, handle, display_name, owner_user_id, public')
+    .select('id, handle, display_name, owner_user_id')
     .eq('handle', handle)
     .maybeSingle();
   if (error || !buyer) return notFound();
@@ -252,7 +252,6 @@ export default async function BuyerAdminPage({
       offersCount={offersCount ?? 0}
       newPitchCount={newPitchCount}
       credits={creditsBalance}
-      isPublic={Boolean(buyer.public)}
     />
   );
 }

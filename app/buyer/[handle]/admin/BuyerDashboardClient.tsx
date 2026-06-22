@@ -5,7 +5,6 @@ import ThemeToggle from '@/components/app/ThemeToggle';
 import { Wordmark } from '@/components/app/Wordmark';
 import TestAgentBadge from '@/components/app/TestAgentBadge';
 import MatchNotifyDot from '@/components/app/MatchNotifyDot';
-import { BuyerVisibilityToggle } from '@/components/app/BuyerVisibilityToggle';
 
 /* ──────────────────────────────────────────────────────────────────────────
    Buyer dashboard, Maison design. Every figure is real: identity plus the
@@ -118,7 +117,7 @@ function priceLabel(m: MatchRow): string {
 }
 
 export default function BuyerDashboardClient({
-  name, handle, buyerId, agentCode, mcpUrl, prefsCount, openBriefs, briefs, matches, matchCount, newCount, pitches, offersCount, newPitchCount, credits, isPublic,
+  name, handle, buyerId, agentCode, mcpUrl, prefsCount, openBriefs, briefs, matches, matchCount, newCount, pitches, offersCount, newPitchCount, credits,
 }: {
   name: string;
   handle: string;
@@ -135,7 +134,6 @@ export default function BuyerDashboardClient({
   offersCount: number;
   newPitchCount: number;
   credits: number;
-  isPublic: boolean;
 }) {
   const trainHref = `/buyer/${handle}/admin/buying-agent`;
   const intentsHref = `/buyer/${handle}/admin/intents`;
@@ -165,7 +163,6 @@ export default function BuyerDashboardClient({
           </nav>
           <Link href="/" aria-label="VIA home" style={{ display: 'inline-flex', justifyContent: 'center' }}><Wordmark /></Link>
           <div className="dash-right">
-            <BuyerVisibilityToggle buyerId={buyerId} initialPublic={isPublic} />
             <a href={mcpUrl} target="_blank" rel="noreferrer" className="dash-mcp uc-mono">MCP ↗</a>
             <div className="dash-acct"><span className="dash-avatar" />{name}</div>
             <form action="/api/buyer/auth/logout" method="post" style={{ display: 'inline-flex' }}>
@@ -192,15 +189,6 @@ export default function BuyerDashboardClient({
               : <Link href={trainHref} className="btn">Train your agent</Link>}
           </div>
         </div>
-
-        {!isPublic && (
-          <div className="panel" style={{ borderColor: 'var(--warning)', marginBottom: 16 }}>
-            <div style={{ padding: '14px 18px', fontSize: 13, color: 'var(--ink-2)', lineHeight: 1.5 }}>
-              <strong style={{ color: 'var(--ink)' }}>Your agent is private.</strong> Briefs are not broadcast to sellers, so they get no offers.
-              Use the <span style={{ color: 'var(--live)' }}>Discoverable</span> switch at the top right to make it visible. Your identity stays private, sellers only see the structured brief.
-            </div>
-          </div>
-        )}
 
         <div className="dash-metrics">
           <Metric label="CREDITS" val={credits.toLocaleString()} sub="balance" href={creditsHref} />
