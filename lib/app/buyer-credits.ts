@@ -67,7 +67,7 @@ export async function deductCredits(buyerId: string, tokensUsed: number, context
     type:          'deduction',
     amount_usdc:   -cost,
     balance_after: newBalance,
-    description:   `deepseek${context ? ` ${context}` : ''} (${tokensUsed} tokens, incl. 25% platform fee)`,
+    description:   `deepseek${context ? ` ${context}` : ''} (${tokensUsed} tokens)`,
   });
   return newBalance as number;
 }
