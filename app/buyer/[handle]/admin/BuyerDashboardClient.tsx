@@ -140,6 +140,7 @@ export default function BuyerDashboardClient({
   const delegationHref = `/buyer/${handle}/admin/delegation`;
   const creditsHref = `/buyer/${handle}/admin/credits`;
   const matchesHref = `/buyer/${handle}/admin/matches`;
+  const purchasesHref = `/buyer/${handle}/admin/purchases`;
 
   const trained = prefsCount > 0;
   const hasBriefs = briefs.length > 0;
@@ -157,6 +158,7 @@ export default function BuyerDashboardClient({
             <Link href={`/buyer/${handle}/admin`} className="is-active" style={{ display: 'inline-flex', alignItems: 'center' }}>Dashboard<MatchNotifyDot buyerId={buyerId} /></Link>
             <Link href={intentsHref}>Briefs</Link>
             <Link href={trainHref}>Train</Link>
+            <Link href={purchasesHref}>Purchases</Link>
             <Link href={creditsHref}>Credits</Link>
           </nav>
           <Link href="/" aria-label="VIA home" style={{ display: 'inline-flex', justifyContent: 'center' }}><Wordmark /></Link>

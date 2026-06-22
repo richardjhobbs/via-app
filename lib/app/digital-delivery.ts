@@ -20,7 +20,7 @@ export const DIGITAL_BUCKET = 'app-digital-assets';
 
 /** Purchase statuses that entitle a buyer to the deliverable. 'paid' = USDC
  * captured (mint may still be pending); 'minted'/'paid_out' = fully settled. */
-const ENTITLING_STATUSES = ['paid', 'minted', 'paid_out'];
+export const ENTITLING_STATUSES = ['paid', 'minted', 'paid_out'];
 
 const DEFAULT_TTL_SECONDS = 86_400; // 24h, matches RRG getSignedUrl default
 
