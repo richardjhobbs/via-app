@@ -91,6 +91,8 @@ export function CheckoutBox({
   const [msg, setMsg]           = useState('');
   const [order, setOrder]       = useState<OrderInfo | null>(null);
   const [orderRef, setOrderRef] = useState('');
+  // Signed download links returned by settlement for a digital product.
+  const [downloads, setDownloads] = useState<{ filename: string; url: string }[]>([]);
 
   function setField(k: keyof Delivery, v: string) {
     setDelivery((d) => ({ ...d, [k]: v }));
@@ -131,6 +133,10 @@ export function CheckoutBox({
     });
     const json = await res.json();
     if (!res.ok || !json.settled) throw new Error(json.error || 'Settlement failed');
+    setDownloads(Array.isArray(json.download)
+      ? json.download.filter((d: unknown): d is { filename: string; url: string } =>
+          !!d && typeof (d as { url?: unknown }).url === 'string')
+      : []);
     setOrderRef(ref);
     setStatus('done');
     setMsg('');
@@ -188,13 +194,36 @@ export function CheckoutBox({
   }
 
   if (status === 'done') {
+    const hasDownloads = downloads.length > 0;
     return (
       <div className="mt-6 border border-line bg-paper p-5">
         <div className="uc-mono text-[color:var(--live)]">Purchase complete</div>
-        <p className="mt-3 text-sm text-ink-2">
-          Order <span className="font-mono text-ink">{orderRef}</span> settled in USDC on Base. The seller has been
-          notified and will fulfil your order. Keep this reference for any follow-up.
-        </p>
+        {hasDownloads ? (
+          <>
+            <p className="mt-3 text-sm text-ink-2">
+              Order <span className="font-mono text-ink">{orderRef}</span> settled in USDC on Base. Your download{downloads.length > 1 ? 's are' : ' is'} ready below, the link is private to you and valid for 24 hours.
+            </p>
+            <div className="mt-4 flex flex-col gap-2">
+              {downloads.map((d) => (
+                <a key={d.url} href={d.url} target="_blank" rel="noreferrer" download={d.filename}
+                  className="btn" style={{ alignSelf: 'flex-start' }}>
+                  Download {d.filename}
+                </a>
+              ))}
+            </div>
+            <p className="mt-3 text-xs text-ink-3">Save it now, the link expires in 24 hours. VIA account holders can re-download from their Purchases page.</p>
+          </>
+        ) : isPhysical ? (
+          <p className="mt-3 text-sm text-ink-2">
+            Order <span className="font-mono text-ink">{orderRef}</span> settled in USDC on Base. The seller has been
+            notified and will fulfil your order. Keep this reference for any follow-up.
+          </p>
+        ) : (
+          <p className="mt-3 text-sm text-ink-2">
+            Order <span className="font-mono text-ink">{orderRef}</span> settled in USDC on Base. The seller has been
+            notified to deliver. Keep this reference for any follow-up.
+          </p>
+        )}
       </div>
     );
   }
