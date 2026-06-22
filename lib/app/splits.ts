@@ -41,12 +41,11 @@ export const PLATFORM_WALLET = process.env.NEXT_PUBLIC_PLATFORM_WALLET
 
 const DEFAULT_SELLER_PCT = 97.5;
 
+// USDC has 6 decimals, so the split MUST be computed at 6dp. Rounding to 2dp
+// (whole cents) silently zeroed the platform's 2.5% on sub-0.20 USDC sales
+// (e.g. a 0.05 item: 0.04875 rounded up to 0.05, 0.00125 down to 0.00).
 function round6(n: number): number {
   return parseFloat(n.toFixed(6));
-}
-
-function round2(n: number): number {
-  return Math.round(n * 100) / 100;
 }
 
 export function getSellerPct(sellerPctOverride?: number | null): number {
@@ -59,12 +58,15 @@ export function getSellerPct(sellerPctOverride?: number | null): number {
 export function calculateSplit(input: SplitInput): SplitResult {
   const { totalUsdc, sellerWallet, sellerPctOverride } = input;
   const sellerPct = getSellerPct(sellerPctOverride);
-  const platformPct = 100 - sellerPct;
+  // Seller share at 6dp; platform takes the exact remainder so the two always
+  // sum to the total with no rounding dust and no lost fee.
+  const sellerUsdc   = round6(totalUsdc * sellerPct / 100);
+  const platformUsdc = round6(totalUsdc - sellerUsdc);
   return {
     splitType:      'seller_product_tiered',
     totalUsdc,
-    sellerUsdc:     round2(round6(totalUsdc * sellerPct / 100)),
-    platformUsdc:   round2(round6(totalUsdc * platformPct / 100)),
+    sellerUsdc,
+    platformUsdc,
     sellerWallet,
     onChainCreator: PLATFORM_WALLET,
   };
