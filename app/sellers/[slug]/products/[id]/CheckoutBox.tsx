@@ -6,6 +6,7 @@ import { inAppWallet, createWallet } from 'thirdweb/wallets';
 import { base } from 'thirdweb/chains';
 import { thirdwebClient } from '@/lib/app/thirdwebClient';
 import { sendUsdcToplatform } from '@/lib/app/sendUsdc';
+import { BuyerWalletAutoConnect } from '@/components/app/BuyerWalletAutoConnect';
 
 /* ──────────────────────────────────────────────────────────────────────────
    Human checkout for a single product. Mirrors RRG's PurchaseFlow but settles
@@ -200,6 +201,8 @@ export function CheckoutBox({
 
   return (
     <div className="mt-6 border border-line bg-paper p-5">
+      {/* Silently connect a recognised buyer's own in-app wallet (gated by flag). */}
+      <BuyerWalletAutoConnect active={Boolean(buyerWallet)} />
       <div className="uc-mono text-ink-3">Buy now</div>
       <p className="mt-2 text-sm text-ink-2">
         Pay {priceUsdc.toFixed(2)} USDC on Base. Settles instantly, the seller is notified to fulfil your order.
