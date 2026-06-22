@@ -29,7 +29,7 @@ export default async function BuyerPurchasesPage({
 
   const { data: buyer, error } = await db
     .from('app_buyers')
-    .select('id, handle, owner_user_id, wallet_address, agent_wallet_address')
+    .select('id, handle, owner_user_id, wallet_address, agent_wallet_address, erc8004_agent_id')
     .eq('handle', handle)
     .maybeSingle();
   if (error || !buyer) return notFound();
@@ -41,11 +41,20 @@ export default async function BuyerPurchasesPage({
   const wallets = [buyer.wallet_address, buyer.agent_wallet_address]
     .filter((w): w is string => typeof w === 'string' && w.length > 0)
     .map((w) => w.toLowerCase());
+  const agentId = typeof buyer.erc8004_agent_id === 'string' && buyer.erc8004_agent_id.trim()
+    ? buyer.erc8004_agent_id.trim() : null;
 
-  const rows: PurchaseRow[] = wallets.length === 0 ? [] : (((await db
+  // Match a purchase to this buyer by EITHER a registered wallet OR the buyer's
+  // agent id (stamped on web orders) , so an order paid from any wallet while
+  // logged in still appears, not only one paid from a registered wallet.
+  const orParts: string[] = [];
+  if (wallets.length) orParts.push(`buyer_wallet.in.(${wallets.join(',')})`);
+  if (agentId) orParts.push(`buyer_agent_id.eq.${agentId}`);
+
+  const rows: PurchaseRow[] = orParts.length === 0 ? [] : (((await db
     .from('app_purchases')
     .select('order_ref, status, total_usdc, created_at, product:product_id ( title, kind, metadata ), seller:seller_id ( name )')
-    .in('buyer_wallet', wallets)
+    .or(orParts.join(','))
     .order('created_at', { ascending: false })
     .limit(200)).data ?? []) as PurchaseRow[]);
 
