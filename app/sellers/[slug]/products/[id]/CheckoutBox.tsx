@@ -336,14 +336,14 @@ export function CheckoutBox({
               mode: 'fund_wallet',
               prefillBuy: {
                 chain: base,
-                amount: String(order.total_usdc),
+                amount: String(Math.max(order.total_usdc, CARD_MIN_USD)),
                 token: { address: USDC_ADDRESS, name: 'USD Coin', symbol: 'USDC' },
               },
               onPurchaseSuccess: () => { void afterCardFunded(); },
             }}
             connectOptions={{ chain: base, wallets }}
           />
-          <p className="mt-2 text-xs text-ink-3">After the card payment clears, your USDC is sent to settle order {order.order_ref}.</p>
+          <p className="mt-2 text-xs text-ink-3">After the card payment clears, your USDC is sent to settle order {order.order_ref}. Card top-ups have a {CARD_MIN_USD} USDC minimum; any extra stays in your wallet for next time.</p>
         </div>
       ) : (
         <div className="mt-5">
@@ -362,7 +362,7 @@ export function CheckoutBox({
             >
               {status === 'working' ? 'Working…' : `Pay ${priceUsdc.toFixed(2)} USDC`}
             </button>
-            {priceUsdc >= CARD_MIN_USD && !insufficient && (
+            {!insufficient && (
               <button
                 type="button"
                 onClick={() => void startCard()}
@@ -377,7 +377,7 @@ export function CheckoutBox({
       )}
 
       {priceUsdc < CARD_MIN_USD && (
-        <p className="mt-3 text-xs text-ink-3">Card payment is available on orders of {CARD_MIN_USD} USDC or more. Use a wallet for smaller amounts.</p>
+        <p className="mt-3 text-xs text-ink-3">Paying by card has a {CARD_MIN_USD} USDC minimum to keep card fees reasonable; the extra stays in your wallet for your next purchase.</p>
       )}
       {msg && <p className={`mt-3 text-sm ${status === 'error' ? 'text-[color:var(--danger)]' : 'text-ink-2'}`}>{msg}</p>}
     </div>

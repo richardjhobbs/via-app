@@ -1,24 +1,24 @@
 /**
- * Buyer credit top-up , on-chain USDC, mirrors RRG
- * (app/api/agent/[agentId]/credits/topup). The owner sends USDC on Base from
- * their wallet to the platform wallet, then submits the tx hash here. We verify
- * the transfer and credit the USD-equivalent (1 USDC = 1 USD).
+ * Buyer credit top-up , gasless. The owner funds their in-app wallet (by card
+ * via thirdweb Pay, or by sending USDC on Base to the wallet address), then
+ * signs an EIP-2612 USDC permit authorising the platform wallet to pull the
+ * amount. The server executes the permit (paying gas) and credits the USD
+ * equivalent. The owner never holds ETH and never pastes a transaction hash.
  *
- *   GET  , balance + recent ledger (owner only)
- *   POST , { tx_hash } verify a USDC transfer and credit (owner only)
+ *   GET   , balance + recent ledger (owner only)
+ *   POST  , { x_payment } execute a signed permit and credit (owner only)
+ *
+ * 1 USDC = 1 USD = 1,000 credits.
  */
 import { NextRequest, NextResponse } from 'next/server';
-import { ethers } from 'ethers';
 import { requireBuyerAuth } from '@/lib/app/buyer-auth';
 import { db } from '@/lib/app/db';
+import { verifyAndExecutePayment } from '@/lib/app/x402-server';
 import { topUpCredits, getBalance, getCreditHistory, usdToCredits } from '@/lib/app/buyer-credits';
 
 export const dynamic = 'force-dynamic';
 
-const USDC_ADDRESS = (process.env.NEXT_PUBLIC_USDC_CONTRACT_MAINNET || '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913').toLowerCase();
 const PLATFORM_WALLET = process.env.NEXT_PUBLIC_PLATFORM_WALLET ?? '';
-const BASE_RPC = process.env.NEXT_PUBLIC_BASE_RPC_URL || 'https://mainnet.base.org';
-const TRANSFER_TOPIC = ethers.id('Transfer(address,address,uint256)');
 
 export async function GET(
   _req: NextRequest,
@@ -52,75 +52,48 @@ export async function POST(
     return NextResponse.json({ error: 'Top-up unavailable: platform wallet not configured.' }, { status: 500 });
   }
 
-  let body: { tx_hash?: unknown };
+  let body: { x_payment?: unknown };
   try { body = await req.json(); } catch { return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 }); }
-  const txHash = String(body.tx_hash ?? '').trim();
-  if (!/^0x[0-9a-fA-F]{64}$/.test(txHash)) {
-    return NextResponse.json({ error: 'A valid transaction hash is required' }, { status: 400 });
+  const xPayment = String(body.x_payment ?? '').trim();
+  if (!xPayment) {
+    return NextResponse.json({ error: 'A signed payment is required' }, { status: 400 });
   }
 
-  const { data: buyer } = await db
-    .from('app_buyers')
-    .select('id, wallet_address')
-    .eq('id', buyerId)
-    .maybeSingle();
-  if (!buyer?.wallet_address) {
-    return NextResponse.json({ error: 'Buyer wallet not set' }, { status: 400 });
+  // Decode the base64 x402 permit the owner signed client-side.
+  let proof;
+  try {
+    proof = JSON.parse(Buffer.from(xPayment, 'base64').toString('utf-8'));
+  } catch {
+    return NextResponse.json({ error: 'Could not decode the signed payment' }, { status: 400 });
   }
 
-  // Reject a tx hash already credited (idempotency / replay guard).
+  // Execute the permit on-chain (platform pays gas, pulls USDC to the platform
+  // wallet). Minimum $0.01; the UI recommends >= $10 to minimise card fees.
+  const result = await verifyAndExecutePayment(proof, 0.01);
+  if (!result.verified || !result.txHash) {
+    return NextResponse.json({ error: result.error ?? 'Payment could not be settled' }, { status: 400 });
+  }
+
+  // Idempotency: never credit the same settlement twice.
   const { data: existing } = await db
     .from('app_buyer_credit_transactions')
     .select('id')
-    .eq('tx_hash', txHash)
+    .eq('tx_hash', result.txHash)
     .maybeSingle();
   if (existing) {
-    return NextResponse.json({ error: 'This transaction has already been credited' }, { status: 409 });
+    return NextResponse.json({ error: 'This payment has already been credited' }, { status: 409 });
   }
 
   try {
-    const provider = new ethers.JsonRpcProvider(BASE_RPC);
-    const receipt = await provider.getTransactionReceipt(txHash);
-    if (!receipt || receipt.status !== 1) {
-      return NextResponse.json({ error: 'Transaction not confirmed or failed' }, { status: 400 });
-    }
-
-    let amountRaw: bigint | null = null;
-    for (const log of receipt.logs) {
-      if (log.address.toLowerCase() === USDC_ADDRESS && log.topics[0] === TRANSFER_TOPIC) {
-        const from = '0x' + log.topics[1].slice(26);
-        const to   = '0x' + log.topics[2].slice(26);
-        if (
-          from.toLowerCase() === (buyer.wallet_address as string).toLowerCase() &&
-          to.toLowerCase()   === PLATFORM_WALLET.toLowerCase()
-        ) {
-          amountRaw = BigInt(log.data);
-          break;
-        }
-      }
-    }
-
-    if (amountRaw === null) {
-      return NextResponse.json(
-        { error: 'No USDC transfer found from your wallet to the platform wallet in this transaction' },
-        { status: 400 },
-      );
-    }
-
-    const amountUsd = Number(amountRaw) / 1_000_000; // USDC has 6 decimals; 1 USDC = 1 USD
-    if (amountUsd < 0.01) {
-      return NextResponse.json({ error: 'Amount too small (minimum $0.01)' }, { status: 400 });
-    }
-
-    const newBalance = await topUpCredits(buyerId, amountUsd, txHash, 'USDC top-up');
+    const newBalance = await topUpCredits(buyerId, result.amountUsdc, result.txHash, 'USDC top-up');
     return NextResponse.json({
-      credited:     amountUsd,
-      new_balance:  newBalance,
-      credits:      usdToCredits(newBalance),
-      tx_hash:      txHash,
+      credited:    result.amountUsdc,
+      new_balance: newBalance,
+      credits:     usdToCredits(newBalance),
+      tx_hash:     result.txHash,
     });
   } catch (err) {
     console.error('[buyer/credits/topup]', err);
-    return NextResponse.json({ error: 'Failed to verify transaction' }, { status: 500 });
+    return NextResponse.json({ error: 'Settled on-chain but crediting failed; contact support with your tx hash.' }, { status: 500 });
   }
 }

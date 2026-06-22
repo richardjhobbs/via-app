@@ -9,10 +9,9 @@ import { BuyerSubHeader } from '@/components/app/BuyerSubHeader';
 export const dynamic = 'force-dynamic';
 
 /**
- * Credits surface. Shows the buyer's balance and lets the owner top up by
- * sending USDC on Base to the platform wallet, then submitting the tx hash
- * (verified by POST /api/buyer/[buyerId]/credits/topup). Mirrors RRG's
- * on-chain USDC top-up.
+ * Credits surface. Shows the buyer's balance and lets the owner top up by card
+ * or by sending USDC to their in-app wallet, then converting it to credits with
+ * a gasless permit (POST /api/buyer/[buyerId]/credits/topup). No tx hashes.
  */
 export default async function BuyerCreditsPage({
   params,
@@ -44,8 +43,6 @@ export default async function BuyerCreditsPage({
     model:     (byoRow.data?.llm_byo_model as string | null) ?? null,
   };
 
-  const platformWallet = process.env.NEXT_PUBLIC_PLATFORM_WALLET ?? '';
-
   return (
     <main className="min-h-screen bg-background text-ink flex flex-col">
       <BuyerSubHeader handle={handle} buyerId={buyerId} />
@@ -59,13 +56,11 @@ export default async function BuyerCreditsPage({
           <p className="text-sm text-ink-2 mb-8">
             Credits fund your Buying Agent&rsquo;s work , the conversations it has while training and
             the negotiations it runs on your behalf. New agents start with 1,000 free credits
-            (about 1 USD). Top up by sending USDC on Base.
+            (about 1 USD). Top up by card or USDC, no gas and no transaction hashes.
           </p>
 
           <CreditsClient
             buyerId={buyerId}
-            walletAddress={(buyer.wallet_address as string | null) ?? ''}
-            platformWallet={platformWallet}
             initialCredits={usdToCredits(balance)}
             initialHistory={history as CreditTx[]}
           />
