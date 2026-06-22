@@ -14,6 +14,7 @@ import { ethers } from 'ethers';
 import { db } from '@/lib/app/db';
 import { getShippingConfig, computeShippingQuote } from '@/lib/app/shipping';
 import { getDigitalFiles } from '@/lib/app/digital-delivery';
+import { getBuyerUser } from '@/lib/app/buyer-auth';
 
 export const dynamic = 'force-dynamic';
 
@@ -130,6 +131,24 @@ export async function POST(
   const productUsdc      = productUsdcMinor / 1_000_000;
   const totalUsdc        = totalUsdcMinor / 1_000_000;
 
+  // If a VIA buyer is logged in, stamp their ERC-8004 agent id on the order so
+  // settlement fires the buyer reputation signal about THEIR agent , regardless
+  // of which wallet they pay from. Without this, the buyer signal only fires when
+  // the paying wallet itself resolves on-chain to a known agent, which misses a
+  // recognised buyer paying from a plain wallet. Primary (oldest) profile.
+  let buyerAgentId: string | null = null;
+  const buyerUser = await getBuyerUser();
+  if (buyerUser) {
+    const { data: bs } = await db
+      .from('app_buyers')
+      .select('erc8004_agent_id, created_at')
+      .eq('owner_user_id', buyerUser.id)
+      .order('created_at', { ascending: true })
+      .limit(1);
+    const aid = bs?.[0]?.erc8004_agent_id;
+    buyerAgentId = typeof aid === 'string' && aid.trim() ? aid.trim() : null;
+  }
+
   // ── Record the pending purchase ──
   const { data: purchase, error: intentErr } = await db
     .from('app_purchases')
@@ -137,6 +156,7 @@ export async function POST(
       product_id:       product.id,
       seller_id:        seller.id,
       buyer_wallet:     buyerWallet.toLowerCase(),
+      buyer_agent_id:   buyerAgentId,
       qty,
       total_usdc:       totalUsdc,
       payment_method:   'x402_operator',
