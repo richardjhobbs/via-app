@@ -103,7 +103,10 @@ export async function POST(req: NextRequest) {
       display_name:         displayName,
       wallet_address:       inAppWallet,
       agent_wallet_address: null,
-      public:               false,
+      // Discoverable by default: a Buying Agent exists to source offers, and the
+      // demand feed leaks no identity (structured brief only). Owner can switch
+      // to private from the dashboard.
+      public:               true,
     })
     .select('id, handle, display_name')
     .single();
