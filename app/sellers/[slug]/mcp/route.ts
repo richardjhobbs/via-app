@@ -31,6 +31,7 @@ import { insertNotification } from '@/lib/app/notifications';
 import { runSalesAgentAnswer, recordBuyerNote, type BuyerAnswerContext } from '@/lib/app/sales-agent';
 import { parseOfferingSchema, computeQuote, type Selections } from '@/lib/app/quote-pricing';
 import { getDigitalFiles, buyerHasPaidFor, buildDeliverables, DIGITAL_TTL_SECONDS } from '@/lib/app/digital-delivery';
+import { issueDownloadChallenge, verifyDownloadChallenge } from '@/lib/app/store-auth';
 import { enrichmentFromMetadata } from '@/lib/app/via-product';
 
 export const dynamic = 'force-dynamic';
@@ -353,19 +354,45 @@ function createServer(seller: SellerRow, req: Request) {
     },
   );
 
+  // ── get_download_challenge ───────────────────────────────────────
+  // Step 1 of digital delivery: prove control of the wallet that paid. The buyer
+  // wallet is a PUBLIC on-chain address, so naming it is not proof; the caller
+  // must SIGN this challenge with that wallet before get_download_links issues any
+  // link. Stateless HMAC challenge (no nonce store), expires in 5 minutes.
+  server.tool(
+    'get_download_challenge',
+    `[BEFORE DOWNLOAD] Begin retrieving a digital deliverable from ${seller.name}. Pass the product_id and the wallet that paid; returns a message to SIGN with that wallet plus a challenge token. Then call get_download_links({ product_id, buyer_wallet, challenge, signature }). This proves you control the paying wallet, not just that you know its address.`,
+    {
+      product_id:   z.string().uuid().describe('UUID of the purchased digital product'),
+      buyer_wallet: z.string().regex(/^0x[0-9a-fA-F]{40}$/).describe('The wallet that settled the purchase on VIA.'),
+    },
+    async ({ product_id, buyer_wallet }) => {
+      const ch = issueDownloadChallenge(seller.slug, buyer_wallet, product_id);
+      if (!ch) return asJson({ error: 'not_configured', message: 'Download authorization is not configured on the server.' });
+      return asJson({
+        message:    ch.message,
+        challenge:  ch.challenge,
+        expires_at: ch.expires_at,
+        next:       'Sign `message` with buyer_wallet, then call get_download_links({ product_id, buyer_wallet, challenge, signature }).',
+      });
+    },
+  );
+
   // ── get_download_links ───────────────────────────────────────────
-  // Digital delivery (RRG parity: get_download_links). After a purchase of a
-  // digital product settles on VIA, the buyer fetches time-limited signed URLs
-  // for the deliverable file(s). Gated on a paid app_purchases row for the
-  // paying wallet, so the link is never issued without a completed purchase.
+  // Step 2: time-limited signed URLs for the deliverable file(s). Gated on BOTH
+  // a wallet-control proof (challenge + signature from get_download_challenge)
+  // AND a paid app_purchases row for that wallet, so a link is never issued to a
+  // party that merely knows a (public) payer address + product_id.
   server.tool(
     'get_download_links',
-    `[AFTER PURCHASE] Retrieve time-limited download links for a digital ${seller.name} product you have already bought and settled on VIA. Pass the product_id and the wallet that paid. Links are signed and expire in 24 hours; call again to refresh. Returns an error if no settled purchase exists for that wallet.`,
+    `[AFTER PURCHASE] Retrieve time-limited download links for a digital ${seller.name} product you have already bought and settled on VIA. First call get_download_challenge, sign the message with the paying wallet, then call this with product_id, buyer_wallet, challenge and signature. Links are signed and expire in 24 hours; call again to refresh.`,
     {
       product_id:   z.string().uuid().describe('UUID of the purchased digital product'),
       buyer_wallet: z.string().regex(/^0x[0-9a-fA-F]{40}$/).describe('The wallet that settled the purchase on VIA (the buyer wallet recorded at buy_product).'),
+      challenge:    z.string().min(8).describe('The challenge token from get_download_challenge.'),
+      signature:    z.string().min(8).describe('Signature of the challenge message, signed by buyer_wallet.'),
     },
-    async ({ product_id, buyer_wallet }) => {
+    async ({ product_id, buyer_wallet, challenge, signature }) => {
       const t0 = Date.now();
       const { data: product } = await db
         .from('app_seller_products')
@@ -382,6 +409,12 @@ function createServer(seller: SellerRow, req: Request) {
       if (product.kind !== 'digital' || files.length === 0) {
         void logInteraction(seller.id, 'get_download_links', identity, { product_id }, { error: 'no_deliverables' }, 409, Date.now() - t0);
         return asJson({ error: 'this product has no digital deliverables to download' });
+      }
+      // Wallet-control proof BEFORE we reveal whether this wallet purchased.
+      const sig = verifyDownloadChallenge(seller.slug, buyer_wallet, product_id, challenge, signature);
+      if (!sig.ok) {
+        void logInteraction(seller.id, 'get_download_links', identity, { product_id, buyer_wallet }, { error: 'bad_auth', reason: sig.reason }, 401, Date.now() - t0);
+        return asJson({ error: 'authorization_failed', reason: sig.reason, message: 'Could not verify wallet control. Call get_download_challenge, sign the message with buyer_wallet, then retry.' });
       }
       const paid = await buyerHasPaidFor(seller.id, product_id, buyer_wallet);
       if (!paid) {
