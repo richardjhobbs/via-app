@@ -79,7 +79,7 @@ export async function POST(req: NextRequest) {
     const found = list?.users?.find((u: { email?: string | null; id: string }) => u.email?.toLowerCase() === email);
     if (!found) return NextResponse.json({ error: 'could not create or find user account' }, { status: 500 });
     const { data: priorBuyer } = await db.from('app_buyers').select('handle').eq('owner_user_id', found.id).maybeSingle();
-    if (priorBuyer) return NextResponse.json({ error: `this email already owns "${priorBuyer.handle}", sign in instead` }, { status: 409 });
+    if (priorBuyer) return NextResponse.json({ error: `This email already runs the Buying Agent "${priorBuyer.handle}". Sign in instead.`, existing_account: true, owns_buyer: true, email }, { status: 409 });
     // Account exists for this email but owns no buyer profile (e.g. a seller
     // account). Do NOT reset its password: an unauthenticated request must
     // never take over an existing account. Reuse it only if the supplied
@@ -92,7 +92,7 @@ export async function POST(req: NextRequest) {
   const { data: signIn, error: signInErr } = await supabase.auth.signInWithPassword({ email, password });
   if (signInErr || !signIn.session) {
     console.error('[onboard/buyer/register] signIn failed', signInErr);
-    return NextResponse.json({ error: 'this email may already have an account. Sign in with your existing password, or use Login.' }, { status: 401 });
+    return NextResponse.json({ error: 'This email already has a VIA account, but that password does not match it. Sign in with your existing password, or reset it.', existing_account: true, owns_buyer: false, email }, { status: 401 });
   }
 
   const { data: buyer, error: buyerErr } = await db

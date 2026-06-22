@@ -9,14 +9,16 @@ function BuyerLoginInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const isReset      = searchParams.get('reset') === 'true';
+  const isForgot     = searchParams.get('forgot') === 'true';
+  const emailParam   = searchParams.get('email') ?? '';
   const accessToken  = searchParams.get('access_token');
   const refreshToken = searchParams.get('refresh_token');
 
   const [mode, setMode] = useState<'login' | 'forgot' | 'reset'>(
-    isReset && accessToken ? 'reset' : 'login',
+    isReset && accessToken ? 'reset' : isForgot ? 'forgot' : 'login',
   );
 
-  const [email,    setEmail]    = useState('');
+  const [email,    setEmail]    = useState(emailParam);
   const [password, setPassword] = useState('');
   const [newPass,  setNewPass]  = useState('');
   const [err,      setErr]      = useState('');
