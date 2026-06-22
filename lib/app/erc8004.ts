@@ -14,6 +14,7 @@
 
 import { ethers } from 'ethers';
 import { unstable_cache } from 'next/cache';
+import { db } from './db';
 
 // ── Constants ─────────────────────────────────────────────────────────────
 
@@ -88,44 +89,82 @@ export async function updateAgentUri(
 
 // ── Identity lookup ───────────────────────────────────────────────────────
 
-/**
- * Look up the ERC-8004 agentId registered to a given wallet address.
- * Uses Transfer mint events (from=0x0) — the Identity Registry does not
- * implement ERC-721Enumerable so tokenOfOwnerByIndex is unavailable.
- * Returns null if the wallet has no ERC-8004 registration.
- */
 // ── In-memory cache: wallet → agentId (populated lazily) ────────────────
 const _walletToAgent = new Map<string, bigint>();
 let _cachePopulated = false;
 
-// Known agent IDs - add new ones here as they register. Module-scoped so both
-// the bulk cache warm and the per-call direct scan share one source of truth.
-const KNOWN_AGENT_IDS: bigint[] = [
-  DRHOBBS_AGENT_ID,  // 17666 - DrHobbs personal agent
-  RRG_AGENT_ID,      // 33313 - RRG platform agent
-  37749n,            // Colin     - VIA Labs Admin & Company Secretary
-  37750n,            // Priscilla - VIA Labs Marketing & Content
-  37751n,            // Rosie     - VIA Labs Research & Market Intelligence
-  37752n,            // Jordan    - VIA Labs Product & Dev Coordination
-  38520n,            // Sasha     - VIA Labs Brand Partnerships
-  38538n,            // VIA_Labs  - company entity (getvia.xyz)
-  45690n,            // Nolo      - brand agent (wallet 0x27daa49f)
-  45691n,            // Clooudie  - brand agent (wallet 0xca5c9C4d)
-];
+// DB-sourced candidate index: wallet (lowercased) → agentId. The Identity
+// Registry has no reverse lookup (no ERC-721Enumerable, so tokenOfOwnerByIndex
+// is unavailable), so app_buyers and app_sellers ARE the index of which wallet
+// holds which agent id. Every candidate is still confirmed on-chain with
+// ownerOf before it is trusted, so a stale or wrong DB row can never mint a
+// bogus mapping. Cached in-memory for 10 minutes; an empty result (DB error or
+// no rows) is never cached so a transient outage can't stick.
+let _dbCandidates: Map<string, bigint> | null = null;
+
+/** Parse a stored erc8004_agent_id text column into a positive bigint, or null. */
+function parseStoredAgentId(raw: unknown): bigint | null {
+  if (typeof raw !== 'string') return null;
+  const trimmed = raw.trim();
+  if (!/^\d+$/.test(trimmed)) return null;
+  const id = BigInt(trimmed);
+  return id > 0n ? id : null;
+}
 
 /**
- * Populate the wallet→agentId cache by checking ownerOf for all known
- * agent IDs. Runs once per process lifetime (or until cache expires).
+ * Build the wallet→agentId candidate map from the DB. Pulls every app_buyers /
+ * app_sellers row that has an erc8004_agent_id, keyed by BOTH the agent wallet
+ * (which signs and owns the identity token) and the funding/payout wallet, so
+ * any onboarded VIA agent is resolvable by wallet without a code edit.
+ */
+async function getDbAgentCandidates(): Promise<Map<string, bigint>> {
+  if (_dbCandidates) return _dbCandidates;
+
+  const map = new Map<string, bigint>();
+  for (const table of ['app_buyers', 'app_sellers'] as const) {
+    const { data, error } = await db
+      .from(table)
+      .select('wallet_address, agent_wallet_address, erc8004_agent_id')
+      .not('erc8004_agent_id', 'is', null);
+    if (error) {
+      console.error(`[erc8004] candidate load from ${table} failed:`, error.message);
+      continue;
+    }
+    for (const row of data ?? []) {
+      const id = parseStoredAgentId(row.erc8004_agent_id);
+      if (id === null) continue;
+      for (const w of [row.agent_wallet_address, row.wallet_address]) {
+        if (typeof w === 'string' && w) map.set(w.toLowerCase(), id);
+      }
+    }
+  }
+
+  if (map.size > 0) {
+    _dbCandidates = map;
+    setTimeout(() => { _dbCandidates = null; }, 10 * 60 * 1000);
+  }
+  return map;
+}
+
+/**
+ * Populate the wallet→agentId cache by confirming every DB-listed agent id
+ * on-chain with ownerOf. Maps by the CURRENT on-chain owner (the source of
+ * truth) so a transferred identity token still resolves to the right wallet.
+ * Runs once per process lifetime (or until cache expires).
  */
 async function populateAgentCache(): Promise<void> {
   if (_cachePopulated) return;
   try {
+    const candidates = await getDbAgentCandidates();
+    if (candidates.size === 0) return; // nothing to warm; don't mark warm
+
     const provider = getBaseMainnetProvider();
     const abi = ['function ownerOf(uint256) view returns (address)'];
     const contract = new ethers.Contract(IDENTITY_REGISTRY_ADDR, abi, provider);
 
+    const ids = [...new Set([...candidates.values()].map((id) => id.toString()))].map(BigInt);
     let failures = 0;
-    const checks = KNOWN_AGENT_IDS.map(async (id) => {
+    const checks = ids.map(async (id) => {
       try {
         const owner: string = await (contract.ownerOf as (id: bigint) => Promise<string>)(id);
         _walletToAgent.set(owner.toLowerCase(), id);
@@ -134,24 +173,28 @@ async function populateAgentCache(): Promise<void> {
 
     await Promise.all(checks);
 
-    // Only treat the cache as warm when every known id resolved. A partial
-    // warm from an RPC hiccup on a serverless cold start must not stick, or
-    // wallet lookups return the -1n "unknown id" sentinel for the full 10
-    // minutes and miss a real registration (this skipped a buyer signal once).
+    // Only treat the cache as warm when every id resolved. A partial warm from
+    // an RPC hiccup on a serverless cold start must not stick, or wallet
+    // lookups return the -1n "unknown id" sentinel for the full 10 minutes and
+    // miss a real registration (this skipped a buyer signal once).
     if (failures === 0) {
       _cachePopulated = true;
       setTimeout(() => { _cachePopulated = false; }, 10 * 60 * 1000);
     }
   } catch {
-    // non-fatal - lookup falls back to a direct scan
+    // non-fatal - lookup falls back to a direct DB-confirmed scan
   }
 }
 
 /**
  * Look up the ERC-8004 agentId registered to a given wallet address.
- * Tries the in-memory cache, then a deterministic direct ownerOf scan over
- * the known ids (so a single call still resolves even if the bulk warm
- * partially failed), then a balanceOf sentinel for unknown registrations.
+ * Tries the in-memory cache, then the DB candidate index confirmed with a
+ * single ownerOf call (so one call still resolves even if the bulk warm
+ * partially failed), then a balanceOf sentinel. Returns:
+ *   - a positive id → wallet owns that confirmed agent identity
+ *   - -1n           → wallet holds an identity token but it is not indexed in
+ *                     app_buyers / app_sellers (an erc8004_agent_id backfill gap)
+ *   - null          → wallet holds no identity token / unresolvable
  */
 export async function lookupAgentIdByWallet(wallet: string): Promise<bigint | null> {
   const lowerWallet = wallet.toLowerCase();
@@ -163,23 +206,26 @@ export async function lookupAgentIdByWallet(wallet: string): Promise<bigint | nu
     if (cached !== undefined) return cached;
 
     const provider = getBaseMainnetProvider();
-
-    // Cache miss or partial warm: resolve deterministically with a direct
-    // ownerOf scan so this single call still succeeds for a known agent.
     const ownerAbi = ['function ownerOf(uint256) view returns (address)'];
     const idContract = new ethers.Contract(IDENTITY_REGISTRY_ADDR, ownerAbi, provider);
-    for (const id of KNOWN_AGENT_IDS) {
+
+    // Cache miss or partial warm: resolve this one wallet from the DB index and
+    // confirm on-chain, so a single call still succeeds even if the bulk warm
+    // partially failed.
+    const candidateId = (await getDbAgentCandidates()).get(lowerWallet);
+    if (candidateId !== undefined) {
       try {
-        const owner: string = await (idContract.ownerOf as (id: bigint) => Promise<string>)(id);
+        const owner: string = await (idContract.ownerOf as (id: bigint) => Promise<string>)(candidateId);
         if (owner.toLowerCase() === lowerWallet) {
-          _walletToAgent.set(lowerWallet, id);
-          return id;
+          _walletToAgent.set(lowerWallet, candidateId);
+          return candidateId;
         }
-      } catch { /* token doesn't exist or reverted - skip */ }
+      } catch { /* token doesn't exist or reverted - fall through */ }
     }
 
-    // Not a known agent. If the wallet still holds an identity token, signal
-    // "registered, unknown id" so the badge shows; otherwise unregistered.
+    // Not in the DB index. If the wallet still holds an identity token, signal
+    // "registered, unknown id" so callers can surface the backfill gap;
+    // otherwise unregistered.
     const balAbi = ['function balanceOf(address) view returns (uint256)'];
     const balContract = new ethers.Contract(IDENTITY_REGISTRY_ADDR, balAbi, provider);
     const balance = await (balContract.balanceOf as (a: string) => Promise<bigint>)(wallet);

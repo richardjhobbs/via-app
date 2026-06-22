@@ -313,6 +313,12 @@ export async function POST(req: NextRequest) {
           .update({ buyer_agent_id: resolved.toString() })
           .eq('id', purchase.id);
         console.log(`[x402/purchase] ${orderRef} resolved buyer agent id ${resolved} from wallet ${buyerWalletRecorded}`);
+      } else if (resolved === -1n) {
+        // Wallet holds an ERC-8004 identity token but isn't indexed in
+        // app_buyers/app_sellers, so its id can't be resolved (the registry has
+        // no reverse lookup). Surface the backfill gap instead of silently
+        // skipping: stamping erc8004_agent_id on that buyer row fixes it.
+        console.warn(`[x402/purchase] ${orderRef} buyer wallet ${buyerWalletRecorded} holds an ERC-8004 identity token but is not indexed in app_buyers/app_sellers; backfill its erc8004_agent_id to enable the buyer reputation signal`);
       }
     } catch (err) {
       console.warn(`[x402/purchase] ${orderRef} buyer agent-id wallet lookup failed`, err);
