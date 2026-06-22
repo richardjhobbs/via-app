@@ -214,22 +214,38 @@ export function CheckoutBox({
       <div className="mt-4">
         <div className="uc-mono text-ink-3" style={{ fontSize: 10 }}>Step 1 · Your wallet</div>
         {!account ? (
-          <>
-            <p className="mt-2 text-sm text-ink-2">
-              {buyerName
-                ? <>Welcome back, {buyerName}. Sign in with the email or Google you joined VIA with to use your VIA wallet{shortWallet ? <> (<span className="font-mono">{shortWallet}</span>)</> : null}, or connect your own.</>
-                : <>New here? Create a wallet in seconds with your email or Google, you stay in control of it. Already have a wallet? Connect MetaMask, Coinbase or WalletConnect.</>}
-            </p>
-            <div className="mt-3 flex gap-3">
-              <button type="button" onClick={openWallet} disabled={isConnecting} className="btn disabled:opacity-40" style={{ flex: 1 }}>
-                Create wallet
-              </button>
-              <button type="button" onClick={openWallet} disabled={isConnecting} className="btn ghost disabled:opacity-40" style={{ flex: 1 }}>
-                Connect wallet
-              </button>
-            </div>
-            <p className="mt-2 text-xs text-ink-3">Create makes you a new wallet with email or Google. Connect links a wallet you already have.</p>
-          </>
+          buyerName ? (
+            // Recognised VIA buyer: one clear action to THEIR own wallet. The
+            // first sign-in per browser is one tap (Google) or one email code to
+            // the wallet they joined with; thirdweb AutoConnect keeps it connected
+            // silently on every visit after that.
+            <>
+              <p className="mt-2 text-sm text-ink-2">
+                Welcome back, {buyerName}. Sign in to your VIA wallet{shortWallet ? <> (<span className="font-mono">{shortWallet}</span>)</> : null} with the email or Google you joined with, it stays connected after the first time.
+              </p>
+              <div className="mt-3 flex items-center gap-3">
+                <button type="button" onClick={openWallet} disabled={isConnecting} className="btn disabled:opacity-40">
+                  {isConnecting ? 'Opening…' : 'Sign in to your VIA wallet'}
+                </button>
+                <button type="button" onClick={openWallet} disabled={isConnecting} className="underline text-xs text-ink-3 hover:text-ink">use a different wallet</button>
+              </div>
+            </>
+          ) : (
+            <>
+              <p className="mt-2 text-sm text-ink-2">
+                New here? Create a wallet in seconds with your email or Google, you stay in control of it. Already have a wallet? Connect MetaMask, Coinbase or WalletConnect.
+              </p>
+              <div className="mt-3 flex gap-3">
+                <button type="button" onClick={openWallet} disabled={isConnecting} className="btn disabled:opacity-40" style={{ flex: 1 }}>
+                  Create wallet
+                </button>
+                <button type="button" onClick={openWallet} disabled={isConnecting} className="btn ghost disabled:opacity-40" style={{ flex: 1 }}>
+                  Connect wallet
+                </button>
+              </div>
+              <p className="mt-2 text-xs text-ink-3">Create makes you a new wallet with email or Google. Connect links a wallet you already have.</p>
+            </>
+          )
         ) : (
           <div className="mt-2 text-xs">
             {isViaWallet ? (
