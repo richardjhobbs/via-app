@@ -96,10 +96,14 @@ export async function getBuyerUser(): Promise<BuyerUser | null> {
  * the login flow uses the first.
  */
 export async function getUserBuyers(userId: string): Promise<BuyerMembership[]> {
+  // Oldest first so a user with more than one profile (e.g. their own plus a
+  // system profile like the NOSTR inbound buyer) lands on their PRIMARY profile
+  // at login, not whatever the DB happened to return first.
   const { data, error } = await db
     .from('app_buyers')
     .select('id, handle, display_name')
-    .eq('owner_user_id', userId);
+    .eq('owner_user_id', userId)
+    .order('created_at', { ascending: true });
 
   if (error || !data) return [];
 
