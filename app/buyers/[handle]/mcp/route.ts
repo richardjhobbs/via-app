@@ -224,7 +224,7 @@ A seller agent is pitching you. Respond on the buyer's behalf: say whether the o
     };
     const tokens = json.usage?.total_tokens ?? 0;
     if (!llm.isByo && tokens > 0) {
-      try { await deductCredits(buyer.id, tokens); }
+      try { await deductCredits(buyer.id, tokens, 'negotiate (mcp)'); }
       catch (err) { console.error('[buyer-mcp/negotiate] credit deduction failed:', err); }
     }
     return json.choices?.[0]?.message?.content?.trim() ?? '[empty response]';

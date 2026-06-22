@@ -109,7 +109,7 @@ export async function POST(
   let creditBalance: number | undefined;
   if (source === 'owner_chat' && !result.isByo && result.tokensUsed > 0) {
     try {
-      creditBalance = await deductCredits(buyerId, result.tokensUsed);
+      creditBalance = await deductCredits(buyerId, result.tokensUsed, 'training chat');
     } catch (err) {
       console.error('[buyer/chat] credit deduction failed:', err);
     }

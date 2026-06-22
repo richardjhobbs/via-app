@@ -35,7 +35,7 @@ export default async function BuyerAdminPage({
 
   const buyerId = buyer.id as string;
 
-  const [{ data: intents }, { count: prefsCount }, { data: matchData }, { count: matchCount }, { count: newCount }, { data: pitchData }, { count: offersCount }] = await Promise.all([
+  const [{ data: intents }, { count: prefsCount }, { data: matchData }, { count: matchCount }, { count: newCount }, { data: pitchData }] = await Promise.all([
     db
       .from('app_buyer_intents')
       .select('id, intent_text, status, created_at, structured')
@@ -68,10 +68,6 @@ export default async function BuyerAdminPage({
       .eq('buyer_id', buyerId)
       .order('created_at', { ascending: false })
       .limit(60),
-    db
-      .from('app_buyer_brief_pitches')
-      .select('id', { count: 'exact', head: true })
-      .eq('buyer_id', buyerId),
   ]);
 
   // How many offers the buyer wants to see per brief (set during clarification).
@@ -180,10 +176,15 @@ export default async function BuyerAdminPage({
     };
   });
 
+  // Only surface offers that fit or partially fit. True no-fit pitches (wrong
+  // category, seller spam that the judge scored 0) are dropped so the buyer sees
+  // relevant offers only, not every product a seller agent chose to throw at the brief.
+  const shownOffers = allOffers.filter((o) => o.tier !== 'nofit');
+
   // Rank per brief (genuine fits first, then by judge score) and cap each brief to
   // its option_count, so the buyer sees the best N offers per brief, not a flood.
   const offersByIntent = new Map<string, (PitchRow & { intentId: string })[]>();
-  for (const o of allOffers) {
+  for (const o of shownOffers) {
     const arr = offersByIntent.get(o.intentId) ?? [];
     arr.push(o);
     offersByIntent.set(o.intentId, arr);
@@ -199,7 +200,15 @@ export default async function BuyerAdminPage({
   // ...but the FEED itself shows most-recent first, so a freshly-arrived offer is
   // at the top rather than buried under older "fits"/Buy-now pitches.
   pitches.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-  const newPitchCount = ((pitchData ?? []) as Array<{ status?: string }>).filter((p) => p.status === 'new').length;
+  // "New" badge + offers metric count only the relevant (fit/partial) offers we
+  // actually show, so a burst of no-fit seller spam never inflates either.
+  const isRelevantPitch = (p: { verdict?: Record<string, unknown> | null }) => {
+    const v = (p.verdict ?? {}) as Record<string, unknown>;
+    const met = Array.isArray(v.met) ? v.met : [];
+    return v.fits === true || met.length > 0;
+  };
+  const newPitchCount = ((pitchData ?? []) as Array<{ status?: string; verdict?: Record<string, unknown> | null }>)
+    .filter((p) => p.status === 'new' && isRelevantPitch(p)).length;
 
   // Viewing the dashboard clears the new-results flash: mark this buyer's unseen
   // matches AND pitches as seen (the nav dot polls status='new'). Non-fatal.
@@ -249,7 +258,7 @@ export default async function BuyerAdminPage({
       matchCount={matchCount ?? 0}
       newCount={newCount ?? 0}
       pitches={pitches}
-      offersCount={offersCount ?? 0}
+      offersCount={shownOffers.length}
       newPitchCount={newPitchCount}
       credits={creditsBalance}
     />
