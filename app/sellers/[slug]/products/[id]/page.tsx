@@ -60,11 +60,17 @@ export default async function ProductPage({ params }: { params: Promise<{ slug: 
   if (buyable) {
     const user = await getBuyerUser();
     if (user) {
-      const { data: b } = await db
+      // One owner can hold more than one buyer profile (e.g. the human buyer plus
+      // a system profile like the NOSTR inbound). maybeSingle() would return null
+      // on >1 row and silently treat the buyer as a newcomer, so take the primary
+      // (oldest) profile instead.
+      const { data: bs } = await db
         .from('app_buyers')
-        .select('wallet_address, display_name, handle')
+        .select('wallet_address, display_name, handle, created_at')
         .eq('owner_user_id', user.id)
-        .maybeSingle();
+        .order('created_at', { ascending: true })
+        .limit(1);
+      const b = bs?.[0];
       if (b) {
         buyerWallet = (b.wallet_address as string | null) ?? null;
         buyerName = (b.display_name as string | null) ?? (b.handle as string | null) ?? null;

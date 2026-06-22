@@ -21,11 +21,15 @@ export async function GET() {
   if (!user) return NextResponse.json({ error: 'not authenticated' }, { status: 401 });
   if (!user.email) return NextResponse.json({ error: 'no email on account' }, { status: 409 });
 
-  const { data: buyer } = await db
+  // One owner can hold more than one buyer profile; take the primary (oldest) so
+  // a second profile (e.g. the NOSTR inbound system buyer) does not null this out.
+  const { data: buyers } = await db
     .from('app_buyers')
-    .select('wallet_address')
+    .select('wallet_address, created_at')
     .eq('owner_user_id', user.id)
-    .maybeSingle();
+    .order('created_at', { ascending: true })
+    .limit(1);
+  const buyer = buyers?.[0];
   if (!buyer) return NextResponse.json({ error: 'no buyer profile' }, { status: 404 });
 
   const email = user.email.toLowerCase();
