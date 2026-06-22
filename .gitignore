@@ -64,6 +64,7 @@ tmp/
 .env*.local
 
 # scratch / one-off probe scripts and scrape artifacts (never commit)
+integrations/
 scripts/_*.mjs
 tmp-populate.sh
 *_ms_sellers.html
