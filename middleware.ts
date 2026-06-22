@@ -104,6 +104,7 @@ export const config = {
   matcher: [
     '/',
     '/seller/:path*',
+    '/sellers/:path*',   // public seller + product/checkout pages: keep a logged-in buyer's session alive here too, so checkout recognises them (agent MCP traffic carries no auth cookies and passes straight through)
     '/buyer/:path*',
     '/api/seller/:path*',
     '/api/buyer/:path*',
