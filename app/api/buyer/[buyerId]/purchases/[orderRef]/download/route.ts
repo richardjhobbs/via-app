@@ -32,24 +32,28 @@ export async function GET(
   // settled from one of them.
   const { data: buyer } = await db
     .from('app_buyers')
-    .select('wallet_address, agent_wallet_address')
+    .select('wallet_address, agent_wallet_address, erc8004_agent_id')
     .eq('id', buyerId)
     .maybeSingle();
   if (!buyer) return NextResponse.json({ error: 'buyer not found' }, { status: 404 });
   const wallets = [buyer.wallet_address, buyer.agent_wallet_address]
     .filter((w): w is string => typeof w === 'string' && w.length > 0)
     .map((w) => w.toLowerCase());
-  if (wallets.length === 0) return NextResponse.json({ error: 'no wallet on record for this buyer' }, { status: 409 });
+  const agentId = typeof buyer.erc8004_agent_id === 'string' && buyer.erc8004_agent_id.trim()
+    ? buyer.erc8004_agent_id.trim() : null;
 
   const { data: purchase } = await db
     .from('app_purchases')
-    .select('id, status, buyer_wallet, product:product_id ( id, title, kind, metadata )')
+    .select('id, status, buyer_wallet, buyer_agent_id, product:product_id ( id, title, kind, metadata )')
     .eq('order_ref', orderRef)
     .maybeSingle();
   if (!purchase) return NextResponse.json({ error: `order ${orderRef} not found` }, { status: 404 });
 
-  // Ownership: the order must have settled from one of this buyer's wallets.
-  if (!wallets.includes(String(purchase.buyer_wallet).toLowerCase())) {
+  // Ownership: the order is this buyer's if it settled from one of their wallets
+  // OR carries their agent id (matches the Purchases page, which lists both).
+  const ownsByWallet = wallets.includes(String(purchase.buyer_wallet).toLowerCase());
+  const ownsByAgent  = agentId !== null && String(purchase.buyer_agent_id ?? '') === agentId;
+  if (!ownsByWallet && !ownsByAgent) {
     return NextResponse.json({ error: 'this order does not belong to your account' }, { status: 403 });
   }
   if (!ENTITLING_STATUSES.includes(String(purchase.status))) {
