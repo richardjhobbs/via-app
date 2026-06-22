@@ -30,8 +30,14 @@ function b64url(buf: Buffer | string): string {
 function privateKeyPem(): string | null {
   const raw = process.env.VIA_WALLET_JWT_PRIVATE_KEY;
   if (!raw) return null;
-  const pem = raw.includes('\\n') ? raw.replace(/\\n/g, '\n') : raw;
+  const pem = (raw.includes('\\n') ? raw.replace(/\\n/g, '\n') : raw).trim();
   return pem.includes('BEGIN') ? pem : null;
+}
+
+/** The configured thirdweb `aud`, trimmed (env values can carry a trailing newline). */
+function audValue(): string | null {
+  const aud = process.env.VIA_WALLET_JWT_AUD?.trim();
+  return aud && aud.length > 0 ? aud : null;
 }
 
 /** RFC 7638 JWK thumbprint, used as the stable `kid` linking JWKS to the JWT header. */
@@ -58,7 +64,7 @@ export interface BuyerWalletClaims { sub: string; email?: string; }
 export function signBuyerWalletJwt(claims: BuyerWalletClaims, ttlSeconds = 300): string | null {
   const pem = privateKeyPem();
   const jwk = getPublicJwk();
-  const aud = process.env.VIA_WALLET_JWT_AUD;
+  const aud = audValue();
   if (!pem || !jwk || !aud) return null;
 
   const iss = (process.env.NEXT_PUBLIC_APP_BASE_URL || 'https://app.getvia.xyz').replace(/\/$/, '');
@@ -80,5 +86,5 @@ export function signBuyerWalletJwt(claims: BuyerWalletClaims, ttlSeconds = 300):
 
 /** Whether the JWT wallet-auth path is fully configured server-side. */
 export function walletJwtConfigured(): boolean {
-  return Boolean(privateKeyPem() && getPublicJwk() && process.env.VIA_WALLET_JWT_AUD);
+  return Boolean(privateKeyPem() && getPublicJwk() && audValue());
 }
