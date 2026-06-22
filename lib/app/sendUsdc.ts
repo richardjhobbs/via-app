@@ -1,11 +1,8 @@
 /**
- * Client-side USDC transfer from a Thirdweb embedded wallet to the platform wallet.
- * Used in the "Buy with Card" flow after the user has on-ramped USDC via Thirdweb Pay.
+ * Gasless human checkout: build a signed EIP-2612 USDC permit the buyer signs
+ * (no ETH/gas needed); the server executes it. The buyer never pays gas.
  */
 
-import { prepareContractCall, sendTransaction, getContract } from 'thirdweb';
-import { base } from 'thirdweb/chains';
-import { thirdwebClient } from './thirdwebClient';
 import type { Account } from 'thirdweb/wallets';
 
 const USDC_ADDRESS = process.env.NEXT_PUBLIC_USDC_CONTRACT_MAINNET
@@ -73,34 +70,4 @@ export async function buildUsdcPermitXPayment(account: Account, amountUsdc: numb
     },
   };
   return btoa(JSON.stringify(payload));
-}
-
-/**
- * Send USDC from a Thirdweb embedded wallet to the platform wallet.
- * @param account  - The active Thirdweb account (embedded wallet)
- * @param amountUsdc - Amount in USDC (human-readable, e.g. 10.00)
- * @returns Transaction hash
- */
-export async function sendUsdcToplatform(
-  account: Account,
-  amountUsdc: number,
-): Promise<string> {
-  const usdcContract = getContract({
-    client: thirdwebClient,
-    chain: base,
-    address: USDC_ADDRESS,
-  });
-
-  // USDC has 6 decimals
-  const amount6dp = BigInt(Math.round(amountUsdc * 1_000_000));
-
-  const tx = prepareContractCall({
-    contract: usdcContract,
-    method: 'function transfer(address to, uint256 value) returns (bool)',
-    params: [PLATFORM_WALLET, amount6dp],
-  });
-
-  const result = await sendTransaction({ transaction: tx, account });
-
-  return result.transactionHash;
 }
