@@ -4,7 +4,6 @@ import { db } from '@/lib/app/db';
 import { createClient } from '@supabase/supabase-js';
 import { ethers } from 'ethers';
 import { mintBuyerIdentity } from '@/lib/app/buyer-identity';
-import { deriveAgentWallet, platformAgentWalletsEnabled } from '@/lib/app/agent-wallet';
 import { shouldSkipErc8004, syntheticTestAgentId } from '@/lib/app/test-mode';
 import { grantWelcomeCredits } from '@/lib/app/buyer-credits';
 
@@ -30,9 +29,11 @@ const supabase = createClient(
  *    is always platform-derived from AGENT_WALLET_SEED.)
  *
  * Creates Supabase Auth user (auto-confirmed), signs them in, inserts an
- * app_buyers row (wallet_address = the human's funding wallet), then mints the
- * ERC-8004 identity to a platform-DERIVED agent wallet via mintBuyerIdentity.
- * Mint is awaited; failure rolls back the buyer row.
+ * app_buyers row (wallet_address = the buyer's in-app wallet), then mints the
+ * ERC-8004 identity ONTO that same in-app wallet via mintBuyerIdentity , one
+ * wallet is identity + spend + recognition + delivery. Mint is awaited; failure
+ * rolls back the buyer row. (Seller identities stay on platform-derived wallets;
+ * buyers do not, see lib/app/buyer-identity.ts.)
  */
 export async function POST(req: NextRequest) {
   let body: Record<string, unknown>;
@@ -50,13 +51,10 @@ export async function POST(req: NextRequest) {
   if (!password || password.length < 8)           return NextResponse.json({ error: 'password must be 8+ characters' }, { status: 400 });
   if (!displayName)                               return NextResponse.json({ error: 'display name required' },          { status: 400 });
   if (!ethers.isAddress(walletAddress)) return NextResponse.json({ error: 'invalid wallet address' }, { status: 400 });
-  // The funding wallet (where the owner holds the USDC their agent spends, via
-  // thirdweb or an external wallet) is the human's. The AGENT identity wallet is
-  // SEPARATE and platform-derived. Fail closed if the seed is unconfigured.
-  const funding = walletAddress.toLowerCase();
-  if (!shouldSkipErc8004(email) && !platformAgentWalletsEnabled()) {
-    return NextResponse.json({ error: 'platform-managed identity wallets are not enabled; contact VIA' }, { status: 503 });
-  }
+  // The in-app wallet (the deterministic thirdweb wallet tied to the buyer's
+  // email, or the external wallet they onboarded with) is the buyer's single
+  // wallet: it holds the USDC the agent spends AND carries the ERC-8004 identity.
+  const inAppWallet = walletAddress.toLowerCase();
 
   const handle = handleInput
     .replace(/[^a-z0-9]+/g, '-')
@@ -73,7 +71,7 @@ export async function POST(req: NextRequest) {
     email,
     password,
     email_confirm: true,
-    user_metadata: { source: 'via_app_onboard_buyer', wallet_address: funding, agent_wallet_address: null },
+    user_metadata: { source: 'via_app_onboard_buyer', wallet_address: inAppWallet, agent_wallet_address: null },
   });
 
   if (createErr) {
@@ -103,7 +101,7 @@ export async function POST(req: NextRequest) {
       handle,
       owner_user_id:        userId,
       display_name:         displayName,
-      wallet_address:       funding,
+      wallet_address:       inAppWallet,
       agent_wallet_address: null,
       public:               false,
     })
@@ -116,17 +114,16 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'failed to create buyer record' }, { status: 500 });
   }
 
-  // The Buying Agent identity wallet is platform-derived; the ERC-8004 identity
-  // is minted to it ON REGISTRATION (awaited). The human's funding wallet stays
-  // on wallet_address. mintBuyerIdentity derives the dedicated wallet (it sees
-  // agent_wallet_address=null), links-or-mints, and is idempotent. If it fails we
-  // roll back the buyer row so a retry works. Test-mode writes a synthetic
-  // placeholder + derived wallet and skips the on-chain mint (lib/app/test-mode.ts).
+  // The ERC-8004 identity is minted ONTO the buyer's in-app wallet ON
+  // REGISTRATION (awaited): one wallet is identity + spend + recognition +
+  // delivery. mintBuyerIdentity reads wallet_address, links-or-mints, and is
+  // idempotent. If it fails we roll back the buyer row so a retry works.
+  // Test-mode writes a synthetic placeholder, sets agent_wallet_address to the
+  // same in-app wallet, and skips the on-chain mint (lib/app/test-mode.ts).
   if (shouldSkipErc8004(email)) {
     const placeholder = syntheticTestAgentId();
-    const derived = deriveAgentWallet(buyer.id);
     await db.from('app_buyers')
-      .update({ erc8004_agent_id: placeholder, ...(derived ? { agent_wallet_address: derived.address.toLowerCase() } : {}) })
+      .update({ erc8004_agent_id: placeholder, agent_wallet_address: inAppWallet })
       .eq('id', buyer.id);
     console.log(`[onboard/buyer/register] TEST MODE — skipped ERC-8004 mint for handle=${buyer.handle}, placeholder=${placeholder}`);
   } else {

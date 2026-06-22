@@ -68,15 +68,18 @@ function row(label, id, onRecord, derived) {
     out.push({ ...r, erc8004: s.erc8004_agent_id ?? null, active: s.active, approval: s.approval_status });
   }
 
+  // Buyers are DIFFERENT from sellers: a buyer's identity wallet is their own
+  // in-app wallet (wallet_address), NOT a platform-derived one. So a buyer is
+  // healthy when agent_wallet_address == wallet_address. (Seller identities stay
+  // platform-derived because the central runtime must sign x402 for them.)
   const { data: buyers, error: be } = await db
     .from('app_buyers')
-    .select('id, handle, agent_wallet_address')
+    .select('id, handle, agent_wallet_address, wallet_address')
     .order('handle');
   if (be) { console.error('buyers query failed:', be.message); process.exit(1); }
 
   for (const b of buyers ?? []) {
-    const d = deriveAgentWallet(b.id);
-    out.push(row(`buyer:${b.handle}`, b.id, b.agent_wallet_address, d?.address));
+    out.push(row(`buyer:${b.handle}`, b.id, b.agent_wallet_address, b.wallet_address));
   }
 
   const mism = out.filter(r => r.status === 'MISMATCH');
