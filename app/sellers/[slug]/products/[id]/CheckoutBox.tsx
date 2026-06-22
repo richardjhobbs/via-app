@@ -5,7 +5,7 @@ import { PayEmbed, useActiveAccount, useConnectModal } from 'thirdweb/react';
 import { inAppWallet, createWallet } from 'thirdweb/wallets';
 import { base } from 'thirdweb/chains';
 import { thirdwebClient } from '@/lib/app/thirdwebClient';
-import { sendUsdcToplatform } from '@/lib/app/sendUsdc';
+import { buildUsdcPermitXPayment } from '@/lib/app/sendUsdc';
 import { BuyerWalletAutoConnect } from '@/components/app/BuyerWalletAutoConnect';
 
 /* ──────────────────────────────────────────────────────────────────────────
@@ -123,11 +123,11 @@ export function CheckoutBox({
     return { order_ref: json.order_ref, total_usdc: json.total_usdc };
   }
 
-  async function settle(ref: string, txHash: string) {
+  async function settle(ref: string, xPayment: string) {
     const res = await fetch('/api/x402/purchase', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ order_ref: ref, payment_tx_hash: txHash }),
+      body: JSON.stringify({ order_ref: ref, x_payment: xPayment }),
     });
     const json = await res.json();
     if (!res.ok || !json.settled) throw new Error(json.error || 'Settlement failed');
@@ -145,10 +145,10 @@ export function CheckoutBox({
     try {
       const o = await createOrder('usdc');
       setOrder(o);
-      setMsg(`Sending ${o.total_usdc.toFixed(2)} USDC…`);
-      const txHash = await sendUsdcToplatform(account, o.total_usdc);
-      setMsg('Confirming on-chain…');
-      await settle(o.order_ref, txHash);
+      setMsg('Approve the payment in your wallet…');
+      const xPayment = await buildUsdcPermitXPayment(account, o.total_usdc);
+      setMsg('Settling…');
+      await settle(o.order_ref, xPayment);
     } catch (e) {
       setStatus('error');
       setMsg(e instanceof Error ? e.message : 'Payment failed');
@@ -178,9 +178,9 @@ export function CheckoutBox({
     if (!account || !order) return;
     setStatus('working'); setMsg('Card cleared , transferring USDC…');
     try {
-      const txHash = await sendUsdcToplatform(account, order.total_usdc);
-      setMsg('Confirming on-chain…');
-      await settle(order.order_ref, txHash);
+      const xPayment = await buildUsdcPermitXPayment(account, order.total_usdc);
+      setMsg('Settling…');
+      await settle(order.order_ref, xPayment);
     } catch (e) {
       setStatus('error');
       setMsg(e instanceof Error ? e.message : 'Transfer after card payment failed');
