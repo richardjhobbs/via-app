@@ -27,7 +27,7 @@ export default async function SellerAdminPage({
 
   const { data: seller, error } = await db
     .from('app_sellers')
-    .select('id, slug, name, owner_user_id, shipping, headline, description')
+    .select('id, slug, name, owner_user_id, shipping, headline, description, wallet_address')
     .eq('slug', slug)
     .maybeSingle();
 
@@ -149,6 +149,7 @@ export default async function SellerAdminPage({
       headline={String(seller.headline ?? '')}
       description={personaText}
       personaNeedsWork={personaNeedsWork}
+      walletAddress={String(seller.wallet_address ?? '')}
     />
   );
 }

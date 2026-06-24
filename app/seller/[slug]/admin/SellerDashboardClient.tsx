@@ -7,6 +7,7 @@ import { NotificationBell } from '@/components/app/NotificationBell';
 import { Wordmark } from '@/components/app/Wordmark';
 import TestAgentBadge from '@/components/app/TestAgentBadge';
 import PersonaEditor from '@/components/app/PersonaEditor';
+import PayoutWalletEditor from '@/components/app/PayoutWalletEditor';
 
 /* ──────────────────────────────────────────────────────────────────────────
    Seller dashboard, Maison design. Every number, row and card on this surface
@@ -154,7 +155,7 @@ function Listing({ l }: { l: ListingRow }) {
 
 export default function SellerDashboardClient({
   name, slug, sellerId, agentCode, mcpUrl, brands, metrics, activity, negotiations, listings, shippingNeedsSetup,
-  headline, description, personaNeedsWork,
+  headline, description, personaNeedsWork, walletAddress,
 }: {
   name: string;
   slug: string;
@@ -170,6 +171,7 @@ export default function SellerDashboardClient({
   headline: string;
   description: string;
   personaNeedsWork: boolean;
+  walletAddress: string;
 }) {
   const router = useRouter();
   const productsHref = `/seller/${slug}/admin/products`;
@@ -292,6 +294,10 @@ export default function SellerDashboardClient({
 
         <div id="brand-persona" style={{ marginBottom: 24, scrollMarginTop: 80 }}>
           <PersonaEditor sellerId={sellerId} initialHeadline={headline} initialDescription={description} />
+        </div>
+
+        <div id="payout-wallet" style={{ marginBottom: 24, scrollMarginTop: 80 }}>
+          <PayoutWalletEditor sellerId={sellerId} initialWallet={walletAddress} />
         </div>
 
         <div className="panel listings-panel">

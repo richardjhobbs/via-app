@@ -1,6 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { ethers } from 'ethers';
 import { requireBrandAuth } from '@/lib/app/seller-auth';
 import { db } from '@/lib/app/db';
+
+/** Zero address + the 0x0..00-0x0..ff precompile/sentinel range: valid-format
+ *  addresses no one controls. A payout set to one is unmanageable and burns
+ *  funds, so reject them the same way registration does. */
+const SENTINEL_ADDRESS = /^0x0{38}[0-9a-fA-F]{2}$/;
 
 export const dynamic = 'force-dynamic';
 
@@ -36,6 +42,7 @@ interface SettingsBody {
   squarespace_shop_url?: string | null;
   source_currency?:      string;
   purchase_policy?:      string | null;
+  wallet_address?:       string;
 }
 
 /**
@@ -125,6 +132,20 @@ export async function PATCH(
       : String(body.purchase_policy).trim().slice(0, 2000);
   }
 
+  // Payout wallet — where USDC sales settle. Owner-editable so a store that was
+  // registered with a placeholder (or a wallet the operator no longer controls)
+  // can be pointed at the real one without re-registering.
+  if (body.wallet_address !== undefined) {
+    const w = String(body.wallet_address).trim();
+    if (!ethers.isAddress(w)) {
+      return NextResponse.json({ error: 'payout wallet is not a valid Base/EVM address' }, { status: 400 });
+    }
+    if (SENTINEL_ADDRESS.test(w)) {
+      return NextResponse.json({ error: 'payout wallet must be a real wallet you control, not a placeholder or burn address' }, { status: 400 });
+    }
+    updates.wallet_address = w.toLowerCase();
+  }
+
   if (Object.keys(updates).length === 1) {
     // only updated_at — nothing to do
     return NextResponse.json({ error: 'No editable fields supplied' }, { status: 400 });
@@ -134,7 +155,7 @@ export async function PATCH(
     .from('app_sellers')
     .update(updates)
     .eq('id', sellerId)
-    .select('id, slug, name, kind, contact_email, website_url, description, headline, catalog_source, shopify_domain, squarespace_shop_url, source_currency, purchase_policy')
+    .select('id, slug, name, kind, contact_email, website_url, description, headline, catalog_source, shopify_domain, squarespace_shop_url, source_currency, purchase_policy, wallet_address')
     .single();
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   return NextResponse.json({ seller: data });
