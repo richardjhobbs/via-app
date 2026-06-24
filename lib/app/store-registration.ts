@@ -103,6 +103,13 @@ export async function createPendingAgentStore(
   if (!storeName)                                    return { ok: false, code: 'missing_name',      error: 'store_name is required.' };
   if (!['product', 'service', 'mixed'].includes(kind)) return { ok: false, code: 'invalid_kind',   error: "kind must be 'product', 'service', or 'mixed'." };
   if (!ethers.isAddress(payoutWallet))               return { ok: false, code: 'invalid_payout_wallet', error: 'payout_wallet is not a valid Base/EVM address.' };
+  // Format-valid but not a real wallet: the zero address and the precompile
+  // range (0x0..00 through 0x0..ff) are sentinels no one controls. They pass
+  // ethers.isAddress but a store set to one can never be managed (the owner
+  // can't sign a challenge from it) and any payout sent there is burned.
+  if (/^0x0{38}[0-9a-fA-F]{2}$/.test(payoutWallet.trim())) {
+    return { ok: false, code: 'invalid_payout_wallet', error: 'payout_wallet must be a real wallet you control, not a placeholder or burn address.' };
+  }
 
   // The AGENT wallet is ALWAYS platform-derived from AGENT_WALLET_SEED: the
   // central platform-run agent must be able to sign for it. It is derived AFTER
