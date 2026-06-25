@@ -14,6 +14,13 @@
       "runtimeArgs": ["node_modules/next/dist/bin/next", "dev", "--port", "3007"],
       "port": 3007,
       "url": "http://localhost:3007/"
+    },
+    {
+      "name": "via-labs-static",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["-y", "serve", "-l", "4321", "C:\\Users\\Richard\\Documents\\via-labs-website"],
+      "port": 4321,
+      "url": "http://localhost:4321/schematic/"
     }
   ]
 }
