@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef, useCallback } from 'react';
+import ThemeToggle from '@/components/app/ThemeToggle';
 
 interface Memory {
   id: string;
@@ -198,9 +199,12 @@ export default function SalesAgentChatClient({ sellerId, sellerSlug, sellerName,
             </span>
             {brandHeadline && <span className="text-xs text-neutral-500 hidden md:inline">{brandHeadline}</span>}
           </div>
-          <a href="/admin" className="text-xs text-neutral-600 hover:text-neutral-900 transition-colors font-mono">
-            ← Admin
-          </a>
+          <div className="flex items-center gap-4">
+            <ThemeToggle />
+            <a href="/admin" className="text-xs text-neutral-600 hover:text-neutral-900 transition-colors font-mono">
+              ← Admin
+            </a>
+          </div>
         </header>
       )}
 

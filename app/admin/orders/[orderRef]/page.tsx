@@ -4,6 +4,7 @@ import Image from 'next/image';
 import { isAdminFromCookies } from '@/lib/app/auth';
 import { loadOrderByRef } from '@/lib/app/orders';
 import { OrderDetailView } from '@/components/app/OrderDetailView';
+import ThemeToggle from '@/components/app/ThemeToggle';
 
 export const dynamic = 'force-dynamic';
 
@@ -31,11 +32,14 @@ export default async function AdminOrderDetailPage({
               <span aria-hidden>&larr;</span> {order.seller.slug}
             </span>
           </Link>
-          <form action="/api/admin/auth/logout" method="post">
-            <button className="text-xs font-mono tracking-widest uppercase text-neutral-400 hover:text-neutral-100 transition-colors">
-              Sign out
-            </button>
-          </form>
+          <div className="flex items-center gap-5">
+            <ThemeToggle className="on-dark" />
+            <form action="/api/admin/auth/logout" method="post">
+              <button className="text-xs font-mono tracking-widest uppercase text-neutral-400 hover:text-neutral-100 transition-colors">
+                Sign out
+              </button>
+            </form>
+          </div>
         </div>
       </header>
 

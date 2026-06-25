@@ -3,6 +3,7 @@ import Image from 'next/image';
 import { notFound, redirect } from 'next/navigation';
 import { db } from '@/lib/app/db';
 import { isAdminFromCookies } from '@/lib/app/auth';
+import ThemeToggle from '@/components/app/ThemeToggle';
 import { BuyerDetailClient } from './BuyerDetailClient';
 
 export const dynamic = 'force-dynamic';
@@ -58,11 +59,14 @@ export default async function AdminBuyerDetailPage({
               <span aria-hidden>&larr;</span> Overview
             </span>
           </Link>
-          <form action="/api/admin/auth/logout" method="post">
-            <button className="text-xs font-mono tracking-widest uppercase text-neutral-400 hover:text-neutral-100 transition-colors">
-              Sign out
-            </button>
-          </form>
+          <div className="flex items-center gap-5">
+            <ThemeToggle className="on-dark" />
+            <form action="/api/admin/auth/logout" method="post">
+              <button className="text-xs font-mono tracking-widest uppercase text-neutral-400 hover:text-neutral-100 transition-colors">
+                Sign out
+              </button>
+            </form>
+          </div>
         </div>
       </header>
 

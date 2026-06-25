@@ -2,6 +2,7 @@ import { redirect } from 'next/navigation';
 import Link from 'next/link';
 import { db } from '@/lib/app/db';
 import { isAdminFromCookies } from '@/lib/app/auth';
+import ThemeToggle from '@/components/app/ThemeToggle';
 
 export const dynamic = 'force-dynamic';
 
@@ -47,7 +48,10 @@ export default async function AdminNostrPage({ searchParams }: { searchParams: P
     <main className="min-h-dvh bg-bg text-ink px-6 py-10 max-w-3xl mx-auto">
       <div className="flex items-center justify-between mb-8">
         <h1 className="text-xl font-semibold">Nostr content approvals</h1>
-        <Link href="/admin" className="text-sm underline text-ink-2">← Admin</Link>
+        <div className="flex items-center gap-4">
+          <ThemeToggle />
+          <Link href="/admin" className="text-sm underline text-ink-2">← Admin</Link>
+        </div>
       </div>
 
       {error === 'publish-failed' && (

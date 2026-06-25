@@ -305,7 +305,6 @@ export default function DemandBoardClient({ initialTeasers, initialContent }: { 
     <>
       <Link href="/faq" className="demand-navlink">FAQ</Link>
       <Link href="/seller/login" className="demand-navlink">Seller sign in →</Link>
-      <ThemeToggle />
     </>
   );
 
@@ -355,17 +354,20 @@ export default function DemandBoardClient({ initialTeasers, initialContent }: { 
         <Link href="/" className="demand-home" aria-label="VIA home">
           <Wordmark />
         </Link>
-        <button
-          type="button"
-          className="demand-burger"
-          aria-label={menuOpen ? 'Close menu' : 'Open menu'}
-          aria-expanded={menuOpen}
-          onClick={() => setMenuOpen((v) => !v)}
-        >
-          <span className={`burger-icon${menuOpen ? ' is-open' : ''}`}>
-            <span /><span /><span />
-          </span>
-        </button>
+        <div className="demand-head-actions">
+          <ThemeToggle />
+          <button
+            type="button"
+            className="demand-burger"
+            aria-label={menuOpen ? 'Close menu' : 'Open menu'}
+            aria-expanded={menuOpen}
+            onClick={() => setMenuOpen((v) => !v)}
+          >
+            <span className={`burger-icon${menuOpen ? ' is-open' : ''}`}>
+              <span /><span /><span />
+            </span>
+          </button>
+        </div>
       </header>
 
       {/* Masthead (pinned): a compact band, LIVE counter plus title. The pitch and
@@ -439,6 +441,7 @@ export default function DemandBoardClient({ initialTeasers, initialContent }: { 
           width: 100%;
         }
         .demand-home { text-decoration: none; color: var(--ink); display: inline-flex; }
+        .demand-head-actions { display: flex; align-items: center; gap: 12px; }
         .demand-navlink { font-size: 13px; color: var(--ink-2); text-decoration: none; }
         .demand-burger {
           display: inline-flex;

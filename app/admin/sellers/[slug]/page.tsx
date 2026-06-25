@@ -5,6 +5,7 @@ import { db } from '@/lib/app/db';
 import { isAdminFromCookies } from '@/lib/app/auth';
 import { supabaseAdmin } from '@/lib/app/seller-auth';
 import { getDigitalFiles, signDigitalUrl } from '@/lib/app/digital-delivery';
+import ThemeToggle from '@/components/app/ThemeToggle';
 import { SellerDetailClient } from './SellerDetailClient';
 
 export const dynamic = 'force-dynamic';
@@ -105,11 +106,14 @@ export default async function AdminSellerDetailPage({
               <span aria-hidden>&larr;</span> Overview
             </span>
           </Link>
-          <form action="/api/admin/auth/logout" method="post">
-            <button className="text-xs font-mono tracking-widest uppercase text-neutral-400 hover:text-neutral-100 transition-colors">
-              Sign out
-            </button>
-          </form>
+          <div className="flex items-center gap-5">
+            <ThemeToggle className="on-dark" />
+            <form action="/api/admin/auth/logout" method="post">
+              <button className="text-xs font-mono tracking-widest uppercase text-neutral-400 hover:text-neutral-100 transition-colors">
+                Sign out
+              </button>
+            </form>
+          </div>
         </div>
       </header>
 
