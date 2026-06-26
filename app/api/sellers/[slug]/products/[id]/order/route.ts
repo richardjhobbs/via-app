@@ -14,6 +14,7 @@ import { ethers } from 'ethers';
 import { db } from '@/lib/app/db';
 import { getShippingConfig, computeShippingQuote } from '@/lib/app/shipping';
 import { getDigitalFiles } from '@/lib/app/digital-delivery';
+import { isVoucherProduct, availableVoucherCount } from '@/lib/app/vouchers';
 import { getBuyerUser } from '@/lib/app/buyer-auth';
 
 export const dynamic = 'force-dynamic';
@@ -32,7 +33,7 @@ export async function POST(
 ) {
   const { slug, id } = await params;
 
-  let body: { qty?: unknown; buyer_wallet?: unknown; buyer_country?: unknown; delivery?: DeliveryInput; method?: unknown };
+  let body: { qty?: unknown; buyer_wallet?: unknown; buyer_country?: unknown; delivery?: DeliveryInput; method?: unknown; email?: unknown };
   try { body = await req.json(); } catch { return NextResponse.json({ error: 'invalid JSON body' }, { status: 400 }); }
 
   const qty          = Math.max(1, Math.min(1000, Math.floor(Number(body.qty ?? 1)) || 1));
@@ -40,6 +41,7 @@ export async function POST(
   const buyerCountry = body.buyer_country ? String(body.buyer_country).trim().toUpperCase() : '';
   const method       = body.method === 'card' ? 'card' : 'usdc';
   const delivery     = body.delivery;
+  const email        = typeof body.email === 'string' ? body.email.trim() : '';
 
   if (!ethers.isAddress(buyerWallet)) {
     return NextResponse.json({ error: 'a valid wallet address is required' }, { status: 400 });
@@ -68,7 +70,10 @@ export async function POST(
   // A digital product with no deliverable attached cannot take money: the buyer
   // would pay and get_download_links would have nothing to hand over. Mirror the
   // MCP buy_product guard so the web and agent paths never diverge.
-  if (product.kind === 'digital' && getDigitalFiles(product.metadata).length === 0) {
+  // Event passes (voucher products) deliver a unique code from the pool, not a
+  // file, so they are exempt from the file-attached guard.
+  const isVoucher = isVoucherProduct(product.metadata);
+  if (product.kind === 'digital' && !isVoucher && getDigitalFiles(product.metadata).length === 0) {
     return NextResponse.json({ error: 'this digital product has no deliverable file attached and cannot be purchased yet' }, { status: 409 });
   }
   if (product.pricing_mode === 'configurable') {
@@ -90,8 +95,23 @@ export async function POST(
     return NextResponse.json({ error: `edition cap is ${maxSupplyNum}` }, { status: 409 });
   }
 
-  // ── Physical delivery details ──
+  // ── Event pass: require an email and enough codes in the pool ──
+  // The buyer pays before settlement claims a code, so we refuse the order up
+  // front when the pool cannot cover it (the atomic claim is the hard backstop).
+  // The email is where the redemption code is delivered.
   let deliveryRow: Record<string, string | null> | null = null;
+  if (isVoucher) {
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
+      return NextResponse.json({ error: 'an email address is required to receive your pass' }, { status: 400 });
+    }
+    const remaining = await availableVoucherCount(product.id as string);
+    if (qty > remaining) {
+      return NextResponse.json({ error: remaining === 0 ? 'this pass is sold out' : `only ${remaining} left`, available: remaining }, { status: 409 });
+    }
+    deliveryRow = { email };
+  }
+
+  // ── Physical delivery details ──
   if (product.kind === 'physical') {
     const required: Array<keyof DeliveryInput> = ['name', 'address_line1', 'city', 'postcode', 'country', 'phone'];
     const missing = !delivery ? required : required.filter((k) => !delivery[k] || String(delivery[k]).trim().length === 0);

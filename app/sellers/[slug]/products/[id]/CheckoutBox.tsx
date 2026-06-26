@@ -39,12 +39,14 @@ const INPUT_CLS = 'w-full bg-background border border-line-strong px-3 py-2 text
 interface OrderInfo { order_ref: string; total_usdc: number; }
 
 export function CheckoutBox({
-  slug, productId, priceUsdc, kind, buyerWallet, buyerName,
+  slug, productId, priceUsdc, kind, isVoucher = false, buyerWallet, buyerName,
 }: {
   slug: string;
   productId: string;
   priceUsdc: number;
   kind: string | null;
+  /** true for an event pass: collect an email and deliver a redemption code. */
+  isVoucher?: boolean;
   /** The logged-in VIA buyer's funding wallet, if any. Used to greet them and
    *  confirm when the connected wallet is the VIA one they onboarded with. */
   buyerWallet?: string | null;
@@ -87,18 +89,24 @@ export function CheckoutBox({
   const topUpAmount = Math.max(priceUsdc, CARD_MIN_USD);
 
   const [delivery, setDelivery] = useState<Delivery>(EMPTY_DELIVERY);
+  const [email, setEmail]       = useState('');
   const [status, setStatus]     = useState<'idle' | 'working' | 'card' | 'done' | 'error'>('idle');
   const [msg, setMsg]           = useState('');
   const [order, setOrder]       = useState<OrderInfo | null>(null);
   const [orderRef, setOrderRef] = useState('');
   // Signed download links returned by settlement for a digital product.
   const [downloads, setDownloads] = useState<{ filename: string; url: string }[]>([]);
+  // Unique redemption code(s) returned by settlement for an event pass.
+  const [vouchers, setVouchers] = useState<string[]>([]);
 
   function setField(k: keyof Delivery, v: string) {
     setDelivery((d) => ({ ...d, [k]: v }));
   }
 
+  const emailValid = /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email.trim());
+
   function deliveryMissing(): string | null {
+    if (isVoucher && !emailValid) return 'Please enter a valid email to receive your pass.';
     if (!isPhysical) return null;
     const req: Array<[keyof Delivery, string]> = [
       ['name', 'name'], ['address_line1', 'address'], ['city', 'city'],
@@ -118,6 +126,7 @@ export function CheckoutBox({
         method,
         buyer_country: isPhysical ? delivery.country.trim().toUpperCase() : undefined,
         delivery: isPhysical ? delivery : undefined,
+        email: isVoucher ? email.trim() : undefined,
       }),
     });
     const json = await res.json();
@@ -136,6 +145,9 @@ export function CheckoutBox({
     setDownloads(Array.isArray(json.download)
       ? json.download.filter((d: unknown): d is { filename: string; url: string } =>
           !!d && typeof (d as { url?: unknown }).url === 'string')
+      : []);
+    setVouchers(Array.isArray(json.vouchers)
+      ? json.vouchers.filter((v: unknown): v is string => typeof v === 'string')
       : []);
     setOrderRef(ref);
     setStatus('done');
@@ -195,9 +207,25 @@ export function CheckoutBox({
 
   if (status === 'done') {
     const hasDownloads = downloads.length > 0;
+    const hasVouchers  = vouchers.length > 0;
     return (
       <div className="mt-6 border border-line bg-paper p-5">
         <div className="uc-mono text-[color:var(--live)]">Purchase complete</div>
+        {hasVouchers && (
+          <>
+            <p className="mt-3 text-sm text-ink-2">
+              Order <span className="font-mono text-ink">{orderRef}</span> settled in USDC on Base. Your redemption {vouchers.length > 1 ? 'codes are' : 'code is'} below, and we have emailed {vouchers.length > 1 ? 'them' : 'it'} to you as well.
+            </p>
+            <div className="mt-4 flex flex-col gap-2">
+              {vouchers.map((code) => (
+                <div key={code} className="border border-[color:var(--live)] bg-background px-4 py-3 text-center font-mono text-lg tracking-widest text-ink">
+                  {code}
+                </div>
+              ))}
+            </div>
+            <p className="mt-3 text-xs text-ink-3">Keep this safe. Redeem your pass with the code above per the instructions in your email.</p>
+          </>
+        )}
         {hasDownloads ? (
           <>
             <p className="mt-3 text-sm text-ink-2">
@@ -213,7 +241,7 @@ export function CheckoutBox({
             </div>
             <p className="mt-3 text-xs text-ink-3">Save it now, the link expires in 24 hours. VIA account holders can re-download from their Purchases page.</p>
           </>
-        ) : isPhysical ? (
+        ) : hasVouchers ? null : isPhysical ? (
           <p className="mt-3 text-sm text-ink-2">
             Order <span className="font-mono text-ink">{orderRef}</span> settled in USDC on Base. The seller has been
             notified and will fulfil your order. Keep this reference for any follow-up.
@@ -312,6 +340,20 @@ export function CheckoutBox({
         </div>
       )}
 
+      {isVoucher && (
+        <div className="mt-5">
+          <div className="uc-mono text-ink-3" style={{ fontSize: 10 }}>Where to send your pass</div>
+          <input
+            className={`${INPUT_CLS} mt-3`}
+            type="email"
+            placeholder="you@example.com"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+          />
+          <p className="mt-2 text-xs text-ink-3">Your redemption code is shown here after payment and emailed to this address.</p>
+        </div>
+      )}
+
       {isPhysical && (
         <div className="mt-5">
         <div className="uc-mono text-ink-3" style={{ fontSize: 10 }}>Delivery address</div>
@@ -357,7 +399,7 @@ export function CheckoutBox({
             <button
               type="button"
               onClick={() => void payWithUsdc()}
-              disabled={!account || status === 'working' || insufficient}
+              disabled={!account || status === 'working' || insufficient || (isVoucher && !emailValid)}
               className="btn disabled:opacity-40 disabled:cursor-not-allowed"
             >
               {status === 'working' ? 'Working…' : `Pay ${priceUsdc.toFixed(2)} USDC`}
@@ -366,7 +408,7 @@ export function CheckoutBox({
               <button
                 type="button"
                 onClick={() => void startCard()}
-                disabled={!account || status === 'working'}
+                disabled={!account || status === 'working' || (isVoucher && !emailValid)}
                 className="btn ghost disabled:opacity-40 disabled:cursor-not-allowed"
               >
                 Pay with card

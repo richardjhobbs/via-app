@@ -5,6 +5,30 @@ Status: GO (approved for build, 2026-06-26). Branch: `claude/sbw-ticketing-plan`
 Companion to the partner-facing pitch "Singapore Blockchain Week x VIA: Partnership
 Proposal" (Notion). That page is what SBW reads. This page is what we build from.
 
+## Build status (2026-06-26)
+
+Landed on the branch (typechecks clean, test suite green; NOT yet deployed):
+
+- **Phase A, voucher core, DONE.** `migrations/0031_voucher_codes.sql` (pool table +
+  atomic `app_claim_voucher` RPC), `lib/app/vouchers.ts`, voucher branch in
+  `app/api/x402/purchase/route.ts` (claim + inline `vouchers` + buyer email),
+  `sendTicketDeliveryEmail` in `lib/app/email.ts`, oversell guards in both the web
+  order route and the MCP `buy_product`, email capture + code display in
+  `CheckoutBox.tsx`, and `is_voucher` on `PublicProduct`.
+- **Phase C, event template, DONE (code).** `scripts/provision-event.mjs` +
+  `events/sbw-2026.json` (placeholder values flagged for SBW).
+
+Remaining operator steps (irreversible / outward, held for explicit go):
+
+1. Apply `migrations/0031_voucher_codes.sql` to the live Supabase project.
+2. `vercel --prod` deploy (run `tsc --noEmit` first; it is currently clean).
+3. `node scripts/provision-event.mjs events/sbw-2026.json --enable` to stand up the
+   SBW store, then load a test code batch and run an end-to-end buy (Phase E).
+
+Not yet built (next): Phase B admin CSV upload control in the seller products UI
+(the provisioning script's `--codes` flag covers the operator path meanwhile);
+Phase D optional embeddable concierge widget.
+
 ## Goal
 
 A full, live proof of execution: VIA as a **ticketing / event channel for agents**.

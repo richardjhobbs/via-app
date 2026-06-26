@@ -31,6 +31,7 @@ import { insertNotification } from '@/lib/app/notifications';
 import { runSalesAgentAnswer, recordBuyerNote, type BuyerAnswerContext } from '@/lib/app/sales-agent';
 import { parseOfferingSchema, computeQuote, type Selections } from '@/lib/app/quote-pricing';
 import { getDigitalFiles, buyerHasPaidFor, buildDeliverables, DIGITAL_TTL_SECONDS } from '@/lib/app/digital-delivery';
+import { isVoucherProduct, availableVoucherCount } from '@/lib/app/vouchers';
 import { issueDownloadChallenge, verifyDownloadChallenge } from '@/lib/app/store-auth';
 import { enrichmentFromMetadata } from '@/lib/app/via-product';
 
@@ -635,13 +636,28 @@ function createServer(seller: SellerRow, req: Request) {
       // digital listing with none hands the buyer nothing after settlement (the
       // DANArtist Pallas Cat case). Block the buy here so funds never move
       // against an undeliverable digital item.
-      if (product.kind === 'digital' && getDigitalFiles(product.metadata).length === 0) {
+      // Event passes (voucher products) deliver a unique code from the pool, not
+      // a file, so they are exempt from the file-attached guard.
+      const isVoucher = isVoucherProduct(product.metadata);
+      if (product.kind === 'digital' && !isVoucher && getDigitalFiles(product.metadata).length === 0) {
         const r = asJson({
           error: 'no_deliverable',
           message: `"${product.title}" is listed as a digital product but has no deliverable file attached, so it cannot be purchased yet. The seller must attach the file before it can sell.`,
         });
         void logInteraction(seller.id, 'buy_product', identity, { product_id, qty, buyer_wallet }, { error: 'no_deliverable' }, 409, Date.now() - t0);
         return r;
+      }
+
+      // Event pass: refuse the buy when the code pool cannot cover it, so funds
+      // never move against a pass we cannot redeem (the atomic claim at
+      // settlement is the hard backstop).
+      if (isVoucher) {
+        const remaining = await availableVoucherCount(product.id as string);
+        if (qty > remaining) {
+          const r = asJson({ error: 'insufficient_stock', message: remaining === 0 ? `"${product.title}" is sold out.` : `Only ${remaining} pass(es) of "${product.title}" remain; requested ${qty}.`, available: remaining, requested: qty });
+          void logInteraction(seller.id, 'buy_product', identity, { product_id, qty, buyer_wallet }, { error: 'insufficient_stock', available: remaining }, 409, Date.now() - t0);
+          return r;
+        }
       }
 
       // ── Stock / supply gate ───────────────────────────────────
