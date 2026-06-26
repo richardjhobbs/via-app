@@ -7,7 +7,7 @@
  * app_sellers / app_seller_products (this app has the live data; the marketing
  * site queries the same Supabase project but is rebuilt less often).
  *
- * Tools (8):
+ * Tools (9):
  *   list_sellers      : active VIA sellers, paginated, with per-seller MCP URL
  *   find_seller       : product + seller search; returns product-level results
  *                       (direct web_url + mcp_ref) or need_more_info when loose
@@ -19,6 +19,8 @@
  *   get_via_overview  : short pitch + entrypoint URLs for buyers / sellers
  *   register_store    : self-register a new store (pending human review)
  *   get_store_status  : check a registered store's review status
+ *   import_preference_appraisal : a Mind (hellominds.ai) pushes a buyer's email-
+ *                       derived shopping-preference appraisal (link-token authed)
  */
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { WebStandardStreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js';
@@ -28,6 +30,9 @@ import { createPendingAgentStore } from '@/lib/app/store-registration';
 import { fetchNetwork, searchNetwork, type NetworkResult } from '@/lib/app/network-search';
 import { dryRunMatch, agenticNetworkSearch } from '@/lib/app/buyer-matching';
 import { findOpenBriefs } from '@/lib/app/demand';
+import { insertNotification } from '@/lib/app/notifications';
+import { verifyMindLinkToken } from '@/lib/app/minds-link';
+import { PreferenceAppraisalSchema, importPreferenceAppraisal } from '@/lib/app/minds-appraisal';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -460,6 +465,67 @@ function createServer(req: Request) {
     },
   );
 
+  // ── import_preference_appraisal ──────────────────────────────────
+  // The Minds side of the email -> shopping-preferences feature. A Mind
+  // (hellominds.ai) reads the owner's email INSIDE the Mind, appraises how they
+  // shop, and pushes the structured result here with the link token the owner
+  // minted in their VIA dashboard. VIA never sees raw email. Taste becomes soft
+  // preference memories; budget becomes a PROPOSED cap the owner approves.
+  server.tool(
+    'import_preference_appraisal',
+    "Import a buyer's shopping-preference appraisal (derived by a Mind from the owner's email) onto their VIA buying agent. Requires a link_token the owner minted in their VIA dashboard; it scopes the write to exactly one buyer. Pass the structured appraisal (categories, brands, sizes, cadence, budget signal). VIA never receives raw email. Taste signals shape matching and negotiation immediately; the budget signal becomes a PROPOSED spending cap that the owner must approve in the dashboard before it gates any autonomous spend.",
+    {
+      link_token: z.string().min(1).describe('The link token the buyer owner minted in their VIA dashboard (POST /api/buyer/[buyerId]/appraisal action=mint_link).'),
+      appraisal:  PreferenceAppraisalSchema.describe('The structured shopping-preference appraisal. Use evidence_summary for prose only; never include raw quoted email.'),
+    },
+    async ({ link_token, appraisal }) => {
+      const verified = verifyMindLinkToken(link_token);
+      if (!verified.ok) return asJson({ ok: false, error: `invalid link token: ${verified.error}` });
+
+      const { data: buyer } = await db
+        .from('app_buyers')
+        .select('id, handle, owner_user_id')
+        .eq('id', verified.payload.buyer_id)
+        .maybeSingle();
+      if (!buyer || buyer.handle !== verified.payload.handle) {
+        return asJson({ ok: false, error: 'buyer not found for this token' });
+      }
+
+      let result;
+      try {
+        result = await importPreferenceAppraisal(buyer.id as string, appraisal);
+      } catch (err) {
+        console.error('[mcp/import_preference_appraisal] import failed:', err);
+        return asJson({ ok: false, error: 'failed to import appraisal' });
+      }
+
+      const reviewPath = `/buyer/${buyer.handle}/admin/buying-agent`;
+      const hasProposedCaps = Object.keys(result.proposedCaps).length > 0;
+
+      void insertNotification({
+        ownerUserId: buyer.owner_user_id as string,
+        kind:        'system',
+        title:       'Your Mind appraised your shopping preferences',
+        body:        hasProposedCaps
+          ? `${result.inserted + result.updated} preference signal(s) imported, plus proposed spending caps awaiting your approval.`
+          : `${result.inserted + result.updated} preference signal(s) imported from your email appraisal.`,
+        link:        reviewPath,
+        metadata:    { source: 'minds-email', buyer_id: buyer.id, ...result },
+      });
+
+      return asJson({
+        ok:            true,
+        buyer:         { handle: buyer.handle },
+        imported:      { inserted: result.inserted, updated: result.updated },
+        proposed_caps: hasProposedCaps ? result.proposedCaps : null,
+        review_url:    `${APP_BASE}${reviewPath}`,
+        next: hasProposedCaps
+          ? 'Preferences imported. Proposed spending caps are waiting for the owner to approve in the dashboard before they take effect.'
+          : 'Preferences imported onto the buying agent.',
+      });
+    },
+  );
+
   return server;
 }
 
@@ -470,7 +536,7 @@ export async function GET() {
     description: 'VIA Labs central discovery MCP. POST JSON-RPC to this endpoint to call tools.',
     protocol:    'MCP Streamable HTTP',
     base:        APP_BASE,
-    tools:       ['list_sellers', 'find_seller', 'get_seller_products', 'seller_mcp_url', 'get_via_overview', 'register_store', 'get_store_status'],
+    tools:       ['list_sellers', 'find_seller', 'get_seller_products', 'seller_mcp_url', 'get_via_overview', 'register_store', 'get_store_status', 'import_preference_appraisal'],
   });
 }
 
