@@ -118,7 +118,8 @@ export async function inviteToSeller(opts: {
   sellerSlug: string;
   email: string;
   role: AssignableRole;
-  invitedBy: string;
+  // null when initiated by the superadmin (no auth.users identity).
+  invitedBy: string | null;
   inviterEmail: string | null;
 }): Promise<{ ok: true; linked: boolean } | { ok: false; error: string; status: number }> {
   const email = opts.email.trim().toLowerCase();

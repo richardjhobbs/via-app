@@ -7,6 +7,8 @@ import { supabaseAdmin } from '@/lib/app/seller-auth';
 import { getDigitalFiles, signDigitalUrl } from '@/lib/app/digital-delivery';
 import ThemeToggle from '@/components/app/ThemeToggle';
 import { SellerDetailClient } from './SellerDetailClient';
+import { AdminTeamSection } from './AdminTeamSection';
+import { listTeam } from '@/lib/app/seller-team';
 
 export const dynamic = 'force-dynamic';
 
@@ -42,6 +44,8 @@ export default async function AdminSellerDetailPage({
   } catch {
     loginEmail = null;
   }
+
+  const team = await listTeam(sellerId);
 
   const [memoriesRes, interactionsRes, purchasesRes, productsRes] = await Promise.all([
     db.from('app_seller_memories')
@@ -154,6 +158,15 @@ export default async function AdminSellerDetailPage({
             }>}
             products={products}
           />
+
+          <div className="mt-10">
+            <AdminTeamSection
+              sellerId={sellerId}
+              sellerName={seller.name as string}
+              initialMembers={team.members}
+              initialInvites={team.invites}
+            />
+          </div>
         </div>
       </section>
     </main>
