@@ -9,6 +9,8 @@ import { postViaReputationSignal, parseAgentId } from '@/lib/app/via-reputation'
 import { lookupAgentIdByWallet } from '@/lib/app/erc8004';
 import { insertNotification } from '@/lib/app/notifications';
 import { getDigitalFiles, buildDeliverables, type Deliverable } from '@/lib/app/digital-delivery';
+import { isVoucherProduct, getVoucherRedemption, claimVouchersForPurchase } from '@/lib/app/vouchers';
+import { sendTicketDeliveryEmail } from '@/lib/app/email';
 
 export const dynamic = 'force-dynamic';
 
@@ -119,7 +121,7 @@ export async function POST(req: NextRequest) {
     .from('app_purchases')
     .select(`
       id, status, total_usdc, buyer_wallet, buyer_agent_id, qty,
-      mint_tx_hash, payout_tx_hash, payment_tx_hash, order_ref,
+      mint_tx_hash, payout_tx_hash, payment_tx_hash, order_ref, delivery_address,
       product:product_id ( id, title, token_id, price_minor, max_supply ),
       seller:seller_id ( id, slug, name, wallet_address, seller_pct_override, erc8004_agent_id, owner_user_id, contact_email )
     `)
@@ -417,6 +419,7 @@ export async function POST(req: NextRequest) {
   // response. Non-fatal: the sale already settled, so a signing hiccup just
   // omits the links (recoverable via get_download_links on the seller MCP).
   let download: Deliverable[] | null = null;
+  let vouchers: string[] | null = null;
   try {
     const { data: prodMeta } = await db
       .from('app_seller_products')
@@ -427,8 +430,40 @@ export async function POST(req: NextRequest) {
     if (prodMeta?.kind === 'digital' && files.length > 0) {
       download = await buildDeliverables(files);
     }
+    // Event passes draw a UNIQUE redemption code per buyer from the voucher pool
+    // (vs the shared file the digital path signs). Claiming is idempotent on the
+    // purchase, so a settlement re-POST returns the same codes rather than
+    // burning new ones.
+    if (isVoucherProduct(prodMeta?.metadata)) {
+      const claimed = await claimVouchersForPurchase(
+        product.id as string, purchase.id as string, Number(purchase.qty) || 1,
+      );
+      if (claimed.length > 0) {
+        vouchers = claimed;
+        const deliveryAddr = (purchase.delivery_address ?? null) as { email?: string } | null;
+        const buyerEmail = deliveryAddr?.email?.trim();
+        if (buyerEmail) {
+          try {
+            await sendTicketDeliveryEmail({
+              to:         buyerEmail,
+              eventName:  String(seller.name ?? 'Your event'),
+              tierTitle:  String(product.title ?? 'Event pass'),
+              codes:      claimed,
+              redemption: getVoucherRedemption(prodMeta?.metadata),
+              orderRef,
+              priceUsdc:  totalUsdc,
+              txHash:     pay.txHash,
+            });
+          } catch (mailErr) {
+            console.warn(`[x402/purchase] ${orderRef} ticket email failed (non-fatal)`, mailErr);
+          }
+        }
+      } else {
+        console.warn(`[x402/purchase] ${orderRef} voucher pool empty for product ${product.id}; codes owed to buyer`);
+      }
+    }
   } catch (err) {
-    console.warn(`[x402/purchase] ${orderRef} digital delivery link signing failed (non-fatal)`, err);
+    console.warn(`[x402/purchase] ${orderRef} delivery (download/voucher) failed (non-fatal)`, err);
   }
 
   void insertNotification({
@@ -457,5 +492,6 @@ export async function POST(req: NextRequest) {
     payout:          { distribution_id: payout.distributionId, seller_tx_hash: payout.sellerTxHash },
     reputation,
     ...(download ? { download } : {}),
+    ...(vouchers ? { vouchers } : {}),
   });
 }

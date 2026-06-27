@@ -19,6 +19,7 @@
 import { db } from './db';
 import { buildIlikeOr, matchesQuery } from './via-search';
 import { enrichmentFromMetadata } from './via-product';
+import { isVoucherProduct } from './vouchers';
 
 const APP_BASE = (process.env.NEXT_PUBLIC_APP_BASE_URL || 'https://app.getvia.xyz').replace(/\/$/, '');
 
@@ -70,6 +71,8 @@ export interface PublicProduct {
   stock:        number | null;
   image_url:    string | null;
   token_id:     number | null;
+  /** true when the product delivers a unique code from the voucher pool (an event pass) */
+  is_voucher:   boolean;
   product_url:  string;
   mcp_ref:      ProductMcpRef;
 }
@@ -139,6 +142,7 @@ function toPublicProduct(p: ProductRow, seller: { slug: string; name: string }):
     stock:         typeof p.stock === 'number' ? p.stock : null,
     image_url:     p.image_url || p.url || null,
     token_id:      p.token_id ?? null,
+    is_voucher:    isVoucherProduct(p.metadata),
     product_url:   productPageUrl(seller.slug, p.id),
     mcp_ref: {
       seller_mcp_url: sellerMcpUrl(seller.slug),

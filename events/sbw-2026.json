@@ -1,0 +1,33 @@
+{
+  "_note": "Event template for the VIA ticketing channel. Values marked PLACEHOLDER are confirmed with SBW before go-live (per the proposal's Next steps). Provision with: node scripts/provision-event.mjs events/sbw-2026.json",
+
+  "slug": "singapore-blockchain-week",
+  "name": "Singapore Blockchain Week 2026",
+  "concierge_name": "Hermes",
+  "website": "https://www.sg-blockchainweek.com",
+  "contact_email": "tickets@sg-blockchainweek.example",
+  "payout_wallet": "PLACEHOLDER_SBW_USDC_WALLET_ON_BASE",
+
+  "headline": "Buy your Singapore Blockchain Week pass in USDC. For agents and humans.",
+  "description": "The official VIA channel for Singapore Blockchain Week passes. Pay in USDC on Base and receive a redemption code for your pass. Open to autonomous AI buying agents and to people.",
+
+  "redemption": {
+    "platform": "luma",
+    "instructions": "Redeem your code on the Singapore Blockchain Week Luma page. Enter it at checkout to claim your pass.",
+    "url": "https://lu.ma/PLACEHOLDER_SBW_EVENT"
+  },
+
+  "concierge_facts": [
+    { "type": "event",  "title": "Dates and venue",   "body": "PLACEHOLDER. Confirm the SBW 2026 dates and venue with the organiser, then update this fact." },
+    { "type": "policy", "title": "Refunds",           "body": "PLACEHOLDER. Confirm the SBW refund policy, then update this fact." },
+    { "type": "general","title": "How passes work",   "body": "VIA sells the right to a pass and hands you a redemption code. Redeem the code on the official Luma page to receive your actual pass. SBW issues and verifies all passes." }
+  ],
+
+  "tiers": [
+    { "key": "visitor",   "title": "SBW Visitor Pass",   "price_usdc": 50,   "allocation": 100, "includes": "PLACEHOLDER. Single-day expo access. Confirm inclusions with SBW." },
+    { "key": "general",   "title": "SBW General Pass",   "price_usdc": 150,  "allocation": 200, "includes": "PLACEHOLDER. Full conference access for all days. Confirm inclusions with SBW." },
+    { "key": "corporate", "title": "SBW Corporate Pass", "price_usdc": 400,  "allocation": 50,  "includes": "PLACEHOLDER. Conference access plus networking lounge. Confirm inclusions with SBW." },
+    { "key": "pro",       "title": "SBW Pro Pass",       "price_usdc": 800,  "allocation": 30,  "includes": "PLACEHOLDER. All-access plus workshops and side events. Confirm inclusions with SBW." },
+    { "key": "vip",       "title": "SBW VIP Pass",       "price_usdc": 1500, "allocation": 10,  "includes": "PLACEHOLDER. All-access plus VIP dinner and speaker access. Confirm inclusions with SBW." }
+  ]
+}

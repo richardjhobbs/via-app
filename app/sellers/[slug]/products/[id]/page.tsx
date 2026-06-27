@@ -120,6 +120,7 @@ export default async function ProductPage({ params }: { params: Promise<{ slug: 
                 productId={product.product_id}
                 priceUsdc={product.price_usdc as number}
                 kind={product.kind}
+                isVoucher={product.is_voucher}
                 buyerWallet={buyerWallet}
                 buyerName={buyerName}
               />
