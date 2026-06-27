@@ -51,12 +51,27 @@ export function getPlatformSigner(): ethers.Wallet {
   return new ethers.Wallet(key, getRpcProvider());
 }
 
-export function getRRGContract(): ethers.Contract {
+export function getRRGContract(addressOverride?: string): ethers.Contract {
   return new ethers.Contract(
-    process.env.NEXT_PUBLIC_VIA_CONTRACT_ADDRESS!,
+    addressOverride || process.env.NEXT_PUBLIC_VIA_CONTRACT_ADDRESS!,
     RRG_ABI,
     getDeployerSigner()
   );
+}
+
+/**
+ * Contract address that event-pass (ticket) receipts mint on. Tickets mint on
+ * the VIA-branded contract (VIAnetwork.sol, name "VIA Network") so the on-chain
+ * receipt reads "VIA Network" on explorers, not the legacy shared RRG contract,
+ * which matters for the Singapore Blockchain Week proof. Set
+ * NEXT_PUBLIC_VIA_TICKETS_CONTRACT_ADDRESS to the deployed VIA Network address;
+ * until then it falls back to the default contract (no behaviour change), and the
+ * receipt keeps its current branding. Scoped to tickets so existing products,
+ * whose tokens live on the current contract, are never disturbed.
+ */
+export function ticketsContractAddress(): string {
+  return process.env.NEXT_PUBLIC_VIA_TICKETS_CONTRACT_ADDRESS
+    || process.env.NEXT_PUBLIC_VIA_CONTRACT_ADDRESS!;
 }
 
 export function getRRGReadOnly(): ethers.Contract {

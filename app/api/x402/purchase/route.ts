@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/app/db';
 import { extractPaymentProof, verifyAndExecutePayment, verifyUsdcTransfer } from '@/lib/app/x402-server';
-import { getRRGContract, toUsdc6dp } from '@/lib/app/contract';
+import { getRRGContract, toUsdc6dp, ticketsContractAddress } from '@/lib/app/contract';
 import { calculateSplit, PLATFORM_WALLET } from '@/lib/app/splits';
 import { insertDistributionAndPay } from '@/lib/app/auto-payout';
 import { shouldSkipErc8004 } from '@/lib/app/test-mode';
@@ -58,6 +58,7 @@ async function registerDropAtSale(
   priceMinor: number,
   maxSupply: number | null,
   skipChain: boolean,
+  contractAddress?: string,
 ): Promise<number> {
   const { data: tokenIdData, error: tokErr } = await db.rpc('app_next_token_id');
   if (tokErr || tokenIdData == null) throw new Error(`claim token_id failed: ${tokErr?.message ?? 'null'}`);
@@ -83,7 +84,7 @@ async function registerDropAtSale(
   if (skipChain) {
     txHash = `TEST-registerDrop-${tokenId}`;
   } else {
-    const contract = getRRGContract();
+    const contract = getRRGContract(contractAddress);
     const price6dp = toUsdc6dp(priceMinor / 1_000_000);
     const tx = await (contract.registerDrop as (
       tokenId: bigint, creator: string, price6dp: bigint, maxSupply: bigint,
@@ -122,7 +123,7 @@ export async function POST(req: NextRequest) {
     .select(`
       id, status, total_usdc, buyer_wallet, buyer_agent_id, qty,
       mint_tx_hash, payout_tx_hash, payment_tx_hash, order_ref, delivery_address,
-      product:product_id ( id, title, token_id, price_minor, max_supply ),
+      product:product_id ( id, title, token_id, price_minor, max_supply, metadata ),
       seller:seller_id ( id, slug, name, wallet_address, seller_pct_override, erc8004_agent_id, owner_user_id, contact_email )
     `)
     .eq('order_ref', orderRef)
@@ -142,6 +143,13 @@ export async function POST(req: NextRequest) {
   if (!product || !seller) {
     return NextResponse.json({ settled: false, error: 'order is missing its product or seller link' }, { status: 500 });
   }
+
+  // Event passes (voucher products) still mint an on-chain receipt (the
+  // blockchain proof matters for Blockchain Week), but on the VIA-branded
+  // contract so the explorer shows "VIA Network", not the legacy shared contract.
+  // Falls back to the default contract until the VIA tickets contract is set.
+  const isTicket = isVoucherProduct((product as { metadata?: unknown }).metadata);
+  const mintContractAddress = isTicket ? ticketsContractAddress() : undefined;
 
   // ── Idempotency: already settled → return stored hashes ──────────────
   if (purchase.status === 'minted' || purchase.status === 'paid_out') {
@@ -241,6 +249,7 @@ export async function POST(req: NextRequest) {
         Number(product.price_minor ?? 0),
         product.max_supply != null ? Number(product.max_supply) : null,
         skipChain,
+        mintContractAddress,
       );
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -263,7 +272,7 @@ export async function POST(req: NextRequest) {
       await db.from('app_purchases').update({ status: 'minted', mint_tx_hash: mintTxHash }).eq('id', purchase.id);
     } else {
       try {
-        const contract = getRRGContract();
+        const contract = getRRGContract(mintContractAddress);
         const mintTx   = await (contract.operatorMint as (
           tokenId: number, buyer: string,
         ) => Promise<{ hash: string; nonce: number; wait: (n?: number) => Promise<unknown> }>)(
