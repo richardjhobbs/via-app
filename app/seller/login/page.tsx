@@ -25,11 +25,15 @@ function SellerLoginInner() {
   const router       = useRouter();
   const searchParams = useSearchParams();
   const isReset      = searchParams.get('reset') === 'true';
-  const accessToken  = searchParams.get('access_token');
-  const refreshToken = searchParams.get('refresh_token');
   const nextPath     = safeNext(searchParams.get('next'));
 
-  const [mode,    setMode]    = useState<Mode>(isReset && accessToken ? 'reset' : 'login');
+  // Supabase returns the recovery tokens in the URL HASH fragment
+  // (#access_token=…&refresh_token=…&type=recovery), which useSearchParams
+  // cannot read. They are parsed from the hash in an effect below.
+  const [accessToken,  setAccessToken]  = useState<string | null>(null);
+  const [refreshToken, setRefreshToken] = useState<string | null>(null);
+
+  const [mode,    setMode]    = useState<Mode>('login');
   const [email,   setEmail]   = useState('');
   const [pass,    setPass]    = useState('');
   const [newPass, setNewPass] = useState('');
@@ -37,10 +41,29 @@ function SellerLoginInner() {
   const [msg,     setMsg]     = useState('');
   const [loading, setLoading] = useState(false);
 
+  // Recovery tokens arrive in the URL hash, not the query string. Parse them
+  // client-side and switch to the reset form so the user can set a new
+  // password. Without this the page falls back to the sign-in form.
+  useEffect(() => {
+    const raw = window.location.hash.replace(/^#/, '');
+    if (!raw) return;
+    const h  = new URLSearchParams(raw);
+    const at = h.get('access_token');
+    const rt = h.get('refresh_token');
+    if (at && (h.get('type') === 'recovery' || isReset)) {
+      setAccessToken(at);
+      setRefreshToken(rt);
+      setMode('reset');
+    }
+  }, [isReset]);
+
   // If a session cookie is already present, send them straight on. Honour
   // ?next= when it's a safe relative /seller/ path so notification deep
   // links work without an extra hop through the slug guess.
   useEffect(() => {
+    // A recovery visit carries its token in the hash; don't bounce it to the
+    // dashboard, let the user set a new password first.
+    if (window.location.hash.includes('access_token')) return;
     fetch('/api/seller/auth/check', { cache: 'no-store' })
       .then((r) => r.ok ? r.json() : null)
       .then((d) => {
