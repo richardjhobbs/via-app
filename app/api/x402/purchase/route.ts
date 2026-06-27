@@ -122,7 +122,7 @@ export async function POST(req: NextRequest) {
     .select(`
       id, status, total_usdc, buyer_wallet, buyer_agent_id, qty,
       mint_tx_hash, payout_tx_hash, payment_tx_hash, order_ref, delivery_address,
-      product:product_id ( id, title, token_id, price_minor, max_supply ),
+      product:product_id ( id, title, token_id, price_minor, max_supply, metadata ),
       seller:seller_id ( id, slug, name, wallet_address, seller_pct_override, erc8004_agent_id, owner_user_id, contact_email )
     `)
     .eq('order_ref', orderRef)
@@ -142,6 +142,13 @@ export async function POST(req: NextRequest) {
   if (!product || !seller) {
     return NextResponse.json({ settled: false, error: 'order is missing its product or seller link' }, { status: 500 });
   }
+
+  // Event passes (voucher products) are NOT minted as NFTs: a ticket needs no
+  // on-chain collectible, and minting one would put an off-brand ERC-1155 receipt
+  // on the shared commerce contract. We skip registerDrop/operatorMint for them,
+  // so the on-chain footprint is the USDC settlement plus the VIA ERC-8004
+  // reputation signals. Delivery is the voucher code / Luma registration.
+  const isTicket = isVoucherProduct((product as { metadata?: unknown }).metadata);
 
   // ── Idempotency: already settled → return stored hashes ──────────────
   if (purchase.status === 'minted' || purchase.status === 'paid_out') {
@@ -234,7 +241,8 @@ export async function POST(req: NextRequest) {
   let signalBaseNonce: number | null = null;
 
   // 3a. Register the on-chain drop now if this listing was still a draft.
-  if (effectiveTokenId == null) {
+  //     Skipped for tickets: they carry no on-chain receipt.
+  if (!isTicket && effectiveTokenId == null) {
     try {
       effectiveTokenId = await registerDropAtSale(
         product.id as string,
@@ -256,8 +264,8 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  // 3b. Mint the ERC-1155 receipt to the buyer.
-  if (effectiveTokenId != null) {
+  // 3b. Mint the ERC-1155 receipt to the buyer. Skipped for tickets.
+  if (!isTicket && effectiveTokenId != null) {
     if (skipChain) {
       mintTxHash = `TEST-operatorMint-${effectiveTokenId}`;
       await db.from('app_purchases').update({ status: 'minted', mint_tx_hash: mintTxHash }).eq('id', purchase.id);
@@ -385,6 +393,21 @@ export async function POST(req: NextRequest) {
   let payout = { distributionId: null as string | null, sellerTxHash: null as string | null };
   if (skipChain) {
     console.log(`[x402/purchase] ${orderRef} test-mode; skipping on-chain payout`);
+  } else if (isTicket) {
+    // Tickets have no mint to gate on. Pay out directly. tokenId 0 has no on-chain
+    // drop, so the payout guardrail read fails and, on the non-permit operator
+    // path, warns and proceeds , correct here, there is no drop to validate.
+    try {
+      payout = await insertDistributionAndPay({
+        purchaseId: purchase.id as string,
+        sellerId:   seller.id as string,
+        split,
+        tokenId:    0,
+        mintMethod: 'operator',
+      });
+    } catch (err) {
+      console.error(`[x402/purchase] ${orderRef} voucher payout failed`, err);
+    }
   } else if (effectiveTokenId != null && mintTxHash) {
     try {
       payout = await insertDistributionAndPay({
