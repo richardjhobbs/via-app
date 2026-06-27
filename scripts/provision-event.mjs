@@ -118,6 +118,11 @@ function tierToProduct(tier) {
     metadata: {
       voucher:    true,
       redemption: cfg.redemption ?? null,
+      // Fulfilment mode (code_pool default, or luma_api with auto-fallback). The
+      // Luma API key is never stored here, only the name of the env var holding it.
+      fulfilment: cfg.fulfilment
+        ? { mode: cfg.fulfilment.mode ?? 'code_pool', luma_event_api_id: cfg.fulfilment.luma_event_api_id, luma_api_key_env: cfg.fulfilment.luma_api_key_env }
+        : { mode: 'code_pool' },
       event_slug: SLUG,
       tier_key:   tier.key,
       via_enrichment: {

@@ -98,6 +98,8 @@ export function CheckoutBox({
   const [downloads, setDownloads] = useState<{ filename: string; url: string }[]>([]);
   // Unique redemption code(s) returned by settlement for an event pass.
   const [vouchers, setVouchers] = useState<string[]>([]);
+  // True when the buyer was registered directly on the event (Luma) instead of codes.
+  const [registered, setRegistered] = useState(false);
 
   function setField(k: keyof Delivery, v: string) {
     setDelivery((d) => ({ ...d, [k]: v }));
@@ -149,6 +151,7 @@ export function CheckoutBox({
     setVouchers(Array.isArray(json.vouchers)
       ? json.vouchers.filter((v: unknown): v is string => typeof v === 'string')
       : []);
+    setRegistered(json.luma_registered === true);
     setOrderRef(ref);
     setStatus('done');
     setMsg('');
@@ -211,6 +214,11 @@ export function CheckoutBox({
     return (
       <div className="mt-6 border border-line bg-paper p-5">
         <div className="uc-mono text-[color:var(--live)]">Purchase complete</div>
+        {registered && !hasVouchers && (
+          <p className="mt-3 text-sm text-ink-2">
+            Order <span className="font-mono text-ink">{orderRef}</span> settled in USDC on Base. You have been registered for the event, and your pass is on its way to your email from the organiser. No code to redeem.
+          </p>
+        )}
         {hasVouchers && (
           <>
             <p className="mt-3 text-sm text-ink-2">
@@ -241,7 +249,7 @@ export function CheckoutBox({
             </div>
             <p className="mt-3 text-xs text-ink-3">Save it now, the link expires in 24 hours. VIA account holders can re-download from their Purchases page.</p>
           </>
-        ) : hasVouchers ? null : isPhysical ? (
+        ) : (hasVouchers || registered) ? null : isPhysical ? (
           <p className="mt-3 text-sm text-ink-2">
             Order <span className="font-mono text-ink">{orderRef}</span> settled in USDC on Base. The seller has been
             notified and will fulfil your order. Keep this reference for any follow-up.

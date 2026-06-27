@@ -9,8 +9,8 @@ import { postViaReputationSignal, parseAgentId } from '@/lib/app/via-reputation'
 import { lookupAgentIdByWallet } from '@/lib/app/erc8004';
 import { insertNotification } from '@/lib/app/notifications';
 import { getDigitalFiles, buildDeliverables, type Deliverable } from '@/lib/app/digital-delivery';
-import { isVoucherProduct, getVoucherRedemption, claimVouchersForPurchase } from '@/lib/app/vouchers';
-import { sendTicketDeliveryEmail } from '@/lib/app/email';
+import { isVoucherProduct, getVoucherRedemption, fulfilVoucherPurchase } from '@/lib/app/vouchers';
+import { sendTicketDeliveryEmail, sendTicketRegisteredEmail } from '@/lib/app/email';
 
 export const dynamic = 'force-dynamic';
 
@@ -420,6 +420,7 @@ export async function POST(req: NextRequest) {
   // omits the links (recoverable via get_download_links on the seller MCP).
   let download: Deliverable[] | null = null;
   let vouchers: string[] | null = null;
+  let lumaRegistered = false;
   try {
     const { data: prodMeta } = await db
       .from('app_seller_products')
@@ -430,36 +431,48 @@ export async function POST(req: NextRequest) {
     if (prodMeta?.kind === 'digital' && files.length > 0) {
       download = await buildDeliverables(files);
     }
-    // Event passes draw a UNIQUE redemption code per buyer from the voucher pool
-    // (vs the shared file the digital path signs). Claiming is idempotent on the
-    // purchase, so a settlement re-POST returns the same codes rather than
-    // burning new ones.
+    // Event passes are fulfilled by registering the buyer on the seller's Luma
+    // event (luma_api mode) or, by default / as fallback, by handing them a
+    // UNIQUE redemption code from the pool. Both are idempotent on the purchase.
     if (isVoucherProduct(prodMeta?.metadata)) {
-      const claimed = await claimVouchersForPurchase(
-        product.id as string, purchase.id as string, Number(purchase.qty) || 1,
-      );
-      if (claimed.length > 0) {
-        vouchers = claimed;
-        const deliveryAddr = (purchase.delivery_address ?? null) as { email?: string } | null;
-        const buyerEmail = deliveryAddr?.email?.trim();
+      const deliveryAddr = (purchase.delivery_address ?? null) as { email?: string; name?: string } | null;
+      const buyerEmail = deliveryAddr?.email?.trim() || null;
+      const buyerName  = deliveryAddr?.name?.trim() || null;
+      const ful = await fulfilVoucherPurchase({
+        sellerId:   seller.id as string,
+        productId:  product.id as string,
+        purchaseId: purchase.id as string,
+        qty:        Number(purchase.qty) || 1,
+        metadata:   prodMeta?.metadata,
+        buyerEmail,
+        buyerName,
+      });
+      const eventName = String(seller.name ?? 'Your event');
+      const tierTitle = String(product.title ?? 'Event pass');
+      if (ful.vouchers.length > 0) {
+        vouchers = ful.vouchers;
         if (buyerEmail) {
           try {
             await sendTicketDeliveryEmail({
-              to:         buyerEmail,
-              eventName:  String(seller.name ?? 'Your event'),
-              tierTitle:  String(product.title ?? 'Event pass'),
-              codes:      claimed,
+              to: buyerEmail, eventName, tierTitle, codes: ful.vouchers,
               redemption: getVoucherRedemption(prodMeta?.metadata),
-              orderRef,
-              priceUsdc:  totalUsdc,
-              txHash:     pay.txHash,
+              orderRef, priceUsdc: totalUsdc, txHash: pay.txHash,
             });
           } catch (mailErr) {
             console.warn(`[x402/purchase] ${orderRef} ticket email failed (non-fatal)`, mailErr);
           }
         }
+      } else if (ful.lumaRegistered) {
+        lumaRegistered = true;
+        if (buyerEmail) {
+          try {
+            await sendTicketRegisteredEmail({ to: buyerEmail, eventName, tierTitle, orderRef, priceUsdc: totalUsdc, txHash: pay.txHash });
+          } catch (mailErr) {
+            console.warn(`[x402/purchase] ${orderRef} registration email failed (non-fatal)`, mailErr);
+          }
+        }
       } else {
-        console.warn(`[x402/purchase] ${orderRef} voucher pool empty for product ${product.id}; codes owed to buyer`);
+        console.warn(`[x402/purchase] ${orderRef} voucher fulfilment owed (no code in pool and Luma unavailable) for product ${product.id}`);
       }
     }
   } catch (err) {
@@ -493,5 +506,6 @@ export async function POST(req: NextRequest) {
     reputation,
     ...(download ? { download } : {}),
     ...(vouchers ? { vouchers } : {}),
+    ...(lumaRegistered ? { luma_registered: true } : {}),
   });
 }

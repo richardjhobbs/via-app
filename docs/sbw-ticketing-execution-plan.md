@@ -29,6 +29,32 @@ Not yet built (next): Phase B admin CSV upload control in the seller products UI
 (the provisioning script's `--codes` flag covers the operator path meanwhile);
 Phase D optional embeddable concierge widget.
 
+## Fulfilment modes (how a settled pass is delivered)
+
+Fulfilment is a post-settlement step (the paid x402 door is unchanged). Each
+voucher product chooses a mode via `metadata.fulfilment.mode`:
+
+- **`code_pool` (default + universal fallback).** Hand the buyer a unique code
+  from `app_voucher_codes` (atomic claim). Zero integration; the seller loads a
+  batch of codes. This is what the demo Test Coupon uses.
+- **`luma_api`.** Register the buyer directly on the seller's Luma event via the
+  Luma public API (`lib/app/luma.ts`, `addLumaGuest` -> `POST
+  https://public-api.luma.com/v1/event/add-guests`), so Luma issues the pass and
+  there is no code to redeem. The API key is read from the env var named in
+  `metadata.fulfilment.luma_api_key_env` (never stored in the DB); the
+  `luma_event_api_id` is in metadata. **Always falls back to `code_pool`** when
+  the key/event/email is missing or the Luma call fails, so a sale never drops.
+
+Dispatch lives in `fulfilVoucherPurchase` (`lib/app/vouchers.ts`), called from
+`/api/x402/purchase`. Email branches: codes -> `sendTicketDeliveryEmail`,
+Luma registration -> `sendTicketRegisteredEmail`. The settlement response carries
+`vouchers` (code path) or `luma_registered: true` (Luma path); `CheckoutBox`
+renders both. Requires `DEPLOYER_PRIVATE_KEY` (signals) and, for luma_api, SBW on
+Luma Plus + their per-calendar API key (expected next week). Until then SBW tiers
+stay `code_pool`; flip `metadata.fulfilment.mode` to `luma_api` + set
+`luma_event_api_id` + the `SBW_LUMA_API_KEY` env var to switch, no redeploy of
+logic needed.
+
 ## Goal
 
 A full, live proof of execution: VIA as a **ticketing / event channel for agents**.

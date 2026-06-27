@@ -812,6 +812,76 @@ export async function sendSellerInviteEmail({
   });
 }
 
+// ── 9. Event pass registered directly on Luma (no code to redeem) ──────
+//
+// Sent when fulfilment is Luma API auto-registration: the buyer was added to
+// the event as a guest, so Luma issues the pass to them directly. VIA-branded,
+// no em/en dashes.
+
+export async function sendTicketRegisteredEmail({
+  to,
+  eventName,
+  tierTitle,
+  orderRef,
+  priceUsdc,
+  txHash,
+}: {
+  to: string;
+  eventName: string;
+  tierTitle: string;
+  orderRef: string;
+  priceUsdc?: number | null;
+  txHash?: string | null;
+}): Promise<void> {
+  if (!to) return;
+  const scanBase = 'https://basescan.org';
+
+  const html = `
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><style>
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', sans-serif; background: #faf7f2; color: #1a1612; margin: 0; padding: 40px 20px; }
+  .wrap { max-width: 560px; margin: 0 auto; }
+  .wordmark { font-family: Georgia, 'Times New Roman', serif; font-size: 18px; font-weight: 400; font-style: italic; color: #1a1612; margin: 0 0 24px; }
+  .card { background: #ffffff; border: 1px solid #e8e3db; }
+  .card-head { padding: 28px 32px 24px; border-bottom: 1px solid #e8e3db; }
+  .eyebrow { font-family: 'Courier New', Courier, monospace; font-size: 10px; letter-spacing: 0.16em; text-transform: uppercase; color: #2b9a66; margin: 0 0 8px; }
+  h1 { margin: 0 0 4px; font-family: Georgia, 'Times New Roman', serif; font-size: 26px; font-weight: 400; font-style: italic; color: #1a1612; }
+  .sub { font-size: 13px; color: #6e665c; margin: 0; }
+  .body { padding: 28px 32px; }
+  .copy { margin: 0 0 16px; line-height: 1.6; color: #3a342d; font-size: 14px; }
+  .lbl { font-family: 'Courier New', Courier, monospace; font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; color: #6e665c; margin: 0 0 12px; }
+</style></head>
+<body>
+<div class="wrap">
+  <p class="wordmark">VIA</p>
+  <div class="card">
+    <div class="card-head">
+      <p class="eyebrow">You are registered</p>
+      <h1>${escHtml(tierTitle)}</h1>
+      <p class="sub">${escHtml(eventName)}</p>
+    </div>
+    <div class="body">
+      <p class="copy">Thank you for your order. Your payment settled in USDC on Base and we have registered you directly for ${escHtml(eventName)}. Your pass will arrive in your inbox from the event organiser. No code to redeem.</p>
+      <p class="lbl">Order</p>
+      <table width="100%" cellpadding="0" cellspacing="0" style="border:1px solid #e8e3db;border-collapse:collapse;"><tbody>
+        <tr><td style="padding:10px 16px;font-size:13px;border-bottom:1px solid #e8e3db;color:#6e665c;">Reference</td><td style="padding:10px 16px;font-size:13px;border-bottom:1px solid #e8e3db;color:#1a1612;font-weight:500;text-align:right;font-family:'Courier New',Courier,monospace;">${escHtml(orderRef)}</td></tr>
+        ${priceUsdc != null ? `<tr><td style="padding:10px 16px;font-size:13px;${txHash ? 'border-bottom:1px solid #e8e3db;' : ''}color:#6e665c;">Paid</td><td style="padding:10px 16px;font-size:13px;${txHash ? 'border-bottom:1px solid #e8e3db;' : ''}color:#6b4f3a;font-weight:600;text-align:right;">$${priceUsdc.toFixed(2)} USDC</td></tr>` : ''}
+        ${txHash ? `<tr><td style="padding:10px 16px;font-size:13px;color:#6e665c;">On-chain tx</td><td style="padding:10px 16px;font-size:13px;text-align:right;"><a href="${scanBase}/tx/${txHash}" style="color:#6b4f3a;font-family:'Courier New',Courier,monospace;font-size:11px;">${txHash.slice(0, 14)}&hellip;${txHash.slice(-6)}</a></td></tr>` : ''}
+      </tbody></table>
+    </div>
+  </div>
+  <table width="100%" cellpadding="0" cellspacing="0" style="margin-top:32px;padding-top:20px;border-top:1px solid #e8e3db;"><tbody><tr>
+    <td style="font-family:'Courier New',Courier,monospace;font-size:10px;letter-spacing:0.12em;text-transform:uppercase;color:#6e665c;">VIA</td>
+    <td align="right" style="font-family:'Courier New',Courier,monospace;font-size:10px;letter-spacing:0.12em;text-transform:uppercase;color:#6e665c;text-align:right;"><a href="${SITE_URL}" style="color:#6e665c;text-decoration:none;">app.getvia.xyz</a></td>
+  </tr></tbody></table>
+</div>
+</body>
+</html>`;
+
+  await sendEmail({ to, subject: `You are registered for ${eventName}`, html });
+}
+
 // ── HTML escape helper ─────────────────────────────────────────────────
 function escHtml(str: string): string {
   return str
