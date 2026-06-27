@@ -127,7 +127,13 @@ function tierToProduct(tier) {
       tier_key:   tier.key,
       via_enrichment: {
         agentDescription: `${tier.title} for ${cfg.name}. ${tier.includes || ''}`.trim(),
-        category:   'event-pass',
+        // category is left null on purpose: the network matcher (runMatch) has a
+        // cross-vertical gate that drops a product when its category domain does
+        // not match the buyer's LLM-inferred domain. For a ticket query the domain
+        // is inferred unpredictably (events / tickets / conference...), so a fixed
+        // category like 'event-pass' gets gated out before the judge. null means
+        // "uncategorised", which the gate never hides, so the judge decides fit.
+        category:   null,
         tags:       ['event', 'ticket', 'pass', SLUG],
         attributes: { event: cfg.name, tier: tier.key },
       },
