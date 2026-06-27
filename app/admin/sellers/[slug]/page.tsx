@@ -97,7 +97,7 @@ export default async function AdminSellerDetailPage({
   }));
 
   return (
-    <main className="min-h-screen bg-neutral-50 text-neutral-900 flex flex-col">
+    <main className="min-h-screen bg-background text-ink flex flex-col">
       <header className="bg-neutral-900 text-neutral-100">
         <div className="max-w-6xl mx-auto px-6 py-5 flex items-center justify-between">
           <Link href="/admin" aria-label="Admin overview" className="inline-flex items-center gap-3">
@@ -119,9 +119,9 @@ export default async function AdminSellerDetailPage({
 
       <section className="flex-1 px-6 py-12">
         <div className="max-w-6xl mx-auto">
-          <p className="text-xs font-mono tracking-widest text-neutral-500 mb-3 uppercase">Seller</p>
+          <p className="text-xs font-mono tracking-widest text-ink-3 mb-3 uppercase">Seller</p>
           <h1 className="font-serif text-4xl leading-[1.1] tracking-tight mb-2">{seller.name as string}</h1>
-          <p className="text-sm text-neutral-600 mb-8 font-mono">
+          <p className="text-sm text-ink-2 mb-8 font-mono">
             {seller.slug as string} · {seller.kind as string} · onboarded {new Date(seller.created_at as string).toISOString().slice(0, 10)}
           </p>
 

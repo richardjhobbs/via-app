@@ -264,7 +264,7 @@ export function SellerDetailClient({ seller, memories, interactions, purchases, 
       {/* Status strip */}
       <div className="flex flex-wrap items-center gap-3">
         <span className={`inline-block px-2.5 py-1 text-[10px] font-mono uppercase tracking-widest rounded ${
-          seller.active ? 'bg-emerald-100 text-emerald-900' : 'bg-neutral-200 text-neutral-700'
+          seller.active ? 'bg-emerald-100 text-emerald-900' : 'bg-line text-ink-2'
         }`}>
           {seller.active ? 'Active' : 'Inactive'}
         </span>
@@ -272,13 +272,13 @@ export function SellerDetailClient({ seller, memories, interactions, purchases, 
           href={`/sellers/${seller.slug}`}
           target="_blank"
           rel="noopener noreferrer"
-          className="text-[10px] font-mono uppercase tracking-widest text-neutral-700 underline hover:no-underline"
+          className="text-[10px] font-mono uppercase tracking-widest text-ink-2 underline hover:no-underline"
         >
           View public store ↗
         </Link>
         <Link
           href={`/admin/sellers/${seller.slug}/sales-agent`}
-          className="text-[10px] font-mono uppercase tracking-widest text-neutral-700 underline hover:no-underline"
+          className="text-[10px] font-mono uppercase tracking-widest text-ink-2 underline hover:no-underline"
         >
           Drive Sales Agent &rarr;
         </Link>
@@ -290,7 +290,7 @@ export function SellerDetailClient({ seller, memories, interactions, purchases, 
             Mint ERC-8004 identity
           </button>
         )}
-        <span className="ml-auto text-[10px] font-mono uppercase tracking-widest text-neutral-400">
+        <span className="ml-auto text-[10px] font-mono uppercase tracking-widest text-ink-3">
           {productCount} products · {memoriesCount} memories · {purchasesCount} purchases
         </span>
       </div>
@@ -310,58 +310,58 @@ export function SellerDetailClient({ seller, memories, interactions, purchases, 
             <button
               type="button"
               onClick={() => setEditing(true)}
-              className="text-[10px] font-mono uppercase tracking-widest text-neutral-700 underline hover:no-underline"
+              className="text-[10px] font-mono uppercase tracking-widest text-ink-2 underline hover:no-underline"
             >
               Force edit
             </button>
           )}
         </div>
         {editing ? (
-          <div className="bg-white border border-neutral-200 rounded-lg p-6 space-y-4">
+          <div className="bg-paper border border-line rounded-lg p-6 space-y-4">
             <Field label="Name">
-              <input className="w-full bg-white border border-neutral-300 rounded-md px-3 py-2 text-sm"
+              <input className="w-full bg-paper border border-line-strong rounded-md px-3 py-2 text-sm"
                 value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
             </Field>
             <Field label="Contact email (display only)">
-              <input type="email" className="w-full bg-white border border-neutral-300 rounded-md px-3 py-2 text-sm font-mono"
+              <input type="email" className="w-full bg-paper border border-line-strong rounded-md px-3 py-2 text-sm font-mono"
                 value={form.contact_email} onChange={(e) => setForm({ ...form, contact_email: e.target.value })} />
-              <p className="text-[10px] font-mono text-neutral-500 mt-1">
+              <p className="text-[10px] font-mono text-ink-3 mt-1">
                 For follow-ups. Does NOT change the seller&apos;s sign-in email.
               </p>
             </Field>
             <Field label="Headline">
-              <input className="w-full bg-white border border-neutral-300 rounded-md px-3 py-2 text-sm"
+              <input className="w-full bg-paper border border-line-strong rounded-md px-3 py-2 text-sm"
                 value={form.headline} onChange={(e) => setForm({ ...form, headline: e.target.value })} />
             </Field>
             <Field label="Description">
-              <textarea rows={3} className="w-full bg-white border border-neutral-300 rounded-md px-3 py-2 text-sm"
+              <textarea rows={3} className="w-full bg-paper border border-line-strong rounded-md px-3 py-2 text-sm"
                 value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} />
             </Field>
             <Field label="Website">
-              <input className="w-full bg-white border border-neutral-300 rounded-md px-3 py-2 text-sm font-mono"
+              <input className="w-full bg-paper border border-line-strong rounded-md px-3 py-2 text-sm font-mono"
                 value={form.website_url} onChange={(e) => setForm({ ...form, website_url: e.target.value })} />
             </Field>
             <Field label="Payout wallet">
-              <input className="w-full bg-white border border-neutral-300 rounded-md px-3 py-2 text-sm font-mono"
+              <input className="w-full bg-paper border border-line-strong rounded-md px-3 py-2 text-sm font-mono"
                 value={form.wallet_address} onChange={(e) => setForm({ ...form, wallet_address: e.target.value })} />
             </Field>
             <div className="flex gap-3 pt-2">
               <button
                 type="button" onClick={() => void save()} disabled={busy}
-                className="px-5 py-3 bg-neutral-900 text-neutral-50 text-xs font-mono tracking-widest uppercase hover:bg-neutral-800 transition-colors rounded-md disabled:opacity-50"
+                className="px-5 py-3 bg-ink text-background text-xs font-mono tracking-widest uppercase hover:opacity-90 transition-opacity rounded-md disabled:opacity-50"
               >
                 {busy ? 'Saving…' : 'Save'}
               </button>
               <button
                 type="button" onClick={() => { setEditing(false); setErr(''); }}
-                className="px-5 py-3 bg-white border border-neutral-300 text-neutral-700 text-xs font-mono tracking-widest uppercase hover:border-neutral-900 transition-colors rounded-md"
+                className="px-5 py-3 bg-paper border border-line-strong text-ink-2 text-xs font-mono tracking-widest uppercase hover:border-ink transition-colors rounded-md"
               >
                 Cancel
               </button>
             </div>
           </div>
         ) : (
-          <div className="bg-white border border-neutral-200 rounded-lg p-6 grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-3">
+          <div className="bg-paper border border-line rounded-lg p-6 grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-3">
             <Stat label="Contact email"     value={seller.contact_email} mono />
             <Stat label="Login email"       value={seller.login_email ?? '(unavailable)'} mono />
             <Stat label="Website"           value={seller.website_url ?? '—'} mono />
@@ -373,8 +373,8 @@ export function SellerDetailClient({ seller, memories, interactions, purchases, 
             <Stat label="ERC-8004 agent"    value={seller.erc8004_agent_id ?? '—'} mono />
             <Stat label="Shopify domain"    value={seller.shopify_domain ?? '—'} mono />
             <div className="md:col-span-2">
-              <div className="text-xs font-mono tracking-widest text-neutral-500 uppercase mb-1">Description</div>
-              <div className="text-sm text-neutral-900">{seller.description ?? '—'}</div>
+              <div className="text-xs font-mono tracking-widest text-ink-3 uppercase mb-1">Description</div>
+              <div className="text-sm text-ink">{seller.description ?? '—'}</div>
             </div>
           </div>
         )}
@@ -384,8 +384,8 @@ export function SellerDetailClient({ seller, memories, interactions, purchases, 
           hits Supabase auth.admin.updateUserById, not the row PATCH. */}
       <section>
         <h2 className="font-serif text-2xl tracking-tight mb-4">Login email</h2>
-        <div className="bg-white border border-neutral-200 rounded-lg p-6">
-          <p className="text-xs text-neutral-600 mb-4">
+        <div className="bg-paper border border-line rounded-lg p-6">
+          <p className="text-xs text-ink-2 mb-4">
             The address the seller signs in with. Distinct from the contact email above. Changing
             it overwrites the Supabase auth user and confirms it immediately — no verification mail
             is sent.
@@ -394,7 +394,7 @@ export function SellerDetailClient({ seller, memories, interactions, purchases, 
           {loginInfo && <div className="bg-emerald-50 border border-emerald-200 text-emerald-800 text-sm rounded-md px-4 py-3 mb-4">{loginInfo}</div>}
           <div className="flex flex-col sm:flex-row sm:items-end gap-3">
             <div className="flex-1">
-              <label htmlFor="login-email" className="text-xs font-mono tracking-widest text-neutral-500 uppercase block mb-2">
+              <label htmlFor="login-email" className="text-xs font-mono tracking-widest text-ink-3 uppercase block mb-2">
                 Login email
               </label>
               <input
@@ -404,12 +404,12 @@ export function SellerDetailClient({ seller, memories, interactions, purchases, 
                 onChange={(e) => setLoginEmailInput(e.target.value)}
                 placeholder={seller.login_email ?? 'unavailable'}
                 disabled={seller.login_email === null}
-                className="w-full bg-white border border-neutral-300 rounded-md px-3 py-2 text-sm font-mono disabled:bg-neutral-50 disabled:text-neutral-400"
+                className="w-full bg-paper border border-line-strong rounded-md px-3 py-2 text-sm font-mono disabled:bg-background disabled:text-ink-3"
               />
             </div>
             <button
               type="button" onClick={() => void saveLoginEmail()} disabled={loginBusy || seller.login_email === null}
-              className="px-5 py-3 bg-neutral-900 text-neutral-50 text-xs font-mono tracking-widest uppercase hover:bg-neutral-800 transition-colors rounded-md disabled:opacity-50"
+              className="px-5 py-3 bg-ink text-background text-xs font-mono tracking-widest uppercase hover:opacity-90 transition-opacity rounded-md disabled:opacity-50"
             >
               {loginBusy ? 'Saving…' : 'Update login email'}
             </button>
@@ -435,13 +435,13 @@ export function SellerDetailClient({ seller, memories, interactions, purchases, 
           </button>
         </div>
         {memoriesCount === 0 ? (
-          <p className="text-sm text-neutral-500 bg-white border border-neutral-200 rounded-lg p-6">
+          <p className="text-sm text-ink-3 bg-paper border border-line rounded-lg p-6">
             No memories stored.
           </p>
         ) : (
-          <div className="bg-white border border-neutral-200 rounded-lg overflow-hidden">
+          <div className="bg-paper border border-line rounded-lg overflow-hidden">
             <table className="w-full text-sm">
-              <thead className="bg-neutral-50 text-xs font-mono uppercase tracking-widest text-neutral-500">
+              <thead className="bg-background text-xs font-mono uppercase tracking-widest text-ink-3">
                 <tr>
                   <th className="text-left px-4 py-3">When</th>
                   <th className="text-left px-4 py-3">Type</th>
@@ -450,14 +450,14 @@ export function SellerDetailClient({ seller, memories, interactions, purchases, 
                   <th className="text-left px-4 py-3">Tags</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-neutral-200">
+              <tbody className="divide-y divide-line">
                 {memories.map((m) => (
                   <tr key={m.id}>
-                    <td className="px-4 py-3 font-mono text-xs text-neutral-500 whitespace-nowrap">{fmtDate(m.created_at)}</td>
+                    <td className="px-4 py-3 font-mono text-xs text-ink-3 whitespace-nowrap">{fmtDate(m.created_at)}</td>
                     <td className="px-4 py-3 font-mono text-xs">{m.type}</td>
                     <td className="px-4 py-3">{m.title}</td>
-                    <td className="px-4 py-3 text-neutral-600 text-xs">{m.body.slice(0, 160)}{m.body.length > 160 ? '…' : ''}</td>
-                    <td className="px-4 py-3 font-mono text-xs text-neutral-500">{m.tags.join(', ') || '—'}</td>
+                    <td className="px-4 py-3 text-ink-2 text-xs">{m.body.slice(0, 160)}{m.body.length > 160 ? '…' : ''}</td>
+                    <td className="px-4 py-3 font-mono text-xs text-ink-3">{m.tags.join(', ') || '—'}</td>
                   </tr>
                 ))}
               </tbody>
@@ -470,13 +470,13 @@ export function SellerDetailClient({ seller, memories, interactions, purchases, 
       <section>
         <h2 className="font-serif text-2xl tracking-tight mb-4">Recent MCP interactions</h2>
         {interactionsCount === 0 ? (
-          <p className="text-sm text-neutral-500 bg-white border border-neutral-200 rounded-lg p-6">
+          <p className="text-sm text-ink-3 bg-paper border border-line rounded-lg p-6">
             No buying agent has called this seller&apos;s MCP yet.
           </p>
         ) : (
-          <div className="bg-white border border-neutral-200 rounded-lg overflow-hidden">
+          <div className="bg-paper border border-line rounded-lg overflow-hidden">
             <table className="w-full text-sm">
-              <thead className="bg-neutral-50 text-xs font-mono uppercase tracking-widest text-neutral-500">
+              <thead className="bg-background text-xs font-mono uppercase tracking-widest text-ink-3">
                 <tr>
                   <th className="text-left px-4 py-3">When</th>
                   <th className="text-left px-4 py-3">Tool</th>
@@ -485,7 +485,7 @@ export function SellerDetailClient({ seller, memories, interactions, purchases, 
                   <th className="text-right px-4 py-3">ms</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-neutral-200">
+              <tbody className="divide-y divide-line">
                 {interactions.map((i) => {
                   const ident = i.agent_identity ?? {};
                   const viaId = ident.via_agent_id;
@@ -495,11 +495,11 @@ export function SellerDetailClient({ seller, memories, interactions, purchases, 
                     : (ip || 'anonymous');
                   return (
                     <tr key={i.id}>
-                      <td className="px-4 py-3 font-mono text-xs text-neutral-500 whitespace-nowrap">{fmtDate(i.created_at)}</td>
+                      <td className="px-4 py-3 font-mono text-xs text-ink-3 whitespace-nowrap">{fmtDate(i.created_at)}</td>
                       <td className="px-4 py-3 font-mono text-xs">{i.tool_name}</td>
-                      <td className="px-4 py-3 font-mono text-xs text-neutral-700">{agentLabel}</td>
+                      <td className="px-4 py-3 font-mono text-xs text-ink-2">{agentLabel}</td>
                       <td className="px-4 py-3 text-right font-mono text-xs">{i.status_code ?? '—'}</td>
-                      <td className="px-4 py-3 text-right font-mono text-xs text-neutral-500">{i.duration_ms ?? '—'}</td>
+                      <td className="px-4 py-3 text-right font-mono text-xs text-ink-3">{i.duration_ms ?? '—'}</td>
                     </tr>
                   );
                 })}
@@ -515,20 +515,20 @@ export function SellerDetailClient({ seller, memories, interactions, purchases, 
           <h2 className="font-serif text-2xl tracking-tight">Recent purchases</h2>
           <Link
             href={`/seller/${seller.slug}/admin/sales`}
-            className="text-[10px] font-mono uppercase tracking-widest text-neutral-700 underline hover:no-underline"
+            className="text-[10px] font-mono uppercase tracking-widest text-ink-2 underline hover:no-underline"
             target="_blank" rel="noopener noreferrer"
           >
             Full ledger ↗
           </Link>
         </div>
         {purchasesCount === 0 ? (
-          <p className="text-sm text-neutral-500 bg-white border border-neutral-200 rounded-lg p-6">
+          <p className="text-sm text-ink-3 bg-paper border border-line rounded-lg p-6">
             No purchases yet.
           </p>
         ) : (
-          <div className="bg-white border border-neutral-200 rounded-lg overflow-hidden">
+          <div className="bg-paper border border-line rounded-lg overflow-hidden">
             <table className="w-full text-sm">
-              <thead className="bg-neutral-50 text-xs font-mono uppercase tracking-widest text-neutral-500">
+              <thead className="bg-background text-xs font-mono uppercase tracking-widest text-ink-3">
                 <tr>
                   <th className="text-left px-4 py-3">Order</th>
                   <th className="text-left px-4 py-3">When</th>
@@ -536,18 +536,18 @@ export function SellerDetailClient({ seller, memories, interactions, purchases, 
                   <th className="text-left px-4 py-3">Status</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-neutral-200">
+              <tbody className="divide-y divide-line">
                 {purchases.map((p) => (
-                  <tr key={p.id} className="hover:bg-neutral-50">
+                  <tr key={p.id} className="hover:bg-background">
                     <td className="px-4 py-3 font-mono text-xs">
                       <Link
                         href={`/admin/orders/${p.order_ref}`}
-                        className="text-neutral-900 underline hover:no-underline"
+                        className="text-ink underline hover:no-underline"
                       >
                         {p.order_ref}
                       </Link>
                     </td>
-                    <td className="px-4 py-3 font-mono text-xs text-neutral-500 whitespace-nowrap">{fmtDate(p.created_at)}</td>
+                    <td className="px-4 py-3 font-mono text-xs text-ink-3 whitespace-nowrap">{fmtDate(p.created_at)}</td>
                     <td className="px-4 py-3 text-right font-mono">{p.total_usdc.toFixed(2)}</td>
                     <td className="px-4 py-3 font-mono text-xs">{p.status}</td>
                   </tr>
@@ -562,16 +562,16 @@ export function SellerDetailClient({ seller, memories, interactions, purchases, 
       <section>
         <div className="flex items-end justify-between mb-4">
           <h2 className="font-serif text-2xl tracking-tight">Products</h2>
-          <span className="text-[10px] font-mono uppercase tracking-widest text-neutral-400">{productCount} total</span>
+          <span className="text-[10px] font-mono uppercase tracking-widest text-ink-3">{productCount} total</span>
         </div>
         {productCount === 0 ? (
-          <p className="text-sm text-neutral-500 bg-white border border-neutral-200 rounded-lg p-6">
+          <p className="text-sm text-ink-3 bg-paper border border-line rounded-lg p-6">
             No products yet.
           </p>
         ) : (
-          <div className="bg-white border border-neutral-200 rounded-lg overflow-hidden">
+          <div className="bg-paper border border-line rounded-lg overflow-hidden">
             <table className="w-full text-sm">
-              <thead className="bg-neutral-50 text-xs font-mono uppercase tracking-widest text-neutral-500">
+              <thead className="bg-background text-xs font-mono uppercase tracking-widest text-ink-3">
                 <tr>
                   <th className="text-left px-4 py-3">Image</th>
                   <th className="text-left px-4 py-3">Title</th>
@@ -581,7 +581,7 @@ export function SellerDetailClient({ seller, memories, interactions, purchases, 
                   <th className="text-right px-4 py-3">Actions</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-neutral-200">
+              <tbody className="divide-y divide-line">
                 {products.map((p) => (
                   <tr key={p.id} className={p.admin_removed ? 'bg-red-50' : undefined}>
                     <td className="px-4 py-3">
@@ -592,7 +592,7 @@ export function SellerDetailClient({ seller, memories, interactions, purchases, 
                           <img
                             src={p.admin_asset_url}
                             alt={p.title}
-                            className="h-14 w-14 object-cover rounded border border-amber-300 bg-neutral-100"
+                            className="h-14 w-14 object-cover rounded border border-amber-300 bg-background"
                           />
                         </a>
                       ) : p.asset_filename ? (
@@ -611,28 +611,28 @@ export function SellerDetailClient({ seller, memories, interactions, purchases, 
                           <img
                             src={p.image_url}
                             alt={p.title}
-                            className="h-14 w-14 object-cover rounded border border-neutral-200 bg-neutral-100"
+                            className="h-14 w-14 object-cover rounded border border-line bg-background"
                           />
                         </a>
                       ) : (
-                        <span className="inline-flex h-14 w-14 items-center justify-center rounded border border-dashed border-neutral-300 text-[9px] font-mono uppercase tracking-widest text-neutral-400">
+                        <span className="inline-flex h-14 w-14 items-center justify-center rounded border border-dashed border-line-strong text-[9px] font-mono uppercase tracking-widest text-ink-3">
                           No image
                         </span>
                       )}
                     </td>
                     <td className="px-4 py-3">
-                      <span className="text-neutral-900">{p.title}</span>
+                      <span className="text-ink">{p.title}</span>
                       {p.admin_removed && p.admin_removed_reason && (
                         <span className="block text-[10px] font-mono text-red-700 mt-0.5">{p.admin_removed_reason}</span>
                       )}
                     </td>
-                    <td className="px-4 py-3 font-mono text-xs text-neutral-600">{p.kind}</td>
+                    <td className="px-4 py-3 font-mono text-xs text-ink-2">{p.kind}</td>
                     <td className="px-4 py-3 text-right font-mono text-xs">{(p.price_minor / 1_000_000).toFixed(2)} {p.currency}</td>
                     <td className="px-4 py-3">
                       {p.admin_removed ? (
                         <span className="inline-block px-2 py-0.5 text-[10px] font-mono uppercase tracking-widest rounded bg-red-100 text-red-900">Cancelled</span>
                       ) : (
-                        <span className="inline-block px-2 py-0.5 text-[10px] font-mono uppercase tracking-widest rounded bg-neutral-100 text-neutral-700">
+                        <span className="inline-block px-2 py-0.5 text-[10px] font-mono uppercase tracking-widest rounded bg-background text-ink-2">
                           {p.on_chain_status === 'registered' && p.active ? 'Live' : p.on_chain_status}
                         </span>
                       )}
@@ -655,7 +655,7 @@ export function SellerDetailClient({ seller, memories, interactions, purchases, 
                       )}
                       <button
                         type="button" disabled={busy} onClick={() => void moderateProduct(p.id, p.title, 'delete')}
-                        className="ml-4 text-[10px] font-mono uppercase tracking-widest text-neutral-500 underline hover:no-underline disabled:opacity-50"
+                        className="ml-4 text-[10px] font-mono uppercase tracking-widest text-ink-3 underline hover:no-underline disabled:opacity-50"
                       >
                         Delete
                       </button>
@@ -671,12 +671,12 @@ export function SellerDetailClient({ seller, memories, interactions, purchases, 
       {/* Danger zone */}
       <section>
         <h2 className="font-serif text-2xl tracking-tight mb-4">Danger zone</h2>
-        <div className="bg-white border border-red-200 rounded-lg p-6 flex items-center justify-between gap-6">
+        <div className="bg-paper border border-red-200 rounded-lg p-6 flex items-center justify-between gap-6">
           <div>
-            <p className="font-medium text-neutral-900 mb-1">
+            <p className="font-medium text-ink mb-1">
               {seller.active ? 'Deactivate this seller' : 'Reactivate this seller'}
             </p>
-            <p className="text-xs text-neutral-600">
+            <p className="text-xs text-ink-2">
               {seller.active
                 ? `Sets active=false. Their per-seller MCP and dashboard immediately stop serving. Payout wallet ${truncWallet(seller.wallet_address)} is unaffected.`
                 : 'Sets active=true. MCP and dashboard come back online.'}
@@ -701,8 +701,8 @@ export function SellerDetailClient({ seller, memories, interactions, purchases, 
 function Stat({ label, value, mono = false }: { label: string; value: string; mono?: boolean }) {
   return (
     <div>
-      <div className="text-xs font-mono tracking-widest text-neutral-500 uppercase mb-1">{label}</div>
-      <div className={`text-sm text-neutral-900 ${mono ? 'font-mono break-all' : ''}`}>{value}</div>
+      <div className="text-xs font-mono tracking-widest text-ink-3 uppercase mb-1">{label}</div>
+      <div className={`text-sm text-ink ${mono ? 'font-mono break-all' : ''}`}>{value}</div>
     </div>
   );
 }
@@ -710,7 +710,7 @@ function Stat({ label, value, mono = false }: { label: string; value: string; mo
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div>
-      <div className="text-xs font-mono tracking-widest text-neutral-500 uppercase mb-2">{label}</div>
+      <div className="text-xs font-mono tracking-widest text-ink-3 uppercase mb-2">{label}</div>
       {children}
     </div>
   );
