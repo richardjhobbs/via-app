@@ -92,6 +92,11 @@ function sellerMcpUrl(slug: string): string {
 // search the same network. list_sellers below still fans out with fetchNetwork
 // directly (it lists sellers, not products); find_seller uses searchNetwork.
 
+// Per-member fan-out cap used when the caller did not set an explicit limit.
+// High enough to return every member's full seller list today; each federated
+// member still enforces its own ceiling on the HTTP call.
+const NETWORK_FANOUT_MAX = 1000;
+
 function rowToSummary(row: SellerSummaryRow): NetworkResult & { slug: string; erc8004_agent_id: string | null } {
   return {
     platform:         'via',
@@ -120,24 +125,32 @@ function createServer(req: Request) {
     'List active sellers across the VIA network (VIA app + RRG + integrated platforms). Each result is tagged with its platform and includes the per-seller MCP URL to connect to for deeper interaction (list_products, ask_sales_agent, buy_product).',
     {
       category: z.enum(['product', 'service', 'mixed']).optional().describe('Optional kind filter (applies to VIA-app sellers only).'),
-      limit:    z.number().int().min(1).max(500).optional().describe('Max sellers to return per platform (default 200, enough to enumerate the whole network).'),
+      limit:    z.number().int().min(1).optional().describe('Optional cap on results. Omit to enumerate the ENTIRE network (no limit) — that is the default.'),
     },
     async ({ category, limit }) => {
-      const max = Math.min(Math.max(limit ?? 200, 1), 500);
-      let query = db
-        .from('app_sellers')
-        .select('slug, name, kind, headline, description, website_url, erc8004_agent_id')
-        .eq('active', true)
-        .order('name', { ascending: true })
-        .limit(max);
-      if (category) query = query.eq('kind', category);
-      const [{ data, error }, network] = await Promise.all([
-        query,
-        fetchNetwork('', max),
-      ]);
-      if (error) console.error('[mcp/list_sellers] query failed:', error);
-      const rows = (data ?? []) as SellerSummaryRow[];
-      const sellers = [...rows.map(rowToSummary), ...network];
+      // Enumerate ALL active VIA-app sellers. A fixed cap silently truncates the
+      // network as it grows (and PostgREST itself stops at 1000 rows per request),
+      // so page through in chunks until exhausted. `limit` is honoured only when
+      // the caller explicitly sets one; the default is the whole network.
+      const PAGE = 1000;
+      const rows: SellerSummaryRow[] = [];
+      for (let from = 0; ; from += PAGE) {
+        let q = db
+          .from('app_sellers')
+          .select('slug, name, kind, headline, description, website_url, erc8004_agent_id')
+          .eq('active', true)
+          .order('name', { ascending: true })
+          .range(from, from + PAGE - 1);
+        if (category) q = q.eq('kind', category);
+        const { data, error } = await q;
+        if (error) { console.error('[mcp/list_sellers] query failed:', error); break; }
+        const chunk = (data ?? []) as SellerSummaryRow[];
+        rows.push(...chunk);
+        if (chunk.length < PAGE || (limit && rows.length >= limit)) break;
+      }
+      const network = await fetchNetwork('', limit ?? NETWORK_FANOUT_MAX);
+      let sellers = [...rows.map(rowToSummary), ...network];
+      if (limit) sellers = sellers.slice(0, limit);
       return asJson({ count: sellers.length, sellers });
     },
   );
