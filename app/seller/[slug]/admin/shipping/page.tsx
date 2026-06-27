@@ -1,7 +1,7 @@
 import { notFound, redirect } from 'next/navigation';
 import Link from 'next/link';
 import { db } from '@/lib/app/db';
-import { getSellerUser } from '@/lib/app/seller-auth';
+import { getSellerUser, isSellerMember } from '@/lib/app/seller-auth';
 import { getShippingConfig, isShippingReady } from '@/lib/app/shipping';
 import { ShippingForm } from './ShippingForm';
 import { Wordmark } from '@/components/app/Wordmark';
@@ -36,7 +36,7 @@ export default async function SellerShippingPage({
   if (!user) {
     redirect(`/seller/login?next=${encodeURIComponent(`/seller/${slug}/admin/shipping`)}`);
   }
-  if (user.id !== seller.owner_user_id) return notFound();
+  if (!(await isSellerMember(user.id, seller.id as string))) return notFound();
 
   const config = getShippingConfig(seller.shipping);
   const ready  = isShippingReady(config);

@@ -1,6 +1,6 @@
 import { notFound, redirect } from 'next/navigation';
 import { db } from '@/lib/app/db';
-import { getSellerUser, getUserBrands } from '@/lib/app/seller-auth';
+import { getSellerUser, getUserBrands, getSellerRole, roleAtLeast } from '@/lib/app/seller-auth';
 import { getShippingConfig, isShippingReady } from '@/lib/app/shipping';
 import SellerDashboardClient, {
   type ActivityRow, type NegotiationRow, type ListingRow,
@@ -37,7 +37,8 @@ export default async function SellerAdminPage({
   if (!user) {
     redirect(`/seller/login?next=${encodeURIComponent(`/seller/${slug}/admin`)}`);
   }
-  if (user.id !== seller.owner_user_id) return notFound();
+  const role = await getSellerRole(user.id, seller.id as string);
+  if (!role) return notFound();
 
   const sellerId = seller.id as string;
 
@@ -150,6 +151,7 @@ export default async function SellerAdminPage({
       description={personaText}
       personaNeedsWork={personaNeedsWork}
       walletAddress={String(seller.wallet_address ?? '')}
+      canManageTeam={roleAtLeast(role, 'admin')}
     />
   );
 }

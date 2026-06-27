@@ -27,7 +27,7 @@ export { supabaseAdmin };
 
 // ── Types ───────────────────────────────────────────────────────────────
 
-export type SellerRole = 'admin' | 'viewer';
+export type SellerRole = 'owner' | 'admin' | 'viewer';
 
 export interface SellerUser {
   id: string;
@@ -104,60 +104,101 @@ export async function getSellerUser(): Promise<SellerUser | null> {
   };
 }
 
+// SellerMemberRole is the same set as SellerRole; alias kept for call-site clarity.
+export type SellerMemberRole = SellerRole;
+
+// Roles ordered by privilege; used for "at least this role" checks.
+const ROLE_RANK: Record<SellerMemberRole, number> = { viewer: 0, admin: 1, owner: 2 };
+
+/** True iff `role` is at least as privileged as `min`. */
+export function roleAtLeast(role: SellerMemberRole, min: SellerMemberRole): boolean {
+  return ROLE_RANK[role] >= ROLE_RANK[min];
+}
+
 /**
- * All sellers owned by a user. via-app uses a 1:1 owner per seller row
- * (app_sellers.owner_user_id) — there is no separate members table like
- * RRG's app_seller_members. Role is always 'admin' for the owner.
+ * All sellers a user belongs to, via app_seller_members. A seller may now have
+ * several members (owner / admin / viewer); the membership table is the source
+ * of truth for access, while app_sellers.owner_user_id stays as the immutable
+ * billing/wallet owner. Returns the user's role on each.
  */
 export async function getUserBrands(userId: string): Promise<SellerMembership[]> {
   const { data, error } = await db
-    .from('app_sellers')
-    .select('id, name, slug')
-    .eq('owner_user_id', userId)
-    .eq('active', true);
+    .from('app_seller_members')
+    .select('role, seller:seller_id ( id, name, slug, active )')
+    .eq('user_id', userId);
 
   if (error || !data) return [];
 
-  return data.map((row) => ({
-    sellerId:   row.id as string,
-    sellerName: row.name as string,
-    sellerSlug: row.slug as string,
-    role:       'admin' as SellerRole,
-  }));
+  return data
+    .map((row) => {
+      // PostgREST types the embedded row as an array; it's a single object here.
+      const s = (Array.isArray(row.seller) ? row.seller[0] : row.seller) as
+        | { id: string; name: string; slug: string; active: boolean }
+        | undefined;
+      if (!s || s.active === false) return null;
+      return {
+        sellerId:   s.id,
+        sellerName: s.name,
+        sellerSlug: s.slug,
+        role:       row.role as SellerRole,
+      };
+    })
+    .filter((m): m is SellerMembership => m !== null);
 }
 
 /**
- * True iff the user is the owner of this seller row. Name kept as
- * `isBrandAdmin` to avoid call-site churn across the auth + API routes
- * during the brand→seller rename. Semantically: "owns the row".
+ * The user's role on a seller, or null if they are not a member. Single source
+ * of truth for every admin-surface gate (replaces the old owner_user_id match).
  */
-export async function isBrandAdmin(userId: string, sellerId: string): Promise<boolean> {
+export async function getSellerRole(
+  userId: string,
+  sellerId: string,
+): Promise<SellerMemberRole | null> {
   const { data } = await db
-    .from('app_sellers')
-    .select('id')
-    .eq('id', sellerId)
-    .eq('owner_user_id', userId)
+    .from('app_seller_members')
+    .select('role')
+    .eq('seller_id', sellerId)
+    .eq('user_id', userId)
     .maybeSingle();
 
-  return !!data;
+  return (data?.role as SellerMemberRole | undefined) ?? null;
+}
+
+/** True iff the user is a member (any role) of this seller. */
+export async function isSellerMember(userId: string, sellerId: string): Promise<boolean> {
+  return (await getSellerRole(userId, sellerId)) !== null;
 }
 
 /**
- * Middleware helper: require brand admin auth for a route.
- * Returns the authenticated user or a 401 response.
+ * True iff the user can manage this seller (owner or admin). Name kept as
+ * `isBrandAdmin` to avoid call-site churn. Viewers return false.
+ */
+export async function isBrandAdmin(userId: string, sellerId: string): Promise<boolean> {
+  const role = await getSellerRole(userId, sellerId);
+  return role !== null && roleAtLeast(role, 'admin');
+}
+
+/**
+ * Require an authenticated member of this seller. Any role (incl. viewer)
+ * passes by default; pass minRole: 'admin' on write routes so viewers get a
+ * 403. Returns the user + their role, or an error response.
  */
 export async function requireBrandAuth(
   sellerId: string,
-): Promise<{ user: SellerUser } | { error: NextResponse }> {
+  minRole: SellerMemberRole = 'viewer',
+): Promise<{ user: SellerUser; role: SellerMemberRole } | { error: NextResponse }> {
   const user = await getSellerUser();
   if (!user) {
     return { error: NextResponse.json({ error: 'Not authenticated' }, { status: 401 }) };
   }
 
-  const isAdmin = await isBrandAdmin(user.id, sellerId);
-  if (!isAdmin) {
+  const role = await getSellerRole(user.id, sellerId);
+  if (!role) {
     return { error: NextResponse.json({ error: 'Not authorized for this brand' }, { status: 403 }) };
   }
+  if (!roleAtLeast(role, minRole)) {
+    return { error: NextResponse.json({ error: 'Your role does not permit this action' }, { status: 403 }) };
+  }
 
-  return { user };
+  return { user, role };
 }

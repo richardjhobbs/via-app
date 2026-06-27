@@ -1,7 +1,7 @@
 import { notFound, redirect } from 'next/navigation';
 import Link from 'next/link';
 import { db } from '@/lib/app/db';
-import { getSellerUser } from '@/lib/app/seller-auth';
+import { getSellerUser, isSellerMember } from '@/lib/app/seller-auth';
 import { NotificationBell } from '@/components/app/NotificationBell';
 import { Wordmark } from '@/components/app/Wordmark';
 import QuotesInbox from './QuotesInbox';
@@ -26,7 +26,7 @@ export default async function SellerQuotesPage({
   if (!user) {
     redirect(`/seller/login?next=${encodeURIComponent(`/seller/${slug}/admin/quotes`)}`);
   }
-  if (user.id !== seller.owner_user_id) return notFound();
+  if (!(await isSellerMember(user.id, seller.id as string))) return notFound();
 
   return (
     <main className="min-h-screen bg-background text-ink flex flex-col">

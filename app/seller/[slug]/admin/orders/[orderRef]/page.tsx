@@ -1,7 +1,7 @@
 import { notFound, redirect } from 'next/navigation';
 import Link from 'next/link';
 import { db } from '@/lib/app/db';
-import { getSellerUser } from '@/lib/app/seller-auth';
+import { getSellerUser, isSellerMember } from '@/lib/app/seller-auth';
 import { loadOrderForSeller } from '@/lib/app/orders';
 import { OrderDetailView } from '@/components/app/OrderDetailView';
 import { NotificationBell } from '@/components/app/NotificationBell';
@@ -27,7 +27,7 @@ export default async function SellerOrderDetailPage({
   if (!user) {
     redirect(`/seller/login?next=${encodeURIComponent(`/seller/${slug}/admin/orders/${orderRef}`)}`);
   }
-  if (user.id !== seller.owner_user_id) return notFound();
+  if (!(await isSellerMember(user.id, seller.id as string))) return notFound();
 
   const order = await loadOrderForSeller(orderRef, slug);
   if (!order) return notFound();

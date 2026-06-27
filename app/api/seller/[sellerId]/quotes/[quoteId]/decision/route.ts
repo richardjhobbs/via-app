@@ -34,7 +34,7 @@ export async function POST(
   { params }: { params: Promise<{ sellerId: string; quoteId: string }> },
 ) {
   const { sellerId, quoteId } = await params;
-  const auth = await requireBrandAuth(sellerId);
+  const auth = await requireBrandAuth(sellerId, 'admin');
   if ('error' in auth) return auth.error;
 
   let body: DecisionBody;

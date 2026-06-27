@@ -49,7 +49,7 @@ export async function POST(
   { params }: { params: Promise<{ sellerId: string }> },
 ) {
   const { sellerId } = await params;
-  const auth = await requireBrandAuth(sellerId);
+  const auth = await requireBrandAuth(sellerId, 'admin');
   if ('error' in auth) return auth.error;
 
   let body: CreateBody;

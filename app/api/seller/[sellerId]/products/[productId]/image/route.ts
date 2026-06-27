@@ -27,7 +27,7 @@ export async function POST(
   { params }: { params: Promise<{ sellerId: string; productId: string }> },
 ) {
   const { sellerId, productId } = await params;
-  const auth = await requireBrandAuth(sellerId);
+  const auth = await requireBrandAuth(sellerId, 'admin');
   if ('error' in auth) return auth.error;
 
   // The product must belong to this seller.

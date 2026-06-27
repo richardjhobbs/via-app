@@ -732,6 +732,86 @@ export async function sendTicketDeliveryEmail({
   });
 }
 
+// ── 8. Seller team invite ──────────────────────────────────────────────
+//
+// Sent when a seller owner/admin invites a teammate. The link carries an
+// opaque invite token (app_seller_invites.token); the accept page creates the
+// account (or signs in) and adds the membership row.
+
+export async function sendSellerInviteEmail({
+  to,
+  sellerName,
+  inviterEmail,
+  role,
+  acceptUrl,
+  expiresAt,
+}: {
+  to: string;
+  sellerName: string;
+  inviterEmail: string | null;
+  role: 'admin' | 'viewer';
+  acceptUrl: string;
+  expiresAt: string;
+}): Promise<void> {
+  const roleLabel = role === 'admin' ? 'Admin' : 'Viewer';
+  const roleBlurb =
+    role === 'admin'
+      ? 'You will be able to manage products, negotiations, orders and settings.'
+      : 'You will have read-only access to products, negotiations and orders.';
+  const expires = new Date(expiresAt).toLocaleDateString('en-GB', {
+    day: 'numeric', month: 'long', year: 'numeric',
+  });
+
+  const html = `
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><style>
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', sans-serif; background: #faf7f2; color: #1a1612; margin: 0; padding: 40px 20px; }
+  .wrap { max-width: 560px; margin: 0 auto; }
+  .wordmark { font-family: Georgia, 'Times New Roman', serif; font-size: 18px; font-weight: 400; font-style: italic; letter-spacing: 0.01em; color: #1a1612; margin: 0 0 24px; }
+  .card { background: #ffffff; border: 1px solid #e8e3db; }
+  .card-head { padding: 28px 32px 24px; border-bottom: 1px solid #e8e3db; }
+  .eyebrow { font-family: 'Courier New', Courier, monospace; font-size: 10px; letter-spacing: 0.16em; text-transform: uppercase; color: #2b9a66; margin: 0 0 8px; }
+  h1 { margin: 0; font-family: Georgia, 'Times New Roman', serif; font-size: 26px; font-weight: 400; font-style: italic; color: #1a1612; letter-spacing: -0.01em; }
+  .body { padding: 28px 32px; }
+  .body p { margin: 0 0 16px; line-height: 1.6; color: #3a342d; font-size: 14px; }
+  .lbl { font-family: 'Courier New', Courier, monospace; font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; color: #6e665c; margin: 0 0 12px; }
+  .role-box { border: 1px solid #e8e3db; padding: 14px 18px; margin: 0 0 24px; background: #fdfbf7; }
+  .role-box p { margin: 0; font-size: 14px; color: #1a1612; line-height: 1.6; }
+  .btn { display: inline-block; background: #1a1612; color: #faf7f2; padding: 12px 22px; text-decoration: none; font-size: 12px; letter-spacing: 0.04em; font-weight: 500; }
+  .post { margin-top: 16px; font-size: 12px; color: #6e665c; }
+</style></head>
+<body>
+<div class="wrap">
+  <p class="wordmark">VIA</p>
+  <div class="card">
+    <div class="card-head">
+      <p class="eyebrow">Team invitation</p>
+      <h1>Join ${escHtml(sellerName)} on VIA</h1>
+    </div>
+    <div class="body">
+      <p>${inviterEmail ? `${escHtml(inviterEmail)} has invited you` : 'You have been invited'} to help run <strong style="color:#1a1612">${escHtml(sellerName)}</strong> on VIA as a <strong style="color:#1a1612">${roleLabel}</strong>.</p>
+      <p class="lbl">Your access</p>
+      <div class="role-box"><p>${roleBlurb}</p></div>
+      <a class="btn" href="${acceptUrl}">Accept invitation</a>
+      <p class="post">This invitation expires on ${expires}. If you weren't expecting it, you can ignore this email.</p>
+    </div>
+  </div>
+  <table width="100%" cellpadding="0" cellspacing="0" style="margin-top:32px;padding-top:20px;border-top:1px solid #e8e3db;"><tbody><tr>
+    <td style="font-family:'Courier New',Courier,monospace;font-size:10px;letter-spacing:0.12em;text-transform:uppercase;color:#6e665c;">VIA</td>
+    <td align="right" style="font-family:'Courier New',Courier,monospace;font-size:10px;letter-spacing:0.12em;text-transform:uppercase;color:#6e665c;text-align:right;"><a href="${SITE_URL}" style="color:#6e665c;text-decoration:none;">app.getvia.xyz</a></td>
+  </tr></tbody></table>
+</div>
+</body>
+</html>`;
+
+  await sendEmail({
+    to,
+    subject: `You're invited to join ${sellerName} on VIA`,
+    html,
+  });
+}
+
 // ── HTML escape helper ─────────────────────────────────────────────────
 function escHtml(str: string): string {
   return str

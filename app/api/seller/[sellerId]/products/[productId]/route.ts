@@ -28,7 +28,7 @@ export async function PUT(
   { params }: { params: Promise<{ sellerId: string; productId: string }> },
 ) {
   const { sellerId, productId } = await params;
-  const auth = await requireBrandAuth(sellerId);
+  const auth = await requireBrandAuth(sellerId, 'admin');
   if ('error' in auth) return auth.error;
 
   let body: UpdateBody;
@@ -108,7 +108,7 @@ export async function DELETE(
   { params }: { params: Promise<{ sellerId: string; productId: string }> },
 ) {
   const { sellerId, productId } = await params;
-  const auth = await requireBrandAuth(sellerId);
+  const auth = await requireBrandAuth(sellerId, 'admin');
   if ('error' in auth) return auth.error;
 
   const { data, error } = await db

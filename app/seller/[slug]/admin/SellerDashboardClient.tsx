@@ -155,7 +155,7 @@ function Listing({ l }: { l: ListingRow }) {
 
 export default function SellerDashboardClient({
   name, slug, sellerId, agentCode, mcpUrl, brands, metrics, activity, negotiations, listings, shippingNeedsSetup,
-  headline, description, personaNeedsWork, walletAddress,
+  headline, description, personaNeedsWork, walletAddress, canManageTeam,
 }: {
   name: string;
   slug: string;
@@ -172,6 +172,7 @@ export default function SellerDashboardClient({
   description: string;
   personaNeedsWork: boolean;
   walletAddress: string;
+  canManageTeam: boolean;
 }) {
   const router = useRouter();
   const productsHref = `/seller/${slug}/admin/products`;
@@ -190,6 +191,7 @@ export default function SellerDashboardClient({
             <Link href={shippingHref}>Shipping</Link>
             <Link href={quotesHref}>Quotes</Link>
             <Link href={salesHref}>Sales</Link>
+            {canManageTeam && <Link href={`/seller/${slug}/admin/team`}>Team</Link>}
           </nav>
           <Link href="/" aria-label="VIA home" style={{ display: 'inline-flex', justifyContent: 'center' }}><Wordmark /></Link>
           <div className="dash-right">
