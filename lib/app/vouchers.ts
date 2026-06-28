@@ -12,6 +12,7 @@
  * needs a DIFFERENT code per buyer that no one else ever sees.
  */
 import { db } from './db';
+import { addLumaGuest } from './luma';
 
 /** Redemption guidance shown to the buyer with their code(s). */
 export interface VoucherRedemption {
@@ -68,6 +69,86 @@ export async function claimVouchersForPurchase(
     codes.push(data as string);
   }
   return codes.slice(0, qty);
+}
+
+/* ──────────────────────────────────────────────────────────────────────────
+   Fulfilment: how a settled pass purchase is delivered. Two modes, chosen per
+   product via metadata.fulfilment.mode:
+     - 'code_pool' (default): hand the buyer a unique code from app_voucher_codes.
+     - 'luma_api': register the buyer directly on the seller's Luma event, so
+       Luma issues the pass; no code for the buyer to redeem.
+   luma_api ALWAYS falls back to the code pool when the Luma key/event/email is
+   missing or the Luma call fails, so a sale never silently drops.
+   ────────────────────────────────────────────────────────────────────────── */
+
+export type FulfilmentMode = 'code_pool' | 'luma_api';
+
+export interface FulfilmentConfig {
+  mode:            FulfilmentMode;
+  lumaEventApiId?: string;
+  /** env var name holding the Luma API key; the key itself is never in the DB. */
+  lumaApiKeyEnv:   string;
+}
+
+/** Read the fulfilment config off a product's metadata (defaults to code_pool). */
+export function getFulfilment(metadata: unknown): FulfilmentConfig {
+  const m = metadata as Record<string, unknown> | null | undefined;
+  const f = (m?.fulfilment ?? null) as Record<string, unknown> | null;
+  if (f && f.mode === 'luma_api') {
+    return {
+      mode:            'luma_api',
+      lumaEventApiId:  typeof f.luma_event_api_id === 'string' ? f.luma_event_api_id : undefined,
+      lumaApiKeyEnv:   typeof f.luma_api_key_env === 'string' && f.luma_api_key_env ? f.luma_api_key_env : 'LUMA_API_KEY',
+    };
+  }
+  return { mode: 'code_pool', lumaApiKeyEnv: 'LUMA_API_KEY' };
+}
+
+export interface FulfilmentResult {
+  /** mode actually used (luma_api downgrades to code_pool on fallback). */
+  mode:           FulfilmentMode;
+  /** codes delivered (code_pool path); empty when registered via Luma. */
+  vouchers:       string[];
+  /** true when the buyer was registered on the Luma event. */
+  lumaRegistered: boolean;
+  /** true when neither path delivered (pool empty AND luma unavailable). */
+  owed:           boolean;
+}
+
+/**
+ * Fulfil a settled voucher-product purchase. Tries Luma registration when the
+ * product is configured for it and the key/event/email are present; otherwise
+ * (or on any Luma failure) claims a unique code from the pool. Idempotent via
+ * claimVouchersForPurchase for the code path; Luma add-guest is idempotent on
+ * email per event.
+ */
+export async function fulfilVoucherPurchase(params: {
+  sellerId:   string;
+  productId:  string;
+  purchaseId: string;
+  qty:        number;
+  metadata:   unknown;
+  buyerEmail?: string | null;
+  buyerName?:  string | null;
+}): Promise<FulfilmentResult> {
+  const { productId, purchaseId, qty, metadata, buyerEmail, buyerName } = params;
+  const cfg = getFulfilment(metadata);
+
+  if (cfg.mode === 'luma_api') {
+    const apiKey = cfg.lumaApiKeyEnv ? process.env[cfg.lumaApiKeyEnv] : undefined;
+    if (apiKey && cfg.lumaEventApiId && buyerEmail) {
+      const r = await addLumaGuest({ apiKey, eventApiId: cfg.lumaEventApiId, email: buyerEmail, name: buyerName });
+      if (r.ok) return { mode: 'luma_api', vouchers: [], lumaRegistered: true, owed: false };
+      console.warn(`[fulfilment] luma_api failed for purchase ${purchaseId}; falling back to code pool: ${r.error}`);
+    } else {
+      const why = !apiKey ? 'API key env unset' : !cfg.lumaEventApiId ? 'event id missing' : 'buyer email missing';
+      console.warn(`[fulfilment] luma_api configured but ${why}; falling back to code pool for purchase ${purchaseId}`);
+    }
+  }
+
+  const codes = await claimVouchersForPurchase(productId, purchaseId, qty);
+  if (codes.length > 0) return { mode: 'code_pool', vouchers: codes, lumaRegistered: false, owed: false };
+  return { mode: cfg.mode, vouchers: [], lumaRegistered: false, owed: true };
 }
 
 /** Remaining unclaimed codes for a product (i.e. the tier's live stock). */

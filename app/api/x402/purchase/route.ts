@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/app/db';
 import { extractPaymentProof, verifyAndExecutePayment, verifyUsdcTransfer } from '@/lib/app/x402-server';
-import { getRRGContract, toUsdc6dp } from '@/lib/app/contract';
+import { getRRGContract, toUsdc6dp, mintContractAddress } from '@/lib/app/contract';
 import { calculateSplit, PLATFORM_WALLET } from '@/lib/app/splits';
 import { insertDistributionAndPay } from '@/lib/app/auto-payout';
 import { shouldSkipErc8004 } from '@/lib/app/test-mode';
@@ -9,8 +9,8 @@ import { postViaReputationSignal, parseAgentId } from '@/lib/app/via-reputation'
 import { lookupAgentIdByWallet } from '@/lib/app/erc8004';
 import { insertNotification } from '@/lib/app/notifications';
 import { getDigitalFiles, buildDeliverables, type Deliverable } from '@/lib/app/digital-delivery';
-import { isVoucherProduct, getVoucherRedemption, claimVouchersForPurchase } from '@/lib/app/vouchers';
-import { sendTicketDeliveryEmail } from '@/lib/app/email';
+import { isVoucherProduct, getVoucherRedemption, fulfilVoucherPurchase } from '@/lib/app/vouchers';
+import { sendTicketDeliveryEmail, sendTicketRegisteredEmail } from '@/lib/app/email';
 
 export const dynamic = 'force-dynamic';
 
@@ -58,6 +58,7 @@ async function registerDropAtSale(
   priceMinor: number,
   maxSupply: number | null,
   skipChain: boolean,
+  contractAddress: string,
 ): Promise<number> {
   const { data: tokenIdData, error: tokErr } = await db.rpc('app_next_token_id');
   if (tokErr || tokenIdData == null) throw new Error(`claim token_id failed: ${tokErr?.message ?? 'null'}`);
@@ -83,7 +84,7 @@ async function registerDropAtSale(
   if (skipChain) {
     txHash = `TEST-registerDrop-${tokenId}`;
   } else {
-    const contract = getRRGContract();
+    const contract = getRRGContract(contractAddress);
     const price6dp = toUsdc6dp(priceMinor / 1_000_000);
     const tx = await (contract.registerDrop as (
       tokenId: bigint, creator: string, price6dp: bigint, maxSupply: bigint,
@@ -95,7 +96,7 @@ async function registerDropAtSale(
   }
 
   await db.from('app_seller_products')
-    .update({ on_chain_status: 'registered', on_chain_tx_hash: txHash, updated_at: new Date().toISOString() })
+    .update({ on_chain_status: 'registered', on_chain_tx_hash: txHash, on_chain_contract_address: contractAddress, updated_at: new Date().toISOString() })
     .eq('id', productId);
   return tokenId;
 }
@@ -122,7 +123,7 @@ export async function POST(req: NextRequest) {
     .select(`
       id, status, total_usdc, buyer_wallet, buyer_agent_id, qty,
       mint_tx_hash, payout_tx_hash, payment_tx_hash, order_ref, delivery_address,
-      product:product_id ( id, title, token_id, price_minor, max_supply ),
+      product:product_id ( id, title, token_id, price_minor, max_supply, metadata, on_chain_contract_address ),
       seller:seller_id ( id, slug, name, wallet_address, seller_pct_override, erc8004_agent_id, owner_user_id, contact_email )
     `)
     .eq('order_ref', orderRef)
@@ -233,14 +234,25 @@ export async function POST(req: NextRequest) {
   let mintTxHash: string | null = null;
   let signalBaseNonce: number | null = null;
 
+  // Which contract this product's drop lives on. A draft (no token yet)
+  // registers on the current mint contract (VIA Network once deployed); a
+  // pre-registered product uses the contract recorded on its row (NULL =
+  // legacy). Every on-chain step below (operatorMint, Guardrail A getDrop)
+  // targets this address so legacy and VIA-Network tokens both resolve right.
+  const LEGACY_CONTRACT = process.env.NEXT_PUBLIC_VIA_CONTRACT_ADDRESS!;
+  let effectiveContract =
+    (product.on_chain_contract_address as string | null) || LEGACY_CONTRACT;
+
   // 3a. Register the on-chain drop now if this listing was still a draft.
   if (effectiveTokenId == null) {
+    effectiveContract = mintContractAddress();
     try {
       effectiveTokenId = await registerDropAtSale(
         product.id as string,
         Number(product.price_minor ?? 0),
         product.max_supply != null ? Number(product.max_supply) : null,
         skipChain,
+        effectiveContract,
       );
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -263,7 +275,7 @@ export async function POST(req: NextRequest) {
       await db.from('app_purchases').update({ status: 'minted', mint_tx_hash: mintTxHash }).eq('id', purchase.id);
     } else {
       try {
-        const contract = getRRGContract();
+        const contract = getRRGContract(effectiveContract);
         const mintTx   = await (contract.operatorMint as (
           tokenId: number, buyer: string,
         ) => Promise<{ hash: string; nonce: number; wait: (n?: number) => Promise<unknown> }>)(
@@ -388,11 +400,12 @@ export async function POST(req: NextRequest) {
   } else if (effectiveTokenId != null && mintTxHash) {
     try {
       payout = await insertDistributionAndPay({
-        purchaseId: purchase.id,
-        sellerId:   seller.id as string,
+        purchaseId:      purchase.id,
+        sellerId:        seller.id as string,
         split,
-        tokenId:    effectiveTokenId,
-        mintMethod: 'operator',
+        tokenId:         effectiveTokenId,
+        mintMethod:      'operator',
+        contractAddress: effectiveContract,
       });
     } catch (err) {
       console.error(`[x402/purchase] ${orderRef} auto-payout failed`, err);
@@ -420,6 +433,7 @@ export async function POST(req: NextRequest) {
   // omits the links (recoverable via get_download_links on the seller MCP).
   let download: Deliverable[] | null = null;
   let vouchers: string[] | null = null;
+  let lumaRegistered = false;
   try {
     const { data: prodMeta } = await db
       .from('app_seller_products')
@@ -430,36 +444,48 @@ export async function POST(req: NextRequest) {
     if (prodMeta?.kind === 'digital' && files.length > 0) {
       download = await buildDeliverables(files);
     }
-    // Event passes draw a UNIQUE redemption code per buyer from the voucher pool
-    // (vs the shared file the digital path signs). Claiming is idempotent on the
-    // purchase, so a settlement re-POST returns the same codes rather than
-    // burning new ones.
+    // Event passes are fulfilled by registering the buyer on the seller's Luma
+    // event (luma_api mode) or, by default / as fallback, by handing them a
+    // UNIQUE redemption code from the pool. Both are idempotent on the purchase.
     if (isVoucherProduct(prodMeta?.metadata)) {
-      const claimed = await claimVouchersForPurchase(
-        product.id as string, purchase.id as string, Number(purchase.qty) || 1,
-      );
-      if (claimed.length > 0) {
-        vouchers = claimed;
-        const deliveryAddr = (purchase.delivery_address ?? null) as { email?: string } | null;
-        const buyerEmail = deliveryAddr?.email?.trim();
+      const deliveryAddr = (purchase.delivery_address ?? null) as { email?: string; name?: string } | null;
+      const buyerEmail = deliveryAddr?.email?.trim() || null;
+      const buyerName  = deliveryAddr?.name?.trim() || null;
+      const ful = await fulfilVoucherPurchase({
+        sellerId:   seller.id as string,
+        productId:  product.id as string,
+        purchaseId: purchase.id as string,
+        qty:        Number(purchase.qty) || 1,
+        metadata:   prodMeta?.metadata,
+        buyerEmail,
+        buyerName,
+      });
+      const eventName = String(seller.name ?? 'Your event');
+      const tierTitle = String(product.title ?? 'Event pass');
+      if (ful.vouchers.length > 0) {
+        vouchers = ful.vouchers;
         if (buyerEmail) {
           try {
             await sendTicketDeliveryEmail({
-              to:         buyerEmail,
-              eventName:  String(seller.name ?? 'Your event'),
-              tierTitle:  String(product.title ?? 'Event pass'),
-              codes:      claimed,
+              to: buyerEmail, eventName, tierTitle, codes: ful.vouchers,
               redemption: getVoucherRedemption(prodMeta?.metadata),
-              orderRef,
-              priceUsdc:  totalUsdc,
-              txHash:     pay.txHash,
+              orderRef, priceUsdc: totalUsdc, txHash: pay.txHash,
             });
           } catch (mailErr) {
             console.warn(`[x402/purchase] ${orderRef} ticket email failed (non-fatal)`, mailErr);
           }
         }
+      } else if (ful.lumaRegistered) {
+        lumaRegistered = true;
+        if (buyerEmail) {
+          try {
+            await sendTicketRegisteredEmail({ to: buyerEmail, eventName, tierTitle, orderRef, priceUsdc: totalUsdc, txHash: pay.txHash });
+          } catch (mailErr) {
+            console.warn(`[x402/purchase] ${orderRef} registration email failed (non-fatal)`, mailErr);
+          }
+        }
       } else {
-        console.warn(`[x402/purchase] ${orderRef} voucher pool empty for product ${product.id}; codes owed to buyer`);
+        console.warn(`[x402/purchase] ${orderRef} voucher fulfilment owed (no code in pool and Luma unavailable) for product ${product.id}`);
       }
     }
   } catch (err) {
@@ -493,5 +519,6 @@ export async function POST(req: NextRequest) {
     reputation,
     ...(download ? { download } : {}),
     ...(vouchers ? { vouchers } : {}),
+    ...(lumaRegistered ? { luma_registered: true } : {}),
   });
 }

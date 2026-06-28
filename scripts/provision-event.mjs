@@ -118,11 +118,22 @@ function tierToProduct(tier) {
     metadata: {
       voucher:    true,
       redemption: cfg.redemption ?? null,
+      // Fulfilment mode (code_pool default, or luma_api with auto-fallback). The
+      // Luma API key is never stored here, only the name of the env var holding it.
+      fulfilment: cfg.fulfilment
+        ? { mode: cfg.fulfilment.mode ?? 'code_pool', luma_event_api_id: cfg.fulfilment.luma_event_api_id, luma_api_key_env: cfg.fulfilment.luma_api_key_env }
+        : { mode: 'code_pool' },
       event_slug: SLUG,
       tier_key:   tier.key,
       via_enrichment: {
         agentDescription: `${tier.title} for ${cfg.name}. ${tier.includes || ''}`.trim(),
-        category:   'event-pass',
+        // category is left null on purpose: the network matcher (runMatch) has a
+        // cross-vertical gate that drops a product when its category domain does
+        // not match the buyer's LLM-inferred domain. For a ticket query the domain
+        // is inferred unpredictably (events / tickets / conference...), so a fixed
+        // category like 'event-pass' gets gated out before the judge. null means
+        // "uncategorised", which the gate never hides, so the judge decides fit.
+        category:   null,
         tags:       ['event', 'ticket', 'pass', SLUG],
         attributes: { event: cfg.name, tier: tier.key },
       },
