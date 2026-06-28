@@ -17,7 +17,7 @@
  */
 
 import { db } from './db';
-import { getRRGContract, toUsdc6dp } from './contract';
+import { getRRGContract, mintContractAddress, toUsdc6dp } from './contract';
 import { PLATFORM_WALLET } from './splits';
 import { isTestEmail, shouldSkipErc8004 } from './test-mode';
 import { FREE_LISTED_CAP, countListedFor, listedCapReachedMessage } from './limits';
@@ -105,12 +105,17 @@ export async function publishProduct(
 
   const skipChain = isTestEmail(seller.contact_email) || shouldSkipErc8004(seller.contact_email);
 
+  // All new drops register on the current mint contract (VIA Network once
+  // deployed; legacy until then). Recorded on the row so later on-chain reads
+  // target the contract this token actually lives on.
+  const contractAddr = mintContractAddress();
+
   let txHash: string;
   if (skipChain) {
     txHash = `TEST-skipped-${Date.now().toString(36)}`;
   } else {
     try {
-      const contract = getRRGContract();
+      const contract = getRRGContract(contractAddr);
       const price6dp = toUsdc6dp(priceMinor / 1_000_000); // price_minor is 6dp; toUsdc6dp wants a float
       const tx = await contract.registerDrop(
         BigInt(tokenId),
@@ -129,10 +134,11 @@ export async function publishProduct(
   const { data: updated, error: updErr } = await db
     .from('app_seller_products')
     .update({
-      token_id:         tokenId,
-      on_chain_tx_hash: txHash,
-      on_chain_status:  'registered',
-      updated_at:       new Date().toISOString(),
+      token_id:                  tokenId,
+      on_chain_tx_hash:          txHash,
+      on_chain_contract_address: contractAddr,
+      on_chain_status:           'registered',
+      updated_at:                new Date().toISOString(),
     })
     .eq('id', productId)
     .eq('seller_id', sellerId)

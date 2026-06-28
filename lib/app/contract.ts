@@ -60,23 +60,25 @@ export function getRRGContract(addressOverride?: string): ethers.Contract {
 }
 
 /**
- * Contract address that event-pass (ticket) receipts mint on. Tickets mint on
- * the VIA-branded contract (VIAnetwork.sol, name "VIA Network") so the on-chain
- * receipt reads "VIA Network" on explorers, not the legacy shared RRG contract,
- * which matters for the Singapore Blockchain Week proof. Set
- * NEXT_PUBLIC_VIA_TICKETS_CONTRACT_ADDRESS to the deployed VIA Network address;
- * until then it falls back to the default contract (no behaviour change), and the
- * receipt keeps its current branding. Scoped to tickets so existing products,
- * whose tokens live on the current contract, are never disturbed.
+ * The contract that ALL new drops register and mint on. Every new VIA listing
+ * (products and event-pass receipts alike) mints on the VIA-branded contract
+ * (VIAnetwork.sol, name "VIA Network") so on-chain receipts read "VIA Network"
+ * on explorers, not the legacy shared RRG contract. Set
+ * NEXT_PUBLIC_VIA_MINT_CONTRACT_ADDRESS to the deployed VIA Network address;
+ * until then it falls back to the legacy contract (no behaviour change).
+ *
+ * Forward-only: NEXT_PUBLIC_VIA_CONTRACT_ADDRESS stays the LEGACY contract and
+ * is never repointed. It is the fallback every pre-existing token (a row with a
+ * NULL on_chain_contract_address) resolves to, so legacy tokens keep working.
  */
-export function ticketsContractAddress(): string {
-  return process.env.NEXT_PUBLIC_VIA_TICKETS_CONTRACT_ADDRESS
+export function mintContractAddress(): string {
+  return process.env.NEXT_PUBLIC_VIA_MINT_CONTRACT_ADDRESS
     || process.env.NEXT_PUBLIC_VIA_CONTRACT_ADDRESS!;
 }
 
-export function getRRGReadOnly(): ethers.Contract {
+export function getRRGReadOnly(addressOverride?: string): ethers.Contract {
   return new ethers.Contract(
-    process.env.NEXT_PUBLIC_VIA_CONTRACT_ADDRESS!,
+    addressOverride || process.env.NEXT_PUBLIC_VIA_CONTRACT_ADDRESS!,
     RRG_ABI,
     getRpcProvider()
   );
@@ -157,9 +159,10 @@ export async function getPlatformUsdcBalance(): Promise<number> {
 export async function verifyOwnership(
   wallet: string,
   tokenId: number,
+  contractAddress?: string,
 ): Promise<boolean> {
   const contract = new ethers.Contract(
-    process.env.NEXT_PUBLIC_VIA_CONTRACT_ADDRESS!,
+    contractAddress || process.env.NEXT_PUBLIC_VIA_CONTRACT_ADDRESS!,
     ERC1155_ABI,
     getRpcProvider()
   );

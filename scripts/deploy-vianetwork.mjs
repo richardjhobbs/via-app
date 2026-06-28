@@ -85,9 +85,14 @@ await contract.waitForDeployment();
 const address = await contract.getAddress();
 
 console.log(`\nVIAnetwork deployed to: ${address}`);
-console.log(`\nNext steps:`);
-console.log(`  1. vercel env add NEXT_PUBLIC_VIA_CONTRACT_ADDRESS production`);
+console.log(`\nNext steps (forward-only cutover):`);
+console.log(`  NOTE: set the MINT var only. NEVER repoint NEXT_PUBLIC_VIA_CONTRACT_ADDRESS`);
+console.log(`        (it stays the legacy contract = fallback for existing tokens).`);
+console.log(`  1. vercel env add NEXT_PUBLIC_VIA_MINT_CONTRACT_ADDRESS production`);
 console.log(`     -> ${address}`);
-console.log(`  2. vercel env add NEXT_PUBLIC_VIA_CONTRACT_ADDRESS preview`);
+console.log(`  2. vercel env add NEXT_PUBLIC_VIA_MINT_CONTRACT_ADDRESS preview`);
 console.log(`     -> ${address}`);
-console.log(`  3. Verify on BaseScan: https://${network === 'sepolia' ? 'sepolia.basescan.org' : 'basescan.org'}/address/${address}`);
+console.log(`  3. Set VIA collection metadata (contractURI): edit scripts/set-contract-uri.mjs`);
+console.log(`     to target ${address} with VIA branding (it currently writes RRG to the`);
+console.log(`     legacy contract), then run it. Sets the collection name/image marketplaces show.`);
+console.log(`  4. Verify on BaseScan: https://${network === 'sepolia' ? 'sepolia.basescan.org' : 'basescan.org'}/address/${address}`);

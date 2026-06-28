@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/app/db';
 import { extractPaymentProof, verifyAndExecutePayment, verifyUsdcTransfer } from '@/lib/app/x402-server';
-import { getRRGContract, toUsdc6dp, ticketsContractAddress } from '@/lib/app/contract';
+import { getRRGContract, toUsdc6dp, mintContractAddress } from '@/lib/app/contract';
 import { calculateSplit, PLATFORM_WALLET } from '@/lib/app/splits';
 import { insertDistributionAndPay } from '@/lib/app/auto-payout';
 import { shouldSkipErc8004 } from '@/lib/app/test-mode';
@@ -58,7 +58,7 @@ async function registerDropAtSale(
   priceMinor: number,
   maxSupply: number | null,
   skipChain: boolean,
-  contractAddress?: string,
+  contractAddress: string,
 ): Promise<number> {
   const { data: tokenIdData, error: tokErr } = await db.rpc('app_next_token_id');
   if (tokErr || tokenIdData == null) throw new Error(`claim token_id failed: ${tokErr?.message ?? 'null'}`);
@@ -96,7 +96,7 @@ async function registerDropAtSale(
   }
 
   await db.from('app_seller_products')
-    .update({ on_chain_status: 'registered', on_chain_tx_hash: txHash, updated_at: new Date().toISOString() })
+    .update({ on_chain_status: 'registered', on_chain_tx_hash: txHash, on_chain_contract_address: contractAddress, updated_at: new Date().toISOString() })
     .eq('id', productId);
   return tokenId;
 }
@@ -123,7 +123,7 @@ export async function POST(req: NextRequest) {
     .select(`
       id, status, total_usdc, buyer_wallet, buyer_agent_id, qty,
       mint_tx_hash, payout_tx_hash, payment_tx_hash, order_ref, delivery_address,
-      product:product_id ( id, title, token_id, price_minor, max_supply, metadata ),
+      product:product_id ( id, title, token_id, price_minor, max_supply, metadata, on_chain_contract_address ),
       seller:seller_id ( id, slug, name, wallet_address, seller_pct_override, erc8004_agent_id, owner_user_id, contact_email )
     `)
     .eq('order_ref', orderRef)
@@ -143,13 +143,6 @@ export async function POST(req: NextRequest) {
   if (!product || !seller) {
     return NextResponse.json({ settled: false, error: 'order is missing its product or seller link' }, { status: 500 });
   }
-
-  // Event passes (voucher products) still mint an on-chain receipt (the
-  // blockchain proof matters for Blockchain Week), but on the VIA-branded
-  // contract so the explorer shows "VIA Network", not the legacy shared contract.
-  // Falls back to the default contract until the VIA tickets contract is set.
-  const isTicket = isVoucherProduct((product as { metadata?: unknown }).metadata);
-  const mintContractAddress = isTicket ? ticketsContractAddress() : undefined;
 
   // ── Idempotency: already settled → return stored hashes ──────────────
   if (purchase.status === 'minted' || purchase.status === 'paid_out') {
@@ -241,15 +234,25 @@ export async function POST(req: NextRequest) {
   let mintTxHash: string | null = null;
   let signalBaseNonce: number | null = null;
 
+  // Which contract this product's drop lives on. A draft (no token yet)
+  // registers on the current mint contract (VIA Network once deployed); a
+  // pre-registered product uses the contract recorded on its row (NULL =
+  // legacy). Every on-chain step below (operatorMint, Guardrail A getDrop)
+  // targets this address so legacy and VIA-Network tokens both resolve right.
+  const LEGACY_CONTRACT = process.env.NEXT_PUBLIC_VIA_CONTRACT_ADDRESS!;
+  let effectiveContract =
+    (product.on_chain_contract_address as string | null) || LEGACY_CONTRACT;
+
   // 3a. Register the on-chain drop now if this listing was still a draft.
   if (effectiveTokenId == null) {
+    effectiveContract = mintContractAddress();
     try {
       effectiveTokenId = await registerDropAtSale(
         product.id as string,
         Number(product.price_minor ?? 0),
         product.max_supply != null ? Number(product.max_supply) : null,
         skipChain,
-        mintContractAddress,
+        effectiveContract,
       );
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -272,7 +275,7 @@ export async function POST(req: NextRequest) {
       await db.from('app_purchases').update({ status: 'minted', mint_tx_hash: mintTxHash }).eq('id', purchase.id);
     } else {
       try {
-        const contract = getRRGContract(mintContractAddress);
+        const contract = getRRGContract(effectiveContract);
         const mintTx   = await (contract.operatorMint as (
           tokenId: number, buyer: string,
         ) => Promise<{ hash: string; nonce: number; wait: (n?: number) => Promise<unknown> }>)(
@@ -397,11 +400,12 @@ export async function POST(req: NextRequest) {
   } else if (effectiveTokenId != null && mintTxHash) {
     try {
       payout = await insertDistributionAndPay({
-        purchaseId: purchase.id,
-        sellerId:   seller.id as string,
+        purchaseId:      purchase.id,
+        sellerId:        seller.id as string,
         split,
-        tokenId:    effectiveTokenId,
-        mintMethod: 'operator',
+        tokenId:         effectiveTokenId,
+        mintMethod:      'operator',
+        contractAddress: effectiveContract,
       });
     } catch (err) {
       console.error(`[x402/purchase] ${orderRef} auto-payout failed`, err);

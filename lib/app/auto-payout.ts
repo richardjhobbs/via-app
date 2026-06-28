@@ -38,6 +38,11 @@ export interface AutoPayoutInput {
    * Defaults to 'operator' (the safe default).
    */
   mintMethod?: 'permit' | 'operator';
+  /**
+   * The contract the token's drop lives on, for the Guardrail A getDrop read.
+   * Defaults to the legacy contract when unset (every pre-cutover token).
+   */
+  contractAddress?: string;
 }
 
 export interface AutoPayoutResult {
@@ -48,7 +53,7 @@ export interface AutoPayoutResult {
 export async function insertDistributionAndPay(
   input: AutoPayoutInput,
 ): Promise<AutoPayoutResult> {
-  const { purchaseId, sellerId, split, tokenId, mintMethod = 'operator' } = input;
+  const { purchaseId, sellerId, split, tokenId, mintMethod = 'operator', contractAddress } = input;
   const result: AutoPayoutResult = { distributionId: null, sellerTxHash: null };
 
   // ── 1. Insert distribution row as 'pending' ─────────────────────────
@@ -74,7 +79,7 @@ export async function insertDistributionAndPay(
 
   // ── 2. Guardrail A: on-chain creator invariant ──────────────────────
   try {
-    const onChain = await getRRGReadOnly().getDrop(tokenId);
+    const onChain = await getRRGReadOnly(contractAddress).getDrop(tokenId);
     const onChainCreator = String(onChain.creator).toLowerCase();
     const expected       = PLATFORM_WALLET.toLowerCase();
     if (onChainCreator !== expected) {
