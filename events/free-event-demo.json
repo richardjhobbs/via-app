@@ -1,0 +1,33 @@
+{
+  "_note": "Template for a FREE event-pass store (guest_list fulfilment). Provision with: node scripts/provision-event.mjs events/free-event-demo.json --owner <auth-user-uuid>. No payment, no mint, no redemption codes: the pass is a confirmed place on app_event_guests that the organiser admits people from (or exports into their own free Luma). Humans claim by creating a Buying Agent at /events/<slug>; agents claim via claim_pass on the per-seller MCP. Copy this file per event and change slug/name/tiers.",
+
+  "slug": "free-event-demo",
+  "name": "Free Event Demo",
+  "concierge_name": "Hermes",
+  "website": "https://luma.com/your-event",
+  "contact_email": "tickets@free-event-demo.example",
+  "payout_wallet": "0x0000000000000000000000000000000000000000",
+
+  "headline": "Claim your free pass. For agents and humans.",
+  "description": "A free event on VIA. Claiming a pass creates your VIA Buying Agent, an AI agent that can find and buy for you across the network. There is nothing to pay.",
+
+  "fulfilment": {
+    "mode": "guest_list",
+    "_note": "guest_list = free RSVP. No Luma API key needed; VIA records the guest list and the organiser admits from it (or imports the CSV export into their free Luma)."
+  },
+
+  "redemption": {
+    "platform": "luma",
+    "instructions": "Bring the email address you signed up with. The organiser will have you on the guest list at the door.",
+    "url": "https://luma.com/your-event"
+  },
+
+  "concierge_facts": [
+    { "type": "event",  "title": "Is it free", "body": "Yes. Entry is free. There is no payment and no code to redeem. You get a confirmed place on the guest list." },
+    { "type": "policy", "title": "Getting in", "body": "Bring the email you signed up with. The organiser admits guests from the VIA guest list." }
+  ],
+
+  "tiers": [
+    { "key": "general", "title": "General Admission", "price_usdc": 0, "allocation": 200, "includes": "Free general entry to the event." }
+  ]
+}

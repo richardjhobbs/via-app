@@ -1,0 +1,35 @@
+{
+  "_note": "ADS&AI free community event store (guest_list fulfilment). Free passes, no payment, no mint, no redemption codes. Humans claim by creating a Buying Agent at /events/ads-ai; agents claim via claim_pass on /sellers/ads-ai/mcp. Provision: node scripts/provision-event.mjs events/ads-ai.json --owner <richard auth-user-uuid>.",
+
+  "slug": "ads-ai",
+  "name": "ADS&AI",
+  "concierge_name": "Hermes",
+  "website": "https://luma.com/ads-ai",
+  "contact_email": "richard@entrepot.asia",
+  "payout_wallet": "0xb33fb3fd97922d3a8bf4b086af8660bb12cbb1f8",
+  "_payout_note": "Reference only. Free event, so no payout ever runs. Wallet reused from SBW purely so the row has a valid address.",
+
+  "headline": "Claim your free pass to ADS&AI. For agents and humans.",
+  "description": "The Advertising and AI community of Singapore. Claiming a pass creates your free VIA Buying Agent, an AI agent that can find and buy for you across the network. Entry is free and there is nothing to pay.",
+
+  "fulfilment": {
+    "mode": "guest_list",
+    "_note": "Free RSVP. No Luma API key needed. VIA records the guest list; the organiser admits from it or imports the CSV export into their own free Luma."
+  },
+
+  "redemption": {
+    "platform": "luma",
+    "instructions": "Bring the email address you signed up with. The organiser will have you on the guest list at the door.",
+    "url": "https://luma.com/ads-ai"
+  },
+
+  "concierge_facts": [
+    { "type": "event",  "title": "About ADS&AI", "body": "ADS&AI is the Advertising and AI community of Singapore." },
+    { "type": "event",  "title": "Is it free", "body": "Yes. Entry is free. There is no payment and no code to redeem. You get a confirmed place on the guest list." },
+    { "type": "policy", "title": "Getting in", "body": "Bring the email you signed up with. The organiser admits guests from the VIA guest list." }
+  ],
+
+  "tiers": [
+    { "key": "general", "title": "General Admission", "price_usdc": 0, "allocation": 250, "includes": "Free entry to ADS&AI, the Advertising and AI community of Singapore." }
+  ]
+}

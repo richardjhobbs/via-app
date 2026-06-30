@@ -33,6 +33,9 @@ export interface BuyerOnboardState {
   displayName?:        string;
   walletAddress?:      string;       // buyer's funding wallet (where USDC sits for x402 payments)
   // The Buying Agent's identity wallet is platform-derived server-side.
+  // Set when the user arrived from a free-event landing page: after registration
+  // completes, the done step claims this pass and binds it to the new buyer.
+  eventClaim?:         { slug: string; tier: string };
 }
 
 export type OnboardState = SellerOnboardState | BuyerOnboardState;

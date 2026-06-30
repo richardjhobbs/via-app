@@ -32,6 +32,7 @@ import { runSalesAgentAnswer, recordBuyerNote, type BuyerAnswerContext } from '@
 import { parseOfferingSchema, computeQuote, type Selections } from '@/lib/app/quote-pricing';
 import { getDigitalFiles, buyerHasPaidFor, buildDeliverables, DIGITAL_TTL_SECONDS } from '@/lib/app/digital-delivery';
 import { isVoucherProduct, availableVoucherCount } from '@/lib/app/vouchers';
+import { isGuestListProduct, claimEventPass } from '@/lib/app/event-passes';
 import { issueDownloadChallenge, verifyDownloadChallenge } from '@/lib/app/store-auth';
 import { enrichmentFromMetadata } from '@/lib/app/via-product';
 
@@ -607,6 +608,18 @@ function createServer(seller: SellerRow, req: Request) {
         void logInteraction(seller.id, 'buy_product', identity, { product_id, qty, buyer_wallet }, { error: 'admin_removed' }, 404, Date.now() - t0);
         return r;
       }
+      // Free guest-list passes have no price and never touch x402. Route the
+      // agent to claim_pass instead of quoting a zero-value payment requirement.
+      if (isGuestListProduct(product.metadata)) {
+        const r = asJson({
+          error: 'free_pass',
+          message: `"${product.title}" is a free pass. There is nothing to pay. Call claim_pass with { product_id, name, email } to get your place on the guest list.`,
+          next_tool: 'claim_pass',
+          product_id: product.id,
+        });
+        void logInteraction(seller.id, 'buy_product', identity, { product_id, qty, buyer_wallet }, { error: 'free_pass' }, 409, Date.now() - t0);
+        return r;
+      }
       // Configurable products have no single fixed price; they settle through
       // a negotiated quote. Refuse the fixed-price buy path and redirect the
       // buying agent to request_quote.
@@ -845,6 +858,56 @@ function createServer(seller: SellerRow, req: Request) {
         },
       });
       return out;
+    },
+  );
+
+  // ── claim_pass (free event passes — no payment, no x402) ─────────
+  server.tool(
+    'claim_pass',
+    `Claim a FREE entry pass to ${seller.name}. For free-event tiers only (those that decline buy_product with "free_pass"). There is no payment and no wallet needed: provide name and email so the organiser can admit you and we can email your confirmation. One pass per email / per account. Returns a guest-list confirmation. To find the tier, call list_products and use a product_id whose price is 0.`,
+    {
+      product_id:     z.string().uuid().describe('UUID of the free pass tier (see list_products).'),
+      name:           z.string().min(1).max(200).describe('Name of the person attending, for the guest list.'),
+      email:          z.string().email().max(200).describe('Email to confirm the place to and for the organiser to admit you by.'),
+      buyer_wallet:   z.string().regex(/^0x[a-fA-F0-9]{40}$/).optional().describe('Optional Base wallet, if you have a VIA buyer identity.'),
+      buyer_agent_id: z.string().optional().describe('Optional ERC-8004 agent id of the agent claiming on the buyer\'s behalf.'),
+    },
+    async ({ product_id, name, email, buyer_wallet, buyer_agent_id }) => {
+      const t0 = Date.now();
+      const agentId = buyer_agent_id ?? (typeof identity.via_agent_id === 'number' ? String(identity.via_agent_id) : null);
+      const result = await claimEventPass({
+        sellerId:     seller.id,
+        productId:    product_id,
+        name,
+        email,
+        buyerWallet:  buyer_wallet ?? null,
+        buyerAgentId: agentId,
+        source:       'mcp_agent',
+      });
+
+      let status = 200;
+      let payload: Record<string, unknown>;
+      switch (result.outcome) {
+        case 'confirmed':
+          payload = { claimed: true, status: 'confirmed', event: result.eventName, tier: result.tierTitle, guest_id: result.guestId, message: `You are on the guest list for ${result.eventName}. A confirmation email is on its way. There was nothing to pay.` };
+          break;
+        case 'already':
+          payload = { claimed: true, status: 'already_claimed', event: result.eventName, tier: result.tierTitle, message: 'This email or account already holds a pass for this tier. One pass per email / per account.' };
+          break;
+        case 'sold_out':
+          status = 409;
+          payload = { claimed: false, error: 'sold_out', message: `"${result.tierTitle ?? 'This tier'}" has reached its allocation.` };
+          break;
+        case 'not_available':
+          status = 409;
+          payload = { claimed: false, error: 'not_available', message: result.error ?? 'This is not a free pass tier on this store.' };
+          break;
+        default:
+          status = 500;
+          payload = { claimed: false, error: 'claim_failed', message: result.error ?? 'Could not record your place. Please retry.' };
+      }
+      void logInteraction(seller.id, 'claim_pass', identity, { product_id, email }, { outcome: result.outcome }, status, Date.now() - t0);
+      return asJson(payload);
     },
   );
 

@@ -99,8 +99,42 @@ async function resolveOwner() {
   return data.owner_user_id;
 }
 
-// ── Build a voucher product row from a tier ────────────────────────────
+// ── Build a product row from a tier ────────────────────────────────────
+const FULFILMENT_MODE = cfg.fulfilment?.mode ?? 'code_pool';
+const IS_GUEST_LIST = FULFILMENT_MODE === 'guest_list';
+
+// Free guest-list passes: price 0, allocation lives on the stock column (the
+// app_claim_event_seat RPC decrements it), no voucher pool, no mint, no x402.
+function tierToGuestListProduct(tier) {
+  const allocation = Number.isFinite(Number(tier.allocation)) ? Number(tier.allocation) : null;
+  return {
+    kind:            'service',
+    title:           tier.title,
+    description:     tier.includes || `${cfg.name} pass.`,
+    price_minor:     0,
+    currency:        'USDC',
+    stock:           allocation,         // remaining allocation; null = unlimited
+    active:          true,
+    pricing_mode:    'fixed',
+    on_chain_status: 'draft',            // never minted: claim_pass does not settle
+    max_supply:      allocation,
+    metadata: {
+      redemption: cfg.redemption ?? null,
+      fulfilment: { mode: 'guest_list' },
+      event_slug: SLUG,
+      tier_key:   tier.key,
+      via_enrichment: {
+        agentDescription: `${tier.title} for ${cfg.name}. Free entry pass. ${tier.includes || ''}`.trim(),
+        category:   null,
+        tags:       ['event', 'ticket', 'pass', 'free', SLUG],
+        attributes: { event: cfg.name, tier: tier.key, free: true },
+      },
+    },
+  };
+}
+
 function tierToProduct(tier) {
+  if (IS_GUEST_LIST) return tierToGuestListProduct(tier);
   const priceUsdc = Number(tier.price_usdc);
   if (!Number.isFinite(priceUsdc) || priceUsdc <= 0) throw new Error(`tier ${tier.key}: price_usdc must be a positive number`);
   const allocation = Number.isFinite(Number(tier.allocation)) ? Number(tier.allocation) : null;
@@ -269,11 +303,18 @@ async function enableAgent(sellerId) {
   console.log(`Store:    ${cfg.name}  (/sellers/${SLUG})`);
   console.log(`Agent MCP: /sellers/${SLUG}/mcp`);
   console.log(`Admin:    /seller/${SLUG}/admin`);
-  console.log(`Tiers:    ${cfg.tiers.length} voucher products (draft, active; minted at first sale)`);
-  if (!doEnable) {
-    console.log('\nNext: enable the store agent so it is transactable (mints its identity + agent wallet):');
-    console.log(`  - superadmin: open /admin and enable the agent for "${cfg.name}", OR`);
-    console.log(`  - re-run with --enable (needs ADMIN_SECRET + BASE).`);
+  if (IS_GUEST_LIST) {
+    console.log(`Tiers:    ${cfg.tiers.length} FREE guest-list passes (active; no payment, no mint, allocation on stock)`);
+    console.log(`Event:    /events/${SLUG}  (human funnel: create a Buying Agent to claim)`);
+    console.log(`Agents:   call claim_pass on /sellers/${SLUG}/mcp with { product_id, name, email }`);
+    console.log(`Guests:   /seller/${SLUG}/admin/guests  (export the list for the organiser)`);
+  } else {
+    console.log(`Tiers:    ${cfg.tiers.length} voucher products (draft, active; minted at first sale)`);
+    if (!doEnable) {
+      console.log('\nNext: enable the store agent so it is transactable (mints its identity + agent wallet):');
+      console.log(`  - superadmin: open /admin and enable the agent for "${cfg.name}", OR`);
+      console.log(`  - re-run with --enable (needs ADMIN_SECRET + BASE).`);
+    }
+    console.log('Then load redemption codes per tier: re-run with --codes <tierKey>=<file>, one code per line.');
   }
-  console.log('Then load redemption codes per tier: re-run with --codes <tierKey>=<file>, one code per line.');
 })().catch((e) => { console.error('FATAL:', e); process.exit(1); });
