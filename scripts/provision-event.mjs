@@ -276,6 +276,19 @@ async function enableAgent(sellerId) {
     console.log(`[provision] created store id=${sellerId}`);
   }
 
+  // The owner needs an app_seller_members row: every seller-admin surface (the
+  // dashboard, guest list, team) gates on membership, NOT on owner_user_id. The
+  // normal register_store flow creates this; a direct provision must too, or the
+  // store is unreachable by its owner.
+  {
+    const { error } = await db.from('app_seller_members').upsert(
+      { seller_id: sellerId, user_id: ownerId, role: 'owner', accepted_at: new Date().toISOString() },
+      { onConflict: 'seller_id,user_id' },
+    );
+    if (error) throw new Error(`owner membership: ${error.message}`);
+    console.log(`[provision] owner membership ensured for ${ownerId}`);
+  }
+
   const tierIdByKey = {};
   for (const tier of cfg.tiers) {
     tierIdByKey[tier.key] = await upsertProduct(sellerId, tierToProduct(tier));
