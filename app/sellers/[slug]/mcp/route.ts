@@ -575,21 +575,6 @@ function createServer(seller: SellerRow, req: Request) {
     async ({ product_id, qty, buyer_wallet, buyer_agent_id, buyer_country, delivery }) => {
       const t0 = Date.now();
 
-      // Stage-1 gate: a not-yet-integrated store is discovery only. Decline the
-      // purchase with the standard message before touching the DB, and never
-      // point the buyer at the vendor's own checkout.
-      if (!integrated) {
-        const r = asJson({
-          error:   'not_yet_integrated',
-          status:  'coming_soon',
-          message: STAGE1_MESSAGE,
-          seller:  seller.slug,
-          product_id,
-        });
-        void logInteraction(seller.id, 'buy_product', identity, { product_id, qty, buyer_wallet }, { error: 'not_yet_integrated' }, 409, Date.now() - t0);
-        return r;
-      }
-
       const { data: product, error: prodErr } = await db
         .from('app_seller_products')
         .select('id, title, price_minor, currency, stock, token_id, on_chain_status, active, max_supply, kind, pricing_mode, admin_removed, metadata')
@@ -608,8 +593,10 @@ function createServer(seller: SellerRow, req: Request) {
         void logInteraction(seller.id, 'buy_product', identity, { product_id, qty, buyer_wallet }, { error: 'admin_removed' }, 404, Date.now() - t0);
         return r;
       }
-      // Free guest-list passes have no price and never touch x402. Route the
-      // agent to claim_pass instead of quoting a zero-value payment requirement.
+      // Free guest-list passes have no price and never touch x402, and apply even
+      // on a store that was never "integrated" for paid settlement. Route the
+      // agent to claim_pass BEFORE the Stage-1 gate so a free event never reads
+      // back to the buyer as "coming soon, settle in USDC".
       if (isGuestListProduct(product.metadata)) {
         const r = asJson({
           error: 'free_pass',
@@ -618,6 +605,20 @@ function createServer(seller: SellerRow, req: Request) {
           product_id: product.id,
         });
         void logInteraction(seller.id, 'buy_product', identity, { product_id, qty, buyer_wallet }, { error: 'free_pass' }, 409, Date.now() - t0);
+        return r;
+      }
+      // Stage-1 gate: a not-yet-integrated (paid) store is discovery only.
+      // Decline the purchase with the standard message and never point the buyer
+      // at the vendor's own checkout.
+      if (!integrated) {
+        const r = asJson({
+          error:   'not_yet_integrated',
+          status:  'coming_soon',
+          message: STAGE1_MESSAGE,
+          seller:  seller.slug,
+          product_id,
+        });
+        void logInteraction(seller.id, 'buy_product', identity, { product_id, qty, buyer_wallet }, { error: 'not_yet_integrated' }, 409, Date.now() - t0);
         return r;
       }
       // Configurable products have no single fixed price; they settle through
