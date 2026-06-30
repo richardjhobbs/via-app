@@ -67,8 +67,16 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" data-theme="light">
+    <html lang="en" data-theme="light" suppressHydrationWarning>
       <head>
+        {/* Apply the saved theme before first paint so the page never flashes
+            the wrong palette and the theme is correct even before the React
+            ThemeToggle hydrates (matters on heavy, force-dynamic routes). */}
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `(function(){try{var t=localStorage.getItem('rrg-theme');if(t==='dark'||t==='light'){document.documentElement.setAttribute('data-theme',t);}}catch(e){}})();`,
+          }}
+        />
         <link rel="preconnect" href="https://gcxyoujubqclenrhhill.supabase.co" crossOrigin="" />
         <link rel="dns-prefetch" href="https://gcxyoujubqclenrhhill.supabase.co" />
       </head>
