@@ -13,9 +13,9 @@ const PAYMENT_REQUIRED = {
       maxAmountRequired: '10000',
       resource: 'https://app.getvia.xyz/api',
       description:
-        'VIA app API gateway. 0.01 USDC per call, settled on Base to VIA platform wallet 0x58554E...',
+        'VIA app API gateway. 0.01 USDC per call, settled on Base to VIA platform wallet 0xbfd71e...',
       mimeType: 'application/json',
-      payTo: '0x58554E8423EF5C10be6fFC82EfABA9149f64de3d',
+      payTo: '0xbfd71eA27FFc99747dA2873372f84346d9A8b7ed',
       maxTimeoutSeconds: 60,
       asset: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913',
       extra: {

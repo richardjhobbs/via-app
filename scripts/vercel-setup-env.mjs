@@ -31,7 +31,7 @@ const envVars = [
   { key: 'NEXT_PUBLIC_USDC_CONTRACT_TESTNET',     value: '0x036CbD53842c5426634e7929541eC2318f3dCF7e',               envs: ALL_ENVS },
   { key: 'NEXT_PUBLIC_VIA_CONTRACT_ADDRESS',      value: '0x573fad302Be48df7D3A39B381e5E5e794619e174',               envs: ALL_ENVS },
   { key: 'NEXT_PUBLIC_CHAIN_ID',                  value: '84532',                                                     envs: ALL_ENVS },
-  { key: 'NEXT_PUBLIC_PLATFORM_WALLET',           value: '0xe653804032A2d51Cc031795afC601B9b1fd2c375',               envs: ALL_ENVS },
+  { key: 'NEXT_PUBLIC_PLATFORM_WALLET',           value: '0xbfd71eA27FFc99747dA2873372f84346d9A8b7ed',               envs: ALL_ENVS },
   { key: 'NEXT_PUBLIC_SUPABASE_URL',              value: 'https://sanvqnvvzdkjvfmxnxur.supabase.co',                 envs: ALL_ENVS },
   { key: 'NEXT_PUBLIC_SUPABASE_ANON_KEY',         value: 'sb_publishable_llxiA4Ha8Dy0PjezythuPA_WB_ci27b',           envs: ALL_ENVS },
   { key: 'NEXT_PUBLIC_SITE_URL',                  value: 'https://realrealgenuine.com',                               envs: ALL_ENVS },

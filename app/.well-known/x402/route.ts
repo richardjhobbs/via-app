@@ -2,7 +2,7 @@ export const dynamic = 'force-static';
 
 const APP_BASE = 'https://app.getvia.xyz';
 const USDC_BASE = '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913';
-const PLATFORM_WALLET = '0x58554E8423EF5C10be6fFC82EfABA9149f64de3d';
+const PLATFORM_WALLET = '0xbfd71eA27FFc99747dA2873372f84346d9A8b7ed';
 
 const X402 = {
   x402Version: 1,

@@ -18,7 +18,7 @@ const AGENT = {
     network: 'base',
     profile: 'https://8004scan.io/agents/base/38538',
   },
-  wallet: '0x58554E8423EF5C10be6fFC82EfABA9149f64de3d',
+  wallet: '0xbfd71eA27FFc99747dA2873372f84346d9A8b7ed',
   endpoints: {
     mcp:           'https://app.getvia.xyz/mcp',
     per_seller_mcp:'https://app.getvia.xyz/sellers/{slug}/mcp',
@@ -30,7 +30,7 @@ const AGENT = {
     token:    'USDC',
     contract: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913',
     network:  'base-mainnet',
-    address:  '0x58554E8423EF5C10be6fFC82EfABA9149f64de3d',
+    address:  '0xbfd71eA27FFc99747dA2873372f84346d9A8b7ed',
   },
   services: [
     {
