@@ -2,6 +2,7 @@ import { notFound } from 'next/navigation';
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { getPublicProduct, type PublicProduct } from '@/lib/app/seller-catalog';
+import { getFulfilment } from '@/lib/app/vouchers';
 import { db } from '@/lib/app/db';
 import { getBuyerUser } from '@/lib/app/buyer-auth';
 import { Wordmark } from '@/components/app/Wordmark';
@@ -51,6 +52,19 @@ export default async function ProductPage({ params }: { params: Promise<{ slug: 
     .eq('slug', seller.slug)
     .maybeSingle();
   const buyable = !configurable && product.price_usdc !== null && Boolean(sellerRow?.agent_wallet_address);
+
+  // Whether an event pass is fulfilled manually (organiser issues it, buyer gets
+  // a receipt not a code) so the checkout copy is accurate. Only relevant for
+  // voucher products; one extra read, gated to those.
+  let manualFulfilment = false;
+  if (buyable && product.is_voucher) {
+    const { data: pm } = await db
+      .from('app_seller_products')
+      .select('metadata')
+      .eq('id', product.product_id)
+      .maybeSingle();
+    manualFulfilment = getFulfilment(pm?.metadata).mode === 'manual';
+  }
 
   // If a VIA buyer is logged in, recognise their funding wallet so the checkout
   // can greet them and confirm when their connected wallet is the VIA one they
@@ -121,6 +135,7 @@ export default async function ProductPage({ params }: { params: Promise<{ slug: 
                 priceUsdc={product.price_usdc as number}
                 kind={product.kind}
                 isVoucher={product.is_voucher}
+                manual={manualFulfilment}
                 buyerWallet={buyerWallet}
                 buyerName={buyerName}
               />

@@ -14,7 +14,7 @@ import { ethers } from 'ethers';
 import { db } from '@/lib/app/db';
 import { getShippingConfig, computeShippingQuote } from '@/lib/app/shipping';
 import { getDigitalFiles } from '@/lib/app/digital-delivery';
-import { isVoucherProduct, availableVoucherCount } from '@/lib/app/vouchers';
+import { isVoucherProduct, availableVoucherCount, getFulfilment } from '@/lib/app/vouchers';
 import { getBuyerUser } from '@/lib/app/buyer-auth';
 
 export const dynamic = 'force-dynamic';
@@ -33,7 +33,7 @@ export async function POST(
 ) {
   const { slug, id } = await params;
 
-  let body: { qty?: unknown; buyer_wallet?: unknown; buyer_country?: unknown; delivery?: DeliveryInput; method?: unknown; email?: unknown };
+  let body: { qty?: unknown; buyer_wallet?: unknown; buyer_country?: unknown; delivery?: DeliveryInput; method?: unknown; email?: unknown; name?: unknown; country?: unknown };
   try { body = await req.json(); } catch { return NextResponse.json({ error: 'invalid JSON body' }, { status: 400 }); }
 
   const qty          = Math.max(1, Math.min(1000, Math.floor(Number(body.qty ?? 1)) || 1));
@@ -42,6 +42,9 @@ export async function POST(
   const method       = body.method === 'card' ? 'card' : 'usdc';
   const delivery     = body.delivery;
   const email        = typeof body.email === 'string' ? body.email.trim() : '';
+  // Attendee details for an event pass (the person the pass is issued to).
+  const attendeeName    = typeof body.name === 'string' ? body.name.trim() : '';
+  const attendeeCountry = typeof body.country === 'string' ? body.country.trim() : '';
 
   if (!ethers.isAddress(buyerWallet)) {
     return NextResponse.json({ error: 'a valid wallet address is required' }, { status: 400 });
@@ -101,14 +104,24 @@ export async function POST(
   // The email is where the redemption code is delivered.
   let deliveryRow: Record<string, string | null> | null = null;
   if (isVoucher) {
+    if (!attendeeName) {
+      return NextResponse.json({ error: 'a name is required for the pass', required_fields: ['name'] }, { status: 400 });
+    }
     if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
-      return NextResponse.json({ error: 'an email address is required to receive your pass' }, { status: 400 });
+      return NextResponse.json({ error: 'a valid email address is required to receive your pass', required_fields: ['email'] }, { status: 400 });
     }
-    const remaining = await availableVoucherCount(product.id as string);
-    if (qty > remaining) {
-      return NextResponse.json({ error: remaining === 0 ? 'this pass is sold out' : `only ${remaining} left`, available: remaining }, { status: 409 });
+    if (!attendeeCountry) {
+      return NextResponse.json({ error: 'a country is required for the pass', required_fields: ['country'] }, { status: 400 });
     }
-    deliveryRow = { email };
+    // Only gate on the code pool when this pass is actually delivered from it.
+    // Manual and luma_api fulfilment issue no pool code, so an empty pool is fine.
+    if (getFulfilment(product.metadata).mode === 'code_pool') {
+      const remaining = await availableVoucherCount(product.id as string);
+      if (qty > remaining) {
+        return NextResponse.json({ error: remaining === 0 ? 'this pass is sold out' : `only ${remaining} left`, available: remaining }, { status: 409 });
+      }
+    }
+    deliveryRow = { name: attendeeName, email, country: attendeeCountry };
   }
 
   // ── Physical delivery details ──
@@ -135,7 +148,9 @@ export async function POST(
   }
 
   // ── Shipping quote (shared helpers, identical math to buy_product) ──
-  const country = buyerCountry || (deliveryRow?.country ?? '');
+  // Only physical orders ship; an event pass's attendee country must not feed
+  // the shipping quote (it would wrongly trip country-exclusion rules).
+  const country = product.kind === 'physical' ? (buyerCountry || (deliveryRow?.country ?? '')) : '';
   const shippingConfig = getShippingConfig(seller.shipping);
   const shippingQuote  = country ? computeShippingQuote(shippingConfig, country) : null;
   if (shippingQuote && (shippingQuote.status === 'country_excluded' || shippingQuote.status === 'not_shipping_internationally')) {

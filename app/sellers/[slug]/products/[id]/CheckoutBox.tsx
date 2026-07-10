@@ -39,14 +39,17 @@ const INPUT_CLS = 'w-full bg-background border border-line-strong px-3 py-2 text
 interface OrderInfo { order_ref: string; total_usdc: number; }
 
 export function CheckoutBox({
-  slug, productId, priceUsdc, kind, isVoucher = false, buyerWallet, buyerName,
+  slug, productId, priceUsdc, kind, isVoucher = false, manual = false, buyerWallet, buyerName,
 }: {
   slug: string;
   productId: string;
   priceUsdc: number;
   kind: string | null;
-  /** true for an event pass: collect an email and deliver a redemption code. */
+  /** true for an event pass: collect the attendee name, email and country. */
   isVoucher?: boolean;
+  /** true when the pass is fulfilled manually (no code): the organiser issues
+   *  it and the buyer gets a payment receipt rather than a redemption code. */
+  manual?: boolean;
   /** The logged-in VIA buyer's funding wallet, if any. Used to greet them and
    *  confirm when the connected wallet is the VIA one they onboarded with. */
   buyerWallet?: string | null;
@@ -90,6 +93,9 @@ export function CheckoutBox({
 
   const [delivery, setDelivery] = useState<Delivery>(EMPTY_DELIVERY);
   const [email, setEmail]       = useState('');
+  // Attendee details for an event pass (the person the pass is issued to).
+  const [attendeeName, setAttendeeName]       = useState('');
+  const [attendeeCountry, setAttendeeCountry] = useState('');
   const [status, setStatus]     = useState<'idle' | 'working' | 'card' | 'done' | 'error'>('idle');
   const [msg, setMsg]           = useState('');
   const [order, setOrder]       = useState<OrderInfo | null>(null);
@@ -106,9 +112,17 @@ export function CheckoutBox({
   }
 
   const emailValid = /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email.trim());
+  // An event pass needs the attendee's name, email and country before payment.
+  const attendeeReady = !isVoucher || (attendeeName.trim().length > 0 && emailValid && attendeeCountry.trim().length > 0);
 
   function deliveryMissing(): string | null {
-    if (isVoucher && !emailValid) return 'Please enter a valid email to receive your pass.';
+    if (isVoucher) {
+      const missing: string[] = [];
+      if (!attendeeName.trim())    missing.push('name');
+      if (!emailValid)             missing.push('a valid email');
+      if (!attendeeCountry.trim()) missing.push('country');
+      return missing.length ? `Please add: ${missing.join(', ')}.` : null;
+    }
     if (!isPhysical) return null;
     const req: Array<[keyof Delivery, string]> = [
       ['name', 'name'], ['address_line1', 'address'], ['city', 'city'],
@@ -128,7 +142,9 @@ export function CheckoutBox({
         method,
         buyer_country: isPhysical ? delivery.country.trim().toUpperCase() : undefined,
         delivery: isPhysical ? delivery : undefined,
-        email: isVoucher ? email.trim() : undefined,
+        email:   isVoucher ? email.trim() : undefined,
+        name:    isVoucher ? attendeeName.trim() : undefined,
+        country: isVoucher ? attendeeCountry.trim() : undefined,
       }),
     });
     const json = await res.json();
@@ -254,6 +270,11 @@ export function CheckoutBox({
             Order <span className="font-mono text-ink">{orderRef}</span> settled in USDC on Base. The seller has been
             notified and will fulfil your order. Keep this reference for any follow-up.
           </p>
+        ) : isVoucher ? (
+          <p className="mt-3 text-sm text-ink-2">
+            Order <span className="font-mono text-ink">{orderRef}</span> settled in USDC on Base. Your pass is confirmed and
+            we have emailed your receipt. The organiser will issue your pass and follow up by email. Keep this reference for any follow-up.
+          </p>
         ) : (
           <p className="mt-3 text-sm text-ink-2">
             Order <span className="font-mono text-ink">{orderRef}</span> settled in USDC on Base. The seller has been
@@ -350,15 +371,35 @@ export function CheckoutBox({
 
       {isVoucher && (
         <div className="mt-5">
-          <div className="uc-mono text-ink-3" style={{ fontSize: 10 }}>Where to send your pass</div>
-          <input
-            className={`${INPUT_CLS} mt-3`}
-            type="email"
-            placeholder="you@example.com"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-          />
-          <p className="mt-2 text-xs text-ink-3">Your redemption code is shown here after payment and emailed to this address.</p>
+          <div className="uc-mono text-ink-3" style={{ fontSize: 10 }}>Attendee details</div>
+          <div className="mt-3 grid gap-2 sm:grid-cols-2">
+            <input
+              className={`${INPUT_CLS} sm:col-span-2`}
+              type="text"
+              placeholder="Full name"
+              value={attendeeName}
+              onChange={(e) => setAttendeeName(e.target.value)}
+            />
+            <input
+              className={INPUT_CLS}
+              type="email"
+              placeholder="you@example.com"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+            />
+            <input
+              className={INPUT_CLS}
+              type="text"
+              placeholder="Country"
+              value={attendeeCountry}
+              onChange={(e) => setAttendeeCountry(e.target.value)}
+            />
+          </div>
+          <p className="mt-2 text-xs text-ink-3">
+            {manual
+              ? 'The pass is issued to this name. We email your order confirmation and receipt to this address, and the organiser follows up with your pass.'
+              : 'Your redemption code is shown here after payment and emailed to this address.'}
+          </p>
         </div>
       )}
 
@@ -407,7 +448,7 @@ export function CheckoutBox({
             <button
               type="button"
               onClick={() => void payWithUsdc()}
-              disabled={!account || status === 'working' || insufficient || (isVoucher && !emailValid)}
+              disabled={!account || status === 'working' || insufficient || (isVoucher && !attendeeReady)}
               className="btn disabled:opacity-40 disabled:cursor-not-allowed"
             >
               {status === 'working' ? 'Working…' : `Pay ${priceUsdc.toFixed(2)} USDC`}
@@ -416,7 +457,7 @@ export function CheckoutBox({
               <button
                 type="button"
                 onClick={() => void startCard()}
-                disabled={!account || status === 'working' || (isVoucher && !emailValid)}
+                disabled={!account || status === 'working' || (isVoucher && !attendeeReady)}
                 className="btn ghost disabled:opacity-40 disabled:cursor-not-allowed"
               >
                 Pay with card
