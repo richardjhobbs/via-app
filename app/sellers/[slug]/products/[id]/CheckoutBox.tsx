@@ -36,7 +36,7 @@ const EMPTY_DELIVERY: Delivery = {
 
 const INPUT_CLS = 'w-full bg-background border border-line-strong px-3 py-2 text-sm outline-none focus:border-ink transition-colors';
 
-interface OrderInfo { order_ref: string; total_usdc: number; }
+interface OrderInfo { order_ref: string; total_usdc: number; platform_wallet?: string; }
 
 export function CheckoutBox({
   slug, productId, priceUsdc, kind, isVoucher = false, manual = false, buyerWallet, buyerName,
@@ -96,6 +96,12 @@ export function CheckoutBox({
   // Attendee details for an event pass (the person the pass is issued to).
   const [attendeeName, setAttendeeName]       = useState('');
   const [attendeeCountry, setAttendeeCountry] = useState('');
+  // "Pay by transfer" lane: paste the address you will send from, send the USDC
+  // yourself on Base, then confirm with the transfer's tx hash. No in-browser
+  // signer needed, so it works when there is no wallet to connect on this device.
+  const [payBy, setPayBy]         = useState<'wallet' | 'transfer'>('wallet');
+  const [manualAddr, setManualAddr] = useState('');
+  const [txHash, setTxHash]         = useState('');
   const [status, setStatus]     = useState<'idle' | 'working' | 'card' | 'done' | 'error'>('idle');
   const [msg, setMsg]           = useState('');
   const [order, setOrder]       = useState<OrderInfo | null>(null);
@@ -132,13 +138,15 @@ export function CheckoutBox({
     return missing.length ? `Please add: ${missing.join(', ')}.` : null;
   }
 
-  async function createOrder(method: 'usdc' | 'card'): Promise<OrderInfo> {
+  // buyer_wallet defaults to the connected account, but the transfer lane passes
+  // the address the buyer pasted (they pay from it directly).
+  async function createOrder(method: 'usdc' | 'card', walletOverride?: string): Promise<OrderInfo> {
     const res = await fetch(`/api/sellers/${slug}/products/${productId}/order`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         qty: 1,
-        buyer_wallet: account!.address,
+        buyer_wallet: walletOverride ?? account!.address,
         method,
         buyer_country: isPhysical ? delivery.country.trim().toUpperCase() : undefined,
         delivery: isPhysical ? delivery : undefined,
@@ -149,17 +157,11 @@ export function CheckoutBox({
     });
     const json = await res.json();
     if (!res.ok) throw new Error(json.error || `Order failed (${res.status})`);
-    return { order_ref: json.order_ref, total_usdc: json.total_usdc };
+    return { order_ref: json.order_ref, total_usdc: json.total_usdc, platform_wallet: json.platform_wallet };
   }
 
-  async function settle(ref: string, xPayment: string) {
-    const res = await fetch('/api/x402/purchase', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ order_ref: ref, x_payment: xPayment }),
-    });
-    const json = await res.json();
-    if (!res.ok || !json.settled) throw new Error(json.error || 'Settlement failed');
+  // Shared handling of a settled response (permit lane and transfer lane both).
+  function applyResult(json: Record<string, unknown>, ref: string) {
     setDownloads(Array.isArray(json.download)
       ? json.download.filter((d: unknown): d is { filename: string; url: string } =>
           !!d && typeof (d as { url?: unknown }).url === 'string')
@@ -171,6 +173,56 @@ export function CheckoutBox({
     setOrderRef(ref);
     setStatus('done');
     setMsg('');
+  }
+
+  async function settle(ref: string, xPayment: string) {
+    const res = await fetch('/api/x402/purchase', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ order_ref: ref, x_payment: xPayment }),
+    });
+    const json = await res.json();
+    if (!res.ok || !json.settled) throw new Error(json.error || 'Settlement failed');
+    applyResult(json, ref);
+  }
+
+  const manualAddrValid = /^0x[a-fA-F0-9]{40}$/.test(manualAddr.trim());
+  const txHashValid     = /^0x[a-fA-F0-9]{64}$/.test(txHash.trim());
+
+  // Transfer lane, step 1: record the order against the pasted from-address.
+  async function createTransferOrder() {
+    if (!manualAddrValid) { setMsg('Enter a valid wallet address (0x followed by 40 characters).'); return; }
+    const dm = deliveryMissing();
+    if (dm) { setMsg(dm); return; }
+    setStatus('working'); setMsg('Creating order…');
+    try {
+      const o = await createOrder('usdc', manualAddr.trim());
+      setOrder(o);
+      setStatus('idle'); setMsg('');
+    } catch (e) {
+      setStatus('error');
+      setMsg(e instanceof Error ? e.message : 'Could not create order');
+    }
+  }
+
+  // Transfer lane, step 2: verify the on-chain USDC transfer the buyer sent.
+  async function confirmTransfer() {
+    if (!order) return;
+    if (!txHashValid) { setMsg('Paste the transaction hash of your USDC transfer (0x followed by 64 characters).'); return; }
+    setStatus('working'); setMsg('Verifying your transfer on Base…');
+    try {
+      const res = await fetch('/api/x402/purchase', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ order_ref: order.order_ref, payment_tx_hash: txHash.trim() }),
+      });
+      const json = await res.json();
+      if (!res.ok || !json.settled) throw new Error(json.error || 'We could not verify that transfer. Check the hash and that it was sent from the address you entered.');
+      applyResult(json, order.order_ref);
+    } catch (e) {
+      setStatus('error');
+      setMsg(e instanceof Error ? e.message : 'Verification failed');
+    }
   }
 
   // USDC path: create order, transfer USDC from the connected wallet, settle.
@@ -294,9 +346,23 @@ export function CheckoutBox({
         Pay {priceUsdc.toFixed(2)} USDC on Base. Settles instantly, the seller is notified to fulfil your order.
       </p>
 
+      {/* Two ways to pay: connect a wallet in this browser, or send the USDC
+          yourself from any wallet and confirm with the transaction hash. */}
+      <div className="mt-4 flex gap-2">
+        <button type="button" onClick={() => { setPayBy('wallet'); setMsg(''); }}
+          className={`uc-mono px-3 py-2 border transition-colors ${payBy === 'wallet' ? 'border-ink text-ink' : 'border-line text-ink-3 hover:text-ink'}`} style={{ fontSize: 10 }}>
+          Connect a wallet
+        </button>
+        <button type="button" onClick={() => { setPayBy('transfer'); setMsg(''); }}
+          className={`uc-mono px-3 py-2 border transition-colors ${payBy === 'transfer' ? 'border-ink text-ink' : 'border-line text-ink-3 hover:text-ink'}`} style={{ fontSize: 10 }}>
+          Pay by USDC transfer
+        </button>
+      </div>
+
       {/* Step 1: get a wallet. You pay from your own wallet, the one VIA makes
           for you (sign in with email or Google), or your own (MetaMask, Coinbase).
           Both buttons open the same chooser, labelled for new vs existing users. */}
+      {payBy === 'wallet' && (
       <div className="mt-4">
         <div className="uc-mono text-ink-3" style={{ fontSize: 10 }}>Step 1 · Your wallet</div>
         {!account ? (
@@ -344,8 +410,9 @@ export function CheckoutBox({
           </div>
         )}
       </div>
+      )}
 
-      {insufficient && status !== 'card' && (
+      {payBy === 'wallet' && insufficient && status !== 'card' && (
         <div className="mt-4 border border-line-strong bg-background p-4">
           <p className="text-sm text-ink-2">
             Not enough USDC: you have {balance!.toFixed(2)} USDC, this item costs {priceUsdc.toFixed(2)} USDC. Top up your wallet to continue.
@@ -419,7 +486,60 @@ export function CheckoutBox({
         </div>
       )}
 
-      {status === 'card' && order ? (
+      {payBy === 'transfer' && (
+        <div className="mt-5">
+          <div className="uc-mono text-ink-3" style={{ fontSize: 10 }}>Pay by USDC transfer</div>
+          {!order ? (
+            <>
+              <p className="mt-2 text-sm text-ink-2">
+                Have USDC on Base in a wallet you cannot connect here? Paste that wallet address, then send the payment yourself and confirm it with the transaction hash.
+              </p>
+              <input
+                className={`${INPUT_CLS} mt-3 font-mono`}
+                type="text"
+                placeholder="0x your wallet address"
+                value={manualAddr}
+                onChange={(e) => setManualAddr(e.target.value.trim())}
+              />
+              <button
+                type="button"
+                onClick={() => void createTransferOrder()}
+                disabled={!manualAddrValid || status === 'working' || (isVoucher && !attendeeReady)}
+                className="btn mt-3 disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                {status === 'working' ? 'Working…' : 'Continue'}
+              </button>
+              <p className="mt-2 text-xs text-ink-3">You pay from this address on the next step. It must be a wallet you control on Base.</p>
+            </>
+          ) : (
+            <>
+              <p className="mt-2 text-sm text-ink-2">
+                Send exactly <span className="font-mono text-ink">{order.total_usdc.toFixed(2)} USDC</span> on Base from <span className="font-mono text-ink">{manualAddr.slice(0, 6)}…{manualAddr.slice(-4)}</span> to this address:
+              </p>
+              <div className="mt-2 break-all border border-line-strong bg-background px-3 py-2 font-mono text-sm text-ink">{order.platform_wallet}</div>
+              <p className="mt-3 text-sm text-ink-2">Then paste the transaction hash to confirm your payment.</p>
+              <input
+                className={`${INPUT_CLS} mt-2 font-mono`}
+                type="text"
+                placeholder="0x transaction hash"
+                value={txHash}
+                onChange={(e) => setTxHash(e.target.value.trim())}
+              />
+              <button
+                type="button"
+                onClick={() => void confirmTransfer()}
+                disabled={!txHashValid || status === 'working'}
+                className="btn mt-3 disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                {status === 'working' ? 'Verifying…' : 'Confirm payment'}
+              </button>
+              <p className="mt-2 text-xs text-ink-3">Order {order.order_ref}. The transfer must come from the address you entered and match the amount. Each transfer settles one order.</p>
+            </>
+          )}
+        </div>
+      )}
+
+      {payBy === 'wallet' && (status === 'card' && order ? (
         <div className="mt-5">
           <PayEmbed
             client={thirdwebClient}
@@ -465,9 +585,9 @@ export function CheckoutBox({
             )}
           </div>
         </div>
-      )}
+      ))}
 
-      {priceUsdc < CARD_MIN_USD && (
+      {payBy === 'wallet' && priceUsdc < CARD_MIN_USD && (
         <p className="mt-3 text-xs text-ink-3">Paying by card has a {CARD_MIN_USD} USDC minimum to keep card fees reasonable; the extra stays in your wallet for your next purchase.</p>
       )}
       {msg && <p className={`mt-3 text-sm ${status === 'error' ? 'text-[color:var(--danger)]' : 'text-ink-2'}`}>{msg}</p>}
