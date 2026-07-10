@@ -35,6 +35,18 @@ export function getVoucherRedemption(metadata: unknown): VoucherRedemption | nul
 }
 
 /**
+ * Buyer-facing support address for a pass (the "email us for more info" line on
+ * the receipt). Set per event via metadata.support_email; distinct from the
+ * store's account contact so the buyer writes to the organiser, not the owner.
+ * Null when unset, so callers can fall back to the store contact.
+ */
+export function getSupportEmail(metadata: unknown): string | null {
+  const m = metadata as Record<string, unknown> | null | undefined;
+  const e = m?.support_email;
+  return typeof e === 'string' && e.trim() ? e.trim() : null;
+}
+
+/**
  * Claim up to `qty` codes for a purchase, idempotently. Codes already bound to
  * this purchase are returned as-is (so a settlement re-POST / recovery yields
  * the same codes rather than burning new ones); only the shortfall is claimed.

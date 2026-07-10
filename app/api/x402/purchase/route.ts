@@ -9,7 +9,7 @@ import { postViaReputationSignal, parseAgentId } from '@/lib/app/via-reputation'
 import { lookupAgentIdByWallet } from '@/lib/app/erc8004';
 import { insertNotification } from '@/lib/app/notifications';
 import { getDigitalFiles, buildDeliverables, type Deliverable } from '@/lib/app/digital-delivery';
-import { isVoucherProduct, getVoucherRedemption, getFulfilment, fulfilVoucherPurchase } from '@/lib/app/vouchers';
+import { isVoucherProduct, getVoucherRedemption, getFulfilment, getSupportEmail, fulfilVoucherPurchase } from '@/lib/app/vouchers';
 import { sendTicketDeliveryEmail, sendTicketRegisteredEmail, sendTicketReceiptEmail, sendEventOrderToAdmins } from '@/lib/app/email';
 import { listAdminEmails } from '@/lib/app/seller-team';
 
@@ -488,7 +488,7 @@ export async function POST(req: NextRequest) {
             await sendTicketReceiptEmail({
               to: buyerEmail, eventName, tierTitle, orderRef,
               priceUsdc: totalUsdc, txHash: pay.txHash,
-              supportEmail: String(seller.contact_email ?? '').trim(),
+              supportEmail: getSupportEmail(prodMeta?.metadata) ?? String(seller.contact_email ?? '').trim(),
               websiteUrl: (seller.website_url as string | null) ?? null,
             });
           } catch (mailErr) {

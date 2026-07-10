@@ -152,6 +152,9 @@ function tierToProduct(tier) {
     metadata: {
       voucher:    true,
       redemption: cfg.redemption ?? null,
+      // Buyer-facing support address on the receipt (falls back to the store
+      // contact at settlement when unset). Distinct from the account owner email.
+      support_email: cfg.support_email ?? null,
       // Fulfilment mode (code_pool default, or luma_api with auto-fallback). The
       // Luma API key is never stored here, only the name of the env var holding it.
       fulfilment: cfg.fulfilment
