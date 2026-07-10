@@ -789,7 +789,7 @@ export async function sendTicketReceiptEmail({
       <p class="sub">${escHtml(eventName)}</p>
     </div>
     <div class="body">
-      <p class="copy">Thank you for your order. Your payment settled in USDC on Base and your order is confirmed. The organiser will process your pass and be in touch with the next steps.</p>
+      <p class="copy">Thank you for purchasing your ${escHtml(eventName)} pass using VIA. Your payment settled in USDC on Base and your order is confirmed. The organiser will process your pass and be in touch with the next steps.</p>
 
       <p class="lbl">Order</p>
       <table width="100%" cellpadding="0" cellspacing="0" style="border:1px solid #e8e3db;border-collapse:collapse;margin:0 0 24px;"><tbody>
@@ -800,6 +800,10 @@ export async function sendTicketReceiptEmail({
 
       <p class="copy">If any further information is required, send a request by email to <a href="mailto:${escHtml(supportEmail)}">${escHtml(supportEmail)}</a>.</p>
       ${websiteUrl ? `<a class="btn" href="${escHtml(websiteUrl)}">Visit the website</a>` : ''}
+
+      <div style="margin-top:28px;padding-top:20px;border-top:1px solid #e8e3db;">
+        <p class="copy" style="margin:0;">VIA is the first end-to-end fully agentic platform for buyers and sellers. You, or your agent, can create and run a store on VIA. Just point them to <a href="https://app.getvia.xyz/mcp">app.getvia.xyz/mcp</a> or <a href="https://getvia.xyz">getvia.xyz</a> and select JOIN.</p>
+      </div>
     </div>
   </div>
   <table width="100%" cellpadding="0" cellspacing="0" style="margin-top:32px;padding-top:20px;border-top:1px solid #e8e3db;"><tbody><tr>
