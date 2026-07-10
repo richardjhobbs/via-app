@@ -514,10 +514,10 @@ export function CheckoutBox({
           ) : (
             <>
               <p className="mt-2 text-sm text-ink-2">
-                Send exactly <span className="font-mono text-ink">{order.total_usdc.toFixed(2)} USDC</span> on Base from <span className="font-mono text-ink">{manualAddr.slice(0, 6)}…{manualAddr.slice(-4)}</span> to this address:
+                In your own wallet or exchange, send exactly <span className="font-mono text-ink">{order.total_usdc.toFixed(2)} USDC</span> on Base from <span className="font-mono text-ink">{manualAddr.slice(0, 6)}…{manualAddr.slice(-4)}</span> to this address:
               </p>
               <div className="mt-2 break-all border border-line-strong bg-background px-3 py-2 font-mono text-sm text-ink">{order.platform_wallet}</div>
-              <p className="mt-3 text-sm text-ink-2">Then paste the transaction hash to confirm your payment.</p>
+              <p className="mt-3 text-sm text-ink-2">VIA does not move your funds; you make this transfer yourself. Once it confirms, your wallet or a Base explorer shows a transaction hash. Paste it below to complete the order.</p>
               <input
                 className={`${INPUT_CLS} mt-2 font-mono`}
                 type="text"
