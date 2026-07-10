@@ -799,7 +799,7 @@ export async function sendTicketReceiptEmail({
       </tbody></table>
 
       <p class="copy">If any further information is required, send a request by email to <a href="mailto:${escHtml(supportEmail)}">${escHtml(supportEmail)}</a>.</p>
-      ${websiteUrl ? `<a class="btn" href="${escHtml(websiteUrl)}">Visit the website</a>` : ''}
+      ${websiteUrl ? `<a class="btn" href="${escHtml(websiteUrl)}" style="color:#faf7f2;text-decoration:none;">Visit the website</a>` : ''}
 
       <div style="margin-top:28px;padding-top:20px;border-top:1px solid #e8e3db;">
         <p class="copy" style="margin:0;">VIA is the first end-to-end fully agentic platform for buyers and sellers. You, or your agent, can create and run a store on VIA. Just point them to <a href="https://app.getvia.xyz/mcp">app.getvia.xyz/mcp</a> or <a href="https://getvia.xyz">getvia.xyz</a> and select JOIN.</p>
@@ -905,7 +905,7 @@ export async function sendEventOrderToAdmins({
         ${txHash ? mkRow('On-chain tx', `<a href="${scanBase}/tx/${txHash}" style="color:#6b4f3a;${monoStyle}">${txHash.slice(0, 14)}&hellip;${txHash.slice(-6)}</a>`, true) : ''}
       </tbody></table>
 
-      ${dashboardUrl ? `<a class="btn" href="${escHtml(dashboardUrl)}">View order</a>` : ''}
+      ${dashboardUrl ? `<a class="btn" href="${escHtml(dashboardUrl)}" style="color:#faf7f2;text-decoration:none;">View order</a>` : ''}
     </div>
   </div>
   <table width="100%" cellpadding="0" cellspacing="0" style="margin-top:32px;padding-top:20px;border-top:1px solid #e8e3db;"><tbody><tr>
