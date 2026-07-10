@@ -7,6 +7,7 @@ import { base } from 'thirdweb/chains';
 import { thirdwebClient } from '@/lib/app/thirdwebClient';
 import { buildUsdcPermitXPayment } from '@/lib/app/sendUsdc';
 import { BuyerWalletAutoConnect } from '@/components/app/BuyerWalletAutoConnect';
+import { CopyField } from './CopyField';
 
 /* ──────────────────────────────────────────────────────────────────────────
    Human checkout for a single product. Mirrors RRG's PurchaseFlow but settles
@@ -514,9 +515,14 @@ export function CheckoutBox({
           ) : (
             <>
               <p className="mt-2 text-sm text-ink-2">
-                In your own wallet or exchange, send exactly <span className="font-mono text-ink">{order.total_usdc.toFixed(2)} USDC</span> on Base from <span className="font-mono text-ink">{manualAddr.slice(0, 6)}…{manualAddr.slice(-4)}</span> to this address:
+                In your own wallet or exchange, send exactly <span className="font-mono text-ink">{order.total_usdc.toFixed(2)} USDC</span> on Base from <span className="font-mono text-ink">{manualAddr.slice(0, 6)}…{manualAddr.slice(-4)}</span> to the VIA address below.
               </p>
-              <div className="mt-2 break-all border border-line-strong bg-background px-3 py-2 font-mono text-sm text-ink">{order.platform_wallet}</div>
+              <div className="mt-2 border border-line-strong bg-background px-3 py-2">
+                <div className="uc-mono text-ink-3" style={{ fontSize: 10 }}>Send to (Base)</div>
+                <div className="mt-1 text-sm">
+                  <CopyField value={order.platform_wallet ?? ''} />
+                </div>
+              </div>
               <p className="mt-3 text-sm text-ink-2">VIA does not move your funds; you make this transfer yourself. Once it confirms, your wallet or a Base explorer shows a transaction hash. Paste it below to complete the order.</p>
               <input
                 className={`${INPUT_CLS} mt-2 font-mono`}
