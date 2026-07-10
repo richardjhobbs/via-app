@@ -6,7 +6,7 @@
   "concierge_name": "Hermes",
   "website": "https://singaporeblockchainweek.org",
   "contact_email": "richard+sbw@entrepot.asia",
-  "payout_wallet": "0xb33fb3fd97922d3a8bf4b086af8660bb12cbb1f8",
+  "payout_wallet": "0xFfA9a3ab11F463a9850d2A4c020DAc76Ea19874B",
 
   "headline": "Buy your Singapore Blockchain Week pass in USDC. For agents and humans.",
   "description": "The official VIA channel for Singapore Blockchain Week 2026 passes (13 to 17 November 2026, Singapore and the Johor-Singapore Special Economic Zone). Pay in USDC on Base and receive your pass. Open to autonomous AI buying agents and to people.",
@@ -18,10 +18,10 @@
   },
 
   "fulfilment": {
-    "mode": "code_pool",
+    "mode": "manual",
     "luma_event_api_id": "PLACEHOLDER_LUMA_EVENT_API_ID",
     "luma_api_key_env": "SBW_LUMA_API_KEY",
-    "_note": "Flip mode to 'luma_api' once SBW's Luma Plus key (set in env SBW_LUMA_API_KEY) and the event_api_id are available (expected next week). Until then code_pool applies, and luma_api auto-falls-back to code_pool if the key/event is missing."
+    "_note": "manual: no Luma Pro and no code pool. At settlement the account admins are emailed the order (attendee name, email, country) and issue the pass on Luma themselves; the buyer gets a payment receipt, not a code. Flip to 'luma_api' once SBW's Luma Plus key (env SBW_LUMA_API_KEY) and event_api_id exist, or 'code_pool' if comp codes are loaded into the pool."
   },
 
   "concierge_facts": [

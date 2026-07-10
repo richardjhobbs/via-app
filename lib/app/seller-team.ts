@@ -91,6 +91,20 @@ export async function listTeam(sellerId: string): Promise<{
   return { members, invites };
 }
 
+/**
+ * Emails of the people who run a store: the owner plus every accepted admin.
+ * Used to notify the account of orders that need manual fulfilment. Deduped and
+ * lower-cased; viewers and pending (unaccepted) invites are excluded.
+ */
+export async function listAdminEmails(sellerId: string): Promise<string[]> {
+  const { members } = await listTeam(sellerId);
+  const emails = members
+    .filter((m) => m.role === 'owner' || (m.role === 'admin' && m.acceptedAt))
+    .map((m) => m.email.trim().toLowerCase())
+    .filter((e) => e.includes('@'));
+  return Array.from(new Set(emails));
+}
+
 // ── Invite ────────────────────────────────────────────────────────────
 
 /** Find an existing auth user by email (case-insensitive). Null if none. */

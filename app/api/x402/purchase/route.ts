@@ -9,8 +9,9 @@ import { postViaReputationSignal, parseAgentId } from '@/lib/app/via-reputation'
 import { lookupAgentIdByWallet } from '@/lib/app/erc8004';
 import { insertNotification } from '@/lib/app/notifications';
 import { getDigitalFiles, buildDeliverables, type Deliverable } from '@/lib/app/digital-delivery';
-import { isVoucherProduct, getVoucherRedemption, fulfilVoucherPurchase } from '@/lib/app/vouchers';
-import { sendTicketDeliveryEmail, sendTicketRegisteredEmail } from '@/lib/app/email';
+import { isVoucherProduct, getVoucherRedemption, getFulfilment, fulfilVoucherPurchase } from '@/lib/app/vouchers';
+import { sendTicketDeliveryEmail, sendTicketRegisteredEmail, sendTicketReceiptEmail, sendEventOrderToAdmins } from '@/lib/app/email';
+import { listAdminEmails } from '@/lib/app/seller-team';
 
 export const dynamic = 'force-dynamic';
 
@@ -124,7 +125,7 @@ export async function POST(req: NextRequest) {
       id, status, total_usdc, buyer_wallet, buyer_agent_id, qty,
       mint_tx_hash, payout_tx_hash, payment_tx_hash, order_ref, delivery_address,
       product:product_id ( id, title, token_id, price_minor, max_supply, metadata, on_chain_contract_address ),
-      seller:seller_id ( id, slug, name, wallet_address, seller_pct_override, erc8004_agent_id, owner_user_id, contact_email )
+      seller:seller_id ( id, slug, name, wallet_address, seller_pct_override, erc8004_agent_id, owner_user_id, contact_email, website_url )
     `)
     .eq('order_ref', orderRef)
     .maybeSingle();
@@ -434,6 +435,7 @@ export async function POST(req: NextRequest) {
   let download: Deliverable[] | null = null;
   let vouchers: string[] | null = null;
   let lumaRegistered = false;
+  let manualFulfilment = false;
   try {
     const { data: prodMeta } = await db
       .from('app_seller_products')
@@ -444,13 +446,59 @@ export async function POST(req: NextRequest) {
     if (prodMeta?.kind === 'digital' && files.length > 0) {
       download = await buildDeliverables(files);
     }
-    // Event passes are fulfilled by registering the buyer on the seller's Luma
-    // event (luma_api mode) or, by default / as fallback, by handing them a
-    // UNIQUE redemption code from the pool. Both are idempotent on the purchase.
+    // Event passes are fulfilled one of three ways, per the product's
+    // metadata.fulfilment.mode:
+    //   manual    — no code, no Luma API: email the account admins the order so
+    //               they issue the pass, and email the buyer a payment receipt.
+    //   luma_api  — register the buyer directly on the seller's Luma event.
+    //   code_pool — hand the buyer a UNIQUE redemption code from the pool.
+    // All are idempotent on the purchase.
     if (isVoucherProduct(prodMeta?.metadata)) {
-      const deliveryAddr = (purchase.delivery_address ?? null) as { email?: string; name?: string } | null;
-      const buyerEmail = deliveryAddr?.email?.trim() || null;
-      const buyerName  = deliveryAddr?.name?.trim() || null;
+      const deliveryAddr = (purchase.delivery_address ?? null) as { email?: string; name?: string; country?: string } | null;
+      const buyerEmail   = deliveryAddr?.email?.trim() || null;
+      const buyerName    = deliveryAddr?.name?.trim() || null;
+      const buyerCountry = deliveryAddr?.country?.trim() || null;
+      const eventName = String(seller.name ?? 'Your event');
+      const tierTitle = String(product.title ?? 'Event pass');
+      const SITE      = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://app.getvia.xyz';
+      const fulfilment = getFulfilment(prodMeta?.metadata);
+
+      if (fulfilment.mode === 'manual') {
+        // Notify the account (owner + admins) so they can register the attendee.
+        try {
+          const adminEmails = await listAdminEmails(seller.id as string);
+          const recipients  = adminEmails.length > 0
+            ? adminEmails
+            : [String(seller.contact_email ?? '').trim().toLowerCase()].filter((e) => e.includes('@'));
+          for (const to of recipients) {
+            await sendEventOrderToAdmins({
+              to, eventName, tierTitle, orderRef,
+              attendeeName: buyerName, attendeeEmail: buyerEmail, attendeeCountry: buyerCountry,
+              qty: Number(purchase.qty) || 1, priceUsdc: totalUsdc, txHash: pay.txHash,
+              buyerWallet: buyerWalletRecorded,
+              dashboardUrl: `${SITE}/seller/${seller.slug}/admin/orders/${orderRef}`,
+            });
+          }
+        } catch (adminErr) {
+          console.warn(`[x402/purchase] ${orderRef} admin order email failed (non-fatal)`, adminErr);
+        }
+        // Receipt to the buyer: payment confirmation, support address, website.
+        if (buyerEmail) {
+          try {
+            await sendTicketReceiptEmail({
+              to: buyerEmail, eventName, tierTitle, orderRef,
+              priceUsdc: totalUsdc, txHash: pay.txHash,
+              supportEmail: String(seller.contact_email ?? '').trim(),
+              websiteUrl: (seller.website_url as string | null) ?? null,
+            });
+          } catch (mailErr) {
+            console.warn(`[x402/purchase] ${orderRef} receipt email failed (non-fatal)`, mailErr);
+          }
+        } else {
+          console.warn(`[x402/purchase] ${orderRef} manual pass has no buyer email; receipt not sent`);
+        }
+        manualFulfilment = true;
+      } else {
       const ful = await fulfilVoucherPurchase({
         sellerId:   seller.id as string,
         productId:  product.id as string,
@@ -460,8 +508,6 @@ export async function POST(req: NextRequest) {
         buyerEmail,
         buyerName,
       });
-      const eventName = String(seller.name ?? 'Your event');
-      const tierTitle = String(product.title ?? 'Event pass');
       if (ful.vouchers.length > 0) {
         vouchers = ful.vouchers;
         if (buyerEmail) {
@@ -486,6 +532,7 @@ export async function POST(req: NextRequest) {
         }
       } else {
         console.warn(`[x402/purchase] ${orderRef} voucher fulfilment owed (no code in pool and Luma unavailable) for product ${product.id}`);
+      }
       }
     }
   } catch (err) {
@@ -520,5 +567,6 @@ export async function POST(req: NextRequest) {
     ...(download ? { download } : {}),
     ...(vouchers ? { vouchers } : {}),
     ...(lumaRegistered ? { luma_registered: true } : {}),
+    ...(manualFulfilment ? { manual_fulfilment: true, fulfilment_note: 'Order confirmed. The organiser will issue the pass and follow up by email.' } : {}),
   });
 }

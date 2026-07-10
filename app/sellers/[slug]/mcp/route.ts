@@ -554,7 +554,7 @@ function createServer(seller: SellerRow, req: Request) {
   // ── buy_product (v1 — returns x402 payment requirement) ─────────
   server.tool(
     'buy_product',
-    `Initiate a purchase of one of ${seller.name}'s listings. For physical products you MUST pass the full delivery block (name, address_line1, city, postcode, country, phone) — the call will reject with missing_delivery_details listing required_fields if any are blank. Digital and service kinds do not require delivery. Read get_seller_info().purchase_policy first to learn what the seller specifically needs. Returns an x402 payment requirement (USDC, product + shipping) and an order_ref ("VIA-YYMM-XXXXXX") the seller will reference. SETTLE WITH EITHER of two methods at /api/x402/purchase: (a) x402 permit (sign-not-send): sign an EIP-2612 USDC permit authorising payTo to pull maxAmountRequired and POST { order_ref, x_payment }; the endpoint pulls the USDC. OR (b) raw transfer: send a plain USDC transfer of at least maxAmountRequired to payTo from your buyer_wallet, then POST { order_ref, payment_tx_hash }; the endpoint verifies the on-chain transfer. Either way it then fires operatorMint + 97.5/2.5 USDC payout. For the raw-transfer path the transfer must come from the same buyer_wallet on the order, and each tx settles at most one order. Call get_shipping_quote first to know the shipping cost; pass buyer_country to fold it in here.`,
+    `Initiate a purchase of one of ${seller.name}'s listings. For physical products you MUST pass the full delivery block (name, address_line1, city, postcode, country, phone) — the call will reject with missing_delivery_details listing required_fields if any are blank. For event passes you MUST pass the attendee block (name, email, country) — the call will reject with missing_attendee_details if any are blank. Other digital and service kinds require neither. Read get_seller_info().purchase_policy first to learn what the seller specifically needs. Returns an x402 payment requirement (USDC, product + shipping) and an order_ref ("VIA-YYMM-XXXXXX") the seller will reference. SETTLE WITH EITHER of two methods at /api/x402/purchase: (a) x402 permit (sign-not-send): sign an EIP-2612 USDC permit authorising payTo to pull maxAmountRequired and POST { order_ref, x_payment }; the endpoint pulls the USDC. OR (b) raw transfer: send a plain USDC transfer of at least maxAmountRequired to payTo from your buyer_wallet, then POST { order_ref, payment_tx_hash }; the endpoint verifies the on-chain transfer. Either way it then fires operatorMint + 97.5/2.5 USDC payout. For the raw-transfer path the transfer must come from the same buyer_wallet on the order, and each tx settles at most one order. Call get_shipping_quote first to know the shipping cost; pass buyer_country to fold it in here.`,
     {
       product_id:     z.string().uuid(),
       qty:            z.number().int().min(1).max(1000).default(1),
@@ -571,8 +571,13 @@ function createServer(seller: SellerRow, req: Request) {
         country:       z.string().length(2).describe('ISO 3166-1 alpha-2; must match buyer_country if both are supplied'),
         phone:         z.string().min(4).max(40),
       }).optional().describe('Required for physical products. Omit for digital / service.'),
+      attendee:       z.object({
+        name:    z.string().min(1).max(200).describe('Full name of the person the pass is for.'),
+        email:   z.string().email().max(200).describe('Email the organiser will send the pass and any follow-up to.'),
+        country: z.string().min(2).max(60).describe('Attendee country (name or ISO code), for the organiser.'),
+      }).optional().describe('Required for event passes. Provide the visitor name, email and country so the organiser can issue the pass.'),
     },
-    async ({ product_id, qty, buyer_wallet, buyer_agent_id, buyer_country, delivery }) => {
+    async ({ product_id, qty, buyer_wallet, buyer_agent_id, buyer_country, delivery, attendee }) => {
       const t0 = Date.now();
 
       const { data: product, error: prodErr } = await db
@@ -725,6 +730,25 @@ function createServer(seller: SellerRow, req: Request) {
         }
       }
 
+      // ── Attendee gate (event passes) ──────────────────────────
+      // An event pass is issued to a named person, so the organiser needs the
+      // visitor's name, email and country before payment. Mirror the physical
+      // delivery gate: reject with the exact missing fields so the buying agent
+      // can re-prompt precisely.
+      if (isVoucher) {
+        const required: Array<keyof NonNullable<typeof attendee>> = ['name', 'email', 'country'];
+        const missing  = !attendee ? required : required.filter((k) => !attendee[k] || String(attendee[k]).trim().length === 0);
+        if (missing.length > 0) {
+          const r = asJson({
+            error: 'missing_attendee_details',
+            message: `${seller.name} issues each pass to a named person and needs the visitor's name, email and country before payment.`,
+            required_fields: missing,
+          });
+          void logInteraction(seller.id, 'buy_product', identity, { product_id, qty, buyer_wallet, has_attendee: !!attendee }, { error: 'missing_attendee_details', missing }, 400, Date.now() - t0);
+          return r;
+        }
+      }
+
       // ── Shipping resolution ────────────────────────────────────
       const shippingConfig = getShippingConfig(seller.shipping);
       const shippingQuote = buyer_country
@@ -754,8 +778,10 @@ function createServer(seller: SellerRow, req: Request) {
       const productUsdc      = productUsdcMinor / 1_000_000;
       const totalUsdc        = totalUsdcMinor / 1_000_000;
 
-      // Normalise the delivery block before persisting. Country uppercased,
-      // strings trimmed. For non-physical kinds, delivery stays null.
+      // Normalise the contact block before persisting. For physical products
+      // this is the shipping address; for event passes it is the attendee's
+      // name, email and country (which settlement reads to fulfil and receipt).
+      // Both land in delivery_address; non-physical non-voucher kinds stay null.
       const deliveryRow = product.kind === 'physical' && delivery
         ? {
             name:          delivery.name.trim(),
@@ -766,6 +792,12 @@ function createServer(seller: SellerRow, req: Request) {
             postcode:      delivery.postcode.trim(),
             country:       delivery.country.toUpperCase(),
             phone:         delivery.phone.trim(),
+          }
+        : isVoucher && attendee
+        ? {
+            name:    attendee.name.trim(),
+            email:   attendee.email.trim().toLowerCase(),
+            country: attendee.country.trim(),
           }
         : null;
 

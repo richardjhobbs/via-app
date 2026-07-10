@@ -732,6 +732,189 @@ export async function sendTicketDeliveryEmail({
   });
 }
 
+// ── 7b. Event pass: buyer payment receipt (manual fulfilment) ─────────
+//
+// Sent to the buyer when a pass settles under manual fulfilment (no Luma Pro
+// API, no code pool): confirms the USDC transfer and tells them the organiser
+// will follow up, with a support address for any further information and a link
+// to the event's main website. No redemption code. VIA-branded, no em/en dashes.
+
+export async function sendTicketReceiptEmail({
+  to,
+  eventName,
+  tierTitle,
+  orderRef,
+  priceUsdc,
+  txHash,
+  supportEmail,
+  websiteUrl,
+}: {
+  to: string;
+  eventName: string;
+  tierTitle: string;
+  orderRef: string;
+  priceUsdc?: number | null;
+  txHash?: string | null;
+  supportEmail: string;
+  websiteUrl?: string | null;
+}): Promise<void> {
+  if (!to) return;
+  const scanBase = 'https://basescan.org';
+
+  const html = `
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><style>
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', sans-serif; background: #faf7f2; color: #1a1612; margin: 0; padding: 40px 20px; }
+  .wrap { max-width: 560px; margin: 0 auto; }
+  .wordmark { font-family: Georgia, 'Times New Roman', serif; font-size: 18px; font-weight: 400; font-style: italic; color: #1a1612; margin: 0 0 24px; }
+  .card { background: #ffffff; border: 1px solid #e8e3db; }
+  .card-head { padding: 28px 32px 24px; border-bottom: 1px solid #e8e3db; }
+  .eyebrow { font-family: 'Courier New', Courier, monospace; font-size: 10px; letter-spacing: 0.16em; text-transform: uppercase; color: #2b9a66; margin: 0 0 8px; }
+  h1 { margin: 0 0 4px; font-family: Georgia, 'Times New Roman', serif; font-size: 26px; font-weight: 400; font-style: italic; color: #1a1612; }
+  .sub { font-size: 13px; color: #6e665c; margin: 0; }
+  .body { padding: 28px 32px; }
+  .copy { margin: 0 0 16px; line-height: 1.6; color: #3a342d; font-size: 14px; }
+  .lbl { font-family: 'Courier New', Courier, monospace; font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; color: #6e665c; margin: 0 0 12px; }
+  .btn { display: inline-block; background: #1a1612; color: #faf7f2; padding: 12px 22px; text-decoration: none; font-size: 12px; letter-spacing: 0.04em; font-weight: 500; }
+  a { color: #6b4f3a; }
+</style></head>
+<body>
+<div class="wrap">
+  <p class="wordmark">VIA</p>
+  <div class="card">
+    <div class="card-head">
+      <p class="eyebrow">Payment received</p>
+      <h1>${escHtml(tierTitle)}</h1>
+      <p class="sub">${escHtml(eventName)}</p>
+    </div>
+    <div class="body">
+      <p class="copy">Thank you for your order. Your payment settled in USDC on Base and your order is confirmed. The organiser will process your pass and be in touch with the next steps.</p>
+
+      <p class="lbl">Order</p>
+      <table width="100%" cellpadding="0" cellspacing="0" style="border:1px solid #e8e3db;border-collapse:collapse;margin:0 0 24px;"><tbody>
+        <tr><td style="padding:10px 16px;font-size:13px;border-bottom:1px solid #e8e3db;color:#6e665c;">Reference</td><td style="padding:10px 16px;font-size:13px;border-bottom:1px solid #e8e3db;color:#1a1612;font-weight:500;text-align:right;font-family:'Courier New',Courier,monospace;">${escHtml(orderRef)}</td></tr>
+        ${priceUsdc != null ? `<tr><td style="padding:10px 16px;font-size:13px;${txHash ? 'border-bottom:1px solid #e8e3db;' : ''}color:#6e665c;">Paid</td><td style="padding:10px 16px;font-size:13px;${txHash ? 'border-bottom:1px solid #e8e3db;' : ''}color:#6b4f3a;font-weight:600;text-align:right;">$${priceUsdc.toFixed(2)} USDC</td></tr>` : ''}
+        ${txHash ? `<tr><td style="padding:10px 16px;font-size:13px;color:#6e665c;">On-chain tx</td><td style="padding:10px 16px;font-size:13px;text-align:right;"><a href="${scanBase}/tx/${txHash}" style="font-family:'Courier New',Courier,monospace;font-size:11px;">${txHash.slice(0, 14)}&hellip;${txHash.slice(-6)}</a></td></tr>` : ''}
+      </tbody></table>
+
+      <p class="copy">If any further information is required, send a request by email to <a href="mailto:${escHtml(supportEmail)}">${escHtml(supportEmail)}</a>.</p>
+      ${websiteUrl ? `<a class="btn" href="${escHtml(websiteUrl)}">Visit the website</a>` : ''}
+    </div>
+  </div>
+  <table width="100%" cellpadding="0" cellspacing="0" style="margin-top:32px;padding-top:20px;border-top:1px solid #e8e3db;"><tbody><tr>
+    <td style="font-family:'Courier New',Courier,monospace;font-size:10px;letter-spacing:0.12em;text-transform:uppercase;color:#6e665c;">VIA</td>
+    <td align="right" style="font-family:'Courier New',Courier,monospace;font-size:10px;letter-spacing:0.12em;text-transform:uppercase;color:#6e665c;text-align:right;"><a href="${SITE_URL}" style="color:#6e665c;text-decoration:none;">app.getvia.xyz</a></td>
+  </tr></tbody></table>
+</div>
+</body>
+</html>`;
+
+  await sendEmail({ to, subject: `Your ${eventName} order is confirmed (${orderRef})`, html });
+}
+
+// ── 7c. Event pass: order notice to account admins (manual fulfilment) ──
+//
+// Sent to the store's owner + admins when a pass settles under manual
+// fulfilment, so they can register the attendee. Carries the attendee details
+// collected at purchase and the payment proof. VIA-branded, no em/en dashes.
+
+export async function sendEventOrderToAdmins({
+  to,
+  eventName,
+  tierTitle,
+  orderRef,
+  attendeeName,
+  attendeeEmail,
+  attendeeCountry,
+  qty,
+  priceUsdc,
+  txHash,
+  buyerWallet,
+  dashboardUrl,
+}: {
+  to: string;
+  eventName: string;
+  tierTitle: string;
+  orderRef: string;
+  attendeeName?: string | null;
+  attendeeEmail?: string | null;
+  attendeeCountry?: string | null;
+  qty: number;
+  priceUsdc?: number | null;
+  txHash?: string | null;
+  buyerWallet?: string | null;
+  dashboardUrl?: string | null;
+}): Promise<void> {
+  if (!to) return;
+  const scanBase = 'https://basescan.org';
+  const rowStyle = 'padding:10px 16px;font-size:13px;border-bottom:1px solid #e8e3db;';
+  const lblStyle = 'color:#6e665c;font-size:13px;white-space:nowrap;padding-right:16px;';
+  const valStyle = 'color:#1a1612;font-weight:500;text-align:right;font-size:13px;';
+  const monoStyle = "font-family:'Courier New',Courier,monospace;font-size:11px;";
+
+  const mkRow = (label: string, valueHtml: string, last = false) =>
+    `<tr><td style="${rowStyle}${last ? 'border-bottom:none;' : ''}${lblStyle}">${label}</td><td style="${rowStyle}${last ? 'border-bottom:none;' : ''}${valStyle}">${valueHtml}</td></tr>`;
+
+  const html = `
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><style>
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', sans-serif; background: #faf7f2; color: #1a1612; margin: 0; padding: 40px 20px; }
+  .wrap { max-width: 560px; margin: 0 auto; }
+  .wordmark { font-family: Georgia, 'Times New Roman', serif; font-size: 18px; font-weight: 400; font-style: italic; color: #1a1612; margin: 0 0 24px; }
+  .card { background: #ffffff; border: 1px solid #e8e3db; }
+  .card-head { padding: 28px 32px 24px; border-bottom: 1px solid #e8e3db; }
+  .eyebrow { font-family: 'Courier New', Courier, monospace; font-size: 10px; letter-spacing: 0.16em; text-transform: uppercase; color: #6b4f3a; margin: 0 0 8px; }
+  h1 { margin: 0 0 4px; font-family: Georgia, 'Times New Roman', serif; font-size: 24px; font-weight: 400; font-style: italic; color: #1a1612; }
+  .sub { font-size: 13px; color: #6e665c; margin: 0; }
+  .body { padding: 28px 32px; }
+  .lbl { font-family: 'Courier New', Courier, monospace; font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; color: #6e665c; margin: 0 0 12px; }
+  .btn { display: inline-block; background: #1a1612; color: #faf7f2; padding: 12px 22px; text-decoration: none; font-size: 12px; letter-spacing: 0.04em; font-weight: 500; }
+</style></head>
+<body>
+<div class="wrap">
+  <p class="wordmark">VIA</p>
+  <div class="card">
+    <div class="card-head">
+      <p class="eyebrow">New pass order &middot; action required</p>
+      <h1>${escHtml(tierTitle)}</h1>
+      <p class="sub">${escHtml(eventName)}</p>
+    </div>
+    <div class="body">
+      <p style="font-size:13px;color:#3a342d;line-height:1.6;margin:0 0 20px;">A pass has been paid for and needs issuing. Register the attendee below on the event platform, then follow up with them directly.</p>
+
+      <p class="lbl">Attendee</p>
+      <table width="100%" cellpadding="0" cellspacing="0" style="border:1px solid #e8e3db;margin:0 0 20px;border-collapse:collapse;"><tbody>
+        ${mkRow('Name', attendeeName ? escHtml(attendeeName) : '<span style="color:#b0442e;">not provided</span>')}
+        ${mkRow('Email', attendeeEmail ? `<a href="mailto:${escHtml(attendeeEmail)}" style="color:#6b4f3a;">${escHtml(attendeeEmail)}</a>` : '<span style="color:#b0442e;">not provided</span>')}
+        ${mkRow('Country', attendeeCountry ? escHtml(attendeeCountry) : '<span style="color:#b0442e;">not provided</span>', true)}
+      </tbody></table>
+
+      <p class="lbl">Order</p>
+      <table width="100%" cellpadding="0" cellspacing="0" style="border:1px solid #e8e3db;margin:0 0 20px;border-collapse:collapse;"><tbody>
+        ${mkRow('Reference', `<span style="${monoStyle}">${escHtml(orderRef)}</span>`)}
+        ${mkRow('Tier', escHtml(tierTitle))}
+        ${mkRow('Quantity', String(qty))}
+        ${priceUsdc != null ? mkRow('Paid', `<span style="color:#6b4f3a;font-weight:600;">$${priceUsdc.toFixed(2)} USDC</span>`) : ''}
+        ${buyerWallet ? mkRow('Buyer wallet', `<span style="${monoStyle}">${escHtml(buyerWallet.slice(0, 10))}&hellip;${escHtml(buyerWallet.slice(-6))}</span>`) : ''}
+        ${txHash ? mkRow('On-chain tx', `<a href="${scanBase}/tx/${txHash}" style="color:#6b4f3a;${monoStyle}">${txHash.slice(0, 14)}&hellip;${txHash.slice(-6)}</a>`, true) : ''}
+      </tbody></table>
+
+      ${dashboardUrl ? `<a class="btn" href="${escHtml(dashboardUrl)}">View order</a>` : ''}
+    </div>
+  </div>
+  <table width="100%" cellpadding="0" cellspacing="0" style="margin-top:32px;padding-top:20px;border-top:1px solid #e8e3db;"><tbody><tr>
+    <td style="font-family:'Courier New',Courier,monospace;font-size:10px;letter-spacing:0.12em;text-transform:uppercase;color:#6e665c;">VIA</td>
+    <td align="right" style="font-family:'Courier New',Courier,monospace;font-size:10px;letter-spacing:0.12em;text-transform:uppercase;color:#6e665c;text-align:right;"><a href="${SITE_URL}" style="color:#6e665c;text-decoration:none;">app.getvia.xyz</a></td>
+  </tr></tbody></table>
+</div>
+</body>
+</html>`;
+
+  await sendEmail({ to, subject: `New ${eventName} pass order: ${orderRef} (${tierTitle})`, html });
+}
+
 // ── 8. Seller team invite ──────────────────────────────────────────────
 //
 // Sent when a seller owner/admin invites a teammate. The link carries an

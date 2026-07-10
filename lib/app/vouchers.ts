@@ -81,7 +81,7 @@ export async function claimVouchersForPurchase(
    missing or the Luma call fails, so a sale never silently drops.
    ────────────────────────────────────────────────────────────────────────── */
 
-export type FulfilmentMode = 'code_pool' | 'luma_api';
+export type FulfilmentMode = 'code_pool' | 'luma_api' | 'manual';
 
 export interface FulfilmentConfig {
   mode:            FulfilmentMode;
@@ -100,6 +100,12 @@ export function getFulfilment(metadata: unknown): FulfilmentConfig {
       lumaEventApiId:  typeof f.luma_event_api_id === 'string' ? f.luma_event_api_id : undefined,
       lumaApiKeyEnv:   typeof f.luma_api_key_env === 'string' && f.luma_api_key_env ? f.luma_api_key_env : 'LUMA_API_KEY',
     };
+  }
+  // Manual issuance: no code pool, no Luma API. The account admins receive the
+  // order (buyer name, email, country) and register the attendee themselves;
+  // the buyer gets a payment receipt, not a redemption code.
+  if (f && f.mode === 'manual') {
+    return { mode: 'manual', lumaApiKeyEnv: 'LUMA_API_KEY' };
   }
   return { mode: 'code_pool', lumaApiKeyEnv: 'LUMA_API_KEY' };
 }
@@ -133,6 +139,11 @@ export async function fulfilVoucherPurchase(params: {
 }): Promise<FulfilmentResult> {
   const { productId, purchaseId, qty, metadata, buyerEmail, buyerName } = params;
   const cfg = getFulfilment(metadata);
+
+  // Manual issuance never touches the code pool: admins fulfil off the order.
+  if (cfg.mode === 'manual') {
+    return { mode: 'manual', vouchers: [], lumaRegistered: false, owed: false };
+  }
 
   if (cfg.mode === 'luma_api') {
     const apiKey = cfg.lumaApiKeyEnv ? process.env[cfg.lumaApiKeyEnv] : undefined;
