@@ -63,6 +63,65 @@
   --font-mono: var(--font-jetbrains);
 }
 
+/* ─── Back Room skin (isolated) ─────────────────────────────────────────
+   A separate world from the Maison tokens above. Paper and ink, warm,
+   analogue: editorial serif for names and objects, humanist sans for
+   functional text, one accent per room. Scoped to [data-skin="backroom"]
+   so it cannot leak into or out of the VIA/RRG surfaces. The accent is a
+   default; each room overrides --accent inline from its own colour. */
+[data-skin="backroom"] {
+  --bg: #f4efe6;          /* warm paper ground */
+  --bg-2: #ece4d6;
+  --ink: #211b15;         /* ink, near-black brown */
+  --ink-2: #4a4136;
+  --ink-3: #7c7060;
+  --line: rgba(33, 27, 21, 0.12);
+  --line-strong: rgba(33, 27, 21, 0.22);
+  --accent: #8a5a3c;      /* default room accent, overridden per room */
+  --paper: #fbf7ef;
+  --live: #4c8a5a;
+  --danger: #a8443a;
+  --warning: #8a6320;
+
+  --background: var(--bg);
+  --foreground: var(--ink);
+
+  /* Editorial serif for names and objects, humanist sans for functional
+     text. Set by next/font on the route-group wrapper. */
+  --font-serif: var(--font-newsreader), 'Newsreader', Georgia, serif;
+  --font-sans:  var(--font-source-sans), 'Source Sans 3', -apple-system, sans-serif;
+
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Dark mode: dim amber light on dark paper, not tech black. */
+[data-theme="dark"] [data-skin="backroom"],
+[data-skin="backroom"][data-theme="dark"] {
+  --bg: #17130d;
+  --bg-2: #1f1a12;
+  --ink: #e8dcc4;
+  --ink-2: #c3b393;
+  --ink-3: #8a7c62;
+  --line: rgba(232, 220, 196, 0.14);
+  --line-strong: rgba(232, 220, 196, 0.28);
+  --accent: #d69a5c;
+  --paper: #1f1a12;
+  --live: #5aa06a;
+  --danger: #c86a5e;
+  --warning: #cda35f;
+}
+
+[data-skin="backroom"] .br-serif {
+  font-family: var(--font-serif);
+  letter-spacing: -0.01em;
+}
+[data-skin="backroom"] .br-sans {
+  font-family: var(--font-sans);
+}
+
 * { box-sizing: border-box; }
 html, body { margin: 0; padding: 0; }
 

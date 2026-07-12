@@ -82,6 +82,20 @@ function row(label, id, onRecord, derived) {
     out.push(row(`buyer:${b.handle}`, b.id, b.agent_wallet_address, b.wallet_address));
   }
 
+  // Rooms are like sellers: MCP-autonomous, so their identity/settlement wallet
+  // is PLATFORM-DERIVED (the runtime must sign for room-funded errands). Healthy
+  // when agent_wallet_address == deriveAgentWallet(room id).
+  const { data: rooms, error: re } = await db
+    .from('app_rooms')
+    .select('id, name, agent_wallet_address')
+    .order('name');
+  if (re) { console.error('rooms query failed:', re.message); process.exit(1); }
+
+  for (const rm of rooms ?? []) {
+    const d = deriveAgentWallet(rm.id);
+    out.push(row(`room:${rm.name}`, rm.id, rm.agent_wallet_address, d?.address));
+  }
+
   const mism = out.filter(r => r.status === 'MISMATCH');
   const nul  = out.filter(r => String(r.status).startsWith('NULL'));
 
