@@ -7,6 +7,11 @@ export const dynamic = 'force-static';
 const APP_BASE = 'https://app.getvia.xyz';
 const USDC_BASE = '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913';
 const PLATFORM_WALLET = '0xbfd71eA27FFc99747dA2873372f84346d9A8b7ed';
+// ERC-8004 Trustless Agents registries on Base. VIA mints a per-seller Sales
+// Agent identity here via the getvia.xyz registrar, so an agent can verify who
+// it is transacting with before it pays.
+const ERC8004_IDENTITY_REGISTRY = '0x8004A169FB4a3325136EB29fA0ceB6D2e539a432';
+const ERC8004_REPUTATION_REGISTRY = '0x8004BAa17C55a88189AE136b182e5fdA19dE9b63';
 
 const CARD = {
   name: 'VIA',
@@ -38,6 +43,19 @@ const CARD = {
         networks: ['base-mainnet'],
         recipient: PLATFORM_WALLET,
         asset: USDC_BASE,
+      },
+    },
+    {
+      uri: 'https://eips.ethereum.org/EIPS/eip-8004',
+      name: 'erc-8004',
+      description:
+        'ERC-8004 Trustless Agents. Every VIA Sales Agent holds an on-chain identity in the Base Identity Registry, minted by the getvia.xyz registrar. Verify a seller agent on-chain before transacting.',
+      required: false,
+      params: {
+        networks: ['base-mainnet'],
+        identityRegistry: ERC8004_IDENTITY_REGISTRY,
+        reputationRegistry: ERC8004_REPUTATION_REGISTRY,
+        registrar: 'https://www.getvia.xyz/mcp',
       },
     },
   ],
@@ -114,6 +132,16 @@ const CARD = {
     api_catalog: `${APP_BASE}/.well-known/api-catalog`,
   },
   paymentMethods: ['x402', 'ap2', 'usdc-base'],
+  identity: {
+    standard: 'ERC-8004',
+    spec: 'https://eips.ethereum.org/EIPS/eip-8004',
+    network: 'base-mainnet',
+    identityRegistry: ERC8004_IDENTITY_REGISTRY,
+    reputationRegistry: ERC8004_REPUTATION_REGISTRY,
+    registrar: 'https://www.getvia.xyz/mcp',
+    description:
+      'Each seller Sales Agent is registered in the ERC-8004 Identity Registry on Base. Resolve a seller agent id via its per-seller MCP (get_seller_info) or the registry, then verify ownership on-chain before transacting.',
+  },
 };
 
 export function GET() {
