@@ -111,6 +111,7 @@ function publicSellerInfo(s: SellerRow) {
     erc8004_agent_id:  s.erc8004_agent_id,
     agent_wallet:     s.agent_wallet_address,
     mcp_url:          `${APP_BASE}/sellers/${s.slug}/mcp`,
+    agent_card:       `${APP_BASE}/sellers/${s.slug}/.well-known/agent-card.json`,
     purchase_policy:  s.purchase_policy,
     management: {
       note: 'If you are the agent that controls agent_wallet, you can add and publish products yourself, agent-to-agent, with no dashboard. Call get_owner_management_info for the wallet-signature steps.',
