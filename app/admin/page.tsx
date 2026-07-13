@@ -226,7 +226,14 @@ export default async function AdminLandingPage() {
       <section className="flex-1 px-6 py-12">
         <div className="max-w-6xl mx-auto">
           <p className="text-xs font-mono tracking-widest text-ink-3 mb-3 uppercase">Admin</p>
-          <h1 className="font-serif text-4xl leading-[1.1] tracking-tight mb-8">Overview</h1>
+          <h1 className="font-serif text-4xl leading-[1.1] tracking-tight mb-4">Overview</h1>
+
+          <div className="mb-8">
+            <Link href="/admin/backroom" className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-paper border border-line text-sm text-ink hover:border-ink transition-colors">
+              <span aria-hidden>🚪</span> Back Room console
+              <span className="text-xs text-ink-3">form rooms, seat members, make introductions</span>
+            </Link>
+          </div>
 
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
             <StatCard label="Sellers"            value={String(sellers.length)} />
