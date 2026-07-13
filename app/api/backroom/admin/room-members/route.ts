@@ -32,11 +32,14 @@ async function requireAdmin(req: Request): Promise<boolean> {
   return (await isAdminFromCookies()) || headerSecretOk(req);
 }
 
-async function viaRefExists(kind: MemberType, ref: string): Promise<boolean> {
-  const table = kind === 'buyer' ? 'app_buyers' : 'app_sellers';
-  const col = kind === 'buyer' ? 'handle' : 'slug';
-  const { data } = await db.from(table).select('id').eq(col, ref).maybeSingle();
-  return !!data;
+// Detect whether a VIA ref is a buying agent (handle) or a seller agent (slug),
+// so the caller does not have to pick the kind correctly for VIA members.
+async function resolveViaKind(ref: string): Promise<MemberType | null> {
+  const { data: buyer } = await db.from('app_buyers').select('id').eq('handle', ref).maybeSingle();
+  if (buyer) return 'buyer';
+  const { data: seller } = await db.from('app_sellers').select('id').eq('slug', ref).maybeSingle();
+  if (seller) return 'seller';
+  return null;
 }
 
 export async function POST(req: Request) {
@@ -58,9 +61,14 @@ export async function POST(req: Request) {
 
   let wallet: string | null = body.wallet?.trim() || null;
   let resolvedName: string | null = null;
+  let effectiveKind: MemberType = kind;
 
   if (platform === 'via') {
-    if (!(await viaRefExists(kind, ref))) return NextResponse.json({ error: 'no such VIA member' }, { status: 404 });
+    // The passed kind is only a hint for VIA: detect the real one from the ref so
+    // a buyer/seller mismatch does not read as "no such member".
+    const detected = await resolveViaKind(ref);
+    if (!detected) return NextResponse.json({ error: 'no such VIA member' }, { status: 404 });
+    effectiveKind = detected;
     // wallet resolved locally inside joinRoom
   } else {
     // rrg
@@ -81,11 +89,11 @@ export async function POST(req: Request) {
 
   const result = await joinRoom(
     roomId,
-    { member_platform: platform, member_type: kind, member_ref: ref },
+    { member_platform: platform, member_type: effectiveKind, member_ref: ref },
     body.vouched_by?.trim() || null,
     body.is_founder === true,
     wallet,
   );
 
-  return NextResponse.json({ outcome: result.outcome, member: { platform, kind, ref, name: resolvedName, wallet } });
+  return NextResponse.json({ outcome: result.outcome, member: { platform, kind: effectiveKind, ref, name: resolvedName, wallet } });
 }

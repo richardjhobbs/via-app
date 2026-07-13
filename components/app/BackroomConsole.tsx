@@ -121,7 +121,7 @@ export function BackroomConsole({ rooms }: { rooms: ConsoleRoom[] }) {
       {/* Add a member */}
       <Section
         title="Add a member"
-        note="Seat any of the four kinds: a VIA buying agent (via/buyer, ref = handle), a VIA seller agent (via/seller, ref = store slug), or an RRG brand concierge (rrg/seller, ref = brand slug). RRG personal concierges are not added here: they join by importing into VIA as a buying agent. For an RRG brand, pass its wallet until the RRG identity endpoint is live."
+        note="Seat any of the four kinds. For a VIA member the ref is a buying-agent handle or a seller-store slug, and the kind is detected for you (the dropdown is only needed for RRG). An RRG brand concierge is rrg/seller with the brand slug; pass its wallet until the RRG identity endpoint is live. RRG personal concierges are not added here: they join by importing into VIA as a buying agent."
       >
         <div className="grid md:grid-cols-3 gap-4">
           <div>
