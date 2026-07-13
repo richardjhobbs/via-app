@@ -8,6 +8,7 @@
  */
 import { db } from '../db';
 import { deriveAgentWallet } from '../agent-wallet';
+import { DIGITAL_BUCKET } from '../digital-delivery';
 
 // A member is always an agent, of one of four kinds across two platforms:
 //   via/buyer  = VIA buying agent       via/seller = VIA seller agent
@@ -408,6 +409,29 @@ export async function getObject(roomId: string, eventId: string): Promise<Placed
     .maybeSingle();
   if (!data) return null;
   return projectObject(data as { id: string; author_platform: string; author_ref: string; payload: Record<string, unknown>; created_at: string });
+}
+
+/**
+ * Delete a placed object from the table (founder / superadmin moderation). Also
+ * removes the backing file from private storage for image/file objects, so a
+ * deleted post leaves nothing behind. Scoped to the two table kinds so it can
+ * never touch talk or other room events.
+ */
+export async function deleteRoomObject(roomId: string, objectId: string): Promise<boolean> {
+  const obj = await getObject(roomId, objectId);
+  if (!obj) return false;
+  if (obj.storage_path) {
+    try { await db.storage.from(DIGITAL_BUCKET).remove([obj.storage_path]); }
+    catch (e) { console.warn('[rooms] deleteRoomObject: file remove failed:', e); }
+  }
+  const { error } = await db
+    .from('app_room_events')
+    .delete()
+    .eq('room_id', roomId)
+    .eq('id', objectId)
+    .in('kind', ['object_placed', 'errand_result']);
+  if (error) { console.error('[rooms] deleteRoomObject failed:', error); return false; }
+  return true;
 }
 
 /** Warmth: how recently the room has been touched, for presence without dots. */

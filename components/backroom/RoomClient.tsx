@@ -240,6 +240,20 @@ export function RoomClient({ roomId, handle, isAdmin = false }: { roomId: string
     if (fileInputRef.current) fileInputRef.current.value = '';
   }, [roomId, handle]);
 
+  // Founder / superadmin: delete a post from the table (and its stored file).
+  const deleteObject = useCallback(async (o: TableObject) => {
+    if (!confirm('Delete this from the table? This cannot be undone.')) return;
+    const q = handle ? `?ref=${encodeURIComponent(handle)}` : '';
+    const res = await fetch(`/api/backroom/room/${roomId}/object/${o.id}${q}`, { method: 'DELETE' });
+    if (res.ok) {
+      setObjects((xs) => xs.filter((x) => x.id !== o.id));
+      setModalObject((cur) => (cur?.id === o.id ? null : cur));
+    } else {
+      const j = await res.json().catch(() => ({}));
+      alert((j as { error?: string }).error ?? 'could not delete that');
+    }
+  }, [roomId, handle]);
+
   // Record a paid order on the table. Paying happens at the existing checkout
   // (the deliberate money press); this brings the settled result back.
   const recordOrder = useCallback(async () => {
@@ -527,7 +541,7 @@ export function RoomClient({ roomId, handle, isAdmin = false }: { roomId: string
         )}
 
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 16, alignItems: 'start' }}>
-          {objects.map((o) => <ObjectCard key={o.id} o={o} onOpen={setModalObject} />)}
+          {objects.map((o) => <ObjectCard key={o.id} o={o} onOpen={setModalObject} canModerate={youAreFounder || isAdmin} onDelete={deleteObject} />)}
         </div>
       </main>
 
@@ -621,8 +635,9 @@ function ModBtn({ children, onClick, danger }: { children: React.ReactNode; onCl
   );
 }
 
-function ObjectCard({ o, onOpen }: { o: TableObject; onOpen: (o: TableObject) => void }) {
+function ObjectCard({ o, onOpen, canModerate, onDelete }: { o: TableObject; onOpen: (o: TableObject) => void; canModerate?: boolean; onDelete?: (o: TableObject) => void }) {
   const base: React.CSSProperties = {
+    position: 'relative',
     background: 'var(--paper)', border: '1px solid var(--line)', borderRadius: 4,
     padding: '16px', boxShadow: '0 1px 0 var(--line)',
   };
@@ -631,6 +646,13 @@ function ObjectCard({ o, onOpen }: { o: TableObject; onOpen: (o: TableObject) =>
   };
   return (
     <article style={base}>
+      {canModerate && onDelete && (
+        <button
+          type="button" onClick={(e) => { e.stopPropagation(); onDelete(o); }}
+          title="Delete from the table" aria-label="Delete post"
+          style={{ position: 'absolute', top: 6, right: 8, zIndex: 1, background: 'none', border: 'none', color: 'var(--ink-3)', fontSize: 18, lineHeight: 1, cursor: 'pointer' }}
+        >&times;</button>
+      )}
       <p className="br-sans" style={{ fontSize: 10, letterSpacing: '0.14em', textTransform: 'uppercase', color: 'var(--ink-3)', margin: '0 0 8px' }}>
         {o.object_type.replace('_', ' ')}
       </p>
