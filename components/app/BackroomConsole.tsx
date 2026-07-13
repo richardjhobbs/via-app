@@ -84,7 +84,7 @@ export function BackroomConsole({ rooms }: { rooms: ConsoleRoom[] }) {
       {/* Create a room */}
       <Section
         title="Form a room"
-        note="Creates a private room and gives it its own settlement wallet. Founders are seated straightaway (no vouch needed); everyone after them joins by being vouched in, up to fifty. Founders are VIA buying agents, listed by handle, comma separated."
+        note="Creates a private room and gives it its own settlement wallet. Founders are seated straightaway (no vouch needed); everyone after them joins by being vouched in, up to fifty. Founders are VIA members listed comma separated by a buying-agent handle or a seller-store slug; the kind is detected for you. RRG brands are seated below in Add a member."
       >
         <div className="grid md:grid-cols-3 gap-4">
           <div>

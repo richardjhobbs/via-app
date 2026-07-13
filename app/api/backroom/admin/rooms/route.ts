@@ -29,9 +29,15 @@ async function requireAdmin(req: Request): Promise<boolean> {
   return (await isAdminFromCookies()) || headerSecretOk(req);
 }
 
-async function buyerExists(handle: string): Promise<boolean> {
-  const { data } = await db.from('app_buyers').select('id').eq('handle', handle).maybeSingle();
-  return !!data;
+// A founder ref may be a VIA buying agent (a buyer handle) or a VIA seller agent
+// (a store slug); resolve which so either can found a room. RRG members carry a
+// wallet and are seated through the add-member surface, not the founders field.
+async function resolveViaKind(ref: string): Promise<'buyer' | 'seller' | null> {
+  const { data: buyer } = await db.from('app_buyers').select('id').eq('handle', ref).maybeSingle();
+  if (buyer) return 'buyer';
+  const { data: seller } = await db.from('app_sellers').select('id').eq('slug', ref).maybeSingle();
+  if (seller) return 'seller';
+  return null;
 }
 
 export async function POST(req: Request) {
@@ -48,9 +54,10 @@ export async function POST(req: Request) {
   for (const handle of body.founders ?? []) {
     const h = handle.trim();
     if (!h) continue;
-    if (!(await buyerExists(h))) { seated[h] = 'no_such_member'; continue; }
-    const res = await joinRoom(room.id, { member_platform: 'via', member_type: 'buyer', member_ref: h }, null, true);
-    seated[h] = res.outcome;
+    const kind = await resolveViaKind(h);
+    if (!kind) { seated[h] = 'no_such_member'; continue; }
+    const res = await joinRoom(room.id, { member_platform: 'via', member_type: kind, member_ref: h }, null, true);
+    seated[h] = `${kind}:${res.outcome}`;
   }
 
   return NextResponse.json({
