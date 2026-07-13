@@ -446,7 +446,7 @@ export function RoomClient({ roomId, handle, isAdmin = false }: { roomId: string
               <img src={modalObject.url} alt={modalObject.filename ?? 'image'} style={{ display: 'block', maxWidth: '100%', maxHeight: '82vh', objectFit: 'contain', margin: '0 auto' }} />
             ) : (
               <>
-                <p className="br-sans" style={{ fontSize: 11, letterSpacing: '0.14em', textTransform: 'uppercase', color: 'var(--ink-3)', margin: '0 0 14px' }}>Note · {modalObject.author_ref}</p>
+                <p className="br-sans" style={{ fontSize: 11, letterSpacing: '0.14em', textTransform: 'uppercase', color: 'var(--ink-3)', margin: '0 0 14px' }}>Note · {modalObject.author_ref} · {formatStamp(modalObject.created_at)}</p>
                 <p className="br-serif" style={{ fontSize: 18, color: 'var(--ink)', margin: 0, lineHeight: 1.65, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{modalObject.content}</p>
               </>
             )}
@@ -546,9 +546,16 @@ function ObjectCard({ o, onOpen }: { o: TableObject; onOpen: (o: TableObject) =>
           )}
         </button>
       )}
-      <p className="br-sans" style={{ fontSize: 12, color: 'var(--ink-3)', margin: '12px 0 0' }}>{o.author_ref}</p>
+      <p className="br-sans" style={{ fontSize: 12, color: 'var(--ink-3)', margin: '12px 0 0' }}>{o.author_ref} · {formatStamp(o.created_at)}</p>
     </article>
   );
+}
+
+// Compact date + time for a table item, e.g. "13 Jul, 14:32".
+function formatStamp(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '';
+  return d.toLocaleString(undefined, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
 }
 
 function Waveform({ seed }: { seed: string }) {

@@ -50,6 +50,27 @@ function ResultBox({ r }: { r: Result }) {
 }
 
 export function BackroomConsole({ rooms }: { rooms: ConsoleRoom[] }) {
+  // Rooms list (stateful so a member removal reflects without a full reload).
+  const [roomList, setRoomList] = useState<ConsoleRoom[]>(rooms);
+  const [removing, setRemoving] = useState<string | null>(null);
+
+  async function removeMember(roomId: string, m: { platform: string; kind: string; ref: string }) {
+    if (!confirm(`Remove ${m.platform}/${m.kind} ${m.ref} from this room? They can be vouched back in later.`)) return;
+    const key = `${roomId}|${m.platform}|${m.kind}|${m.ref}`;
+    setRemoving(key);
+    const r = await postJson(`/api/backroom/room/${roomId}/members`, {
+      target_platform: m.platform, target_type: m.kind, target_ref: m.ref, action: 'remove',
+    });
+    if (r?.ok) {
+      setRoomList((list) => list.map((rm) => rm.id === roomId
+        ? { ...rm, member_count: Math.max(0, rm.member_count - 1), members: rm.members.filter((x) => !(x.platform === m.platform && x.kind === m.kind && x.ref === m.ref)) }
+        : rm));
+    } else {
+      alert(r?.text ?? 'Could not remove that member.');
+    }
+    setRemoving(null);
+  }
+
   // Create room
   const [roomName, setRoomName] = useState('');
   const [accent, setAccent] = useState('#8a5a3c');
@@ -240,11 +261,11 @@ export function BackroomConsole({ rooms }: { rooms: ConsoleRoom[] }) {
         title="Rooms"
         note="Every room, its members, and where to open each surface. Opening a room or a member's Door needs you signed in as that member; the links pre-fill a member handle where one exists."
       >
-        {rooms.length === 0 ? (
+        {roomList.length === 0 ? (
           <p className="text-sm text-ink-3">No rooms yet. Form one above.</p>
         ) : (
           <div className="space-y-4">
-            {rooms.map((r) => {
+            {roomList.map((r) => {
               const firstBuyer = r.members.find((m) => m.platform === 'via' && m.kind === 'buyer')?.ref;
               return (
                 <div key={r.id} className="border border-line rounded p-4">
@@ -257,9 +278,17 @@ export function BackroomConsole({ rooms }: { rooms: ConsoleRoom[] }) {
                   </div>
                   <p className="text-xs font-mono text-ink-3 mb-3 break-all">{r.id}</p>
                   <div className="flex flex-wrap gap-2 mb-3">
+                    {r.members.length === 0 && <span className="text-[11px] font-mono text-ink-3">no members</span>}
                     {r.members.map((m, i) => (
-                      <span key={i} className="text-[11px] font-mono px-2 py-0.5 rounded bg-background border border-line text-ink-2">
+                      <span key={i} className="inline-flex items-center gap-1.5 text-[11px] font-mono px-2 py-0.5 rounded bg-background border border-line text-ink-2">
                         {m.platform}/{m.kind} · {m.ref}
+                        <button
+                          type="button"
+                          disabled={removing === `${r.id}|${m.platform}|${m.kind}|${m.ref}`}
+                          onClick={() => removeMember(r.id, m)}
+                          className="text-ink-3 hover:text-red-500 disabled:opacity-40 leading-none"
+                          title="Remove from room" aria-label={`Remove ${m.ref}`}
+                        >×</button>
                       </span>
                     ))}
                   </div>
