@@ -5,9 +5,11 @@
  * links a signed-in member to their taste, their Door and their rooms, and lets
  * anyone try the voice on the spot. Member-facing copy: the actor is VIA.
  */
-import { useState } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
 import { HoldToSpeak } from './HoldToSpeak';
+
+interface Invite { id: string; room_id: string; room_name: string; inviter_ref: string; why: string; }
 
 interface HubRoom { id: string; name: string; accent_hex: string }
 
@@ -26,6 +28,27 @@ export function BackroomHub({ handle, memberType, label, rooms }: { handle: stri
   const [newName, setNewName] = useState('');
   const [creating, setCreating] = useState(false);
   const [createErr, setCreateErr] = useState<string | null>(null);
+  const [invites, setInvites] = useState<Invite[]>([]);
+
+  const loadInvites = useCallback(async () => {
+    if (!handle) return;
+    const res = await fetch(`/api/backroom/invitations?ref=${encodeURIComponent(handle)}`);
+    if (res.ok) { const j = await res.json() as { invites: Invite[] }; setInvites(j.invites); }
+  }, [handle]);
+
+  useEffect(() => { void loadInvites(); }, [loadInvites]);
+
+  async function respondInvite(id: string, accept: boolean, roomId: string) {
+    const res = await fetch(`/api/backroom/invitations/${id}/respond`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ref: handle, accept }),
+    });
+    if (res.ok) {
+      const j = await res.json() as { outcome: string };
+      setInvites((xs) => xs.filter((i) => i.id !== id));
+      if (accept && j.outcome === 'joined') window.location.href = `/room/${roomId}`;
+    }
+  }
 
   async function startRoom() {
     if (!handle || !newName.trim()) return;
@@ -89,6 +112,21 @@ export function BackroomHub({ handle, memberType, label, rooms }: { handle: stri
           {label && (
             <p className="br-sans" style={{ fontSize: 13, color: 'var(--ink-3)', margin: 0 }}>Signed in as {label}.</p>
           )}
+
+          {invites.map((iv) => (
+            <div key={iv.id} style={{ ...cardStyle, borderColor: 'var(--accent)' }}>
+              <p className="br-sans" style={{ fontSize: 11, letterSpacing: '0.14em', textTransform: 'uppercase', color: 'var(--ink-3)', margin: 0 }}>An invitation</p>
+              <p className="br-serif" style={{ fontSize: 20, margin: '4px 0 2px', color: 'var(--ink)' }}>{iv.room_name}</p>
+              <p className="br-sans" style={{ fontSize: 14, color: 'var(--ink-3)', margin: 0 }}>Vouched by {iv.inviter_ref}.</p>
+              {iv.why && <p className="br-sans" style={{ fontSize: 14, color: 'var(--ink-2)', margin: '8px 0 0' }}>{iv.why}</p>}
+              <div style={{ display: 'flex', gap: 10, marginTop: 12 }}>
+                <button type="button" onClick={() => respondInvite(iv.id, true, iv.room_id)} className="br-sans"
+                  style={{ padding: '9px 20px', borderRadius: 999, border: '1px solid var(--ink)', background: 'var(--ink)', color: 'var(--bg)', fontSize: 13, cursor: 'pointer' }}>Accept</button>
+                <button type="button" onClick={() => respondInvite(iv.id, false, iv.room_id)} className="br-sans"
+                  style={{ padding: '9px 20px', borderRadius: 999, border: '1px solid var(--line-strong)', background: 'transparent', color: 'var(--ink-2)', fontSize: 13, cursor: 'pointer' }}>Decline</button>
+              </div>
+            </div>
+          ))}
           {isBuyer && <HubLink href={`/you?handle=${encodeURIComponent(handle)}`} title="Your taste" desc="The references and obsessions VIA matches you on. Yours to write and change." />}
           {isBuyer && <HubLink href={`/door?handle=${encodeURIComponent(handle)}`} title="The Door" desc="Where introductions arrive. Accept, decline, or leave them." />}
           {rooms.length === 0 ? (

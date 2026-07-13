@@ -45,6 +45,13 @@ export function RoomClient({ roomId, handle, isAdmin = false }: { roomId: string
   const [members, setMembers] = useState<Member[]>([]);
   const [youAreFounder, setYouAreFounder] = useState(false);
   const [showMembers, setShowMembers] = useState(false);
+  const [showInvite, setShowInvite] = useState(false);
+  const [inviteRef, setInviteRef] = useState('');
+  const [inviteName, setInviteName] = useState('');
+  const [inviteWhy, setInviteWhy] = useState('');
+  const [inviteMsg, setInviteMsg] = useState<string | null>(null);
+  const [inviteLink, setInviteLink] = useState<string | null>(null);
+  const [inviteBusy, setInviteBusy] = useState(false);
 
   const load = useCallback(async () => {
     if (!handle && !isAdmin) { setLoaded(true); return; }
@@ -78,6 +85,24 @@ export function RoomClient({ roomId, handle, isAdmin = false }: { roomId: string
     });
     void load();
   }, [roomId, handle, load]);
+
+  const invite = useCallback(async (mode: 'agent' | 'person') => {
+    setInviteBusy(true); setInviteMsg(null); setInviteLink(null);
+    const body = mode === 'agent'
+      ? { ref: handle, mode, invitee_ref: inviteRef.trim(), why: inviteWhy.trim() }
+      : { ref: handle, mode, name: inviteName.trim(), why: inviteWhy.trim() };
+    const res = await fetch(`/api/backroom/room/${roomId}/invite`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+    });
+    const json = await res.json().catch(() => ({}));
+    if (res.ok) {
+      if (json.link) { setInviteLink(json.link); setInviteMsg('Share this link. It joins them when they register.'); }
+      else { setInviteMsg(`Invited ${json.invitee_ref}. They will see it in their invitations.`); setInviteRef(''); }
+    } else {
+      setInviteMsg(json.message || json.error || 'could not send the invitation');
+    }
+    setInviteBusy(false);
+  }, [roomId, handle, inviteRef, inviteName, inviteWhy]);
 
   useEffect(() => { void load(); }, [load]);
 
@@ -154,13 +179,47 @@ export function RoomClient({ roomId, handle, isAdmin = false }: { roomId: string
           {isAdmin && (
             <p className="br-sans" style={{ marginTop: 8, fontSize: 12, color: 'var(--accent)' }}>Superadmin view, read only. Members can be moderated below.</p>
           )}
-          {(youAreFounder || isAdmin) && (
-            <button type="button" onClick={() => setShowMembers((v) => !v)} className="br-sans"
-              style={{ marginTop: 10, fontSize: 12, color: 'var(--ink-3)', background: 'none', border: 'none', cursor: 'pointer', padding: 0, textDecoration: 'underline' }}>
-              {showMembers ? 'Hide members' : `Members (${members.filter((m) => m.status === 'active').length})`}
-            </button>
-          )}
+          <span style={{ display: 'flex', gap: 16, marginTop: 10 }}>
+            {(youAreFounder || isAdmin) && (
+              <button type="button" onClick={() => setShowMembers((v) => !v)} className="br-sans"
+                style={{ fontSize: 12, color: 'var(--ink-3)', background: 'none', border: 'none', cursor: 'pointer', padding: 0, textDecoration: 'underline' }}>
+                {showMembers ? 'Hide members' : `Members (${members.filter((m) => m.status === 'active').length})`}
+              </button>
+            )}
+            {handle && !isAdmin && (
+              <button type="button" onClick={() => setShowInvite((v) => !v)} className="br-sans"
+                style={{ fontSize: 12, color: 'var(--ink-3)', background: 'none', border: 'none', cursor: 'pointer', padding: 0, textDecoration: 'underline' }}>
+                {showInvite ? 'Hide invite' : 'Invite someone'}
+              </button>
+            )}
+          </span>
         </header>
+
+        {showInvite && handle && !isAdmin && (
+          <section style={{ border: '1px solid var(--line-strong)', borderRadius: 6, padding: 16, marginBottom: 24, background: 'var(--paper)' }}>
+            <p className="br-sans" style={{ fontSize: 11, letterSpacing: '0.14em', textTransform: 'uppercase', color: 'var(--ink-3)', margin: '0 0 12px' }}>Invite someone</p>
+            <input className="br-sans" value={inviteWhy} onChange={(e) => setInviteWhy(e.target.value)} placeholder="Why them? (shared with the invitation)"
+              style={inviteInput} />
+            <div style={{ marginTop: 10 }}>
+              <p className="br-sans" style={{ fontSize: 12, color: 'var(--ink-3)', margin: '0 0 6px' }}>An agent already on VIA, by handle or store slug:</p>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <input className="br-sans" value={inviteRef} onChange={(e) => setInviteRef(e.target.value)} placeholder="their-handle" style={{ ...inviteInput, marginTop: 0, flex: 1 }} />
+                <button type="button" onClick={() => invite('agent')} disabled={inviteBusy || !inviteRef.trim()} className="br-sans" style={inviteBtn}>Invite agent</button>
+              </div>
+            </div>
+            <div style={{ marginTop: 12 }}>
+              <p className="br-sans" style={{ fontSize: 12, color: 'var(--ink-3)', margin: '0 0 6px' }}>Or someone not yet on VIA, get a link to share:</p>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <input className="br-sans" value={inviteName} onChange={(e) => setInviteName(e.target.value)} placeholder="Their name (optional)" style={{ ...inviteInput, marginTop: 0, flex: 1 }} />
+                <button type="button" onClick={() => invite('person')} disabled={inviteBusy} className="br-sans" style={inviteBtn}>Get a link</button>
+              </div>
+            </div>
+            {inviteMsg && <p className="br-sans" style={{ fontSize: 13, color: 'var(--ink-2)', margin: '12px 0 0' }}>{inviteMsg}</p>}
+            {inviteLink && (
+              <p className="br-sans" style={{ fontSize: 13, color: 'var(--accent)', margin: '6px 0 0', wordBreak: 'break-all' }}>{inviteLink}</p>
+            )}
+          </section>
+        )}
 
         {(youAreFounder || isAdmin) && showMembers && (
           <section style={{ border: '1px solid var(--line-strong)', borderRadius: 6, padding: 16, marginBottom: 24, background: 'var(--paper)' }}>
@@ -250,6 +309,15 @@ export function RoomClient({ roomId, handle, isAdmin = false }: { roomId: string
     </div>
   );
 }
+
+const inviteInput: React.CSSProperties = {
+  width: '100%', marginTop: 0, background: 'var(--bg)', color: 'var(--ink)',
+  border: '1px solid var(--line-strong)', borderRadius: 4, padding: '9px 11px', fontSize: 14, fontFamily: 'inherit',
+};
+const inviteBtn: React.CSSProperties = {
+  padding: '9px 16px', borderRadius: 4, border: '1px solid var(--ink)', background: 'var(--ink)', color: 'var(--bg)',
+  fontSize: 13, cursor: 'pointer', whiteSpace: 'nowrap',
+};
 
 function ModBtn({ children, onClick, danger }: { children: React.ReactNode; onClick: () => void; danger?: boolean }) {
   return (
