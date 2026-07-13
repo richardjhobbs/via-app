@@ -1,4 +1,5 @@
 import { RoomClient } from '@/components/backroom/RoomClient';
+import { isAdminFromCookies } from '@/lib/app/auth';
 
 export const dynamic = 'force-dynamic';
 
@@ -14,5 +15,6 @@ export default async function RoomPage({
   const { roomId } = await params;
   const sp = await searchParams;
   const handle = typeof sp.handle === 'string' ? sp.handle.trim() : '';
-  return <RoomClient roomId={roomId} handle={handle} />;
+  const isAdmin = !handle && (await isAdminFromCookies());
+  return <RoomClient roomId={roomId} handle={handle} isAdmin={isAdmin} />;
 }

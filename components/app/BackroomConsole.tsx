@@ -264,18 +264,18 @@ export function BackroomConsole({ rooms }: { rooms: ConsoleRoom[] }) {
                     ))}
                   </div>
                   <div className="flex flex-wrap gap-3 text-xs">
-                    <a className="text-accent underline" target="_blank" rel="noreferrer"
-                       href={`${base}/room/${r.id}${firstBuyer ? `?handle=${encodeURIComponent(firstBuyer)}` : ''}`}>
-                      Open room ↗
+                    <a className="text-accent underline" target="_blank" rel="noreferrer" href={`${base}/room/${r.id}`}>
+                      Inspect room (admin) ↗
                     </a>
+                    {firstBuyer && (
+                      <a className="text-accent underline" target="_blank" rel="noreferrer"
+                         href={`${base}/room/${r.id}?handle=${encodeURIComponent(firstBuyer)}`}>
+                        Open as {firstBuyer} ↗
+                      </a>
+                    )}
                     <a className="text-accent underline" target="_blank" rel="noreferrer" href={`${base}/rooms/${r.id}/mcp`}>
                       MCP card ↗
                     </a>
-                    {firstBuyer && (
-                      <a className="text-accent underline" target="_blank" rel="noreferrer" href={`${base}/door?handle=${encodeURIComponent(firstBuyer)}`}>
-                        {firstBuyer}&apos;s Door ↗
-                      </a>
-                    )}
                   </div>
                 </div>
               );

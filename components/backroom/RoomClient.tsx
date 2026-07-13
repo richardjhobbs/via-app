@@ -32,7 +32,7 @@ function peaksFrom(seed: string): number[] {
   return out;
 }
 
-export function RoomClient({ roomId, handle }: { roomId: string; handle: string }) {
+export function RoomClient({ roomId, handle, isAdmin = false }: { roomId: string; handle: string; isAdmin?: boolean }) {
   const [meta, setMeta] = useState<RoomMeta | null>(null);
   const [objects, setObjects] = useState<TableObject[]>([]);
   const [warmth, setWarmth] = useState<Warmth>({ last_event_at: null, events_24h: 0 });
@@ -47,8 +47,9 @@ export function RoomClient({ roomId, handle }: { roomId: string; handle: string 
   const [showMembers, setShowMembers] = useState(false);
 
   const load = useCallback(async () => {
-    if (!handle) { setLoaded(true); return; }
-    const res = await fetch(`/api/backroom/room/${roomId}?handle=${encodeURIComponent(handle)}`);
+    if (!handle && !isAdmin) { setLoaded(true); return; }
+    const q = handle ? `?handle=${encodeURIComponent(handle)}` : '';
+    const res = await fetch(`/api/backroom/room/${roomId}${q}`);
     if (res.ok) {
       const json = await res.json() as { room: RoomMeta; warmth: Warmth; objects: TableObject[] };
       setMeta(json.room); setWarmth(json.warmth); setObjects(json.objects);
@@ -56,15 +57,16 @@ export function RoomClient({ roomId, handle }: { roomId: string; handle: string 
       const j = await res.json().catch(() => ({}));
       setError((j as { error?: string }).error ?? 'could not open the room');
     }
-    // Members + founder status, for the founder's management panel.
-    const mres = await fetch(`/api/backroom/room/${roomId}/members?ref=${encodeURIComponent(handle)}`);
+    // Members: the founder's management panel, or the superadmin oversight view.
+    const mq = handle ? `?ref=${encodeURIComponent(handle)}` : '';
+    const mres = await fetch(`/api/backroom/room/${roomId}/members${mq}`);
     if (mres.ok) {
       const mjson = await mres.json() as { you_are_founder: boolean; members: Member[] };
       setYouAreFounder(mjson.you_are_founder);
       setMembers(mjson.members);
     }
     setLoaded(true);
-  }, [roomId, handle]);
+  }, [roomId, handle, isAdmin]);
 
   const moderate = useCallback(async (target: Member, action: 'remove' | 'block' | 'restore') => {
     await fetch(`/api/backroom/room/${roomId}/members`, {
@@ -125,7 +127,7 @@ export function RoomClient({ roomId, handle }: { roomId: string; handle: string 
 
   const accent = meta?.accent_hex ?? '#8a5a3c';
 
-  if (!handle) {
+  if (!handle && !isAdmin) {
     return <main style={{ maxWidth: 560, margin: '0 auto', padding: '64px 20px' }}>
       <p className="br-sans" style={{ color: 'var(--ink-2)' }}>Open this with your member handle, for example ?handle=yourname.</p>
     </main>;
@@ -149,7 +151,10 @@ export function RoomClient({ roomId, handle }: { roomId: string; handle: string 
         <header style={{ marginBottom: 24 }}>
           <p className="br-sans" style={{ fontSize: 12, letterSpacing: '0.14em', textTransform: 'uppercase', color: 'var(--ink-3)', margin: 0 }}>The Room</p>
           <h1 className="br-serif" style={{ fontSize: 32, fontWeight: 400, margin: '6px 0 0' }}>{meta?.name ?? '...'}</h1>
-          {youAreFounder && (
+          {isAdmin && (
+            <p className="br-sans" style={{ marginTop: 8, fontSize: 12, color: 'var(--accent)' }}>Superadmin view, read only. Members can be moderated below.</p>
+          )}
+          {(youAreFounder || isAdmin) && (
             <button type="button" onClick={() => setShowMembers((v) => !v)} className="br-sans"
               style={{ marginTop: 10, fontSize: 12, color: 'var(--ink-3)', background: 'none', border: 'none', cursor: 'pointer', padding: 0, textDecoration: 'underline' }}>
               {showMembers ? 'Hide members' : `Members (${members.filter((m) => m.status === 'active').length})`}
@@ -157,9 +162,11 @@ export function RoomClient({ roomId, handle }: { roomId: string; handle: string 
           )}
         </header>
 
-        {youAreFounder && showMembers && (
+        {(youAreFounder || isAdmin) && showMembers && (
           <section style={{ border: '1px solid var(--line-strong)', borderRadius: 6, padding: 16, marginBottom: 24, background: 'var(--paper)' }}>
-            <p className="br-sans" style={{ fontSize: 11, letterSpacing: '0.14em', textTransform: 'uppercase', color: 'var(--ink-3)', margin: '0 0 12px' }}>Members · you found this room</p>
+            <p className="br-sans" style={{ fontSize: 11, letterSpacing: '0.14em', textTransform: 'uppercase', color: 'var(--ink-3)', margin: '0 0 12px' }}>
+              {isAdmin && !youAreFounder ? 'Members · superadmin' : 'Members · you found this room'}
+            </p>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
               {members.map((m, i) => {
                 const isYou = m.member_platform === 'via' && m.member_ref === handle;
@@ -239,7 +246,7 @@ export function RoomClient({ roomId, handle }: { roomId: string; handle: string 
       {busy && (
         <p className="br-sans" style={{ position: 'fixed', bottom: 92, left: 0, right: 0, textAlign: 'center', fontSize: 13, color: 'var(--ink-3)', pointerEvents: 'none' }}>One moment...</p>
       )}
-      <HoldToSpeak onUtterance={onUtterance} />
+      {handle && <HoldToSpeak onUtterance={onUtterance} />}
     </div>
   );
 }

@@ -19,16 +19,24 @@ export const runtime = 'nodejs';
 export async function GET(req: Request, { params }: { params: Promise<{ roomId: string }> }) {
   const { roomId } = await params;
   const ref = new URL(req.url).searchParams.get('ref')?.trim() ?? '';
-  if (!ref) return NextResponse.json({ error: 'ref required' }, { status: 400 });
   const room = await loadRoom(roomId);
   if (!room) return NextResponse.json({ error: 'room not found' }, { status: 404 });
 
-  const auth = await requireRoomMember(ref, roomId);
-  if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
+  // Member view (with ref) or superadmin oversight view (no ref).
+  let youFound = false;
+  let asAdmin = false;
+  if (ref) {
+    const auth = await requireRoomMember(ref, roomId);
+    if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
+    youFound = await isFounder(roomId, auth.member);
+  } else if (await isAdminFromCookies()) {
+    asAdmin = true;
+  } else {
+    return NextResponse.json({ error: 'ref required' }, { status: 400 });
+  }
 
   const members = await listRoomMembers(roomId);
-  const youFound = await isFounder(roomId, auth.member);
-  return NextResponse.json({ room: { id: room.id, name: room.name }, you_are_founder: youFound, members });
+  return NextResponse.json({ room: { id: room.id, name: room.name }, you_are_founder: youFound, is_admin: asAdmin, members });
 }
 
 export async function POST(req: Request, { params }: { params: Promise<{ roomId: string }> }) {
