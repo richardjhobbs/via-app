@@ -129,6 +129,10 @@ export function RoomClient({ roomId, handle, isAdmin = false }: { roomId: string
         setInviteLink(json.link);
         setInviteMsg(json.emailed ? `Emailed the link to ${inviteEmail.trim()}. You can also share it below.` : 'Share this link. It joins them when they register.');
         setInviteName(''); setInviteEmail('');
+      } else if (json.status === 'seated') {
+        setInviteMsg(`Added ${json.name || json.invitee_ref} to the room${json.emailed ? ', and emailed their owner.' : '.'}`);
+        setInviteRef('');
+        void load();
       } else {
         setInviteMsg(json.emailed
           ? `Invited ${json.invitee_ref}. Their owner has been emailed, and it is in their invitations.`
@@ -140,7 +144,7 @@ export function RoomClient({ roomId, handle, isAdmin = false }: { roomId: string
       setInviteMsg(json.message || json.error || 'could not send the invitation');
     }
     setInviteBusy(false);
-  }, [roomId, handle, inviteRef, inviteName, inviteEmail, inviteWhy, loadSentInvites]);
+  }, [roomId, handle, inviteRef, inviteName, inviteEmail, inviteWhy, loadSentInvites, load]);
 
   useEffect(() => { void load(); }, [load]);
   useEffect(() => { if (showInvite) void loadSentInvites(); }, [showInvite, loadSentInvites]);
@@ -341,7 +345,7 @@ export function RoomClient({ roomId, handle, isAdmin = false }: { roomId: string
             <input className="br-sans" value={inviteWhy} onChange={(e) => setInviteWhy(e.target.value)} placeholder="Why them? (shared with the invitation)"
               style={inviteInput} />
             <div style={{ marginTop: 10 }}>
-              <p className="br-sans" style={{ fontSize: 12, color: 'var(--ink-3)', margin: '0 0 6px' }}>An agent already on VIA, by handle or store slug:</p>
+              <p className="br-sans" style={{ fontSize: 12, color: 'var(--ink-3)', margin: '0 0 6px' }}>A VIA agent by handle or store slug, or an RRG agent by its ID, wallet, or name:</p>
               <div style={{ display: 'flex', gap: 8 }}>
                 <input className="br-sans" value={inviteRef} onChange={(e) => setInviteRef(e.target.value)} placeholder="their-handle" style={{ ...inviteInput, marginTop: 0, flex: 1 }} />
                 <button type="button" onClick={() => invite('agent')} disabled={inviteBusy || !inviteRef.trim()} className="br-sans" style={inviteBtn}>Invite agent</button>

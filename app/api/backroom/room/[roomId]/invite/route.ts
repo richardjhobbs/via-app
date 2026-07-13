@@ -9,11 +9,12 @@
  */
 import { NextResponse } from 'next/server';
 import { db } from '@/lib/app/db';
-import { loadRoom, type MemberType } from '@/lib/app/backroom/rooms';
+import { loadRoom, joinRoom, type MemberType } from '@/lib/app/backroom/rooms';
 import { requireRoomMember } from '@/lib/app/backroom/ui-auth';
 import { inviteAgent, invitePerson, listSentInvites } from '@/lib/app/backroom/invitations';
+import { resolveRrgConcierge, resolveRrgBrand } from '@/lib/app/backroom/rrg-federation';
 import { supabaseAdmin } from '@/lib/app/seller-auth';
-import { sendRoomInviteEmail } from '@/lib/app/email';
+import { sendRoomInviteEmail, sendRoomMemberAddedEmail } from '@/lib/app/email';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -92,25 +93,52 @@ export async function POST(req: Request, { params }: { params: Promise<{ roomId:
     const inviteeRef = body.invitee_ref?.trim() ?? '';
     if (!inviteeRef) return NextResponse.json({ error: 'invitee_ref required' }, { status: 400 });
     const kind = await resolveViaKind(inviteeRef);
-    if (!kind) return NextResponse.json({ error: 'no such VIA agent' }, { status: 404 });
-    const result = await inviteAgent(roomId, auth.member, { member_platform: 'via', member_type: kind, member_ref: inviteeRef }, why);
-    if (!result.ok) {
-      const msg = result.reason === 'already_member' ? 'They are already in the room.'
-        : result.reason === 'already_invited' ? 'They already have a pending invitation.'
-        : 'Could not create the invitation.';
-      return NextResponse.json({ status: result.reason, message: msg }, { status: result.reason === 'error' ? 500 : 409 });
+    if (kind) {
+      // VIA agent: create an invitation it accepts from its VIA hub.
+      const result = await inviteAgent(roomId, auth.member, { member_platform: 'via', member_type: kind, member_ref: inviteeRef }, why);
+      if (!result.ok) {
+        const msg = result.reason === 'already_member' ? 'They are already in the room.'
+          : result.reason === 'already_invited' ? 'They already have a pending invitation.'
+          : 'Could not create the invitation.';
+        return NextResponse.json({ status: result.reason, message: msg }, { status: result.reason === 'error' ? 500 : 409 });
+      }
+      // Best-effort heads-up to the invited agent's owner. A failure here must
+      // not fail the invitation, which already lives in their in-app inbox.
+      let emailed = false;
+      const ownerEmail = await resolveOwnerEmail(kind, inviteeRef);
+      if (ownerEmail) {
+        try {
+          await sendRoomInviteEmail({ to: ownerEmail, roomName: room.name, inviterRef: ref, why, ctaUrl: `${APP_BASE}/backroom`, mode: 'agent' });
+          emailed = true;
+        } catch (e) { console.warn('[room/invite] agent heads-up email failed:', e); }
+      }
+      return NextResponse.json({ status: 'invited', kind, invitee_ref: inviteeRef, emailed }, { status: 201 });
     }
-    // Best-effort heads-up to the invited agent's owner. A failure here must not
-    // fail the invitation, which already lives in their in-app inbox.
+
+    // Not a VIA agent: try RRG. RRG agents have no VIA inbox to accept from, so
+    // they are seated directly as a federated member carrying the inviter's
+    // vouch (the same way the operator console seats them). Resolved by VIA id,
+    // wallet, or unique name for a concierge, or a brand slug.
+    const concierge = await resolveRrgConcierge(inviteeRef);
+    const brand = concierge ? null : await resolveRrgBrand(inviteeRef);
+    const rrgKind: MemberType | null = concierge ? 'buyer' : brand ? 'seller' : null;
+    const identity = concierge ?? brand;
+    if (!rrgKind || !identity) return NextResponse.json({ error: 'no such VIA or RRG agent' }, { status: 404 });
+    if (!identity.wallet_address) return NextResponse.json({ error: 'could not resolve that RRG agent wallet; add it from the operator console with the wallet' }, { status: 422 });
+
+    const joined = await joinRoom(roomId, { member_platform: 'rrg', member_type: rrgKind, member_ref: inviteeRef }, ref, false, identity.wallet_address);
+    if (joined.outcome === 'blocked') return NextResponse.json({ status: 'blocked', message: 'They cannot join this room.' }, { status: 409 });
+    if (joined.outcome === 'full') return NextResponse.json({ status: 'full', message: 'This room is full.' }, { status: 409 });
+
     let emailed = false;
-    const ownerEmail = await resolveOwnerEmail(kind, inviteeRef);
-    if (ownerEmail) {
+    const conciergeEmail = concierge?.email ?? null;
+    if (conciergeEmail) {
       try {
-        await sendRoomInviteEmail({ to: ownerEmail, roomName: room.name, inviterRef: ref, why, ctaUrl: `${APP_BASE}/backroom`, mode: 'agent' });
+        await sendRoomMemberAddedEmail({ to: conciergeEmail, roomName: room.name, memberName: identity.name });
         emailed = true;
-      } catch (e) { console.warn('[room/invite] agent heads-up email failed:', e); }
+      } catch (e) { console.warn('[room/invite] rrg seat heads-up email failed:', e); }
     }
-    return NextResponse.json({ status: 'invited', kind, invitee_ref: inviteeRef, emailed }, { status: 201 });
+    return NextResponse.json({ status: 'seated', platform: 'rrg', kind: rrgKind, invitee_ref: inviteeRef, name: identity.name, emailed }, { status: 201 });
   }
 
   if (body.mode === 'person') {
