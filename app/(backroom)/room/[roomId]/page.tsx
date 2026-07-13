@@ -1,5 +1,6 @@
 import { RoomClient } from '@/components/backroom/RoomClient';
 import { isAdminFromCookies } from '@/lib/app/auth';
+import { primarySessionMember } from '@/lib/app/backroom/ui-auth';
 
 export const dynamic = 'force-dynamic';
 
@@ -14,7 +15,13 @@ export default async function RoomPage({
 }) {
   const { roomId } = await params;
   const sp = await searchParams;
-  const handle = typeof sp.handle === 'string' ? sp.handle.trim() : '';
+  // Use the handle in the URL if given, otherwise the identity you are already
+  // signed in as (buyer or seller). No separate room login.
+  let handle = typeof sp.handle === 'string' ? sp.handle.trim() : '';
+  if (!handle) {
+    const me = await primarySessionMember();
+    if (me) handle = me.ref;
+  }
   const isAdmin = !handle && (await isAdminFromCookies());
   return <RoomClient roomId={roomId} handle={handle} isAdmin={isAdmin} />;
 }

@@ -1,4 +1,5 @@
 import { DoorClient } from '@/components/backroom/DoorClient';
+import { primarySessionMember } from '@/lib/app/backroom/ui-auth';
 
 export const dynamic = 'force-dynamic';
 
@@ -7,6 +8,10 @@ export const dynamic = 'force-dynamic';
 // leave it. Declines are silent.
 export default async function DoorPage({ searchParams }: { searchParams: Promise<{ handle?: string }> }) {
   const sp = await searchParams;
-  const handle = typeof sp.handle === 'string' ? sp.handle.trim() : '';
+  let handle = typeof sp.handle === 'string' ? sp.handle.trim() : '';
+  if (!handle) {
+    const me = await primarySessionMember();
+    if (me) handle = me.ref;
+  }
   return <DoorClient handle={handle} />;
 }

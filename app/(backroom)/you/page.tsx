@@ -1,4 +1,5 @@
 import { YouClient } from '@/components/backroom/YouClient';
+import { primarySessionMember } from '@/lib/app/backroom/ui-auth';
 
 export const dynamic = 'force-dynamic';
 
@@ -6,6 +7,10 @@ export const dynamic = 'force-dynamic';
 // you is public. Slice one has no You surface beyond the interview and the edit.
 export default async function YouPage({ searchParams }: { searchParams: Promise<{ handle?: string }> }) {
   const sp = await searchParams;
-  const handle = typeof sp.handle === 'string' ? sp.handle.trim() : '';
+  let handle = typeof sp.handle === 'string' ? sp.handle.trim() : '';
+  if (!handle) {
+    const me = await primarySessionMember();
+    if (me) handle = me.ref;
+  }
   return <YouClient handle={handle} />;
 }

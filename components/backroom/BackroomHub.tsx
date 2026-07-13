@@ -19,7 +19,8 @@ interface VoiceResult {
   note?: string;
 }
 
-export function BackroomHub({ handle, rooms }: { handle: string | null; rooms: HubRoom[] }) {
+export function BackroomHub({ handle, memberType, label, rooms }: { handle: string | null; memberType: string | null; label: string | null; rooms: HubRoom[] }) {
+  const isBuyer = memberType === 'buyer';
   const [result, setResult] = useState<VoiceResult | null>(null);
   const [busy, setBusy] = useState(false);
   const [newName, setNewName] = useState('');
@@ -67,18 +68,29 @@ export function BackroomHub({ handle, rooms }: { handle: string | null; rooms: H
 
       {!handle && (
         <div style={{ marginTop: 32, borderTop: '1px solid var(--line)', paddingTop: 24 }}>
-          <p className="br-sans" style={{ fontSize: 15, color: 'var(--ink-2)', marginBottom: 12 }}>Sign in to see your taste, your Door and your rooms.</p>
-          <Link href="/buyer/login" className="br-sans"
-            style={{ display: 'inline-block', padding: '12px 24px', borderRadius: 999, border: '1px solid var(--ink)', background: 'var(--ink)', color: 'var(--bg)', fontSize: 14, textDecoration: 'none' }}>
-            Sign in
-          </Link>
+          <p className="br-sans" style={{ fontSize: 15, color: 'var(--ink-2)', marginBottom: 12 }}>
+            Open the Back Room from your agent. If you are already signed in to your buying agent or your seller store, you are in. Otherwise sign in there first.
+          </p>
+          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+            <Link href="/buyer/login" className="br-sans"
+              style={{ display: 'inline-block', padding: '12px 24px', borderRadius: 999, border: '1px solid var(--ink)', background: 'var(--ink)', color: 'var(--bg)', fontSize: 14, textDecoration: 'none' }}>
+              Buying agent sign in
+            </Link>
+            <Link href="/seller/login" className="br-sans"
+              style={{ display: 'inline-block', padding: '12px 24px', borderRadius: 999, border: '1px solid var(--line-strong)', background: 'transparent', color: 'var(--ink)', fontSize: 14, textDecoration: 'none' }}>
+              Seller sign in
+            </Link>
+          </div>
         </div>
       )}
 
       {handle && (
         <div style={{ marginTop: 32, display: 'flex', flexDirection: 'column', gap: 12 }}>
-          <HubLink href={`/you?handle=${encodeURIComponent(handle)}`} title="Your taste" desc="The references and obsessions VIA matches you on. Yours to write and change." />
-          <HubLink href={`/door?handle=${encodeURIComponent(handle)}`} title="The Door" desc="Where introductions arrive. Accept, decline, or leave them." />
+          {label && (
+            <p className="br-sans" style={{ fontSize: 13, color: 'var(--ink-3)', margin: 0 }}>Signed in as {label}.</p>
+          )}
+          {isBuyer && <HubLink href={`/you?handle=${encodeURIComponent(handle)}`} title="Your taste" desc="The references and obsessions VIA matches you on. Yours to write and change." />}
+          {isBuyer && <HubLink href={`/door?handle=${encodeURIComponent(handle)}`} title="The Door" desc="Where introductions arrive. Accept, decline, or leave them." />}
           {rooms.length === 0 ? (
             <div style={cardStyle}>
               <p className="br-serif" style={{ fontSize: 18, margin: 0 }}>Your rooms</p>

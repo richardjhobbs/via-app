@@ -14,9 +14,9 @@
  * the RRG side, not here.
  */
 import { db } from '../db';
-import { getBuyerUser } from '../buyer-auth';
-import { getSellerUser, isSellerMember } from '../seller-auth';
-import { isMember, type Author } from './rooms';
+import { getBuyerUser, getUserBuyers } from '../buyer-auth';
+import { getSellerUser, isSellerMember, getUserBrands } from '../seller-auth';
+import { isMember, type Author, type MemberType } from './rooms';
 
 export type RoomMemberAuth =
   | { ok: true; member: Author }
@@ -44,6 +44,37 @@ export async function resolveOwnedMember(ref: string): Promise<RoomMemberAuth> {
     }
   }
   return { ok: false, status: 401, error: 'not authenticated for this member' };
+}
+
+export interface SessionMember { platform: 'via'; type: MemberType; ref: string; label: string; }
+
+/**
+ * Every VIA member the current session is already signed in as: their buying
+ * agent(s) and any seller stores they belong to. This is what lets the Back
+ * Room reuse an existing agent-admin session, so a signed-in user never has to
+ * log in again to reach a room. Empty when there is no session.
+ */
+export async function sessionMembers(): Promise<SessionMember[]> {
+  const out: SessionMember[] = [];
+  const buyerUser = await getBuyerUser();
+  if (buyerUser) {
+    for (const b of await getUserBuyers(buyerUser.id)) {
+      out.push({ platform: 'via', type: 'buyer', ref: b.handle, label: b.displayName || b.handle });
+    }
+  }
+  const sellerUser = await getSellerUser();
+  if (sellerUser) {
+    for (const s of await getUserBrands(sellerUser.id)) {
+      out.push({ platform: 'via', type: 'seller', ref: s.sellerSlug, label: s.sellerName || s.sellerSlug });
+    }
+  }
+  return out;
+}
+
+/** The primary session member (first buyer, else first seller), or null. */
+export async function primarySessionMember(): Promise<SessionMember | null> {
+  const all = await sessionMembers();
+  return all[0] ?? null;
 }
 
 /** As resolveOwnedMember, and additionally require active membership of the room. */
