@@ -352,6 +352,36 @@ export async function sayToRoom(roomId: string, author: Author, text: string) {
   return appendEvent(roomId, 'talk', author, { text });
 }
 
+export interface ChatMessage {
+  id:              string;
+  author_platform: string;
+  author_ref:      string;
+  text:            string;
+  created_at:      string;
+}
+
+/**
+ * The room's chat: 'talk' events, NEWEST FIRST (most recent at the top). Talk is
+ * the group conversation; the table (object_placed) is the permanent surface.
+ */
+export async function listChat(roomId: string, limit = 100): Promise<ChatMessage[]> {
+  const { data } = await db
+    .from('app_room_events')
+    .select('id, author_platform, author_ref, payload, created_at')
+    .eq('room_id', roomId)
+    .eq('kind', 'talk')
+    .order('created_at', { ascending: false })
+    .limit(limit);
+  const rows = (data as Array<{ id: string; author_platform: string; author_ref: string; payload: Record<string, unknown>; created_at: string }>) ?? [];
+  return rows.map((r) => ({
+    id: r.id,
+    author_platform: r.author_platform,
+    author_ref: r.author_ref,
+    text: String(r.payload.text ?? ''),
+    created_at: r.created_at,
+  }));
+}
+
 export async function placeErrandResult(roomId: string, author: Author, result: Record<string, unknown>) {
   return appendEvent(roomId, 'errand_result', author, result);
 }

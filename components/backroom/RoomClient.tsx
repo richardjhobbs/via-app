@@ -31,6 +31,7 @@ interface RoomMeta { id: string; name: string; accent_hex: string; member_cap: n
 interface Quote { title: string; seller: string | null; price_usdc: number | null; page_url: string | null; }
 interface Member { member_platform: string; member_type: string; member_ref: string; is_founder: boolean; status: string; }
 interface SentInvite { id: string; kind: string; status: string; why: string; invitee: string; link: string | null; email: string | null; created_at: string; }
+interface ChatMessage { id: string; author_platform: string; author_ref: string; text: string; created_at: string; }
 
 // Deterministic pseudo-waveform peaks from a string, so a voice note always
 // draws the same bars without storing them for the placeholder rendering.
@@ -46,6 +47,10 @@ export function RoomClient({ roomId, handle, isAdmin = false }: { roomId: string
   const [meta, setMeta] = useState<RoomMeta | null>(null);
   const [objects, setObjects] = useState<TableObject[]>([]);
   const [modalObject, setModalObject] = useState<TableObject | null>(null);
+  const [chat, setChat] = useState<ChatMessage[]>([]);
+  const [chatInput, setChatInput] = useState('');
+  const [chatBusy, setChatBusy] = useState(false);
+  const [mentionMatches, setMentionMatches] = useState<string[]>([]);
   const [warmth, setWarmth] = useState<Warmth>({ last_event_at: null, events_24h: 0 });
   const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -154,6 +159,55 @@ export function RoomClient({ roomId, handle, isAdmin = false }: { roomId: string
     }
     setBusy(false);
   }, [roomId, handle, load]);
+
+  // Group chat. The room's ambient talk stream, newest first (top of the box).
+  const loadChat = useCallback(async () => {
+    if (!handle) return;
+    const res = await fetch(`/api/backroom/room/${roomId}/chat?handle=${encodeURIComponent(handle)}`);
+    if (res.ok) { const j = await res.json() as { messages: ChatMessage[] }; setChat(j.messages); }
+  }, [roomId, handle]);
+
+  const sendChat = useCallback(async () => {
+    const text = chatInput.trim();
+    if (!text || !handle) return;
+    setChatBusy(true);
+    const res = await fetch(`/api/backroom/room/${roomId}/chat`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ handle, text }),
+    });
+    if (res.ok) { const j = await res.json() as { messages: ChatMessage[] }; setChat(j.messages); setChatInput(''); setMentionMatches([]); }
+    setChatBusy(false);
+  }, [roomId, handle, chatInput]);
+
+  // @mention: match the trailing "@word" against active members (not yourself).
+  const onChatChange = useCallback((v: string) => {
+    setChatInput(v);
+    const m = v.match(/@([\w-]*)$/);
+    if (m) {
+      const q = m[1].toLowerCase();
+      setMentionMatches(
+        members
+          .filter((mm) => mm.status === 'active' && mm.member_ref !== handle && mm.member_ref.toLowerCase().includes(q))
+          .map((mm) => mm.member_ref)
+          .slice(0, 6),
+      );
+    } else { setMentionMatches([]); }
+  }, [members, handle]);
+
+  const pickMention = useCallback((ref: string) => {
+    setChatInput((v) => v.replace(/@([\w-]*)$/, `@${ref} `));
+    setMentionMatches([]);
+  }, []);
+
+  const memberRefs = useMemo(() => new Set(members.map((m) => m.member_ref)), [members]);
+
+  // Keep the chat current: initial load plus a light poll while in the room.
+  useEffect(() => { if (handle) void loadChat(); }, [handle, loadChat]);
+  useEffect(() => {
+    if (!handle) return;
+    const t = setInterval(() => { void loadChat(); }, 5000);
+    return () => clearInterval(t);
+  }, [handle, loadChat]);
 
   // Text input. Voice is promoted, but anyone can type onto the table instead.
   const placeNote = useCallback(async () => {
@@ -382,6 +436,53 @@ export function RoomClient({ roomId, handle, isAdmin = false }: { roomId: string
           </section>
         )}
 
+        {/* Group chat: the room's ambient talk, a larger box at the top of the
+            table. Newest message at the TOP (input is here too); older below. */}
+        {handle && (
+          <section style={{ border: '1px solid var(--line-strong)', borderRadius: 8, background: 'var(--paper)', marginBottom: 24, overflow: 'hidden' }}>
+            <div style={{ padding: '12px 14px 10px', borderBottom: '1px solid var(--line)', position: 'relative' }}>
+              <p className="br-sans" style={{ fontSize: 11, letterSpacing: '0.14em', textTransform: 'uppercase', color: 'var(--ink-3)', margin: '0 0 8px' }}>Chat</p>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <input
+                  className="br-sans"
+                  value={chatInput}
+                  onChange={(e) => onChatChange(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); void sendChat(); } }}
+                  placeholder="Message the room. Type @ to mention someone."
+                  style={{ flex: 1, background: 'var(--bg)', color: 'var(--ink)', border: '1px solid var(--line-strong)', borderRadius: 4, padding: '10px 12px', fontSize: 15, fontFamily: 'inherit' }}
+                />
+                <button type="button" onClick={sendChat} disabled={chatBusy || !chatInput.trim()} className="br-sans"
+                  style={{ padding: '10px 18px', borderRadius: 4, border: '1px solid var(--ink)', background: 'var(--ink)', color: 'var(--bg)', fontSize: 14, cursor: 'pointer', opacity: chatBusy || !chatInput.trim() ? 0.5 : 1, whiteSpace: 'nowrap' }}>Send</button>
+              </div>
+              {mentionMatches.length > 0 && (
+                <div style={{ position: 'absolute', left: 14, right: 14, top: '100%', zIndex: 5, background: 'var(--bg)', border: '1px solid var(--line-strong)', borderRadius: 4, boxShadow: '0 4px 12px rgba(0,0,0,0.25)', overflow: 'hidden' }}>
+                  {mentionMatches.map((ref) => (
+                    <button key={ref} type="button" onClick={() => pickMention(ref)} className="br-sans"
+                      style={{ display: 'block', width: '100%', textAlign: 'left', padding: '8px 12px', background: 'none', border: 'none', color: 'var(--ink)', fontSize: 14, cursor: 'pointer' }}>@{ref}</button>
+                  ))}
+                </div>
+              )}
+            </div>
+            <div style={{ maxHeight: 360, overflowY: 'auto' }}>
+              {chat.length === 0 ? (
+                <p className="br-sans" style={{ fontSize: 14, color: 'var(--ink-3)', padding: '16px 14px', margin: 0 }}>No messages yet. Say something to the room.</p>
+              ) : (
+                chat.map((m) => (
+                  <div key={m.id} style={{ padding: '10px 14px', borderBottom: '1px solid var(--line)' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, marginBottom: 2 }}>
+                      <span className="br-sans" style={{ fontSize: 13, color: 'var(--accent)', fontWeight: 500 }}>{m.author_ref}</span>
+                      <span className="br-sans" style={{ fontSize: 12, color: 'var(--ink-3)', whiteSpace: 'nowrap' }}>{formatStamp(m.created_at)}</span>
+                    </div>
+                    <p className="br-sans" style={{ fontSize: 15, color: 'var(--ink)', margin: 0, lineHeight: 1.5, wordBreak: 'break-word', whiteSpace: 'pre-wrap' }}>
+                      <MentionText text={m.text} memberRefs={memberRefs} />
+                    </p>
+                  </div>
+                ))
+              )}
+            </div>
+          </section>
+        )}
+
         {/* Errand: quotes VIA sourced, then bring a paid order back to the table.
             Paying happens at the existing checkout, the deliberate money press. */}
         {quotes.length > 0 && (
@@ -548,6 +649,20 @@ function ObjectCard({ o, onOpen }: { o: TableObject; onOpen: (o: TableObject) =>
       )}
       <p className="br-sans" style={{ fontSize: 12, color: 'var(--ink-3)', margin: '12px 0 0' }}>{o.author_ref} · {formatStamp(o.created_at)}</p>
     </article>
+  );
+}
+
+// Render a chat message, highlighting @mentions of known room members.
+function MentionText({ text, memberRefs }: { text: string; memberRefs: Set<string> }) {
+  const parts = text.split(/(@[A-Za-z0-9_-]+)/g);
+  return (
+    <>
+      {parts.map((p, i) =>
+        p.startsWith('@') && memberRefs.has(p.slice(1))
+          ? <span key={i} style={{ color: 'var(--accent)', fontWeight: 500 }}>{p}</span>
+          : <span key={i}>{p}</span>,
+      )}
+    </>
   );
 }
 
