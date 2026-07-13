@@ -76,24 +76,19 @@ export function RoomClient({ roomId, handle, isAdmin = false }: { roomId: string
   const [composerErr, setComposerErr] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // One call returns the table, warmth, members, founder flag, and chat.
   const load = useCallback(async () => {
     if (!handle && !isAdmin) { setLoaded(true); return; }
     const q = handle ? `?handle=${encodeURIComponent(handle)}` : '';
     const res = await fetch(`/api/backroom/room/${roomId}${q}`);
     if (res.ok) {
-      const json = await res.json() as { room: RoomMeta; warmth: Warmth; objects: TableObject[] };
+      const json = await res.json() as { room: RoomMeta; warmth: Warmth; objects: TableObject[]; members: Member[]; you_are_founder: boolean; chat: ChatMessage[] };
       setMeta(json.room); setWarmth(json.warmth); setObjects(json.objects);
+      setMembers(json.members ?? []); setYouAreFounder(!!json.you_are_founder);
+      if (Array.isArray(json.chat)) setChat(json.chat);
     } else {
       const j = await res.json().catch(() => ({}));
       setError((j as { error?: string }).error ?? 'could not open the room');
-    }
-    // Members: the founder's management panel, or the superadmin oversight view.
-    const mq = handle ? `?ref=${encodeURIComponent(handle)}` : '';
-    const mres = await fetch(`/api/backroom/room/${roomId}/members${mq}`);
-    if (mres.ok) {
-      const mjson = await mres.json() as { you_are_founder: boolean; members: Member[] };
-      setYouAreFounder(mjson.you_are_founder);
-      setMembers(mjson.members);
     }
     setLoaded(true);
   }, [roomId, handle, isAdmin]);
@@ -216,11 +211,11 @@ export function RoomClient({ roomId, handle, isAdmin = false }: { roomId: string
 
   const memberRefs = useMemo(() => new Set(members.map((m) => m.member_ref)), [members]);
 
-  // Keep the chat current: initial load plus a light poll while in the room.
-  useEffect(() => { if (handle) void loadChat(); }, [handle, loadChat]);
+  // The initial chat arrives with load(); keep it current with a light poll,
+  // paused while the tab is hidden so it does not run in the background.
   useEffect(() => {
     if (!handle) return;
-    const t = setInterval(() => { void loadChat(); }, 5000);
+    const t = setInterval(() => { if (typeof document === 'undefined' || !document.hidden) void loadChat(); }, 7000);
     return () => clearInterval(t);
   }, [handle, loadChat]);
 

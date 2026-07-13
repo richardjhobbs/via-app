@@ -1,13 +1,14 @@
 /**
- * The Room, for the human UI: the table and the room's warmth.
- *
- * GET ?handle=<buyer> , the objects on the table plus presence warmth. Members
- * only (owner session + room membership).
+ * The Room, for the human UI: one call that returns everything the room view
+ * needs , table objects (with signed file URLs), warmth, members, the caller's
+ * founder flag, and the chat , so the client makes a single request on load
+ * instead of three. Members only (owner session + membership), or a superadmin
+ * for read-only oversight.
  */
 import { NextResponse } from 'next/server';
 import { db } from '@/lib/app/db';
-import { loadRoom, listTable, roomWarmth } from '@/lib/app/backroom/rooms';
-import { requireRoomMember } from '@/lib/app/backroom/ui-auth';
+import { loadRoom, listTable, roomWarmth, listRoomMembers, listChat } from '@/lib/app/backroom/rooms';
+import { requireRoomMember, type RoomMemberAuth } from '@/lib/app/backroom/ui-auth';
 import { isAdminFromCookies } from '@/lib/app/auth';
 import { DIGITAL_BUCKET } from '@/lib/app/digital-delivery';
 
@@ -21,32 +22,51 @@ export async function GET(req: Request, { params }: { params: Promise<{ roomId: 
   const room = await loadRoom(roomId);
   if (!room) return NextResponse.json({ error: 'room not found' }, { status: 404 });
 
-  // A member opens the room with their handle; a superadmin may open any room
-  // read-only for oversight (no handle needed).
+  // Auth runs alongside the data fetch so the request is one round-trip deep,
+  // not a chain. Data is fetched optimistically and only returned if auth passes.
+  const [objects, warmth, members, chat, auth, isAdmin] = await Promise.all([
+    listTable(roomId),
+    roomWarmth(roomId),
+    listRoomMembers(roomId),
+    listChat(roomId),
+    handle ? requireRoomMember(handle, roomId) : Promise.resolve<RoomMemberAuth | null>(null),
+    handle ? Promise.resolve(false) : isAdminFromCookies(),
+  ]);
+
   if (handle) {
-    const auth = await requireRoomMember(handle, roomId);
-    if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
-  } else if (!(await isAdminFromCookies())) {
+    if (!auth || !auth.ok) {
+      const status = auth && !auth.ok ? auth.status : 401;
+      const error = auth && !auth.ok ? auth.error : 'not authenticated';
+      return NextResponse.json({ error }, { status });
+    }
+  } else if (!isAdmin) {
     return NextResponse.json({ error: 'handle required' }, { status: 400 });
   }
 
-  const [objects, warmth] = await Promise.all([listTable(roomId), roomWarmth(roomId)]);
+  // Founder flag from the members already fetched , no extra query.
+  const me = auth && auth.ok ? auth.member : null;
+  const youAreFounder = !!(me && members.some(
+    (m) => m.member_platform === me.member_platform && m.member_type === me.member_type && m.member_ref === me.member_ref && m.is_founder,
+  ));
 
-  // File/image objects are stored privately; hand the client a short-lived
-  // signed URL so it can render an image or offer a download. Sign each path
-  // individually: the batch createSignedUrls returns the key URL-encoded, so a
-  // key with a space (e.g. "composed 5.jpg") would never match a by-path lookup
-  // and the image would silently fail to render.
-  const withUrls = await Promise.all(objects.map(async (o) => {
-    if (!o.storage_path) return { ...o, url: null as string | null };
-    const { data } = await db.storage.from(DIGITAL_BUCKET).createSignedUrl(o.storage_path, 3600);
-    return { ...o, url: data?.signedUrl ?? null };
-  }));
+  // Batch-sign file/image URLs in one storage call, mapping by INDEX (the batch
+  // return path is URL-encoded, so a key with a space would never match by path).
+  const signPaths = objects.map((o) => o.storage_path).filter((p): p is string => !!p);
+  const urlByPath = new Map<string, string>();
+  if (signPaths.length > 0) {
+    const { data } = await db.storage.from(DIGITAL_BUCKET).createSignedUrls(signPaths, 3600);
+    (data ?? []).forEach((d, i) => { if (d?.signedUrl) urlByPath.set(signPaths[i], d.signedUrl); });
+  }
+  const withUrls = objects.map((o) => ({ ...o, url: o.storage_path ? urlByPath.get(o.storage_path) ?? null : null }));
 
   return NextResponse.json({
     room: { id: room.id, name: room.name, accent_hex: room.accent_hex, member_cap: room.member_cap },
     warmth,
     count: withUrls.length,
     objects: withUrls,
+    members,
+    you_are_founder: youAreFounder,
+    is_admin: !handle && isAdmin,
+    chat,
   });
 }
