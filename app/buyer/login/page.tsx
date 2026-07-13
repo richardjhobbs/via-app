@@ -24,6 +24,7 @@ function BuyerLoginInner() {
   const [err,      setErr]      = useState('');
   const [msg,      setMsg]      = useState('');
   const [loading,  setLoading]  = useState(false);
+  const [resetDone, setResetDone] = useState(false);
 
   // Bounce already-signed-in buyers straight to their dashboard.
   useEffect(() => {
@@ -90,8 +91,19 @@ function BuyerLoginInner() {
     setLoading(false);
 
     if (res.ok) {
-      setMsg('Password updated. Redirecting…');
-      setTimeout(() => router.push('/buyer/login'), 1500);
+      // Hide the form and take them to their dashboard. The reset route sets the
+      // session cookie; resolve the handle and go straight there.
+      setResetDone(true);
+      setErr('');
+      setMsg('Password updated. Taking you to your dashboard.');
+      let dest = '/buyer/login';
+      try {
+        const chk = await fetch('/api/buyer/auth/check', { cache: 'no-store' });
+        const d = chk.ok ? await chk.json() : null;
+        const handle = d?.buyers?.[0]?.handle;
+        if (handle) dest = `/buyer/${handle}/admin`;
+      } catch { /* fall back to login, which forwards a signed-in buyer on */ }
+      setTimeout(() => { window.location.href = dest; }, 1000);
     } else {
       setErr(data.error || 'Failed to reset password');
     }
@@ -155,17 +167,22 @@ function BuyerLoginInner() {
         </form>
       )}
 
-      {mode === 'reset' && (
+      {mode === 'reset' && !resetDone && (
         <form onSubmit={handleReset} className="space-y-4">
           <h1 className="font-serif text-3xl tracking-tight mb-2">New password</h1>
           <p className="text-sm text-ink-2 mb-2">Choose a new password (8+ characters).</p>
           <input type="password" required minLength={8} value={newPass} onChange={(e) => setNewPass(e.target.value)} placeholder="New password" className={inputClass} autoFocus />
           {err && <p className="text-sm text-[color:var(--danger)] font-mono">{err}</p>}
-          {msg && <p className="text-sm text-[color:var(--live)] font-mono">{msg}</p>}
           <button type="submit" disabled={loading} className="btn w-full justify-center disabled:opacity-40">
             {loading ? 'Updating…' : 'Set new password'}
           </button>
         </form>
+      )}
+      {mode === 'reset' && resetDone && (
+        <div className="space-y-2">
+          <h1 className="font-serif text-3xl tracking-tight mb-2">All set</h1>
+          <p className="text-sm text-[color:var(--live)] font-mono">{msg}</p>
+        </div>
       )}
     </div>
   );

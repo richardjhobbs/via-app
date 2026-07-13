@@ -40,6 +40,7 @@ function SellerLoginInner() {
   const [err,     setErr]     = useState('');
   const [msg,     setMsg]     = useState('');
   const [loading, setLoading] = useState(false);
+  const [resetDone, setResetDone] = useState(false);
 
   // Recovery tokens arrive in the URL hash, not the query string. Parse them
   // client-side and switch to the reset form so the user can set a new
@@ -136,8 +137,21 @@ function SellerLoginInner() {
       });
       const data = await res.json();
       if (res.ok) {
-        setMsg('Password updated. Signing you in.');
-        setTimeout(() => router.push('/seller/login'), 1200);
+        // Success: hide the form and take them to their dashboard. The reset
+        // route has already set the session cookie, so resolve the store slug
+        // and go straight there. A full navigation to a different path is used
+        // because the recovery hash still on this URL blocks the auto-forward.
+        setResetDone(true);
+        setErr('');
+        setMsg('Password updated. Taking you to your dashboard.');
+        let dest = '/seller/login';
+        try {
+          const chk = await fetch('/api/seller/auth/check', { cache: 'no-store' });
+          const d = chk.ok ? await chk.json() : null;
+          const slug = d?.brands?.[0]?.sellerSlug;
+          if (slug) dest = `/seller/${slug}/admin`;
+        } catch { /* fall back to the login page, which forwards once the hash is gone */ }
+        setTimeout(() => { window.location.href = dest; }, 1000);
       } else {
         setErr(data.error || 'Could not reset password.');
       }
@@ -156,7 +170,9 @@ function SellerLoginInner() {
       </h1>
       <p className="text-sm text-ink-2 mb-8">
         {mode === 'reset'
-          ? 'You arrived here from the email link. Enter your new password and we will sign you straight in.'
+          ? (resetDone
+              ? 'All set. Taking you to your dashboard.'
+              : 'You arrived here from the email link. Enter your new password and we will sign you straight in.')
           : mode === 'forgot'
             ? 'Enter the email on your seller account and we will email a reset link.'
             : (<>
@@ -227,7 +243,7 @@ function SellerLoginInner() {
         </form>
       )}
 
-      {mode === 'reset' && (
+      {mode === 'reset' && !resetDone && (
         <form onSubmit={handleReset} className="space-y-5">
           <Field label="New password">
             <input
