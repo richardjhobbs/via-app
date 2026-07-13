@@ -17,6 +17,7 @@ import { isAdminFromCookies } from '@/lib/app/auth';
 import { db } from '@/lib/app/db';
 import { loadRoom, joinRoom, resolveViaMemberWallet, type MemberPlatform, type MemberType } from '@/lib/app/backroom/rooms';
 import { resolveRrgBrand, resolveRrgConcierge } from '@/lib/app/backroom/rrg-federation';
+import { sendRoomMemberAddedEmail } from '@/lib/app/email';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -61,6 +62,7 @@ export async function POST(req: Request) {
 
   let wallet: string | null = body.wallet?.trim() || null;
   let resolvedName: string | null = null;
+  let conciergeOwnerEmail: string | null = null;
   let effectiveKind: MemberType = kind;
 
   if (platform === 'via') {
@@ -82,7 +84,7 @@ export async function POST(req: Request) {
       if (identity) { resolvedName = identity.name; wallet = wallet ?? identity.wallet_address; }
     } else {
       const identity = await resolveRrgConcierge(ref);
-      if (identity) { resolvedName = identity.name; wallet = wallet ?? identity.wallet_address; }
+      if (identity) { resolvedName = identity.name; wallet = wallet ?? identity.wallet_address; conciergeOwnerEmail = identity.email; }
     }
     if (!wallet) {
       return NextResponse.json({
@@ -121,8 +123,19 @@ export async function POST(req: Request) {
     }
   }
 
+  // Courtesy heads-up to a seated concierge's owner (not a permission gate).
+  // Best-effort: a mail failure must not fail the seating.
+  let notified = false;
+  if ((result.outcome === 'joined' || result.outcome === 'already') && platform === 'rrg' && effectiveKind === 'buyer' && conciergeOwnerEmail) {
+    try {
+      await sendRoomMemberAddedEmail({ to: conciergeOwnerEmail, roomName: room.name, memberName: resolvedName });
+      notified = true;
+    } catch (e) { console.warn('[room-members] concierge heads-up email failed:', e); }
+  }
+
   return NextResponse.json({
     outcome: result.outcome,
     member: { platform, kind: effectiveKind, ref, name: resolvedName, wallet, vouched_by: isFounder ? null : vouchedBy },
+    owner_notified: notified,
   });
 }

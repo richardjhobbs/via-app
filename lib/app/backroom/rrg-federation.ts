@@ -84,25 +84,37 @@ export interface RrgConciergeIdentity {
   ref: string;
   name: string | null;
   wallet_address: string | null;
+  /** Owner email, returned only over the secret-gated channel; for the heads-up. */
+  email: string | null;
 }
 
 /**
  * Resolve an RRG personal concierge (rrg/buyer) over federation, so the operator
  * can seat it in a room WITHOUT the owner running the import handoff. RRG agents
  * have no human handle, so `ref` is resolved on the RRG side by VIA id, wallet,
- * email, or a unique name. Returns null (caller supplies the wallet) if RRG has
- * not deployed the kind=buyer identity resolver yet, or the ref is not unique.
+ * or a unique name. The concierge belongs to an individual, so this channel is
+ * SECRET-GATED: we present the shared VIA_PLATFORM_SECRET, and RRG returns the
+ * owner email (for the seat heads-up) only to a secret-holding caller. Returns
+ * null (caller supplies the wallet) if RRG cannot resolve the ref or the
+ * resolver is unavailable.
  */
 export async function resolveRrgConcierge(ref: string): Promise<RrgConciergeIdentity | null> {
   const r = ref.trim();
   if (!r) return null;
+  const secret = process.env.VIA_PLATFORM_SECRET;
+  if (!secret) return null;
   try {
     const url = `${RRG_BASE}/api/via/identity?kind=buyer&ref=${encodeURIComponent(r)}`;
-    const res = await fetch(url, { signal: AbortSignal.timeout(6000) });
+    const res = await fetch(url, { headers: { 'x-via-platform-secret': secret }, signal: AbortSignal.timeout(6000) });
     if (!res.ok) return null;
     const j = await res.json() as Partial<RrgConciergeIdentity>;
     if (!j || j.kind !== 'buyer') return null;
-    return { platform: 'rrg', kind: 'buyer', ref: r, name: j.name ?? null, wallet_address: (j.wallet_address ?? null) as string | null };
+    return {
+      platform: 'rrg', kind: 'buyer', ref: r,
+      name: j.name ?? null,
+      wallet_address: (j.wallet_address ?? null) as string | null,
+      email: (j.email ?? null) as string | null,
+    };
   } catch {
     return null;
   }
