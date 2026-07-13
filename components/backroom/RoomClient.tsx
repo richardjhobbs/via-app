@@ -45,6 +45,7 @@ function peaksFrom(seed: string): number[] {
 export function RoomClient({ roomId, handle, isAdmin = false }: { roomId: string; handle: string; isAdmin?: boolean }) {
   const [meta, setMeta] = useState<RoomMeta | null>(null);
   const [objects, setObjects] = useState<TableObject[]>([]);
+  const [modalObject, setModalObject] = useState<TableObject | null>(null);
   const [warmth, setWarmth] = useState<Warmth>({ last_event_at: null, events_24h: 0 });
   const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -419,10 +420,39 @@ export function RoomClient({ roomId, handle, isAdmin = false }: { roomId: string
           <p className="br-serif" style={{ fontSize: 22, color: 'var(--ink-2)', marginTop: 32 }}>The table is empty. Put something on it.</p>
         )}
 
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 16 }}>
-          {objects.map((o) => <ObjectCard key={o.id} o={o} />)}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 16, alignItems: 'start' }}>
+          {objects.map((o) => <ObjectCard key={o.id} o={o} onOpen={setModalObject} />)}
         </div>
       </main>
+
+      {modalObject && (
+        <div
+          onClick={() => setModalObject(null)}
+          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.78)', zIndex: 60, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              position: 'relative', background: 'var(--paper)', border: '1px solid var(--line-strong)', borderRadius: 6,
+              maxWidth: modalObject.object_type === 'image' ? '92vw' : 680, maxHeight: '88vh', overflow: 'auto',
+              padding: modalObject.object_type === 'image' ? 10 : '28px 30px',
+            }}
+          >
+            <button
+              type="button" onClick={() => setModalObject(null)} aria-label="Close"
+              style={{ position: 'absolute', top: 8, right: 12, background: 'none', border: 'none', color: 'var(--ink-3)', fontSize: 24, lineHeight: 1, cursor: 'pointer', zIndex: 1 }}
+            >&times;</button>
+            {modalObject.object_type === 'image' && modalObject.url ? (
+              <img src={modalObject.url} alt={modalObject.filename ?? 'image'} style={{ display: 'block', maxWidth: '100%', maxHeight: '82vh', objectFit: 'contain', margin: '0 auto' }} />
+            ) : (
+              <>
+                <p className="br-sans" style={{ fontSize: 11, letterSpacing: '0.14em', textTransform: 'uppercase', color: 'var(--ink-3)', margin: '0 0 14px' }}>Note · {modalObject.author_ref}</p>
+                <p className="br-serif" style={{ fontSize: 18, color: 'var(--ink)', margin: 0, lineHeight: 1.65, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{modalObject.content}</p>
+              </>
+            )}
+          </div>
+        </div>
+      )}
 
       {busy && (
         <p className="br-sans" style={{ position: 'fixed', bottom: 92, left: 0, right: 0, textAlign: 'center', fontSize: 13, color: 'var(--ink-3)', pointerEvents: 'none' }}>One moment...</p>
@@ -467,10 +497,13 @@ function ModBtn({ children, onClick, danger }: { children: React.ReactNode; onCl
   );
 }
 
-function ObjectCard({ o }: { o: TableObject }) {
+function ObjectCard({ o, onOpen }: { o: TableObject; onOpen: (o: TableObject) => void }) {
   const base: React.CSSProperties = {
     background: 'var(--paper)', border: '1px solid var(--line)', borderRadius: 4,
     padding: '16px', boxShadow: '0 1px 0 var(--line)',
+  };
+  const plainBtn: React.CSSProperties = {
+    display: 'block', width: '100%', textAlign: 'left', padding: 0, margin: 0, border: 'none', background: 'none', font: 'inherit',
   };
   return (
     <article style={base}>
@@ -481,9 +514,9 @@ function ObjectCard({ o }: { o: TableObject }) {
         <Waveform seed={o.id} />
       ) : o.object_type === 'image' ? (
         o.url ? (
-          <a href={o.url} target="_blank" rel="noreferrer" style={{ display: 'block' }}>
-            <img src={o.url} alt={o.filename ?? 'image'} style={{ display: 'block', width: '100%', maxHeight: 320, objectFit: 'cover', borderRadius: 3 }} />
-          </a>
+          <button type="button" onClick={() => onOpen(o)} style={{ ...plainBtn, cursor: 'zoom-in' }} title="Open image">
+            <img src={o.url} alt={o.filename ?? 'image'} style={{ display: 'block', width: '100%', maxHeight: 260, objectFit: 'cover', borderRadius: 3 }} />
+          </button>
         ) : (
           <p className="br-sans" style={{ fontSize: 14, color: 'var(--ink-3)', margin: 0 }}>{o.filename ?? o.content}</p>
         )
@@ -502,7 +535,16 @@ function ObjectCard({ o }: { o: TableObject }) {
           {o.content}
         </a>
       ) : (
-        <p className="br-serif" style={{ fontSize: 17, color: 'var(--ink)', margin: 0, lineHeight: 1.4, wordBreak: 'break-word' }}>{o.content}</p>
+        // Note: a clamped snippet in the grid; click opens the full text in a modal.
+        <button type="button" onClick={() => onOpen(o)} style={{ ...plainBtn, cursor: 'pointer' }} title="Read the full note">
+          <span className="br-serif" style={{
+            display: '-webkit-box', WebkitLineClamp: 8, WebkitBoxOrient: 'vertical', overflow: 'hidden',
+            fontSize: 17, color: 'var(--ink)', lineHeight: 1.4, wordBreak: 'break-word',
+          }}>{o.content}</span>
+          {o.content.length > 240 && (
+            <span className="br-sans" style={{ display: 'inline-block', marginTop: 8, fontSize: 12, color: 'var(--accent)' }}>Read more</span>
+          )}
+        </button>
       )}
       <p className="br-sans" style={{ fontSize: 12, color: 'var(--ink-3)', margin: '12px 0 0' }}>{o.author_ref}</p>
     </article>

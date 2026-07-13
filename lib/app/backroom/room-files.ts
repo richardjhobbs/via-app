@@ -66,7 +66,12 @@ export function checkFile(filename: string, size: number): FileCheck {
   };
 }
 
-/** Private storage path for a room attachment. */
-export function backroomFilePath(roomId: string, id: string, safeName: string): string {
-  return `backroom/${roomId}/${id}-${safeName}`;
+/**
+ * Private storage path for a room attachment. The KEY is URL-safe (no spaces or
+ * other characters that break signed-URL encoding); the human-readable filename
+ * is kept separately on the object for display and download.
+ */
+export function backroomFilePath(roomId: string, id: string, filename: string): string {
+  const keySafe = filename.replace(/[^a-zA-Z0-9._-]/g, '-').replace(/-+/g, '-');
+  return `backroom/${roomId}/${id}-${keySafe}`;
 }

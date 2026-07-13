@@ -67,3 +67,9 @@ test('storage path is scoped under the room', () => {
   const p = backroomFilePath('room-123', 'uuid-abc', 'report.pdf');
   assert.equal(p, 'backroom/room-123/uuid-abc-report.pdf');
 });
+
+test('storage key is URL-safe (spaces removed) so signed URLs never mismatch', () => {
+  const p = backroomFilePath('room-123', 'uuid-abc', 'composed 5.jpg');
+  assert.equal(p, 'backroom/room-123/uuid-abc-composed-5.jpg');
+  assert.ok(!/\s/.test(p), 'no whitespace in the storage key');
+});

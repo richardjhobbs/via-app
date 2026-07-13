@@ -33,14 +33,15 @@ export async function GET(req: Request, { params }: { params: Promise<{ roomId: 
   const [objects, warmth] = await Promise.all([listTable(roomId), roomWarmth(roomId)]);
 
   // File/image objects are stored privately; hand the client a short-lived
-  // signed URL so it can render an image or offer a download.
-  const paths = objects.map((o) => o.storage_path).filter((p): p is string => !!p);
-  const signed = new Map<string, string>();
-  if (paths.length) {
-    const { data: urls } = await db.storage.from(DIGITAL_BUCKET).createSignedUrls(paths, 3600);
-    for (const u of urls ?? []) { if (u.signedUrl && u.path) signed.set(u.path, u.signedUrl); }
-  }
-  const withUrls = objects.map((o) => ({ ...o, url: o.storage_path ? signed.get(o.storage_path) ?? null : null }));
+  // signed URL so it can render an image or offer a download. Sign each path
+  // individually: the batch createSignedUrls returns the key URL-encoded, so a
+  // key with a space (e.g. "composed 5.jpg") would never match a by-path lookup
+  // and the image would silently fail to render.
+  const withUrls = await Promise.all(objects.map(async (o) => {
+    if (!o.storage_path) return { ...o, url: null as string | null };
+    const { data } = await db.storage.from(DIGITAL_BUCKET).createSignedUrl(o.storage_path, 3600);
+    return { ...o, url: data?.signedUrl ?? null };
+  }));
 
   return NextResponse.json({
     room: { id: room.id, name: room.name, accent_hex: room.accent_hex, member_cap: room.member_cap },
