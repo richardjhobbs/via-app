@@ -6,7 +6,7 @@
  * no dots or counts). Hold to speak sits persistently at the bottom centre.
  * One room, full screen.
  */
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { HoldToSpeak } from './HoldToSpeak';
 
 interface TableObject {
@@ -16,7 +16,16 @@ interface TableObject {
   corner: string | null;
   author_ref: string;
   created_at: string;
+  url?: string | null;
+  mime?: string | null;
+  filename?: string | null;
+  size?: number | null;
 }
+
+// Files a member may attach. Mirrors the server allowlist (lib/app/backroom/
+// room-files.ts): images and documents, no executables. Used for the picker's
+// accept hint; the server is the real gate.
+const FILE_ACCEPT = 'image/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv,.md,.rtf,.odt,.ods,.odp';
 interface Warmth { last_event_at: string | null; events_24h: number; }
 interface RoomMeta { id: string; name: string; accent_hex: string; member_cap: number; }
 interface Quote { title: string; seller: string | null; price_usdc: number | null; page_url: string | null; }
@@ -52,6 +61,10 @@ export function RoomClient({ roomId, handle, isAdmin = false }: { roomId: string
   const [inviteMsg, setInviteMsg] = useState<string | null>(null);
   const [inviteLink, setInviteLink] = useState<string | null>(null);
   const [inviteBusy, setInviteBusy] = useState(false);
+  const [note, setNote] = useState('');
+  const [composerBusy, setComposerBusy] = useState(false);
+  const [composerErr, setComposerErr] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const load = useCallback(async () => {
     if (!handle && !isAdmin) { setLoaded(true); return; }
@@ -121,6 +134,34 @@ export function RoomClient({ roomId, handle, isAdmin = false }: { roomId: string
     }
     setBusy(false);
   }, [roomId, handle, load]);
+
+  // Text input. Voice is promoted, but anyone can type onto the table instead.
+  const placeNote = useCallback(async () => {
+    const text = note.trim();
+    if (!text) return;
+    setComposerBusy(true); setComposerErr(null);
+    const res = await fetch(`/api/backroom/room/${roomId}/message`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ handle, text }),
+    });
+    if (res.ok) { const j = await res.json() as { objects?: TableObject[] }; if (j.objects) setObjects(j.objects); setNote(''); }
+    else { const j = await res.json().catch(() => ({})); setComposerErr((j as { error?: string }).error ?? 'could not place that'); }
+    setComposerBusy(false);
+  }, [roomId, handle, note]);
+
+  // File attachment. The server enforces the allowlist and size cap; here we
+  // only pass the file through and surface any rejection.
+  const attachFile = useCallback(async (file: File) => {
+    setComposerBusy(true); setComposerErr(null);
+    const fd = new FormData();
+    fd.append('handle', handle);
+    fd.append('file', file);
+    const res = await fetch(`/api/backroom/room/${roomId}/file`, { method: 'POST', body: fd });
+    if (res.ok) { const j = await res.json() as { objects?: TableObject[] }; if (j.objects) setObjects(j.objects); }
+    else { const j = await res.json().catch(() => ({})); setComposerErr((j as { error?: string }).error ?? 'could not attach that'); }
+    setComposerBusy(false);
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  }, [roomId, handle]);
 
   // Record a paid order on the table. Paying happens at the existing checkout
   // (the deliberate money press); this brings the settled result back.
@@ -259,6 +300,44 @@ export function RoomClient({ roomId, handle, isAdmin = false }: { roomId: string
           <p className="br-sans" style={{ fontSize: 14, color: 'var(--ink-3)', fontStyle: 'italic', marginBottom: 20 }}>VIA: {said}</p>
         )}
 
+        {/* Compose: hold to speak is the promoted way in (floating below), but
+            you can also type a note or attach a file. Images and documents only. */}
+        {handle && (
+          <section style={{ border: '1px solid var(--line)', borderRadius: 6, padding: 12, marginBottom: 24, background: 'var(--paper)' }}>
+            <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end' }}>
+              <textarea
+                className="br-sans"
+                value={note}
+                onChange={(e) => setNote(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); void placeNote(); } }}
+                placeholder="Type a note, or paste a link. Or hold to speak."
+                rows={2}
+                style={{ flex: 1, resize: 'vertical', minHeight: 42, background: 'var(--bg)', color: 'var(--ink)', border: '1px solid var(--line-strong)', borderRadius: 4, padding: '10px 12px', fontSize: 15, fontFamily: 'inherit', lineHeight: 1.4 }}
+              />
+              <button type="button" onClick={() => fileInputRef.current?.click()} disabled={composerBusy} className="br-sans"
+                title="Attach an image or document"
+                style={{ padding: '10px 12px', borderRadius: 4, border: '1px solid var(--line-strong)', background: 'transparent', color: 'var(--ink-2)', fontSize: 14, cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                Attach
+              </button>
+              <button type="button" onClick={placeNote} disabled={composerBusy || !note.trim()} className="br-sans"
+                style={{ padding: '10px 18px', borderRadius: 4, border: '1px solid var(--ink)', background: 'var(--ink)', color: 'var(--bg)', fontSize: 14, cursor: 'pointer', opacity: composerBusy || !note.trim() ? 0.5 : 1, whiteSpace: 'nowrap' }}>
+                Place
+              </button>
+            </div>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept={FILE_ACCEPT}
+              onChange={(e) => { const f = e.target.files?.[0]; if (f) void attachFile(f); }}
+              style={{ display: 'none' }}
+            />
+            <p className="br-sans" style={{ fontSize: 11, color: 'var(--ink-3)', margin: '8px 2px 0' }}>
+              Images and documents up to 15 MB. Cmd or Ctrl + Enter to place a note.
+            </p>
+            {composerErr && <p className="br-sans" style={{ fontSize: 13, color: 'var(--danger)', margin: '6px 2px 0' }}>{composerErr}</p>}
+          </section>
+        )}
+
         {/* Errand: quotes VIA sourced, then bring a paid order back to the table.
             Paying happens at the existing checkout, the deliberate money press. */}
         {quotes.length > 0 && (
@@ -319,6 +398,23 @@ const inviteBtn: React.CSSProperties = {
   fontSize: 13, cursor: 'pointer', whiteSpace: 'nowrap',
 };
 
+// A short human label for a file object: type and size, e.g. "PDF · 1.2 MB".
+function fileMeta(mime?: string | null, size?: number | null): string {
+  const type = (() => {
+    if (!mime) return 'File';
+    if (mime === 'application/pdf') return 'PDF';
+    if (mime.includes('word')) return 'Word';
+    if (mime.includes('sheet') || mime.includes('excel')) return 'Spreadsheet';
+    if (mime.includes('presentation') || mime.includes('powerpoint')) return 'Slides';
+    if (mime.startsWith('text/')) return 'Text';
+    return mime.split('/').pop()?.toUpperCase() ?? 'File';
+  })();
+  if (!size || size <= 0) return type;
+  const mb = size / (1024 * 1024);
+  const sizeStr = mb >= 1 ? `${mb.toFixed(1)} MB` : `${Math.max(1, Math.round(size / 1024))} KB`;
+  return `${type} · ${sizeStr}`;
+}
+
 function ModBtn({ children, onClick, danger }: { children: React.ReactNode; onClick: () => void; danger?: boolean }) {
   return (
     <button type="button" onClick={onClick} className="br-sans"
@@ -340,6 +436,23 @@ function ObjectCard({ o }: { o: TableObject }) {
       </p>
       {o.object_type === 'voice_note' ? (
         <Waveform seed={o.id} />
+      ) : o.object_type === 'image' ? (
+        o.url ? (
+          <a href={o.url} target="_blank" rel="noreferrer" style={{ display: 'block' }}>
+            <img src={o.url} alt={o.filename ?? 'image'} style={{ display: 'block', width: '100%', maxHeight: 320, objectFit: 'cover', borderRadius: 3 }} />
+          </a>
+        ) : (
+          <p className="br-sans" style={{ fontSize: 14, color: 'var(--ink-3)', margin: 0 }}>{o.filename ?? o.content}</p>
+        )
+      ) : o.object_type === 'file' ? (
+        <a href={o.url ?? '#'} target="_blank" rel="noreferrer" download={o.filename ?? undefined}
+           className="br-sans" style={{ display: 'flex', alignItems: 'center', gap: 10, color: 'var(--ink)', textDecoration: 'none' }}>
+          <span aria-hidden style={{ fontSize: 22 }}>📄</span>
+          <span style={{ minWidth: 0 }}>
+            <span style={{ display: 'block', fontSize: 15, color: 'var(--accent)', wordBreak: 'break-word' }}>{o.filename ?? o.content}</span>
+            <span style={{ display: 'block', fontSize: 12, color: 'var(--ink-3)', marginTop: 2 }}>{fileMeta(o.mime, o.size)}</span>
+          </span>
+        </a>
       ) : o.object_type === 'link' ? (
         <a href={o.content.startsWith('http') ? o.content : `https://${o.content}`} target="_blank" rel="noreferrer"
            className="br-sans" style={{ color: 'var(--accent)', fontSize: 15, wordBreak: 'break-word' }}>

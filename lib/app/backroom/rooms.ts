@@ -268,6 +268,14 @@ async function appendEvent(roomId: string, kind: RoomEventKind, author: Author, 
   return data as { id: string; created_at: string };
 }
 
+/** A file placed on the table: image/pdf/doc etc. Stored privately; served signed. */
+export interface PlacedFileMeta {
+  storage_path: string;
+  mime:         string;
+  filename:     string;
+  size:         number;
+}
+
 export interface PlacedObject {
   id:              string;
   object_type:     string;
@@ -276,18 +284,42 @@ export interface PlacedObject {
   author_platform: string;
   author_ref:      string;
   created_at:      string;
+  // File objects (object_type 'image' | 'file') carry these; null otherwise.
+  storage_path:    string | null;
+  mime:            string | null;
+  filename:        string | null;
+  size:            number | null;
 }
 
 export async function placeObject(
   roomId: string,
   author: Author,
-  input: { object_type: string; content: string; corner?: string | null },
+  input: { object_type: string; content: string; corner?: string | null; file?: PlacedFileMeta },
 ): Promise<{ id: string; created_at: string }> {
   return appendEvent(roomId, 'object_placed', author, {
     object_type: input.object_type,
     content: input.content,
     corner: input.corner ?? null,
+    ...(input.file
+      ? { storage_path: input.file.storage_path, mime: input.file.mime, filename: input.file.filename, size: input.file.size }
+      : {}),
   });
+}
+
+function projectObject(r: { id: string; author_platform: string; author_ref: string; payload: Record<string, unknown>; created_at: string }): PlacedObject {
+  return {
+    id: r.id,
+    object_type: String(r.payload.object_type ?? 'errand_result'),
+    content: String(r.payload.content ?? r.payload.summary ?? ''),
+    corner: (r.payload.corner as string | null) ?? null,
+    author_platform: r.author_platform,
+    author_ref: r.author_ref,
+    created_at: r.created_at,
+    storage_path: (r.payload.storage_path as string | null) ?? null,
+    mime: (r.payload.mime as string | null) ?? null,
+    filename: (r.payload.filename as string | null) ?? null,
+    size: typeof r.payload.size === 'number' ? (r.payload.size as number) : null,
+  };
 }
 
 export async function sayToRoom(roomId: string, author: Author, text: string) {
@@ -308,15 +340,7 @@ export async function listTable(roomId: string): Promise<PlacedObject[]> {
     .order('created_at', { ascending: false })
     .limit(200);
   const rows = (data as Array<{ id: string; author_platform: string; author_ref: string; payload: Record<string, unknown>; created_at: string }>) ?? [];
-  return rows.map((r) => ({
-    id: r.id,
-    object_type: String(r.payload.object_type ?? 'errand_result'),
-    content: String(r.payload.content ?? r.payload.summary ?? ''),
-    corner: (r.payload.corner as string | null) ?? null,
-    author_platform: r.author_platform,
-    author_ref: r.author_ref,
-    created_at: r.created_at,
-  }));
+  return rows.map(projectObject);
 }
 
 export async function getObject(roomId: string, eventId: string): Promise<PlacedObject | null> {
@@ -327,16 +351,7 @@ export async function getObject(roomId: string, eventId: string): Promise<Placed
     .eq('id', eventId)
     .maybeSingle();
   if (!data) return null;
-  const r = data as { id: string; author_platform: string; author_ref: string; payload: Record<string, unknown>; created_at: string };
-  return {
-    id: r.id,
-    object_type: String(r.payload.object_type ?? 'errand_result'),
-    content: String(r.payload.content ?? r.payload.summary ?? ''),
-    corner: (r.payload.corner as string | null) ?? null,
-    author_platform: r.author_platform,
-    author_ref: r.author_ref,
-    created_at: r.created_at,
-  };
+  return projectObject(data as { id: string; author_platform: string; author_ref: string; payload: Record<string, unknown>; created_at: string });
 }
 
 /** Warmth: how recently the room has been touched, for presence without dots. */

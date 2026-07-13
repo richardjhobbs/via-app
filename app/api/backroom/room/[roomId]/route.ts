@@ -8,6 +8,7 @@ import { NextResponse } from 'next/server';
 import { loadRoom, listTable, roomWarmth } from '@/lib/app/backroom/rooms';
 import { requireRoomMember } from '@/lib/app/backroom/ui-auth';
 import { isAdminFromCookies } from '@/lib/app/auth';
+import { getSignedUrlsBatch } from '@/lib/app/storage';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -29,10 +30,17 @@ export async function GET(req: Request, { params }: { params: Promise<{ roomId: 
   }
 
   const [objects, warmth] = await Promise.all([listTable(roomId), roomWarmth(roomId)]);
+
+  // File/image objects are stored privately; hand the client a short-lived
+  // signed URL so it can render an image or offer a download.
+  const paths = objects.map((o) => o.storage_path).filter((p): p is string => !!p);
+  const signed = paths.length ? await getSignedUrlsBatch(paths) : new Map<string, string>();
+  const withUrls = objects.map((o) => ({ ...o, url: o.storage_path ? signed.get(o.storage_path) ?? null : null }));
+
   return NextResponse.json({
     room: { id: room.id, name: room.name, accent_hex: room.accent_hex, member_cap: room.member_cap },
     warmth,
-    count: objects.length,
-    objects,
+    count: withUrls.length,
+    objects: withUrls,
   });
 }
