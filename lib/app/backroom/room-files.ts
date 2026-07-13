@@ -4,8 +4,9 @@
  * Non-threatening files only. This is a strict ALLOWLIST by extension, so
  * anything not named here (every executable, script, archive, or active-content
  * type) is rejected by default. The stored MIME is derived from the extension,
- * never trusted from the client. Files live in the private submissions bucket
- * under a per-room prefix and are only ever served as short-lived signed URLs.
+ * never trusted from the client. Files live in the private app-digital-assets
+ * bucket under a per-room prefix and are only ever served as short-lived signed
+ * URLs.
  *
  * This module is pure (no storage import) so the allowlist is unit-testable; the
  * upload/sign I/O lives in the route via lib/app/storage.

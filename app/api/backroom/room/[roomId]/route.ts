@@ -5,10 +5,11 @@
  * only (owner session + room membership).
  */
 import { NextResponse } from 'next/server';
+import { db } from '@/lib/app/db';
 import { loadRoom, listTable, roomWarmth } from '@/lib/app/backroom/rooms';
 import { requireRoomMember } from '@/lib/app/backroom/ui-auth';
 import { isAdminFromCookies } from '@/lib/app/auth';
-import { getSignedUrlsBatch } from '@/lib/app/storage';
+import { DIGITAL_BUCKET } from '@/lib/app/digital-delivery';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -34,7 +35,11 @@ export async function GET(req: Request, { params }: { params: Promise<{ roomId: 
   // File/image objects are stored privately; hand the client a short-lived
   // signed URL so it can render an image or offer a download.
   const paths = objects.map((o) => o.storage_path).filter((p): p is string => !!p);
-  const signed = paths.length ? await getSignedUrlsBatch(paths) : new Map<string, string>();
+  const signed = new Map<string, string>();
+  if (paths.length) {
+    const { data: urls } = await db.storage.from(DIGITAL_BUCKET).createSignedUrls(paths, 3600);
+    for (const u of urls ?? []) { if (u.signedUrl && u.path) signed.set(u.path, u.signedUrl); }
+  }
   const withUrls = objects.map((o) => ({ ...o, url: o.storage_path ? signed.get(o.storage_path) ?? null : null }));
 
   return NextResponse.json({

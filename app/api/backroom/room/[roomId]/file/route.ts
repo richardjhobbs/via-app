@@ -9,10 +9,11 @@
  */
 import { randomUUID } from 'crypto';
 import { NextResponse } from 'next/server';
+import { db } from '@/lib/app/db';
 import { loadRoom, placeObject, listTable } from '@/lib/app/backroom/rooms';
 import { requireRoomMember } from '@/lib/app/backroom/ui-auth';
 import { checkFile, backroomFilePath } from '@/lib/app/backroom/room-files';
-import { uploadSubmissionFile } from '@/lib/app/storage';
+import { DIGITAL_BUCKET } from '@/lib/app/digital-delivery';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -37,10 +38,11 @@ export async function POST(req: Request, { params }: { params: Promise<{ roomId:
 
   const buffer = Buffer.from(await file.arrayBuffer());
   const path = backroomFilePath(roomId, randomUUID(), check.safeName);
-  try {
-    await uploadSubmissionFile(path, buffer, check.mime);
-  } catch (err) {
-    console.error('[room/file] upload failed:', err);
+  const { error: upErr } = await db.storage
+    .from(DIGITAL_BUCKET)
+    .upload(path, buffer, { contentType: check.mime, upsert: false });
+  if (upErr) {
+    console.error('[room/file] upload failed:', upErr);
     return NextResponse.json({ error: 'could not store the file' }, { status: 502 });
   }
 
