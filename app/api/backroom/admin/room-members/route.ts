@@ -18,6 +18,28 @@ import { db } from '@/lib/app/db';
 import { loadRoom, joinRoom, resolveViaMemberWallet, type MemberPlatform, type MemberType } from '@/lib/app/backroom/rooms';
 import { resolveRrgBrand, resolveRrgConcierge } from '@/lib/app/backroom/rrg-federation';
 import { sendRoomMemberAddedEmail } from '@/lib/app/email';
+import { supabaseAdmin } from '@/lib/app/seller-auth';
+
+// Owner email for a seated VIA member, so the heads-up can reach a human: a
+// seller's contact email (or owner account), or a buyer owner's account email.
+async function resolveViaOwnerEmail(kind: MemberType, ref: string): Promise<string | null> {
+  try {
+    if (kind === 'seller') {
+      const { data } = await db.from('app_sellers').select('contact_email, owner_user_id').eq('slug', ref).maybeSingle();
+      const row = data as { contact_email: string | null; owner_user_id: string | null } | null;
+      if (row?.contact_email) return row.contact_email;
+      if (row?.owner_user_id) { const { data: u } = await supabaseAdmin.auth.admin.getUserById(row.owner_user_id); return u?.user?.email ?? null; }
+      return null;
+    }
+    const { data } = await db.from('app_buyers').select('owner_user_id').eq('handle', ref).maybeSingle();
+    const id = (data as { owner_user_id: string | null } | null)?.owner_user_id;
+    if (!id) return null;
+    const { data: u } = await supabaseAdmin.auth.admin.getUserById(id);
+    return u?.user?.email ?? null;
+  } catch {
+    return null;
+  }
+}
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -123,14 +145,18 @@ export async function POST(req: Request) {
     }
   }
 
-  // Courtesy heads-up to a seated concierge's owner (not a permission gate).
-  // Best-effort: a mail failure must not fail the seating.
+  // Courtesy heads-up to the seated member's owner (not a permission gate).
+  // Best-effort: a mail failure must not fail the seating. Covers VIA buyers and
+  // sellers and RRG personal concierges; RRG brand email is not federated yet.
   let notified = false;
-  if ((result.outcome === 'joined' || result.outcome === 'already') && platform === 'rrg' && effectiveKind === 'buyer' && conciergeOwnerEmail) {
-    try {
-      await sendRoomMemberAddedEmail({ to: conciergeOwnerEmail, roomName: room.name, memberName: resolvedName });
-      notified = true;
-    } catch (e) { console.warn('[room-members] concierge heads-up email failed:', e); }
+  if (result.outcome === 'joined' || result.outcome === 'already') {
+    const ownerEmail = conciergeOwnerEmail ?? (platform === 'via' ? await resolveViaOwnerEmail(effectiveKind, ref) : null);
+    if (ownerEmail) {
+      try {
+        await sendRoomMemberAddedEmail({ to: ownerEmail, roomName: room.name, memberName: resolvedName });
+        notified = true;
+      } catch (e) { console.warn('[room-members] heads-up email failed:', e); }
+    }
   }
 
   return NextResponse.json({

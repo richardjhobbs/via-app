@@ -154,10 +154,18 @@ export function RoomClient({ roomId, handle, isAdmin = false }: { roomId: string
 
   const onUtterance = useCallback(async (blob: Blob) => {
     setBusy(true); setSaid(null);
+    // A voice note is stored and played back, so transcode to MP3 for
+    // cross-browser playback. Transcription targets send the raw recording.
+    let sendBlob = blob;
+    let filename = 'utterance';
+    if (voiceTarget === 'voice') {
+      try { const { toMp3 } = await import('./toMp3'); sendBlob = await toMp3(blob); filename = 'voice-note.mp3'; }
+      catch (e) { console.warn('[room] mp3 transcode failed, storing original:', e); }
+    }
     const form = new FormData();
     form.append('handle', handle);
     form.append('target', voiceTarget);
-    form.append('audio', blob, 'utterance');
+    form.append('audio', sendBlob, filename);
     const res = await fetch(`/api/backroom/room/${roomId}/voice`, { method: 'POST', body: form });
     if (res.ok) {
       const json = await res.json() as { action?: { say?: string }; objects?: TableObject[]; quotes?: Quote[] };
