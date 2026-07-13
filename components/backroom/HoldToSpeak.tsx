@@ -54,7 +54,12 @@ export function HoldToSpeak({ onUtterance }: { onUtterance: (blob: Blob) => void
           padding: '18px 32px',
           borderRadius: 999,
           border: '1px solid var(--ink)',
-          background: active ? 'var(--ink)' : 'transparent',
+          // Semi-transparent infill (plus a light blur) so the pill reads clearly
+          // when it overlays the table, instead of content showing through.
+          background: active ? 'var(--ink)' : 'color-mix(in srgb, var(--bg) 85%, transparent)',
+          backdropFilter: 'blur(8px)',
+          WebkitBackdropFilter: 'blur(8px)',
+          boxShadow: '0 2px 12px rgba(0,0,0,0.18)',
           color: active ? 'var(--bg)' : 'var(--ink)',
           fontSize: 15,
           letterSpacing: '0.02em',
