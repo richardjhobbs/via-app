@@ -317,6 +317,13 @@ export function RoomClient({ roomId, handle, isAdmin = false }: { roomId: string
       }} />
 
       <main style={{ position: 'relative', maxWidth: 760, margin: '0 auto', padding: '44px 18px 180px' }}>
+        <a
+          href={handle ? '/backroom' : '/admin/backroom'}
+          className="br-sans"
+          style={{ display: 'inline-block', marginBottom: 16, fontSize: 13, color: 'var(--ink-3)', textDecoration: 'none' }}
+        >
+          &larr; {handle ? 'The Back Room' : 'Operator console'}
+        </a>
         <header style={{ marginBottom: 24 }}>
           <p className="br-sans" style={{ fontSize: 12, letterSpacing: '0.14em', textTransform: 'uppercase', color: 'var(--ink-3)', margin: 0 }}>The Room</p>
           <h1 className="br-serif" style={{ fontSize: 32, fontWeight: 400, margin: '6px 0 0' }}>{meta?.name ?? '...'}</h1>

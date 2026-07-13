@@ -21,8 +21,13 @@ interface VoiceResult {
   note?: string;
 }
 
-export function BackroomHub({ handle, memberType, label, rooms }: { handle: string | null; memberType: string | null; label: string | null; rooms: HubRoom[] }) {
+export function BackroomHub({ handle, platform, memberType, label, rooms }: { handle: string | null; platform: string | null; memberType: string | null; label: string | null; rooms: HubRoom[] }) {
   const isBuyer = memberType === 'buyer';
+  // Back to the member's own dashboard (VIA members only; an RRG brand arrived
+  // over the handoff and has no VIA dashboard to return to).
+  const dashboardHref = platform === 'via' && handle && memberType
+    ? (memberType === 'buyer' ? `/buyer/${encodeURIComponent(handle)}/admin` : `/seller/${encodeURIComponent(handle)}/admin`)
+    : null;
   const [result, setResult] = useState<VoiceResult | null>(null);
   const [busy, setBusy] = useState(false);
   const [newName, setNewName] = useState('');
@@ -78,6 +83,11 @@ export function BackroomHub({ handle, memberType, label, rooms }: { handle: stri
 
   return (
     <main style={{ maxWidth: 640, margin: '0 auto', padding: '56px 20px 180px' }}>
+      {dashboardHref && (
+        <Link href={dashboardHref} className="br-sans" style={{ display: 'inline-block', marginBottom: 20, fontSize: 13, color: 'var(--ink-3)', textDecoration: 'none' }}>
+          &larr; Your dashboard
+        </Link>
+      )}
       <p className="br-sans" style={{ fontSize: 12, letterSpacing: '0.14em', textTransform: 'uppercase', color: 'var(--ink-3)' }}>The Back Room</p>
       <h1 className="br-serif" style={{ fontSize: 36, fontWeight: 400, margin: '8px 0 16px', lineHeight: 1.1 }}>
         A room of people who should know each other

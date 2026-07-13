@@ -28,5 +28,5 @@ export default async function BackroomHubPage() {
   const members = await sessionMembers();
   const me = members[0] ?? null;
   const rooms = me ? await loadMemberRooms(me) : [];
-  return <BackroomHub handle={me?.ref ?? null} memberType={me?.type ?? null} label={me?.label ?? null} rooms={rooms} />;
+  return <BackroomHub handle={me?.ref ?? null} platform={me?.platform ?? null} memberType={me?.type ?? null} label={me?.label ?? null} rooms={rooms} />;
 }
