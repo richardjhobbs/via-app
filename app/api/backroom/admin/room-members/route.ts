@@ -16,7 +16,7 @@ import crypto from 'crypto';
 import { isAdminFromCookies } from '@/lib/app/auth';
 import { db } from '@/lib/app/db';
 import { loadRoom, joinRoom, resolveViaMemberWallet, type MemberPlatform, type MemberType } from '@/lib/app/backroom/rooms';
-import { resolveRrgBrand } from '@/lib/app/backroom/rrg-federation';
+import { resolveRrgBrand, resolveRrgConcierge } from '@/lib/app/backroom/rrg-federation';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -71,18 +71,23 @@ export async function POST(req: Request) {
     effectiveKind = detected;
     // wallet resolved locally inside joinRoom
   } else {
-    // rrg
-    if (kind !== 'seller') {
-      return NextResponse.json({ error: 'RRG personal concierges join by importing into VIA as a buying agent (handoff), not here' }, { status: 400 });
+    // rrg: seller = brand concierge, buyer = personal concierge. Both are
+    // FEDERATED (never mirrored): resolve name + wallet from RRG over HTTP, or
+    // accept a supplied wallet, then cache it and seat. This lets the operator
+    // seat a concierge with no owner action, mirroring how brands are seated.
+    // (Personal concierges can still separately IMPORT as a native via/buyer via
+    // the owner handoff; that path is unchanged and gives them a VIA login.)
+    if (kind === 'seller') {
+      const identity = await resolveRrgBrand(ref);
+      if (identity) { resolvedName = identity.name; wallet = wallet ?? identity.wallet_address; }
+    } else {
+      const identity = await resolveRrgConcierge(ref);
+      if (identity) { resolvedName = identity.name; wallet = wallet ?? identity.wallet_address; }
     }
-    const identity = await resolveRrgBrand(ref);
-    if (!identity) return NextResponse.json({ error: 'could not resolve RRG brand over federation' }, { status: 404 });
-    resolvedName = identity.name;
-    wallet = wallet ?? identity.wallet_address;
     if (!wallet) {
       return NextResponse.json({
-        error: 'RRG does not expose this brand wallet yet; pass wallet explicitly to add the member',
-        brand: { ref, name: identity.name, mcp_url: identity.mcp_url },
+        error: `RRG did not expose this ${kind === 'seller' ? 'brand' : 'concierge'} wallet; pass the wallet to seat the member (or wait for the RRG identity endpoint).`,
+        ref, name: resolvedName,
       }, { status: 422 });
     }
   }
