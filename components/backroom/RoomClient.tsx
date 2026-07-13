@@ -20,6 +20,7 @@ interface TableObject {
 interface Warmth { last_event_at: string | null; events_24h: number; }
 interface RoomMeta { id: string; name: string; accent_hex: string; member_cap: number; }
 interface Quote { title: string; seller: string | null; price_usdc: number | null; page_url: string | null; }
+interface Member { member_platform: string; member_type: string; member_ref: string; is_founder: boolean; status: string; }
 
 // Deterministic pseudo-waveform peaks from a string, so a voice note always
 // draws the same bars without storing them for the placeholder rendering.
@@ -41,6 +42,9 @@ export function RoomClient({ roomId, handle }: { roomId: string; handle: string 
   const [busy, setBusy] = useState(false);
   const [quotes, setQuotes] = useState<Quote[]>([]);
   const [orderRef, setOrderRef] = useState('');
+  const [members, setMembers] = useState<Member[]>([]);
+  const [youAreFounder, setYouAreFounder] = useState(false);
+  const [showMembers, setShowMembers] = useState(false);
 
   const load = useCallback(async () => {
     if (!handle) { setLoaded(true); return; }
@@ -52,8 +56,26 @@ export function RoomClient({ roomId, handle }: { roomId: string; handle: string 
       const j = await res.json().catch(() => ({}));
       setError((j as { error?: string }).error ?? 'could not open the room');
     }
+    // Members + founder status, for the founder's management panel.
+    const mres = await fetch(`/api/backroom/room/${roomId}/members?ref=${encodeURIComponent(handle)}`);
+    if (mres.ok) {
+      const mjson = await mres.json() as { you_are_founder: boolean; members: Member[] };
+      setYouAreFounder(mjson.you_are_founder);
+      setMembers(mjson.members);
+    }
     setLoaded(true);
   }, [roomId, handle]);
+
+  const moderate = useCallback(async (target: Member, action: 'remove' | 'block' | 'restore') => {
+    await fetch(`/api/backroom/room/${roomId}/members`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        ref: handle, action,
+        target_platform: target.member_platform, target_type: target.member_type, target_ref: target.member_ref,
+      }),
+    });
+    void load();
+  }, [roomId, handle, load]);
 
   useEffect(() => { void load(); }, [load]);
 
@@ -127,7 +149,45 @@ export function RoomClient({ roomId, handle }: { roomId: string; handle: string 
         <header style={{ marginBottom: 24 }}>
           <p className="br-sans" style={{ fontSize: 12, letterSpacing: '0.14em', textTransform: 'uppercase', color: 'var(--ink-3)', margin: 0 }}>The Room</p>
           <h1 className="br-serif" style={{ fontSize: 32, fontWeight: 400, margin: '6px 0 0' }}>{meta?.name ?? '...'}</h1>
+          {youAreFounder && (
+            <button type="button" onClick={() => setShowMembers((v) => !v)} className="br-sans"
+              style={{ marginTop: 10, fontSize: 12, color: 'var(--ink-3)', background: 'none', border: 'none', cursor: 'pointer', padding: 0, textDecoration: 'underline' }}>
+              {showMembers ? 'Hide members' : `Members (${members.filter((m) => m.status === 'active').length})`}
+            </button>
+          )}
         </header>
+
+        {youAreFounder && showMembers && (
+          <section style={{ border: '1px solid var(--line-strong)', borderRadius: 6, padding: 16, marginBottom: 24, background: 'var(--paper)' }}>
+            <p className="br-sans" style={{ fontSize: 11, letterSpacing: '0.14em', textTransform: 'uppercase', color: 'var(--ink-3)', margin: '0 0 12px' }}>Members · you found this room</p>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {members.map((m, i) => {
+                const isYou = m.member_platform === 'via' && m.member_ref === handle;
+                return (
+                  <div key={i} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, borderTop: i ? '1px solid var(--line)' : 'none', paddingTop: i ? 8 : 0 }}>
+                    <span className="br-sans" style={{ fontSize: 14, color: m.status === 'active' ? 'var(--ink)' : 'var(--ink-3)' }}>
+                      {m.member_platform}/{m.member_type} · {m.member_ref}
+                      {m.is_founder && <span style={{ color: 'var(--accent)' }}> · founder</span>}
+                      {m.status !== 'active' && <span style={{ fontStyle: 'italic' }}> · {m.status}</span>}
+                    </span>
+                    {!m.is_founder && !isYou && (
+                      <span style={{ display: 'flex', gap: 6 }}>
+                        {m.status === 'active' ? (
+                          <>
+                            <ModBtn onClick={() => moderate(m, 'remove')}>Remove</ModBtn>
+                            <ModBtn onClick={() => moderate(m, 'block')} danger>Block</ModBtn>
+                          </>
+                        ) : (
+                          m.status === 'removed' && <ModBtn onClick={() => moderate(m, 'restore')}>Restore</ModBtn>
+                        )}
+                      </span>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </section>
+        )}
 
         {said && (
           <p className="br-sans" style={{ fontSize: 14, color: 'var(--ink-3)', fontStyle: 'italic', marginBottom: 20 }}>VIA: {said}</p>
@@ -181,6 +241,15 @@ export function RoomClient({ roomId, handle }: { roomId: string; handle: string 
       )}
       <HoldToSpeak onUtterance={onUtterance} />
     </div>
+  );
+}
+
+function ModBtn({ children, onClick, danger }: { children: React.ReactNode; onClick: () => void; danger?: boolean }) {
+  return (
+    <button type="button" onClick={onClick} className="br-sans"
+      style={{ fontSize: 12, padding: '4px 10px', borderRadius: 4, cursor: 'pointer', background: 'transparent', color: danger ? 'var(--danger)' : 'var(--ink-2)', border: `1px solid ${danger ? 'var(--danger)' : 'var(--line-strong)'}` }}>
+      {children}
+    </button>
   );
 }
 

@@ -55,13 +55,16 @@ export async function loadRoom(roomId: string): Promise<RoomRow | null> {
  * wallet, never a human in-app wallet. If the seed is unset the room still
  * exists with a null wallet (payments simply cannot settle until it is set).
  */
-export async function createRoom(input: { name: string; accent_hex?: string; created_from?: string }): Promise<RoomRow> {
+export async function createRoom(input: { name: string; accent_hex?: string; created_from?: string; createdBy?: Author }): Promise<RoomRow> {
   const { data, error } = await db
     .from('app_rooms')
     .insert({
       name: input.name,
       accent_hex: input.accent_hex ?? '#8a5a3c',
       created_from: input.created_from ?? 'introduction',
+      created_by_platform: input.createdBy?.member_platform ?? null,
+      created_by_type: input.createdBy?.member_type ?? null,
+      created_by_ref: input.createdBy?.member_ref ?? null,
     })
     .select('id, name, accent_hex, created_from, member_cap, agent_wallet_address')
     .single();
@@ -74,6 +77,39 @@ export async function createRoom(input: { name: string; accent_hex?: string; cre
     room.agent_wallet_address = wallet.address;
   }
   return room;
+}
+
+// A guard while creation is democratised but network-wide oversight is not yet
+// built: a member may found only so many live rooms. Private by construction
+// (there is no room discovery surface), so this is the only creation limit.
+export const MAX_ROOMS_PER_FOUNDER = 5;
+
+export type CreateRoomResult =
+  | { ok: true; room: RoomRow }
+  | { ok: false; reason: 'rate_limited' };
+
+/**
+ * Any network agent creates a room: the room is formed, given its wallet, and
+ * the creator is seated as a founding member. Rate limited per creator.
+ */
+export async function createRoomAsMember(creator: Author, input: { name: string; accent_hex?: string }): Promise<CreateRoomResult> {
+  const { count } = await db
+    .from('app_rooms')
+    .select('id', { count: 'exact', head: true })
+    .eq('status', 'active')
+    .eq('created_by_platform', creator.member_platform)
+    .eq('created_by_type', creator.member_type)
+    .eq('created_by_ref', creator.member_ref);
+  if ((count ?? 0) >= MAX_ROOMS_PER_FOUNDER) return { ok: false, reason: 'rate_limited' };
+
+  const room = await createRoom({
+    name: input.name,
+    accent_hex: input.accent_hex,
+    created_from: 'introduction',
+    createdBy: creator,
+  });
+  await joinRoom(room.id, creator, null, true);
+  return { ok: true, room };
 }
 
 /** Backfill a room's platform wallet if it is missing (e.g. seed set after creation). */
@@ -100,6 +136,7 @@ export async function memberByWallet(roomId: string, wallet: string): Promise<Ro
     .from('app_room_members')
     .select('member_platform, member_type, member_ref, is_founder, vouched_by')
     .eq('room_id', roomId)
+    .eq('status', 'active')
     .ilike('member_wallet', walletLc)
     .maybeSingle();
   return (data as RoomMember) ?? null;
@@ -127,11 +164,51 @@ export async function isMember(roomId: string, platform: MemberPlatform, memberT
     .eq('member_platform', platform)
     .eq('member_type', memberType)
     .eq('member_ref', memberRef)
+    .eq('status', 'active')
     .maybeSingle();
   return (data as RoomMember) ?? null;
 }
 
-export interface JoinResult { member_id: string | null; outcome: 'joined' | 'already' | 'full' | 'needs_vouch'; }
+/** True if the given member is a founder of the room (an active founding member). */
+export async function isFounder(roomId: string, member: Author): Promise<boolean> {
+  const { data } = await db
+    .from('app_room_members')
+    .select('id')
+    .eq('room_id', roomId)
+    .eq('member_platform', member.member_platform)
+    .eq('member_type', member.member_type)
+    .eq('member_ref', member.member_ref)
+    .eq('is_founder', true)
+    .eq('status', 'active')
+    .maybeSingle();
+  return !!data;
+}
+
+export interface RoomMemberFull extends RoomMember { status: string; member_wallet: string | null; joined_at: string; }
+
+/** All members of a room (any status) for the founder's management view. */
+export async function listRoomMembers(roomId: string): Promise<RoomMemberFull[]> {
+  const { data } = await db
+    .from('app_room_members')
+    .select('member_platform, member_type, member_ref, is_founder, vouched_by, status, member_wallet, joined_at')
+    .eq('room_id', roomId)
+    .order('joined_at', { ascending: true });
+  return (data as RoomMemberFull[]) ?? [];
+}
+
+/** Set a member's status (remove or block). Authorisation is the caller's job. */
+export async function setMemberStatus(roomId: string, target: Author, status: 'active' | 'removed' | 'blocked'): Promise<boolean> {
+  const { error } = await db
+    .from('app_room_members')
+    .update({ status })
+    .eq('room_id', roomId)
+    .eq('member_platform', target.member_platform)
+    .eq('member_type', target.member_type)
+    .eq('member_ref', target.member_ref);
+  return !error;
+}
+
+export interface JoinResult { member_id: string | null; outcome: 'joined' | 'already' | 'full' | 'needs_vouch' | 'blocked'; }
 
 /**
  * Join a member to a room through the cap + vouch enforcing RPC, then cache the

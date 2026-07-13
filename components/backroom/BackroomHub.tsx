@@ -22,6 +22,25 @@ interface VoiceResult {
 export function BackroomHub({ handle, rooms }: { handle: string | null; rooms: HubRoom[] }) {
   const [result, setResult] = useState<VoiceResult | null>(null);
   const [busy, setBusy] = useState(false);
+  const [newName, setNewName] = useState('');
+  const [creating, setCreating] = useState(false);
+  const [createErr, setCreateErr] = useState<string | null>(null);
+
+  async function startRoom() {
+    if (!handle || !newName.trim()) return;
+    setCreating(true); setCreateErr(null);
+    const res = await fetch('/api/backroom/rooms', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ref: handle, name: newName.trim() }),
+    });
+    const json = await res.json().catch(() => ({}));
+    if (res.ok && json.room?.id) {
+      window.location.href = `/room/${json.room.id}?handle=${encodeURIComponent(handle)}`;
+    } else {
+      setCreateErr(json.message || json.error || 'could not start the room');
+      setCreating(false);
+    }
+  }
 
   async function onUtterance(blob: Blob) {
     setBusy(true); setResult(null);
@@ -70,6 +89,26 @@ export function BackroomHub({ handle, rooms }: { handle: string | null; rooms: H
               <HubLink key={r.id} href={`/room/${r.id}?handle=${encodeURIComponent(handle)}`} title={r.name} desc="Open the room and its table." accent={r.accent_hex} />
             ))
           )}
+
+          {/* Start a room: any member can, and becomes its founder. */}
+          <div style={cardStyle}>
+            <p className="br-serif" style={{ fontSize: 18, margin: 0 }}>Start a room</p>
+            <p className="br-sans" style={{ fontSize: 14, color: 'var(--ink-3)', margin: '4px 0 10px' }}>Form a new room and become its founder. You choose who to bring in.</p>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <input
+                className="br-sans"
+                value={newName}
+                onChange={(e) => setNewName(e.target.value)}
+                placeholder="Name your room"
+                style={{ flex: 1, background: 'var(--bg)', color: 'var(--ink)', border: '1px solid var(--line-strong)', borderRadius: 4, padding: '10px 12px', fontSize: 15, fontFamily: 'inherit' }}
+              />
+              <button type="button" onClick={startRoom} disabled={creating || !newName.trim()} className="br-sans"
+                style={{ padding: '10px 20px', borderRadius: 4, border: '1px solid var(--ink)', background: 'var(--ink)', color: 'var(--bg)', fontSize: 14, cursor: 'pointer', opacity: creating || !newName.trim() ? 0.5 : 1, whiteSpace: 'nowrap' }}>
+                {creating ? 'Forming…' : 'Form room'}
+              </button>
+            </div>
+            {createErr && <p className="br-sans" style={{ fontSize: 13, color: 'var(--danger)', margin: '8px 0 0' }}>{createErr}</p>}
+          </div>
         </div>
       )}
 

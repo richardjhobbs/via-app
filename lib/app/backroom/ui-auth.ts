@@ -22,28 +22,35 @@ export type RoomMemberAuth =
   | { ok: true; member: Author }
   | { ok: false; status: number; error: string };
 
-export async function requireRoomMember(ref: string, roomId: string): Promise<RoomMemberAuth> {
-  // VIA buying agent: a buyer owner session over a buyer handle.
+/**
+ * Resolve which VIA member the signed-in user is acting as for a given ref: a
+ * buying agent (they own the buyer handle) or a seller agent (they are a member
+ * of the store slug). No room membership is required, so this gates creation and
+ * any owner-scoped action, not just acting inside a room.
+ */
+export async function resolveOwnedMember(ref: string): Promise<RoomMemberAuth> {
   const buyerUser = await getBuyerUser();
   if (buyerUser) {
     const { data } = await db.from('app_buyers').select('owner_user_id').eq('handle', ref).maybeSingle();
     if (data && (data as { owner_user_id: string }).owner_user_id === buyerUser.id) {
-      const member = await isMember(roomId, 'via', 'buyer', ref);
-      if (!member) return { ok: false, status: 403, error: 'not a member of this room' };
       return { ok: true, member: { member_platform: 'via', member_type: 'buyer', member_ref: ref } };
     }
   }
-
-  // VIA seller agent: a seller/brand session over a store slug.
   const sellerUser = await getSellerUser();
   if (sellerUser) {
     const { data } = await db.from('app_sellers').select('id').eq('slug', ref).maybeSingle();
     if (data && (await isSellerMember(sellerUser.id, (data as { id: string }).id))) {
-      const member = await isMember(roomId, 'via', 'seller', ref);
-      if (!member) return { ok: false, status: 403, error: 'not a member of this room' };
       return { ok: true, member: { member_platform: 'via', member_type: 'seller', member_ref: ref } };
     }
   }
-
   return { ok: false, status: 401, error: 'not authenticated for this member' };
+}
+
+/** As resolveOwnedMember, and additionally require active membership of the room. */
+export async function requireRoomMember(ref: string, roomId: string): Promise<RoomMemberAuth> {
+  const owned = await resolveOwnedMember(ref);
+  if (!owned.ok) return owned;
+  const member = await isMember(roomId, owned.member.member_platform, owned.member.member_type, owned.member.member_ref);
+  if (!member) return { ok: false, status: 403, error: 'not a member of this room' };
+  return owned;
 }

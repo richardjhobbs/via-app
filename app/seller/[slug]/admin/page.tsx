@@ -5,6 +5,7 @@ import { getShippingConfig, isShippingReady } from '@/lib/app/shipping';
 import SellerDashboardClient, {
   type ActivityRow, type NegotiationRow, type ListingRow,
 } from './SellerDashboardClient';
+import { BackRoomBanner } from '@/components/app/BackRoomBanner';
 
 export const dynamic = 'force-dynamic';
 
@@ -135,7 +136,9 @@ export default async function SellerAdminPage({
   const personaNeedsWork = personaText.length < 40;
 
   return (
-    <SellerDashboardClient
+    <>
+      <BackRoomBanner href="/backroom" />
+      <SellerDashboardClient
       name={seller.name as string}
       slug={seller.slug as string}
       sellerId={sellerId}
@@ -152,6 +155,7 @@ export default async function SellerAdminPage({
       personaNeedsWork={personaNeedsWork}
       walletAddress={String(seller.wallet_address ?? '')}
       canManageTeam={roleAtLeast(role, 'admin')}
-    />
+      />
+    </>
   );
 }
