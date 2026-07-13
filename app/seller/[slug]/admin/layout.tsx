@@ -1,12 +1,16 @@
 import type { ReactNode } from 'react';
+import { BackRoomBanner } from '@/components/app/BackRoomBanner';
 
 /**
- * Passthrough layout. Every page under /seller/[slug]/admin/ provides its
- * own chrome and runs its own auth check via getSellerUser() + an
- * app_seller_members membership lookup (isSellerMember / getSellerRole).
- * The previous RRG-fork layout did a client-side /api/seller/auth/check
- * fetch and redirected to /brand/login (which doesn't exist here).
+ * Layout for /seller/[slug]/admin/. Each page runs its own auth check; the
+ * layout adds the Back Room entry across every seller admin surface so a
+ * signed-in seller can reach and form rooms from anywhere in their dashboard.
  */
 export default function SellerAdminLayout({ children }: { children: ReactNode }) {
-  return <>{children}</>;
+  return (
+    <>
+      <BackRoomBanner href="/backroom" />
+      {children}
+    </>
+  );
 }

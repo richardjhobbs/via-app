@@ -1,6 +1,7 @@
 import { db } from '@/lib/app/db';
 import { getBuyerUser } from '@/lib/app/buyer-auth';
 import { BuyerWalletSync } from '@/components/app/BuyerWalletSync';
+import { BackRoomBanner } from '@/components/app/BackRoomBanner';
 
 export const dynamic = 'force-dynamic';
 
@@ -37,6 +38,7 @@ export default async function BuyerAdminLayout({
   return (
     <>
       {buyerId ? <BuyerWalletSync buyerId={buyerId} currentWallet={currentWallet} /> : null}
+      <BackRoomBanner href="/backroom" />
       {children}
     </>
   );

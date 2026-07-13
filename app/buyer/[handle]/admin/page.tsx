@@ -3,7 +3,6 @@ import { db } from '@/lib/app/db';
 import { getBuyerUser } from '@/lib/app/buyer-auth';
 import { getBalance, usdToCredits } from '@/lib/app/buyer-credits';
 import BuyerDashboardClient, { type BriefRow, type MatchRow, type PitchRow } from './BuyerDashboardClient';
-import { BackRoomBanner } from '@/components/app/BackRoomBanner';
 
 export const dynamic = 'force-dynamic';
 
@@ -246,9 +245,7 @@ export default async function BuyerAdminPage({
   const mcpUrl = `https://app.getvia.xyz/buyers/${buyer.handle}/mcp`;
 
   return (
-    <>
-      <BackRoomBanner href="/backroom" />
-      <BuyerDashboardClient
+    <BuyerDashboardClient
         name={name}
         handle={buyer.handle as string}
         buyerId={buyerId}
@@ -264,7 +261,6 @@ export default async function BuyerAdminPage({
         offersCount={shownOffers.length}
         newPitchCount={newPitchCount}
         credits={creditsBalance}
-      />
-    </>
+    />
   );
 }
