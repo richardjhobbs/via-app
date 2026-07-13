@@ -10,13 +10,25 @@
  * paying needs a deliberate press (handled by the errand flow). Inviting only
  * stages a vouch; joining needs the confirm press.
  */
+import { randomUUID } from 'crypto';
 import { NextResponse } from 'next/server';
 import { db } from '@/lib/app/db';
 import { transcribe, SttError } from '@/lib/app/backroom/voice';
 import { resolveUtterance } from '@/lib/app/backroom/resolve';
 import { loadRoom, placeObject, sayToRoom, listTable } from '@/lib/app/backroom/rooms';
 import { requireRoomMember } from '@/lib/app/backroom/ui-auth';
+import { backroomFilePath } from '@/lib/app/backroom/room-files';
+import { DIGITAL_BUCKET } from '@/lib/app/digital-delivery';
 import { dryRunMatch } from '@/lib/app/buyer-matching';
+
+// Map a recorded audio MIME to a file extension for the stored voice note.
+function audioExt(mime: string): string {
+  if (mime.includes('mp4') || mime.includes('m4a') || mime.includes('aac')) return 'm4a';
+  if (mime.includes('ogg')) return 'ogg';
+  if (mime.includes('mpeg') || mime.includes('mp3')) return 'mp3';
+  if (mime.includes('wav')) return 'wav';
+  return 'webm';
+}
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -42,6 +54,26 @@ export async function POST(req: Request, { params }: { params: Promise<{ roomId:
 
   const auth = await requireRoomMember(handle, roomId);
   if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
+
+  // Voice note: keep the audio as-is, no transcription. Store it privately and
+  // place a voice_note object on the table; the room GET signs it for playback.
+  if (target === 'voice') {
+    const buffer = Buffer.from(await audio.arrayBuffer());
+    const mime = audio.type || 'audio/webm';
+    const filename = `voice-note.${audioExt(mime)}`;
+    const path = backroomFilePath(roomId, randomUUID(), filename);
+    const { error: upErr } = await db.storage.from(DIGITAL_BUCKET).upload(path, buffer, { contentType: mime, upsert: false });
+    if (upErr) {
+      console.error('[room/voice] voice note upload failed:', upErr);
+      return NextResponse.json({ error: 'could not store the voice note' }, { status: 502 });
+    }
+    await placeObject(roomId, auth.member, {
+      object_type: 'voice_note',
+      content: 'Voice note',
+      file: { storage_path: path, mime, filename, size: buffer.length },
+    });
+    return NextResponse.json({ transcript: '', action: { tool: 'room_place_object', say: 'Voice note on the table.' }, objects: await listTable(roomId) });
+  }
 
   // Transcribe.
   let transcript = '';

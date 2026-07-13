@@ -51,7 +51,7 @@ export function RoomClient({ roomId, handle, isAdmin = false }: { roomId: string
   const [chatInput, setChatInput] = useState('');
   const [chatBusy, setChatBusy] = useState(false);
   const [mentionMatches, setMentionMatches] = useState<string[]>([]);
-  const [voiceTarget, setVoiceTarget] = useState<'chat' | 'table'>('chat');
+  const [voiceTarget, setVoiceTarget] = useState<'chat' | 'table' | 'voice'>('chat');
   const [warmth, setWarmth] = useState<Warmth>({ last_event_at: null, events_24h: 0 });
   const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -582,14 +582,14 @@ export function RoomClient({ roomId, handle, isAdmin = false }: { roomId: string
       {handle && (
         <div style={{ position: 'fixed', left: 0, right: 0, bottom: 96, display: 'flex', justifyContent: 'center', pointerEvents: 'none', zIndex: 5 }}>
           <div style={{ display: 'inline-flex', pointerEvents: 'auto', border: '1px solid var(--line-strong)', borderRadius: 999, overflow: 'hidden', background: 'var(--bg)' }}>
-            {(['chat', 'table'] as const).map((t) => (
+            {(['chat', 'table', 'voice'] as const).map((t) => (
               <button key={t} type="button" onClick={() => setVoiceTarget(t)} className="br-sans"
                 style={{
-                  padding: '6px 16px', fontSize: 12, border: 'none', cursor: 'pointer',
+                  padding: '6px 14px', fontSize: 12, border: 'none', cursor: 'pointer',
                   background: voiceTarget === t ? 'var(--ink)' : 'transparent',
                   color: voiceTarget === t ? 'var(--bg)' : 'var(--ink-2)',
                 }}>
-                {t === 'chat' ? 'To chat' : 'To table'}
+                {t === 'chat' ? 'To chat' : t === 'table' ? 'To table' : 'Voice note'}
               </button>
             ))}
           </div>
@@ -657,7 +657,7 @@ function ObjectCard({ o, onOpen, canModerate, onDelete }: { o: TableObject; onOp
         {o.object_type.replace('_', ' ')}
       </p>
       {o.object_type === 'voice_note' ? (
-        <Waveform seed={o.id} />
+        <VoiceNotePlayer url={o.url ?? null} seed={o.id} />
       ) : o.object_type === 'image' ? (
         o.url ? (
           <button type="button" onClick={() => onOpen(o)} style={{ ...plainBtn, cursor: 'zoom-in' }} title="Open image">
@@ -738,6 +738,32 @@ function formatStamp(iso: string): string {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return '';
   return d.toLocaleString(undefined, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+}
+
+// A voice note: play/pause over the waveform. Falls back to the bare waveform
+// for older notes that have no stored audio.
+function VoiceNotePlayer({ url, seed }: { url: string | null; seed: string }) {
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const [playing, setPlaying] = useState(false);
+  if (!url) return <Waveform seed={seed} />;
+  const toggle = () => {
+    const a = audioRef.current;
+    if (!a) return;
+    if (a.paused) { void a.play().catch(() => setPlaying(false)); } else { a.pause(); }
+  };
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+      <button
+        type="button" onClick={toggle} aria-label={playing ? 'Pause voice note' : 'Play voice note'}
+        style={{ flexShrink: 0, width: 36, height: 36, borderRadius: 999, border: '1px solid var(--accent)', background: playing ? 'var(--accent)' : 'transparent', color: playing ? 'var(--bg)' : 'var(--accent)', cursor: 'pointer', fontSize: 14, lineHeight: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+      >{playing ? '❙❙' : '▶'}</button>
+      <div style={{ flex: 1 }}><Waveform seed={seed} /></div>
+      <audio
+        ref={audioRef} src={url} preload="none"
+        onPlay={() => setPlaying(true)} onPause={() => setPlaying(false)} onEnded={() => setPlaying(false)}
+      />
+    </div>
+  );
 }
 
 function Waveform({ seed }: { seed: string }) {
