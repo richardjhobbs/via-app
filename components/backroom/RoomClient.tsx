@@ -51,6 +51,7 @@ export function RoomClient({ roomId, handle, isAdmin = false }: { roomId: string
   const [chatInput, setChatInput] = useState('');
   const [chatBusy, setChatBusy] = useState(false);
   const [mentionMatches, setMentionMatches] = useState<string[]>([]);
+  const [voiceTarget, setVoiceTarget] = useState<'chat' | 'table'>('chat');
   const [warmth, setWarmth] = useState<Warmth>({ last_event_at: null, events_24h: 0 });
   const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -144,10 +145,18 @@ export function RoomClient({ roomId, handle, isAdmin = false }: { roomId: string
   useEffect(() => { void load(); }, [load]);
   useEffect(() => { if (showInvite) void loadSentInvites(); }, [showInvite, loadSentInvites]);
 
+  // Group chat. The room's ambient talk stream, newest first (top of the box).
+  const loadChat = useCallback(async () => {
+    if (!handle) return;
+    const res = await fetch(`/api/backroom/room/${roomId}/chat?handle=${encodeURIComponent(handle)}`);
+    if (res.ok) { const j = await res.json() as { messages: ChatMessage[] }; setChat(j.messages); }
+  }, [roomId, handle]);
+
   const onUtterance = useCallback(async (blob: Blob) => {
     setBusy(true); setSaid(null);
     const form = new FormData();
     form.append('handle', handle);
+    form.append('target', voiceTarget);
     form.append('audio', blob, 'utterance');
     const res = await fetch(`/api/backroom/room/${roomId}/voice`, { method: 'POST', body: form });
     if (res.ok) {
@@ -156,16 +165,10 @@ export function RoomClient({ roomId, handle, isAdmin = false }: { roomId: string
       if (json.objects) setObjects(json.objects);
       if (json.quotes) setQuotes(json.quotes);
       void load();
+      void loadChat();
     }
     setBusy(false);
-  }, [roomId, handle, load]);
-
-  // Group chat. The room's ambient talk stream, newest first (top of the box).
-  const loadChat = useCallback(async () => {
-    if (!handle) return;
-    const res = await fetch(`/api/backroom/room/${roomId}/chat?handle=${encodeURIComponent(handle)}`);
-    if (res.ok) { const j = await res.json() as { messages: ChatMessage[] }; setChat(j.messages); }
-  }, [roomId, handle]);
+  }, [roomId, handle, voiceTarget, load, loadChat]);
 
   const sendChat = useCallback(async () => {
     const text = chatInput.trim();
@@ -407,10 +410,10 @@ export function RoomClient({ roomId, handle, isAdmin = false }: { roomId: string
                 className="br-sans"
                 value={note}
                 onChange={(e) => setNote(e.target.value)}
-                onKeyDown={(e) => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); void placeNote(); } }}
+                onKeyDown={(e) => composerKeyDown(e, note, setNote, () => { void placeNote(); })}
                 placeholder="Type a note, or paste a link. Or hold to speak."
-                rows={2}
-                style={{ flex: 1, resize: 'vertical', minHeight: 42, background: 'var(--bg)', color: 'var(--ink)', border: '1px solid var(--line-strong)', borderRadius: 4, padding: '10px 12px', fontSize: 15, fontFamily: 'inherit', lineHeight: 1.4 }}
+                rows={4}
+                style={{ flex: 1, resize: 'vertical', minHeight: 84, background: 'var(--bg)', color: 'var(--ink)', border: '1px solid var(--line-strong)', borderRadius: 4, padding: '10px 12px', fontSize: 15, fontFamily: 'inherit', lineHeight: 1.45 }}
               />
               <button type="button" onClick={() => fileInputRef.current?.click()} disabled={composerBusy} className="br-sans"
                 title="Attach an image or document"
@@ -430,7 +433,7 @@ export function RoomClient({ roomId, handle, isAdmin = false }: { roomId: string
               style={{ display: 'none' }}
             />
             <p className="br-sans" style={{ fontSize: 11, color: 'var(--ink-3)', margin: '8px 2px 0' }}>
-              Images and documents up to 15 MB. Cmd or Ctrl + Enter to place a note.
+              Images and documents up to 15 MB. Enter places a note, Ctrl or Cmd + Enter for a new line.
             </p>
             {composerErr && <p className="br-sans" style={{ fontSize: 13, color: 'var(--danger)', margin: '6px 2px 0' }}>{composerErr}</p>}
           </section>
@@ -442,14 +445,15 @@ export function RoomClient({ roomId, handle, isAdmin = false }: { roomId: string
           <section style={{ border: '1px solid var(--line-strong)', borderRadius: 8, background: 'var(--paper)', marginBottom: 24, overflow: 'hidden' }}>
             <div style={{ padding: '12px 14px 10px', borderBottom: '1px solid var(--line)', position: 'relative' }}>
               <p className="br-sans" style={{ fontSize: 11, letterSpacing: '0.14em', textTransform: 'uppercase', color: 'var(--ink-3)', margin: '0 0 8px' }}>Chat</p>
-              <div style={{ display: 'flex', gap: 8 }}>
-                <input
+              <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end' }}>
+                <textarea
                   className="br-sans"
                   value={chatInput}
+                  rows={4}
                   onChange={(e) => onChatChange(e.target.value)}
-                  onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); void sendChat(); } }}
-                  placeholder="Message the room. Type @ to mention someone."
-                  style={{ flex: 1, background: 'var(--bg)', color: 'var(--ink)', border: '1px solid var(--line-strong)', borderRadius: 4, padding: '10px 12px', fontSize: 15, fontFamily: 'inherit' }}
+                  onKeyDown={(e) => composerKeyDown(e, chatInput, (v) => { setChatInput(v); setMentionMatches([]); }, () => { void sendChat(); })}
+                  placeholder="Message the room. Type @ to mention someone. Enter sends, Ctrl or Cmd + Enter for a new line."
+                  style={{ flex: 1, resize: 'vertical', background: 'var(--bg)', color: 'var(--ink)', border: '1px solid var(--line-strong)', borderRadius: 4, padding: '10px 12px', fontSize: 15, fontFamily: 'inherit', lineHeight: 1.45 }}
                 />
                 <button type="button" onClick={sendChat} disabled={chatBusy || !chatInput.trim()} className="br-sans"
                   style={{ padding: '10px 18px', borderRadius: 4, border: '1px solid var(--ink)', background: 'var(--ink)', color: 'var(--bg)', fontSize: 14, cursor: 'pointer', opacity: chatBusy || !chatInput.trim() ? 0.5 : 1, whiteSpace: 'nowrap' }}>Send</button>
@@ -463,7 +467,8 @@ export function RoomClient({ roomId, handle, isAdmin = false }: { roomId: string
                 </div>
               )}
             </div>
-            <div style={{ maxHeight: 360, overflowY: 'auto' }}>
+            {/* Cap the message area to about 15 lines, then it scrolls. */}
+            <div style={{ maxHeight: 340, overflowY: 'auto' }}>
               {chat.length === 0 ? (
                 <p className="br-sans" style={{ fontSize: 14, color: 'var(--ink-3)', padding: '16px 14px', margin: 0 }}>No messages yet. Say something to the room.</p>
               ) : (
@@ -558,6 +563,24 @@ export function RoomClient({ roomId, handle, isAdmin = false }: { roomId: string
       {busy && (
         <p className="br-sans" style={{ position: 'fixed', bottom: 92, left: 0, right: 0, textAlign: 'center', fontSize: 13, color: 'var(--ink-3)', pointerEvents: 'none' }}>One moment...</p>
       )}
+      {/* Voice target: hold-to-speak sends your words to the chat or to the
+          table (as a note), whichever is selected here. Sits above the button. */}
+      {handle && (
+        <div style={{ position: 'fixed', left: 0, right: 0, bottom: 96, display: 'flex', justifyContent: 'center', pointerEvents: 'none', zIndex: 5 }}>
+          <div style={{ display: 'inline-flex', pointerEvents: 'auto', border: '1px solid var(--line-strong)', borderRadius: 999, overflow: 'hidden', background: 'var(--bg)' }}>
+            {(['chat', 'table'] as const).map((t) => (
+              <button key={t} type="button" onClick={() => setVoiceTarget(t)} className="br-sans"
+                style={{
+                  padding: '6px 16px', fontSize: 12, border: 'none', cursor: 'pointer',
+                  background: voiceTarget === t ? 'var(--ink)' : 'transparent',
+                  color: voiceTarget === t ? 'var(--bg)' : 'var(--ink-2)',
+                }}>
+                {t === 'chat' ? 'To chat' : 'To table'}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
       {handle && <HoldToSpeak onUtterance={onUtterance} />}
     </div>
   );
@@ -650,6 +673,28 @@ function ObjectCard({ o, onOpen }: { o: TableObject; onOpen: (o: TableObject) =>
       <p className="br-sans" style={{ fontSize: 12, color: 'var(--ink-3)', margin: '12px 0 0' }}>{o.author_ref} · {formatStamp(o.created_at)}</p>
     </article>
   );
+}
+
+// Text-entry keys: Enter submits; Ctrl or Cmd + Enter inserts a line break at
+// the cursor (so you can write multi-line messages and notes).
+function composerKeyDown(
+  e: React.KeyboardEvent<HTMLTextAreaElement>,
+  value: string,
+  setValue: (v: string) => void,
+  submit: () => void,
+) {
+  if (e.key !== 'Enter') return;
+  if (e.ctrlKey || e.metaKey) {
+    e.preventDefault();
+    const ta = e.currentTarget;
+    const s = ta.selectionStart ?? value.length;
+    const en = ta.selectionEnd ?? value.length;
+    setValue(value.slice(0, s) + '\n' + value.slice(en));
+    requestAnimationFrame(() => { try { ta.selectionStart = ta.selectionEnd = s + 1; } catch { /* noop */ } });
+  } else {
+    e.preventDefault();
+    submit();
+  }
 }
 
 // Render a chat message, highlighting @mentions of known room members.

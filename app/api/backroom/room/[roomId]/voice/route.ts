@@ -35,6 +35,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ roomId:
   let form: FormData;
   try { form = await req.formData(); } catch { return NextResponse.json({ error: 'expected multipart/form-data' }, { status: 400 }); }
   const handle = String(form.get('handle') ?? '').trim();
+  const target = String(form.get('target') ?? '').trim(); // 'chat' | 'table' | '' (smart)
   const audio = form.get('audio');
   if (!handle) return NextResponse.json({ error: 'handle required' }, { status: 400 });
   if (!(audio instanceof Blob) || audio.size === 0) return NextResponse.json({ error: 'missing audio' }, { status: 400 });
@@ -54,6 +55,18 @@ export async function POST(req: Request, { params }: { params: Promise<{ roomId:
   }
   if (!transcript) {
     return NextResponse.json({ transcript: '', action: { tool: null, say: 'I did not catch that.' }, objects: await listTable(roomId) });
+  }
+
+  // Explicit target: the member chose Chat or Table on the speak toggle, so
+  // skip the LLM and send the words straight there (predictable, no ambiguity).
+  if (target === 'chat') {
+    await sayToRoom(roomId, auth.member, transcript);
+    return NextResponse.json({ transcript, action: { tool: 'room_say', say: 'Added to chat.' }, objects: await listTable(roomId) });
+  }
+  if (target === 'table') {
+    const isUrl = /^https?:\/\/\S+$/i.test(transcript) || /^www\.\S+\.\S+$/i.test(transcript);
+    await placeObject(roomId, auth.member, { object_type: isUrl ? 'link' : 'note', content: transcript });
+    return NextResponse.json({ transcript, action: { tool: 'room_place_object', say: 'On the table.' }, objects: await listTable(roomId) });
   }
 
   // Resolve through the member's agent.
