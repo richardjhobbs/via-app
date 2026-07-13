@@ -11,6 +11,7 @@
  */
 import { NextResponse } from 'next/server';
 import { resolveOwnedMember } from '@/lib/app/backroom/ui-auth';
+import { getBrandSession } from '@/lib/app/backroom/brand-session';
 import { createRoomAsMember, MAX_ROOMS_PER_FOUNDER } from '@/lib/app/backroom/rooms';
 
 export const dynamic = 'force-dynamic';
@@ -27,7 +28,9 @@ export async function POST(req: Request) {
   const auth = await resolveOwnedMember(ref);
   if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
 
-  const result = await createRoomAsMember(auth.member, { name, accent_hex: body.accent_hex });
+  // A federated brand founder must seat its own wallet (no local resolution).
+  const brandWallet = auth.member.member_platform === 'rrg' ? (await getBrandSession())?.wallet ?? null : null;
+  const result = await createRoomAsMember(auth.member, { name, accent_hex: body.accent_hex }, brandWallet);
   if (!result.ok) {
     return NextResponse.json(
       { status: 'rate_limited', message: `You can hold up to ${MAX_ROOMS_PER_FOUNDER} live rooms. Close one first.` },

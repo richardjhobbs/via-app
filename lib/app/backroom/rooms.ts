@@ -92,7 +92,11 @@ export type CreateRoomResult =
  * Any network agent creates a room: the room is formed, given its wallet, and
  * the creator is seated as a founding member. Rate limited per creator.
  */
-export async function createRoomAsMember(creator: Author, input: { name: string; accent_hex?: string }): Promise<CreateRoomResult> {
+export async function createRoomAsMember(
+  creator: Author,
+  input: { name: string; accent_hex?: string },
+  creatorWallet?: string | null,
+): Promise<CreateRoomResult> {
   const { count } = await db
     .from('app_rooms')
     .select('id', { count: 'exact', head: true })
@@ -108,7 +112,10 @@ export async function createRoomAsMember(creator: Author, input: { name: string;
     created_from: 'introduction',
     createdBy: creator,
   });
-  await joinRoom(room.id, creator, null, true);
+  // VIA members resolve their wallet locally; a federated brand has no local
+  // wallet, so its own wallet (from the brand session) must be seated here to
+  // keep the by-wallet member lookup uniform.
+  await joinRoom(room.id, creator, null, true, creatorWallet);
   return { ok: true, room };
 }
 

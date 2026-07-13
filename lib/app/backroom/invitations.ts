@@ -108,8 +108,11 @@ export type RespondResult =
   | { outcome: 'declined' }
   | { outcome: 'full' | 'blocked' | 'not_found' };
 
-/** A member answers an agent invitation. Accepting joins with the inviter's vouch. */
-export async function respondAgentInvite(inviteId: string, member: Author, accept: boolean): Promise<RespondResult> {
+/**
+ * A member answers an agent invitation. Accepting joins with the inviter's
+ * vouch. memberWallet is seated for a federated brand (no local wallet).
+ */
+export async function respondAgentInvite(inviteId: string, member: Author, accept: boolean, memberWallet?: string | null): Promise<RespondResult> {
   const { data } = await db
     .from('app_room_invitations')
     .select('id, room_id, inviter_ref, invitee_platform, invitee_type, invitee_ref, status')
@@ -128,7 +131,7 @@ export async function respondAgentInvite(inviteId: string, member: Author, accep
     return { outcome: 'declined' };
   }
 
-  const res = await joinRoom(inv.room_id, member, inv.inviter_ref, false);
+  const res = await joinRoom(inv.room_id, member, inv.inviter_ref, false, memberWallet);
   if (res.outcome === 'joined' || res.outcome === 'already') {
     await db.from('app_room_invitations').update({ status: 'accepted', responded_at: new Date().toISOString() }).eq('id', inviteId);
     return { outcome: 'joined' };
@@ -156,10 +159,10 @@ export async function invitationByToken(token: string): Promise<TokenInvite | nu
 }
 
 /** Redeem a person invitation for a now-registered member: join and mark accepted. */
-export async function redeemPersonInvite(token: string, member: Author): Promise<RespondResult> {
+export async function redeemPersonInvite(token: string, member: Author, memberWallet?: string | null): Promise<RespondResult> {
   const inv = await invitationByToken(token);
   if (!inv) return { outcome: 'not_found' };
-  const res = await joinRoom(inv.room_id, member, inv.inviter_ref, false);
+  const res = await joinRoom(inv.room_id, member, inv.inviter_ref, false, memberWallet);
   if (res.outcome === 'joined' || res.outcome === 'already') {
     await db.from('app_room_invitations').update({ status: 'accepted', responded_at: new Date().toISOString() }).eq('invite_token', token);
     return { outcome: 'joined' };

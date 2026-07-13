@@ -10,13 +10,18 @@
  * A VIA member is one of two agent kinds: a buying agent (owner = buyer session,
  * ref = handle) or a seller agent (owner = seller/brand session, ref = slug).
  * requireRoomMember accepts the ref, resolves which VIA kind owns it for the
- * signed-in user, and confirms room membership. RRG members authenticate over
- * the RRG side, not here.
+ * signed-in user, and confirms room membership.
+ *
+ * An RRG brand concierge (rrg/seller) is federated, not a VIA account, so it is
+ * recognised here through the brand session cookie (brand-session.ts) opened by
+ * the RRG handoff. RRG personal concierges (rrg/buyer) are not seen here: they
+ * import into VIA as a native via/buyer and are resolved on the buyer path.
  */
 import { db } from '../db';
 import { getBuyerUser, getUserBuyers } from '../buyer-auth';
 import { getSellerUser, isSellerMember, getUserBrands } from '../seller-auth';
-import { isMember, type Author, type MemberType } from './rooms';
+import { getBrandSession } from './brand-session';
+import { isMember, type Author, type MemberPlatform, type MemberType } from './rooms';
 
 export type RoomMemberAuth =
   | { ok: true; member: Author }
@@ -43,10 +48,14 @@ export async function resolveOwnedMember(ref: string): Promise<RoomMemberAuth> {
       return { ok: true, member: { member_platform: 'via', member_type: 'seller', member_ref: ref } };
     }
   }
+  const brand = await getBrandSession();
+  if (brand && brand.slug === ref) {
+    return { ok: true, member: { member_platform: 'rrg', member_type: 'seller', member_ref: ref } };
+  }
   return { ok: false, status: 401, error: 'not authenticated for this member' };
 }
 
-export interface SessionMember { platform: 'via'; type: MemberType; ref: string; label: string; }
+export interface SessionMember { platform: MemberPlatform; type: MemberType; ref: string; label: string; }
 
 /**
  * Every VIA member the current session is already signed in as: their buying
@@ -67,6 +76,10 @@ export async function sessionMembers(): Promise<SessionMember[]> {
     for (const s of await getUserBrands(sellerUser.id)) {
       out.push({ platform: 'via', type: 'seller', ref: s.sellerSlug, label: s.sellerName || s.sellerSlug });
     }
+  }
+  const brand = await getBrandSession();
+  if (brand) {
+    out.push({ platform: 'rrg', type: 'seller', ref: brand.slug, label: brand.name || brand.slug });
   }
   return out;
 }
