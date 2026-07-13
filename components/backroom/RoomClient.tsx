@@ -30,6 +30,7 @@ interface Warmth { last_event_at: string | null; events_24h: number; }
 interface RoomMeta { id: string; name: string; accent_hex: string; member_cap: number; }
 interface Quote { title: string; seller: string | null; price_usdc: number | null; page_url: string | null; }
 interface Member { member_platform: string; member_type: string; member_ref: string; is_founder: boolean; status: string; }
+interface SentInvite { id: string; kind: string; status: string; why: string; invitee: string; link: string | null; email: string | null; created_at: string; }
 
 // Deterministic pseudo-waveform peaks from a string, so a voice note always
 // draws the same bars without storing them for the placeholder rendering.
@@ -57,10 +58,12 @@ export function RoomClient({ roomId, handle, isAdmin = false }: { roomId: string
   const [showInvite, setShowInvite] = useState(false);
   const [inviteRef, setInviteRef] = useState('');
   const [inviteName, setInviteName] = useState('');
+  const [inviteEmail, setInviteEmail] = useState('');
   const [inviteWhy, setInviteWhy] = useState('');
   const [inviteMsg, setInviteMsg] = useState<string | null>(null);
   const [inviteLink, setInviteLink] = useState<string | null>(null);
   const [inviteBusy, setInviteBusy] = useState(false);
+  const [sentInvites, setSentInvites] = useState<SentInvite[]>([]);
   const [note, setNote] = useState('');
   const [composerBusy, setComposerBusy] = useState(false);
   const [composerErr, setComposerErr] = useState<string | null>(null);
@@ -99,25 +102,41 @@ export function RoomClient({ roomId, handle, isAdmin = false }: { roomId: string
     void load();
   }, [roomId, handle, load]);
 
+  const loadSentInvites = useCallback(async () => {
+    if (!handle) return;
+    const res = await fetch(`/api/backroom/room/${roomId}/invite?ref=${encodeURIComponent(handle)}`);
+    if (res.ok) { const j = await res.json() as { sent: SentInvite[] }; setSentInvites(j.sent ?? []); }
+  }, [roomId, handle]);
+
   const invite = useCallback(async (mode: 'agent' | 'person') => {
     setInviteBusy(true); setInviteMsg(null); setInviteLink(null);
     const body = mode === 'agent'
       ? { ref: handle, mode, invitee_ref: inviteRef.trim(), why: inviteWhy.trim() }
-      : { ref: handle, mode, name: inviteName.trim(), why: inviteWhy.trim() };
+      : { ref: handle, mode, name: inviteName.trim(), email: inviteEmail.trim(), why: inviteWhy.trim() };
     const res = await fetch(`/api/backroom/room/${roomId}/invite`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
     });
     const json = await res.json().catch(() => ({}));
     if (res.ok) {
-      if (json.link) { setInviteLink(json.link); setInviteMsg('Share this link. It joins them when they register.'); }
-      else { setInviteMsg(`Invited ${json.invitee_ref}. They will see it in their invitations.`); setInviteRef(''); }
+      if (json.link) {
+        setInviteLink(json.link);
+        setInviteMsg(json.emailed ? `Emailed the link to ${inviteEmail.trim()}. You can also share it below.` : 'Share this link. It joins them when they register.');
+        setInviteName(''); setInviteEmail('');
+      } else {
+        setInviteMsg(json.emailed
+          ? `Invited ${json.invitee_ref}. Their owner has been emailed, and it is in their invitations.`
+          : `Invited ${json.invitee_ref}. They will see it in their invitations.`);
+        setInviteRef('');
+      }
+      void loadSentInvites();
     } else {
       setInviteMsg(json.message || json.error || 'could not send the invitation');
     }
     setInviteBusy(false);
-  }, [roomId, handle, inviteRef, inviteName, inviteWhy]);
+  }, [roomId, handle, inviteRef, inviteName, inviteEmail, inviteWhy, loadSentInvites]);
 
   useEffect(() => { void load(); }, [load]);
+  useEffect(() => { if (showInvite) void loadSentInvites(); }, [showInvite, loadSentInvites]);
 
   const onUtterance = useCallback(async (blob: Blob) => {
     setBusy(true); setSaid(null);
@@ -249,15 +268,39 @@ export function RoomClient({ roomId, handle, isAdmin = false }: { roomId: string
               </div>
             </div>
             <div style={{ marginTop: 12 }}>
-              <p className="br-sans" style={{ fontSize: 12, color: 'var(--ink-3)', margin: '0 0 6px' }}>Or someone not yet on VIA, get a link to share:</p>
-              <div style={{ display: 'flex', gap: 8 }}>
-                <input className="br-sans" value={inviteName} onChange={(e) => setInviteName(e.target.value)} placeholder="Their name (optional)" style={{ ...inviteInput, marginTop: 0, flex: 1 }} />
-                <button type="button" onClick={() => invite('person')} disabled={inviteBusy} className="br-sans" style={inviteBtn}>Get a link</button>
+              <p className="br-sans" style={{ fontSize: 12, color: 'var(--ink-3)', margin: '0 0 6px' }}>Or someone not yet on VIA. Add their email to send it for them, or leave it blank to copy a link:</p>
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                <input className="br-sans" value={inviteName} onChange={(e) => setInviteName(e.target.value)} placeholder="Their name (optional)" style={{ ...inviteInput, marginTop: 0, flex: '1 1 140px' }} />
+                <input className="br-sans" type="email" value={inviteEmail} onChange={(e) => setInviteEmail(e.target.value)} placeholder="Their email (optional)" style={{ ...inviteInput, marginTop: 0, flex: '1 1 180px' }} />
+                <button type="button" onClick={() => invite('person')} disabled={inviteBusy} className="br-sans" style={inviteBtn}>{inviteEmail.trim() ? 'Send invite' : 'Get a link'}</button>
               </div>
             </div>
             {inviteMsg && <p className="br-sans" style={{ fontSize: 13, color: 'var(--ink-2)', margin: '12px 0 0' }}>{inviteMsg}</p>}
             {inviteLink && (
               <p className="br-sans" style={{ fontSize: 13, color: 'var(--accent)', margin: '6px 0 0', wordBreak: 'break-all' }}>{inviteLink}</p>
+            )}
+
+            {sentInvites.length > 0 && (
+              <div style={{ marginTop: 18, borderTop: '1px solid var(--line)', paddingTop: 14 }}>
+                <p className="br-sans" style={{ fontSize: 11, letterSpacing: '0.14em', textTransform: 'uppercase', color: 'var(--ink-3)', margin: '0 0 10px' }}>Invites you have sent</p>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                  {sentInvites.map((s) => (
+                    <div key={s.id} style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                      <span className="br-sans" style={{ fontSize: 14, color: 'var(--ink)' }}>
+                        {s.invitee}
+                        <span style={{ color: 'var(--ink-3)' }}> · {s.kind === 'person' ? 'person' : 'agent'} · {s.status}</span>
+                      </span>
+                      {s.kind === 'person' && s.status === 'pending' && s.link && (
+                        <span style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                          <span className="br-sans" style={{ fontSize: 12, color: 'var(--accent)', wordBreak: 'break-all', flex: 1 }}>{s.link}</span>
+                          <button type="button" onClick={() => { void navigator.clipboard?.writeText(s.link!); setInviteMsg('Link copied.'); }} className="br-sans"
+                            style={{ fontSize: 12, padding: '4px 10px', borderRadius: 4, border: '1px solid var(--line-strong)', background: 'transparent', color: 'var(--ink-2)', cursor: 'pointer', whiteSpace: 'nowrap' }}>Copy</button>
+                        </span>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
             )}
           </section>
         )}

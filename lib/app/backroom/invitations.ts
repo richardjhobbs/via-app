@@ -80,6 +80,32 @@ export async function invitePerson(
   return { token };
 }
 
+export interface SentInvite {
+  id: string;
+  kind: 'agent' | 'person';
+  status: string;
+  why: string;
+  created_at: string;
+  invitee_ref: string | null;    // agent invites
+  invitee_name: string | null;   // person invites
+  invitee_email: string | null;  // person invites
+  invite_token: string | null;   // person invites (rebuilds the join link)
+}
+
+/** Invitations a member has sent in a room (their outbox), newest first. */
+export async function listSentInvites(inviter: Author, roomId: string): Promise<SentInvite[]> {
+  const { data } = await db
+    .from('app_room_invitations')
+    .select('id, kind, status, why, created_at, invitee_ref, invitee_name, invitee_email, invite_token')
+    .eq('room_id', roomId)
+    .eq('inviter_platform', inviter.member_platform)
+    .eq('inviter_type', inviter.member_type)
+    .eq('inviter_ref', inviter.member_ref)
+    .order('created_at', { ascending: false })
+    .limit(50);
+  return (data as SentInvite[]) ?? [];
+}
+
 /** Pending agent invitations addressed to a member (their invitation inbox). */
 export async function listAgentInvitesFor(platform: MemberPlatform, type: MemberType, ref: string): Promise<RoomInvite[]> {
   const { data } = await db

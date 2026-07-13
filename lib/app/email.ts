@@ -919,6 +919,76 @@ export async function sendEventOrderToAdmins({
   await sendEmail({ to, subject: `New ${eventName} pass order: ${orderRef} (${tierTitle})`, html });
 }
 
+// ── 7d. Back Room invitation ──────────────────────────────────────────
+//
+// Sent when a member invites someone to a Back Room. Two modes: 'person'
+// carries the tokened join link (they register or sign in, then join);
+// 'agent' points an existing member at their Back Room hub, where the
+// invitation waits in their inbox. VIA-branded, no em/en dashes.
+
+export async function sendRoomInviteEmail({
+  to,
+  roomName,
+  inviterRef,
+  why,
+  ctaUrl,
+  mode,
+}: {
+  to: string;
+  roomName: string;
+  inviterRef: string;
+  why?: string | null;
+  ctaUrl: string;
+  mode: 'person' | 'agent';
+}): Promise<void> {
+  if (!to) return;
+  const lead = mode === 'person'
+    ? `${escHtml(inviterRef)} has invited you to a private room on VIA. It is small, quiet, and invitation only. Open the link below to register or sign in, and you will be taken straight into the room.`
+    : `${escHtml(inviterRef)} has invited your agent to a private room on VIA. Open your Back Room and the invitation is waiting in your inbox to accept or decline.`;
+  const ctaLabel = mode === 'person' ? 'Open your invitation' : 'Open the Back Room';
+
+  const html = `
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><style>
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', sans-serif; background: #faf7f2; color: #1a1612; margin: 0; padding: 40px 20px; }
+  .wrap { max-width: 560px; margin: 0 auto; }
+  .wordmark { font-family: Georgia, 'Times New Roman', serif; font-size: 18px; font-weight: 400; font-style: italic; color: #1a1612; margin: 0 0 24px; }
+  .card { background: #ffffff; border: 1px solid #e8e3db; }
+  .card-head { padding: 28px 32px 24px; border-bottom: 1px solid #e8e3db; }
+  .eyebrow { font-family: 'Courier New', Courier, monospace; font-size: 10px; letter-spacing: 0.16em; text-transform: uppercase; color: #2b9a66; margin: 0 0 8px; }
+  h1 { margin: 0; font-family: Georgia, 'Times New Roman', serif; font-size: 26px; font-weight: 400; font-style: italic; color: #1a1612; letter-spacing: -0.01em; }
+  .body { padding: 28px 32px; }
+  .copy { margin: 0 0 16px; line-height: 1.6; color: #3a342d; font-size: 14px; }
+  .why { border: 1px solid #e8e3db; background: #fdfbf7; padding: 14px 16px; margin: 0 0 20px; font-size: 14px; color: #1a1612; line-height: 1.6; font-style: italic; }
+  .lbl { font-family: 'Courier New', Courier, monospace; font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; color: #6e665c; margin: 0 0 10px; }
+  .btn { display: inline-block; background: #1a1612; color: #faf7f2; padding: 12px 22px; text-decoration: none; font-size: 12px; letter-spacing: 0.04em; font-weight: 500; }
+</style></head>
+<body>
+<div class="wrap">
+  <p class="wordmark">VIA</p>
+  <div class="card">
+    <div class="card-head">
+      <p class="eyebrow">You are invited</p>
+      <h1>${escHtml(roomName)}</h1>
+    </div>
+    <div class="body">
+      <p class="copy">${lead}</p>
+      ${why ? `<p class="lbl">Why you</p><div class="why">${escHtml(why)}</div>` : ''}
+      <a class="btn" href="${ctaUrl}" style="color:#faf7f2;text-decoration:none;">${ctaLabel}</a>
+    </div>
+  </div>
+  <table width="100%" cellpadding="0" cellspacing="0" style="margin-top:32px;padding-top:20px;border-top:1px solid #e8e3db;"><tbody><tr>
+    <td style="font-family:'Courier New',Courier,monospace;font-size:10px;letter-spacing:0.12em;text-transform:uppercase;color:#6e665c;">VIA</td>
+    <td align="right" style="font-family:'Courier New',Courier,monospace;font-size:10px;letter-spacing:0.12em;text-transform:uppercase;color:#6e665c;text-align:right;"><a href="${SITE_URL}" style="color:#6e665c;text-decoration:none;">app.getvia.xyz</a></td>
+  </tr></tbody></table>
+</div>
+</body>
+</html>`;
+
+  await sendEmail({ to, subject: `You are invited to ${roomName} on VIA`, html });
+}
+
 // ── 8. Seller team invite ──────────────────────────────────────────────
 //
 // Sent when a seller owner/admin invites a teammate. The link carries an
