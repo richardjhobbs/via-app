@@ -13,7 +13,7 @@ import { NextResponse } from 'next/server';
 import crypto from 'crypto';
 import { isAdminFromCookies } from '@/lib/app/auth';
 import { db } from '@/lib/app/db';
-import { createRoom, joinRoom } from '@/lib/app/backroom/rooms';
+import { createRoom, joinRoom, RoomNameTakenError } from '@/lib/app/backroom/rooms';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -48,7 +48,15 @@ export async function POST(req: Request) {
   const name = body.name?.trim();
   if (!name) return NextResponse.json({ error: 'name required' }, { status: 400 });
 
-  const room = await createRoom({ name, accent_hex: body.accent_hex, created_from: body.created_from });
+  let room;
+  try {
+    room = await createRoom({ name, accent_hex: body.accent_hex, created_from: body.created_from });
+  } catch (e) {
+    if (e instanceof RoomNameTakenError) {
+      return NextResponse.json({ error: `A room named "${name}" already exists. Choose another name.` }, { status: 409 });
+    }
+    throw e;
+  }
 
   const seated: Record<string, string> = {};
   for (const handle of body.founders ?? []) {

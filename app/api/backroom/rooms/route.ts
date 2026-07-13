@@ -32,6 +32,12 @@ export async function POST(req: Request) {
   const brandWallet = auth.member.member_platform === 'rrg' ? (await getBrandSession())?.wallet ?? null : null;
   const result = await createRoomAsMember(auth.member, { name, accent_hex: body.accent_hex }, brandWallet);
   if (!result.ok) {
+    if (result.reason === 'name_taken') {
+      return NextResponse.json(
+        { status: 'name_taken', message: `A room named "${name}" already exists. Choose another name.` },
+        { status: 409 },
+      );
+    }
     return NextResponse.json(
       { status: 'rate_limited', message: `You can hold up to ${MAX_ROOMS_PER_FOUNDER} live rooms. Close one first.` },
       { status: 429 },

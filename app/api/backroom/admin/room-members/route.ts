@@ -15,7 +15,7 @@ import { NextResponse } from 'next/server';
 import crypto from 'crypto';
 import { isAdminFromCookies } from '@/lib/app/auth';
 import { db } from '@/lib/app/db';
-import { loadRoom, joinRoom, type MemberPlatform, type MemberType } from '@/lib/app/backroom/rooms';
+import { loadRoom, joinRoom, resolveViaMemberWallet, type MemberPlatform, type MemberType } from '@/lib/app/backroom/rooms';
 import { resolveRrgBrand } from '@/lib/app/backroom/rrg-federation';
 
 export const dynamic = 'force-dynamic';
@@ -87,13 +87,37 @@ export async function POST(req: Request) {
     }
   }
 
+  const isFounder = body.is_founder === true;
+  // The operator seating a member IS an authoritative vouch. Without this, a
+  // non-founder add returns needs_vouch and nothing is seated (the form has no
+  // vouch field). Founders carry no vouch. An explicit vouched_by still wins.
+  const vouchedBy = body.vouched_by?.trim() || (isFounder ? null : 'operator');
+
   const result = await joinRoom(
     roomId,
     { member_platform: platform, member_type: effectiveKind, member_ref: ref },
-    body.vouched_by?.trim() || null,
-    body.is_founder === true,
+    vouchedBy,
+    isFounder,
     wallet,
   );
 
-  return NextResponse.json({ outcome: result.outcome, member: { platform, kind: effectiveKind, ref, name: resolvedName, wallet } });
+  // Surface who was actually seated: resolve a VIA member's cached wallet and
+  // display name for the response so it does not read back as null on success.
+  if ((result.outcome === 'joined' || result.outcome === 'already') && platform === 'via') {
+    wallet = wallet ?? (await resolveViaMemberWallet(effectiveKind, ref));
+    if (!resolvedName) {
+      if (effectiveKind === 'buyer') {
+        const { data } = await db.from('app_buyers').select('display_name').eq('handle', ref).maybeSingle();
+        resolvedName = (data as { display_name: string | null } | null)?.display_name ?? null;
+      } else {
+        const { data } = await db.from('app_sellers').select('name').eq('slug', ref).maybeSingle();
+        resolvedName = (data as { name: string | null } | null)?.name ?? null;
+      }
+    }
+  }
+
+  return NextResponse.json({
+    outcome: result.outcome,
+    member: { platform, kind: effectiveKind, ref, name: resolvedName, wallet, vouched_by: isFounder ? null : vouchedBy },
+  });
 }

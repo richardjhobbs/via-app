@@ -55,11 +55,31 @@ export async function loadRoom(roomId: string): Promise<RoomRow | null> {
  * wallet, never a human in-app wallet. If the seed is unset the room still
  * exists with a null wallet (payments simply cannot settle until it is set).
  */
+/** Thrown when a room name collides with an existing active room. */
+export class RoomNameTakenError extends Error {
+  constructor(roomName: string) {
+    super(`A room named "${roomName}" already exists.`);
+    this.name = 'RoomNameTakenError';
+  }
+}
+
 export async function createRoom(input: { name: string; accent_hex?: string; created_from?: string; createdBy?: Author }): Promise<RoomRow> {
+  const name = input.name.trim();
+  // Names are unique among ACTIVE rooms (case-insensitive). A deleted or
+  // archived room frees its name for reuse. ilike with no wildcards is an
+  // exact case-insensitive match.
+  const { data: dup } = await db
+    .from('app_rooms')
+    .select('id')
+    .ilike('name', name)
+    .eq('status', 'active')
+    .limit(1);
+  if (dup && (dup as unknown[]).length > 0) throw new RoomNameTakenError(name);
+
   const { data, error } = await db
     .from('app_rooms')
     .insert({
-      name: input.name,
+      name,
       accent_hex: input.accent_hex ?? '#8a5a3c',
       created_from: input.created_from ?? 'introduction',
       created_by_platform: input.createdBy?.member_platform ?? null,
@@ -86,7 +106,7 @@ export const MAX_ROOMS_PER_FOUNDER = 5;
 
 export type CreateRoomResult =
   | { ok: true; room: RoomRow }
-  | { ok: false; reason: 'rate_limited' };
+  | { ok: false; reason: 'rate_limited' | 'name_taken' };
 
 /**
  * Any network agent creates a room: the room is formed, given its wallet, and
@@ -106,12 +126,18 @@ export async function createRoomAsMember(
     .eq('created_by_ref', creator.member_ref);
   if ((count ?? 0) >= MAX_ROOMS_PER_FOUNDER) return { ok: false, reason: 'rate_limited' };
 
-  const room = await createRoom({
-    name: input.name,
-    accent_hex: input.accent_hex,
-    created_from: 'introduction',
-    createdBy: creator,
-  });
+  let room: RoomRow;
+  try {
+    room = await createRoom({
+      name: input.name,
+      accent_hex: input.accent_hex,
+      created_from: 'introduction',
+      createdBy: creator,
+    });
+  } catch (e) {
+    if (e instanceof RoomNameTakenError) return { ok: false, reason: 'name_taken' };
+    throw e;
+  }
   // VIA members resolve their wallet locally; a federated brand has no local
   // wallet, so its own wallet (from the brand session) must be seated here to
   // keep the by-wallet member lookup uniform.
