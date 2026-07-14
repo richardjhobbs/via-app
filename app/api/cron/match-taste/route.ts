@@ -110,8 +110,6 @@ export async function GET(req: NextRequest) {
   const settled = await loadSettledPairs();
   const cap = judgeCap();
   const summary = { judged: 0, proposed: 0, below_threshold: 0, rate_limited: 0, duplicate: 0, judge_unavailable: 0 };
-  // A member proposed to in THIS run counts against the cap immediately.
-  const proposedThisRun = new Map<string, number>();
 
   outer:
   for (let i = 0; i < cards.length; i++) {
@@ -133,11 +131,13 @@ export async function GET(req: NextRequest) {
         continue;
       }
 
+      // Each proposal is recorded (awaited) before the next pair is judged, so
+      // proposalsThisMonth already reflects proposals made earlier in THIS run;
+      // no separate in-run counter (adding one double-counts and trips the cap
+      // a proposal early).
       const capLimit = monthlyCap();
-      const keyA = memberKey(a.member_platform, a.member_type, a.member_ref);
-      const keyB = memberKey(b.member_platform, b.member_type, b.member_ref);
-      const aCount = (await proposalsThisMonth(a)) + (proposedThisRun.get(keyA) ?? 0);
-      const bCount = (await proposalsThisMonth(b)) + (proposedThisRun.get(keyB) ?? 0);
+      const aCount = await proposalsThisMonth(a);
+      const bCount = await proposalsThisMonth(b);
       if (aCount >= capLimit || bCount >= capLimit) {
         await recordMatch(a, b, verdict, 'rate_limited');
         summary.rate_limited++;
@@ -151,8 +151,6 @@ export async function GET(req: NextRequest) {
       } else {
         await recordMatch(a, b, verdict, 'proposed', result.id);
         summary.proposed++;
-        proposedThisRun.set(keyA, (proposedThisRun.get(keyA) ?? 0) + 1);
-        proposedThisRun.set(keyB, (proposedThisRun.get(keyB) ?? 0) + 1);
       }
     }
   }

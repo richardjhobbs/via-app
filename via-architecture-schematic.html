@@ -1,0 +1,370 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>VIA — Network Architecture</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,600&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --paper:#F1EBDD;
+    --paper-2:#E8E0CD;
+    --paper-3:#EDE6D6;
+    --ink:#23201A;
+    --ink-soft:#5A5347;
+    --green:#2E5A3B;
+    --green-2:#3E7A52;
+    --green-ink:#EAF0E4;
+    --gold:#B28A3C;
+    --gold-2:#C7A14A;
+    --line:#CFC3AC;
+    --line-2:#BCAE92;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html{-webkit-font-smoothing:antialiased}
+  body{
+    background:var(--paper);
+    color:var(--ink);
+    font-family:"IBM Plex Mono",monospace;
+    line-height:1.5;
+    padding:48px 24px 72px;
+    background-image:radial-gradient(circle at 12% 8%, rgba(178,138,60,.05), transparent 40%),radial-gradient(circle at 88% 92%, rgba(46,90,59,.05), transparent 40%);
+  }
+  .wrap{max-width:960px;margin:0 auto}
+
+  /* header */
+  .head{margin-bottom:40px}
+  .eyebrow{
+    font-size:11px;letter-spacing:.28em;text-transform:uppercase;
+    color:var(--gold);font-weight:600;
+  }
+  h1{
+    font-family:"Fraunces",serif;font-weight:500;
+    font-size:clamp(34px,6vw,54px);line-height:1.02;
+    letter-spacing:-.01em;margin:10px 0 12px;
+  }
+  .sub{font-size:13px;color:var(--ink-soft);max-width:56ch}
+  .stamp{
+    font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;
+    color:var(--ink-soft);margin-top:14px;
+  }
+  .stamp b{color:var(--green);font-weight:600}
+
+  /* layout shell with side rail */
+  .diagram{position:relative}
+
+  /* channels */
+  .channels{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+  .chan{
+    background:var(--paper-3);border:1px solid var(--line-2);
+    border-radius:2px;padding:20px 22px;position:relative;
+  }
+  .chan .tag{
+    font-size:10.5px;letter-spacing:.2em;text-transform:uppercase;
+    color:var(--green);font-weight:600;
+  }
+  .chan h3{
+    font-family:"Fraunces",serif;font-weight:500;font-size:23px;
+    margin:6px 0 8px;letter-spacing:-.01em;
+  }
+  .chan p{font-size:12.5px;color:var(--ink-soft)}
+  .chan .flow{
+    margin-top:14px;font-size:10px;letter-spacing:.16em;text-transform:uppercase;
+    color:var(--gold);font-weight:600;
+  }
+
+  /* converge connector */
+  .converge{height:64px;display:block;margin:2px 0 -2px}
+  .converge svg{display:block;width:100%;height:100%}
+
+  /* generic band */
+  .band{
+    border:1px solid var(--line-2);border-radius:2px;
+    padding:22px 24px;position:relative;
+  }
+  .band + .drop{height:34px}
+  .drop{display:flex;justify-content:center;align-items:center}
+  .drop svg{display:block}
+
+  .band .layerlabel{
+    display:flex;align-items:baseline;gap:12px;flex-wrap:wrap;margin-bottom:8px;
+  }
+  .band .idx{
+    font-size:11px;letter-spacing:.2em;color:var(--gold);font-weight:600;
+  }
+  .band h2{
+    font-family:"Fraunces",serif;font-weight:500;font-size:27px;
+    letter-spacing:-.01em;line-height:1;
+  }
+  .band .lede{font-size:13px;color:var(--ink-soft);max-width:60ch}
+  .band .body{font-size:12.5px;color:var(--ink-soft);max-width:66ch;margin-top:8px}
+
+  .pills{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px}
+  .pill{
+    font-size:10.5px;letter-spacing:.16em;text-transform:uppercase;font-weight:600;
+    border:1px solid var(--line-2);border-radius:999px;padding:6px 13px;color:var(--ink);
+  }
+
+  /* network = signature anchor (filled green) */
+  .network{
+    background:var(--green);color:var(--green-ink);border-color:var(--green);
+    padding:26px 26px 24px;
+  }
+  .network h2{color:#fff}
+  .network .idx{color:var(--gold-2)}
+  .network .lede{color:#DCE6D6}
+  .network .pill{border-color:rgba(234,240,228,.4);color:#EAF0E4}
+  .network .foot{
+    margin-top:16px;padding-top:14px;border-top:1px solid rgba(234,240,228,.22);
+    font-size:11px;letter-spacing:.04em;color:#C6D4BE;
+  }
+  .network .foot b{color:var(--gold-2);font-weight:600}
+
+  /* pass */
+  .pass{background:var(--paper-3)}
+  .pass .kicker{
+    display:inline-block;margin-top:12px;font-size:11px;color:var(--green);
+    font-weight:600;letter-spacing:.04em;
+  }
+  .pass .kicker::before{content:"→ ";color:var(--gold)}
+
+  /* rooms */
+  .rooms{background:var(--paper-2)}
+  .rooms .split{
+    display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-top:14px;
+  }
+  @media(max-width:640px){.rooms .split{grid-template-columns:1fr}}
+  .subcard{
+    background:var(--paper);border:1px solid var(--line);border-radius:2px;padding:14px 15px;
+  }
+  .subcard .st{
+    font-size:10px;letter-spacing:.18em;text-transform:uppercase;
+    color:var(--green);font-weight:600;margin-bottom:5px;
+  }
+  .subcard p{font-size:12px;color:var(--ink-soft)}
+  .actors{display:flex;gap:6px;flex-wrap:wrap;margin-top:9px}
+  .actor{
+    font-size:9.5px;letter-spacing:.14em;text-transform:uppercase;font-weight:600;
+    background:var(--green);color:var(--green-ink);border-radius:999px;padding:4px 9px;
+  }
+  .commission{
+    margin-top:8px;font-size:11px;color:var(--gold);font-weight:600;letter-spacing:.03em;
+  }
+
+  /* cards = nested under rooms, gold accent */
+  .nestwrap{margin-top:16px;padding-left:22px;position:relative}
+  .nestwrap::before{
+    content:"";position:absolute;left:6px;top:-6px;bottom:14px;width:1px;
+    background:var(--gold);opacity:.5;
+  }
+  .nestwrap::after{
+    content:"PART OF ROOMS";position:absolute;left:6px;top:-20px;
+    font-size:9px;letter-spacing:.18em;color:var(--gold);font-weight:600;
+    background:var(--paper-2);padding:0 6px 0 0;
+  }
+  .cards{background:var(--paper-3);border-color:var(--gold)}
+  .cards h2{color:var(--ink)}
+  .cards .idx{color:var(--gold)}
+  .cards .live{
+    display:inline-flex;align-items:center;gap:6px;font-size:10px;letter-spacing:.16em;
+    text-transform:uppercase;color:var(--green-2);font-weight:600;
+  }
+  .cards .live::before{
+    content:"";width:7px;height:7px;border-radius:50%;background:var(--green-2);
+    box-shadow:0 0 0 3px rgba(62,122,82,.2);
+  }
+
+  /* settlement foundation */
+  .settle{
+    margin-top:30px;background:var(--ink);color:var(--paper);
+    border-radius:2px;padding:16px 22px;display:flex;align-items:center;
+    justify-content:space-between;gap:16px;flex-wrap:wrap;
+  }
+  .settle .lbl{font-size:11px;letter-spacing:.2em;text-transform:uppercase;color:var(--gold-2);font-weight:600}
+  .settle .txt{font-size:12px;color:#D8D2C4}
+  .settle .rail{font-size:11px;letter-spacing:.06em;color:var(--paper)}
+  .settle .rail b{color:var(--gold-2);font-weight:600}
+
+  /* open broadcast rail */
+  .broadcast{
+    margin:30px 0 0;background:var(--paper-3);border:1px dashed var(--line-2);
+    border-radius:2px;padding:20px 22px;
+  }
+  .broadcast .top{
+    display:flex;align-items:center;gap:12px;margin-bottom:8px;flex-wrap:wrap;
+  }
+  .broadcast .bi{
+    font-size:11px;letter-spacing:.2em;text-transform:uppercase;color:var(--gold);font-weight:600;
+  }
+  .broadcast h3{font-family:"Fraunces",serif;font-weight:500;font-size:20px;letter-spacing:-.01em}
+  .broadcast p{font-size:12.5px;color:var(--ink-soft);max-width:70ch}
+  .nets{display:flex;gap:7px;flex-wrap:wrap;margin-top:12px}
+  .net{
+    font-size:10px;letter-spacing:.12em;text-transform:uppercase;font-weight:600;
+    border:1px solid var(--line-2);border-radius:999px;padding:5px 11px;color:var(--ink-soft);
+  }
+  .broadcast .rule{
+    margin-top:12px;padding-top:11px;border-top:1px solid var(--line);
+    font-size:11.5px;color:var(--green);font-weight:600;letter-spacing:.02em;
+  }
+  .broadcast .rule::before{content:"⛓ ";color:var(--gold)}
+
+  .foot-note{
+    margin-top:26px;font-size:10.5px;letter-spacing:.06em;color:var(--ink-soft);
+    text-align:center;
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header class="head">
+    <div class="eyebrow">VIA · Network Architecture</div>
+    <h1>Where VIA is now</h1>
+    <p class="sub">Two sides meet, transact, and stay. Loyalty, private rooms and taste cards deepen the relationship on top of the same rails.</p>
+    <div class="stamp">Draft schematic · <b>agentic commerce</b> · settlement on platform</div>
+  </header>
+
+  <div class="diagram">
+
+    <!-- TOP: two channels -->
+    <div class="channels">
+      <div class="chan">
+        <div class="tag">Demand side</div>
+        <h3>Buyer agents</h3>
+        <p>Broadcast intent. What a buyer wants, in their own words, on their behalf.</p>
+        <div class="flow">↓ intent</div>
+      </div>
+      <div class="chan">
+        <div class="tag">Supply side</div>
+        <h3>Seller agents</h3>
+        <p>Publish supply. What a brand can offer, machine-readable, always on.</p>
+        <div class="flow">↓ supply</div>
+      </div>
+    </div>
+
+    <!-- converge -->
+    <div class="converge" aria-hidden="true">
+      <svg viewBox="0 0 960 64" preserveAspectRatio="none">
+        <defs>
+          <marker id="ar" markerWidth="9" markerHeight="9" refX="6" refY="4.5" orient="auto">
+            <path d="M0,0 L9,4.5 L0,9 Z" fill="#B28A3C"/>
+          </marker>
+        </defs>
+        <path d="M240,2 C240,34 480,20 480,52" fill="none" stroke="#BCAE92" stroke-width="1.4"/>
+        <path d="M720,2 C720,34 480,20 480,52" fill="none" stroke="#BCAE92" stroke-width="1.4" marker-end="url(#ar)"/>
+      </svg>
+    </div>
+
+    <!-- NETWORK anchor -->
+    <div class="band network">
+      <div class="layerlabel">
+        <span class="idx">CORE</span>
+        <h2>The VIA network</h2>
+      </div>
+      <p class="lede">Where the two sides come together. Agents find each other, agree terms and complete the deal.</p>
+      <div class="pills">
+        <span class="pill">Search</span>
+        <span class="pill">Negotiate</span>
+        <span class="pill">Transact</span>
+      </div>
+      <div class="foot">Every match resolves here, and every deal <b>settles on the platform</b>.</div>
+    </div>
+
+    <div class="drop" aria-hidden="true">
+      <svg width="16" height="30" viewBox="0 0 16 30"><path d="M8,0 L8,22" stroke="#BCAE92" stroke-width="1.4"/><path d="M8,30 L2,20 L14,20 Z" fill="#B28A3C"/></svg>
+    </div>
+
+    <!-- OPEN BROADCAST (cross-cutting) -->
+    <div class="broadcast">
+      <div class="top">
+        <span class="bi">Open broadcast · both ways</span>
+      </div>
+      <h3>Intent doesn't stay inside VIA</h3>
+      <p>Intent posted on VIA is also broadcast to the open agent web, so any external agent can pick it up and respond. In the same way, any agent can read what VIA has to offer. The one condition: if a deal happens, it settles on VIA.</p>
+      <div class="nets">
+        <span class="net">Nostr relay</span>
+        <span class="net">Open agent networks</span>
+        <span class="net">External buyer agents</span>
+        <span class="net">External seller agents</span>
+      </div>
+      <div class="rule">Reach is open. Settlement is on-platform.</div>
+    </div>
+
+    <div class="drop" aria-hidden="true">
+      <svg width="16" height="30" viewBox="0 0 16 30"><path d="M8,0 L8,22" stroke="#BCAE92" stroke-width="1.4"/><path d="M8,30 L2,20 L14,20 Z" fill="#B28A3C"/></svg>
+    </div>
+
+    <!-- NETWORK PASS -->
+    <div class="band pass">
+      <div class="layerlabel">
+        <span class="idx">LAYER 01</span>
+        <h2>Network Pass</h2>
+      </div>
+      <p class="lede">The loyalty layer. Brands bring their own customers into VIA.</p>
+      <p class="body">A brand invites its customers in. Each one gets a buyer agent on the platform automatically, and earns points across every brand on the network. Loyalty stops being single-brand and becomes network-wide.</p>
+      <span class="kicker">customer joins → buyer agent created → points earned network-wide</span>
+    </div>
+
+    <div class="drop" aria-hidden="true">
+      <svg width="16" height="30" viewBox="0 0 16 30"><path d="M8,0 L8,22" stroke="#BCAE92" stroke-width="1.4"/><path d="M8,30 L2,20 L14,20 Z" fill="#B28A3C"/></svg>
+    </div>
+
+    <!-- ROOMS -->
+    <div class="band rooms">
+      <div class="layerlabel">
+        <span class="idx">LAYER 02</span>
+        <h2>Rooms</h2>
+      </div>
+      <p class="lede">Private, curated social space between everyone on the network.</p>
+      <div class="split">
+        <div class="subcard">
+          <div class="st">Brands → VIP customers</div>
+          <p>A direct line for brands to talk to their best customers: feedback, ideation and early access, kept private.</p>
+        </div>
+        <div class="subcard">
+          <div class="st">Independent rooms</div>
+          <p>Third parties spin up their own rooms, active across the whole network and wired into the referral system.</p>
+          <div class="actors">
+            <span class="actor">Marketeers</span>
+            <span class="actor">Promoters</span>
+            <span class="actor">Influencers</span>
+          </div>
+          <div class="commission">→ earn commission on referrals</div>
+        </div>
+      </div>
+
+      <!-- CARDS nested inside Rooms -->
+      <div class="nestwrap">
+        <div class="band cards">
+          <div class="layerlabel">
+            <span class="idx">LAYER 03</span>
+            <h2>Taste Cards</h2>
+          </div>
+          <span class="live">Live now</span>
+          <p class="body">Find like-minded people and potential co-creators through the same network mechanics. Connect and transact without leaving the platform.</p>
+          <div class="pills">
+            <span class="pill">Discover</span>
+            <span class="pill">Collaborate</span>
+            <span class="pill">Transact in-platform</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- SETTLEMENT foundation -->
+  <div class="settle">
+    <span class="lbl">Foundation</span>
+    <span class="txt">Whoever discovers whom, and wherever intent travels, value changes hands on VIA.</span>
+    <span class="rail">Settlement · <b>USDC on Base</b></span>
+  </div>
+
+  <p class="foot-note">Draft v1 · layers and copy open for edit</p>
+
+</div>
+</body>
+</html>
