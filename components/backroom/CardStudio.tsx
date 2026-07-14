@@ -17,6 +17,16 @@ interface ProfileFields {
   obsessions:      string[];
   aesthetic_vocab: string[];
   anti_references: string[];
+  voice_text?:     string;
+}
+
+/** The first sentence of the member's spoken words: the default headline for a
+ *  brand-new card, so talking alone fills the whole card. Always editable. */
+function firstSentence(text: string | undefined): string {
+  const t = (text ?? '').trim();
+  if (!t) return '';
+  const m = t.split(/(?<=[.!?])\s+/)[0] ?? t;
+  return m.trim().slice(0, 140);
 }
 
 interface CardData {
@@ -35,7 +45,9 @@ interface CardData {
 
 const CAPS = { references: 7, obsessions: 5, anti_references: 5, vocab: 6 } as const;
 
-const GROUPS: { cardKey: keyof typeof CAPS; profileKey: keyof ProfileFields; label: string }[] = [
+type ProfileArrayKey = 'references' | 'obsessions' | 'aesthetic_vocab' | 'anti_references';
+
+const GROUPS: { cardKey: keyof typeof CAPS; profileKey: ProfileArrayKey; label: string }[] = [
   { cardKey: 'references', profileKey: 'references', label: 'References' },
   { cardKey: 'obsessions', profileKey: 'obsessions', label: 'Obsessions' },
   { cardKey: 'vocab', profileKey: 'aesthetic_vocab', label: 'Aesthetic' },
@@ -66,10 +78,17 @@ export function CardStudio({ memberRef, profile }: { memberRef: string; profile:
 
   useEffect(() => { void load(); }, [load]);
 
+  // A brand-new card starts already filled from what the member said: the
+  // first entries of each field and the first sentence of their own words.
+  // Talking alone produces a complete card; every part stays editable.
   function working(): CardData {
     return card ?? {
-      slug: suggestedSlug, status: 'draft', display_name: '', headline: '', accent: '#8a5a3c',
-      references: [], obsessions: [], anti_references: [], vocab: [], profile_version: null, matching_enabled: true,
+      slug: suggestedSlug, status: 'draft', display_name: '', headline: firstSentence(profile.voice_text), accent: '#8a5a3c',
+      references: profile.references.slice(0, CAPS.references),
+      obsessions: profile.obsessions.slice(0, CAPS.obsessions),
+      anti_references: profile.anti_references.slice(0, CAPS.anti_references),
+      vocab: profile.aesthetic_vocab.slice(0, CAPS.vocab),
+      profile_version: null, matching_enabled: true,
     };
   }
 
@@ -195,7 +214,7 @@ export function CardStudio({ memberRef, profile }: { memberRef: string; profile:
           <input className="br-sans" value={w.display_name} onChange={(e) => setField('display_name', e.target.value)} placeholder="How you want to be named" style={inputStyle} />
         </label>
         <label className="br-sans" style={miniLabel}>
-          One line, in your words
+          One line, in your words <span style={{ textTransform: 'none', letterSpacing: 0 }}>, drawn from what you said, edit freely</span>
           <input className="br-sans" value={w.headline} onChange={(e) => setField('headline', e.target.value.slice(0, 140))} placeholder="What you make, or how you see things" style={inputStyle} />
         </label>
         <label className="br-sans" style={miniLabel}>

@@ -144,6 +144,11 @@ export function YouClient({ member, members }: { member: YouMember | null; membe
     <main style={{ maxWidth: 620, margin: '0 auto', padding: '48px 20px 180px' }}>
       <p className="br-sans" style={{ fontSize: 12, letterSpacing: '0.14em', textTransform: 'uppercase', color: 'var(--ink-3)' }}>You</p>
       <h1 className="br-serif" style={{ fontSize: 32, fontWeight: 400, margin: '8px 0 12px' }}>Your taste, in your words</h1>
+      <p className="br-sans" style={{ fontSize: 15, color: 'var(--ink-2)', lineHeight: 1.55, margin: '0 0 16px' }}>
+        Just talk. Hold the button at the bottom of the screen and answer out loud.
+        Everything you say fills every field on this page, and those fields become your card.
+        You can edit any word by hand afterwards.
+      </p>
 
       {members.length > 1 && (
         <p className="br-sans" style={{ fontSize: 13, color: 'var(--ink-3)', margin: '0 0 20px' }}>
@@ -185,6 +190,11 @@ export function YouClient({ member, members }: { member: YouMember | null; membe
       )}
 
       {/* Editable profile */}
+      {loaded && (
+        <p className="br-sans" style={{ fontSize: 11, letterSpacing: '0.14em', textTransform: 'uppercase', color: 'var(--ink-3)', margin: '0 0 14px' }}>
+          What you have said so far <span style={{ textTransform: 'none', letterSpacing: 0 }}>, filled by talking, editable by hand</span>
+        </p>
+      )}
       {loaded && ARRAY_FIELDS.map(({ key, label, hint }) => (
         <div key={key} style={{ marginBottom: 20 }}>
           <label className="br-sans" style={{ display: 'block', fontSize: 11, letterSpacing: '0.14em', textTransform: 'uppercase', color: 'var(--ink-3)', marginBottom: 6 }}>
@@ -238,7 +248,13 @@ export function YouClient({ member, members }: { member: YouMember | null; membe
           <p className="br-sans" style={{ fontSize: 14, color: 'var(--ink-2)', margin: '0 0 18px' }}>
             Pick what goes public. The card is a page you can share anywhere; the rest of your profile stays yours.
           </p>
-          <CardStudio memberRef={ref} profile={profile} />
+          <CardStudio memberRef={ref} profile={{
+            references: profile.references,
+            obsessions: profile.obsessions,
+            aesthetic_vocab: profile.aesthetic_vocab,
+            anti_references: profile.anti_references,
+            voice_text: profile.voice_text,
+          }} />
         </section>
       )}
 
