@@ -1211,18 +1211,26 @@ export async function sendEventGuestEmail({
   guestName,
   eventName,
   tierTitle,
-  redemption,
+  imageUrl,
+  info,
+  instructions,
 }: {
   to: string;
   guestName?: string | null;
   eventName: string;
   tierTitle: string;
-  redemption?: { platform?: string; instructions?: string; url?: string } | null;
+  /** Product image on file (image_url, falling back to url). Shown as the hero. */
+  imageUrl?: string | null;
+  /** Product description on file, shown as the pass detail. */
+  info?: string | null;
+  /** Door / check-in guidance (redemption.instructions). Text only, no link. */
+  instructions?: string | null;
 }): Promise<void> {
   if (!to) return;
   const greeting = guestName ? `Hi ${escHtml(guestName)}, ` : '';
-  const instructions = redemption?.instructions?.trim() || null;
-  const url = redemption?.url?.trim() || null;
+  const img  = imageUrl?.trim() || null;
+  const desc = info?.trim() || null;
+  const gate = instructions?.trim() || null;
 
   const html = `
 <!DOCTYPE html>
@@ -1236,10 +1244,10 @@ export async function sendEventGuestEmail({
   .eyebrow { font-family: 'Courier New', Courier, monospace; font-size: 10px; letter-spacing: 0.16em; text-transform: uppercase; color: #2b9a66; margin: 0 0 8px; }
   h1 { margin: 0 0 4px; font-family: Georgia, 'Times New Roman', serif; font-size: 26px; font-weight: 400; font-style: italic; color: #1a1612; }
   .sub { font-size: 13px; color: #6e665c; margin: 0; }
+  .product-img { width: 100%; display: block; height: auto; border-bottom: 1px solid #e8e3db; }
   .body { padding: 28px 32px; }
   .copy { margin: 0 0 16px; line-height: 1.6; color: #3a342d; font-size: 14px; }
   .lbl { font-family: 'Courier New', Courier, monospace; font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; color: #6e665c; margin: 0 0 12px; }
-  .cta { display: inline-block; margin-top: 4px; padding: 12px 20px; background: #1a1612; color: #faf7f2; text-decoration: none; font-size: 13px; letter-spacing: 0.04em; }
 </style></head>
 <body>
 <div class="wrap">
@@ -1250,10 +1258,11 @@ export async function sendEventGuestEmail({
       <h1>${escHtml(tierTitle)}</h1>
       <p class="sub">${escHtml(eventName)}</p>
     </div>
+    ${img ? `<img class="product-img" src="${img}" alt="${escHtml(tierTitle)}" />` : ''}
     <div class="body">
       <p class="copy">${greeting}your place at ${escHtml(eventName)} is confirmed. This pass is free, so there is nothing to pay and no code to redeem. The organiser has you on the guest list.</p>
-      ${instructions ? `<p class="lbl">Getting in</p><p class="copy">${escHtml(instructions)}</p>` : ''}
-      ${url ? `<a class="cta" href="${escHtml(url)}">Event details</a>` : ''}
+      ${desc ? `<p class="lbl">Your pass</p><p class="copy">${escHtml(desc).replace(/\r?\n/g, '<br>')}</p>` : ''}
+      ${gate ? `<p class="lbl">Getting in</p><p class="copy">${escHtml(gate)}</p>` : ''}
     </div>
   </div>
   <table width="100%" cellpadding="0" cellspacing="0" style="margin-top:32px;padding-top:20px;border-top:1px solid #e8e3db;"><tbody><tr>

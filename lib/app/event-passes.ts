@@ -79,7 +79,7 @@ export async function claimEventPass(p: ClaimEventPassParams): Promise<ClaimEven
   // Load the tier and confirm it is a free guest-list pass on this seller.
   const { data: product, error: prodErr } = await db
     .from('app_seller_products')
-    .select('id, title, active, admin_removed, metadata, seller_id')
+    .select('id, title, description, image_url, url, active, admin_removed, metadata, seller_id')
     .eq('id', p.productId)
     .eq('seller_id', p.sellerId)
     .maybeSingle();
@@ -123,7 +123,12 @@ export async function claimEventPass(p: ClaimEventPassParams): Promise<ClaimEven
     const passRef = guestId ? `PASS-${guestId.slice(0, 8).toUpperCase()}` : 'PASS';
     // Fire-and-forget side effects: the place is already recorded.
     try {
-      await sendEventGuestEmail({ to: email, guestName: name, eventName, tierTitle, redemption: getEventRedemption(product.metadata) });
+      await sendEventGuestEmail({
+        to: email, guestName: name, eventName, tierTitle,
+        imageUrl:     (product.image_url as string | null) || (product.url as string | null) || null,
+        info:         (product.description as string | null) || null,
+        instructions: getEventRedemption(product.metadata)?.instructions ?? null,
+      });
     } catch (mailErr) {
       console.warn('[event-passes] guest email failed (non-fatal):', mailErr);
     }
