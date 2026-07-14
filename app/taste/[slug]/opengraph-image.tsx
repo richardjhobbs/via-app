@@ -3,6 +3,9 @@ import { renderCardImage, CARD_IMAGE_SIZES } from '@/lib/app/backroom/taste-card
 import { ImageResponse } from 'next/og';
 
 export const runtime = 'nodejs';
+// Re-render on every request so an edited card's preview is never stale from
+// our side. Social platforms still cache by URL; the card page updates instantly.
+export const dynamic = 'force-dynamic';
 export const size = CARD_IMAGE_SIZES.og;
 export const contentType = 'image/png';
 export const alt = 'Taste card on VIA';

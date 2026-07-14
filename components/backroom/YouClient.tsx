@@ -13,22 +13,30 @@
 import { useCallback, useEffect, useState } from 'react';
 import { HoldToSpeak } from './HoldToSpeak';
 import { CardStudio } from './CardStudio';
+import { ChipField } from './ChipField';
+import { TasteFaq } from './TasteFaq';
 
 interface Fields {
   references:      string[];
   obsessions:      string[];
   aesthetic_vocab: string[];
   anti_references: string[];
+  places:          string[];
+  work:            string[];
   voice_text:      string;
 }
 interface Profile extends Fields { id: string | null; version: number; }
 
 export interface YouMember { platform: 'via' | 'rrg'; type: 'buyer' | 'seller'; ref: string; label: string; }
 
-const EMPTY: Profile = { id: null, version: 0, references: [], obsessions: [], aesthetic_vocab: [], anti_references: [], voice_text: '' };
+const EMPTY: Profile = { id: null, version: 0, references: [], obsessions: [], aesthetic_vocab: [], anti_references: [], places: [], work: [], voice_text: '' };
 
-const ARRAY_FIELDS: { key: keyof Fields; label: string; hint: string }[] = [
-  { key: 'references', label: 'References', hint: 'records, films, designers, eras, places you love' },
+type ArrayKey = 'work' | 'places' | 'references' | 'obsessions' | 'aesthetic_vocab' | 'anti_references';
+
+const ARRAY_FIELDS: { key: ArrayKey; label: string; hint: string }[] = [
+  { key: 'work', label: 'Work', hint: 'what you do, make, or are building, and who you want to meet' },
+  { key: 'places', label: 'Places', hint: 'where you are, and the cities or places you love' },
+  { key: 'references', label: 'References', hint: 'records, films, designers, eras, works you love' },
   { key: 'obsessions', label: 'Obsessions', hint: 'what you keep returning to' },
   { key: 'aesthetic_vocab', label: 'Aesthetic', hint: 'words for how things should feel' },
   { key: 'anti_references', label: 'Not you', hint: 'what you reject' },
@@ -83,8 +91,8 @@ export function YouClient({ member, members }: { member: YouMember | null; membe
     setBusy(false);
   }, [ref]);
 
-  function setArray(key: keyof Fields, text: string) {
-    setProfile((p) => ({ ...p, [key]: text.split('\n').map((s) => s.trim()).filter(Boolean) }));
+  function setArray(key: ArrayKey, next: string[]) {
+    setProfile((p) => ({ ...p, [key]: next }));
     setSaved(false);
   }
 
@@ -98,6 +106,8 @@ export function YouClient({ member, members }: { member: YouMember | null; membe
         obsessions: profile.obsessions,
         aesthetic_vocab: profile.aesthetic_vocab,
         anti_references: profile.anti_references,
+        places: profile.places,
+        work: profile.work,
         voice_text: profile.voice_text,
       } }),
     });
@@ -137,7 +147,8 @@ export function YouClient({ member, members }: { member: YouMember | null; membe
   }
 
   const profileEmpty = !profile.references.length && !profile.obsessions.length
-    && !profile.aesthetic_vocab.length && !profile.anti_references.length;
+    && !profile.aesthetic_vocab.length && !profile.anti_references.length
+    && !profile.places.length && !profile.work.length;
   const showBrandSeed = loaded && profileEmpty && member.platform === 'rrg' && member.type === 'seller';
 
   return (
@@ -146,9 +157,11 @@ export function YouClient({ member, members }: { member: YouMember | null; membe
       <h1 className="br-serif" style={{ fontSize: 32, fontWeight: 400, margin: '8px 0 12px' }}>Your taste, in your words</h1>
       <p className="br-sans" style={{ fontSize: 15, color: 'var(--ink-2)', lineHeight: 1.55, margin: '0 0 16px' }}>
         Just talk. Hold the button at the bottom of the screen and answer out loud.
-        Everything you say fills every field on this page, and those fields become your card.
-        You can edit any word by hand afterwards.
+        Everything you say fills the fields below, from what you do and where you are to
+        what you love, and those fields become your card. You can edit any word by hand afterwards.
       </p>
+
+      <TasteFaq />
 
       {members.length > 1 && (
         <p className="br-sans" style={{ fontSize: 13, color: 'var(--ink-3)', margin: '0 0 20px' }}>
@@ -196,19 +209,13 @@ export function YouClient({ member, members }: { member: YouMember | null; membe
         </p>
       )}
       {loaded && ARRAY_FIELDS.map(({ key, label, hint }) => (
-        <div key={key} style={{ marginBottom: 20 }}>
-          <label className="br-sans" style={{ display: 'block', fontSize: 11, letterSpacing: '0.14em', textTransform: 'uppercase', color: 'var(--ink-3)', marginBottom: 6 }}>
-            {label} <span style={{ textTransform: 'none', letterSpacing: 0, color: 'var(--ink-3)' }}>, {hint}</span>
-          </label>
-          <textarea
-            className="br-sans"
-            value={(profile[key] as string[]).join('\n')}
-            onChange={(e) => setArray(key, e.target.value)}
-            rows={Math.max(2, (profile[key] as string[]).length + 1)}
-            placeholder="One per line"
-            style={fieldStyle}
-          />
-        </div>
+        <ChipField
+          key={key}
+          label={label}
+          hint={hint}
+          values={profile[key]}
+          onChange={(next) => setArray(key, next)}
+        />
       ))}
 
       {loaded && (
@@ -253,6 +260,8 @@ export function YouClient({ member, members }: { member: YouMember | null; membe
             obsessions: profile.obsessions,
             aesthetic_vocab: profile.aesthetic_vocab,
             anti_references: profile.anti_references,
+            places: profile.places,
+            work: profile.work,
             voice_text: profile.voice_text,
           }} />
         </section>

@@ -15,6 +15,8 @@ export interface TasteCardView {
   obsessions:      string[];
   anti_references: string[];
   vocab:           string[];
+  places:          string[];
+  work:            string[];
   profile_version?: number | null;
 }
 
@@ -64,6 +66,8 @@ export function TasteCard({ card }: { card: TasteCardView }) {
       )}
 
       <div style={{ marginTop: 26 }}>
+        <Section label="Work" entries={card.work} />
+        <Section label="Places" entries={card.places} />
         <Section label="References" entries={card.references} />
         <Section label="Obsessions" entries={card.obsessions} />
         <Section label="Aesthetic" entries={card.vocab} />

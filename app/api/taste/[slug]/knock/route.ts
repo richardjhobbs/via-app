@@ -32,6 +32,8 @@ function knockContextPack(knocker: TasteCard, target: TasteCard): Record<string,
     ...intersect(knocker.references, target.references),
     ...intersect(knocker.obsessions, target.obsessions),
     ...intersect(knocker.vocab, target.vocab),
+    ...intersect(knocker.places, target.places),
+    ...intersect(knocker.work, target.work),
   ];
   return {
     why: 'They knocked on your taste card',

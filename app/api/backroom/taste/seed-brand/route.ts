@@ -44,6 +44,8 @@ Return a JSON object with exactly these keys:
 - obsessions: string[]  (up to 6: what the brand keeps returning to)
 - aesthetic_vocab: string[]  (up to 8: words for how their things should feel)
 - anti_references: string[]  (up to 5: what the material implies they reject; empty if unclear)
+- places: string[]  (up to 6: the city, scene, or places the brand is rooted in; empty if unclear)
+- work: string[]  (up to 6: what the brand makes or does, and what it looks for, e.g. stockists, collaborators)
 - voice_text: string  (2 or 3 sentences in the brand's voice, first person plural)
 
 Only JSON. No prose outside it.`;
@@ -97,6 +99,8 @@ export async function POST(req: Request) {
     obsessions: toArr(parsed.obsessions, 6),
     aesthetic_vocab: toArr(parsed.aesthetic_vocab, 8),
     anti_references: toArr(parsed.anti_references, 5),
+    places: toArr(parsed.places, 6),
+    work: toArr(parsed.work, 6),
     voice_text: typeof parsed.voice_text === 'string' ? parsed.voice_text.slice(0, 4000) : '',
   };
   const hasContent = fields.references.length || fields.obsessions.length || fields.aesthetic_vocab.length;

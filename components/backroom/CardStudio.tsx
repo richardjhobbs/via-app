@@ -17,6 +17,8 @@ interface ProfileFields {
   obsessions:      string[];
   aesthetic_vocab: string[];
   anti_references: string[];
+  places:          string[];
+  work:            string[];
   voice_text?:     string;
 }
 
@@ -39,15 +41,19 @@ interface CardData {
   obsessions:       string[];
   anti_references:  string[];
   vocab:            string[];
+  places:           string[];
+  work:             string[];
   profile_version:  number | null;
   matching_enabled: boolean;
 }
 
-const CAPS = { references: 7, obsessions: 5, anti_references: 5, vocab: 6 } as const;
+const CAPS = { references: 15, obsessions: 5, anti_references: 5, vocab: 6, places: 6, work: 6 } as const;
 
-type ProfileArrayKey = 'references' | 'obsessions' | 'aesthetic_vocab' | 'anti_references';
+type ProfileArrayKey = 'references' | 'obsessions' | 'aesthetic_vocab' | 'anti_references' | 'places' | 'work';
 
 const GROUPS: { cardKey: keyof typeof CAPS; profileKey: ProfileArrayKey; label: string }[] = [
+  { cardKey: 'work', profileKey: 'work', label: 'Work' },
+  { cardKey: 'places', profileKey: 'places', label: 'Places' },
   { cardKey: 'references', profileKey: 'references', label: 'References' },
   { cardKey: 'obsessions', profileKey: 'obsessions', label: 'Obsessions' },
   { cardKey: 'vocab', profileKey: 'aesthetic_vocab', label: 'Aesthetic' },
@@ -88,6 +94,8 @@ export function CardStudio({ memberRef, profile }: { memberRef: string; profile:
       obsessions: profile.obsessions.slice(0, CAPS.obsessions),
       anti_references: profile.anti_references.slice(0, CAPS.anti_references),
       vocab: profile.aesthetic_vocab.slice(0, CAPS.vocab),
+      places: profile.places.slice(0, CAPS.places),
+      work: profile.work.slice(0, CAPS.work),
       profile_version: null, matching_enabled: true,
     };
   }
@@ -117,7 +125,7 @@ export function CardStudio({ memberRef, profile }: { memberRef: string; profile:
       body: JSON.stringify({ ref: memberRef, card: {
         slug: w.slug, display_name: w.display_name, headline: w.headline, accent: w.accent,
         references: w.references, obsessions: w.obsessions, anti_references: w.anti_references,
-        vocab: w.vocab, matching_enabled: w.matching_enabled,
+        vocab: w.vocab, places: w.places, work: w.work, matching_enabled: w.matching_enabled,
       } }),
     });
     const json = await res.json().catch(() => ({})) as { card?: CardData; card_url?: string; error?: string };
@@ -150,6 +158,21 @@ export function CardStudio({ memberRef, profile }: { memberRef: string; profile:
     try { await navigator.clipboard.writeText(cardUrl); setNote('Link copied.'); } catch { setNote(cardUrl); }
   }
 
+  // A ready-to-send invitation others can act on: my card, plus where to make
+  // their own. Uses the native share sheet on mobile, clipboard otherwise.
+  async function shareInvite() {
+    const site = (cardUrl ?? 'https://app.getvia.xyz').replace(/\/taste\/.*$/, '');
+    const message = cardUrl
+      ? `I made my taste card on VIA. Here is mine: ${cardUrl}\n\nIt is a better way to meet people who think like you. Make yours: ${site}/taste`
+      : `Meet people who think like you. Make your taste card on VIA: ${site}/taste`;
+    const nav = navigator as Navigator & { share?: (d: { text: string }) => Promise<void> };
+    if (nav.share) {
+      try { await nav.share({ text: message }); return; } catch { /* fall through to copy */ }
+    }
+    try { await navigator.clipboard.writeText(message); setNote('Invite copied. Paste it anywhere.'); }
+    catch { setNote(message); }
+  }
+
   if (!loaded) return null;
 
   const w = working();
@@ -165,6 +188,7 @@ export function CardStudio({ memberRef, profile }: { memberRef: string; profile:
   const preview: TasteCardView = {
     slug: w.slug || suggestedSlug, display_name: w.display_name, headline: w.headline, accent: w.accent,
     references: w.references, obsessions: w.obsessions, anti_references: w.anti_references, vocab: w.vocab,
+    places: w.places, work: w.work,
     profile_version: w.profile_version,
   };
   const published = w.status === 'published';
@@ -284,6 +308,17 @@ export function CardStudio({ memberRef, profile }: { memberRef: string; profile:
           </>
         )}
       </div>
+      {published && cardUrl && (
+        <div style={{ marginTop: 16, border: '1px solid var(--line)', background: 'var(--paper)', borderRadius: 6, padding: '14px 16px' }}>
+          <p className="br-serif" style={{ fontSize: 18, margin: '0 0 4px', color: 'var(--ink)' }}>Bring someone in</p>
+          <p className="br-sans" style={{ fontSize: 13.5, color: 'var(--ink-2)', margin: '0 0 10px', lineHeight: 1.5 }}>
+            The network is only as good as who is in it. Share your card and invite the people you would want to meet here.
+          </p>
+          <button type="button" onClick={() => void shareInvite()} className="br-sans" style={buttonStyle(true)}>
+            I have my card. Invite others
+          </button>
+        </div>
+      )}
       {!published && (
         <p className="br-sans" style={{ fontSize: 12.5, color: 'var(--ink-3)', margin: '10px 0 0' }}>
           Publishing makes this card a public page anyone can see and share, and lets other members knock for an introduction. Your full profile stays private either way.

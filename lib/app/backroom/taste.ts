@@ -22,6 +22,8 @@ export interface TasteFields {
   obsessions:      string[];
   aesthetic_vocab: string[];
   anti_references: string[];
+  places:          string[];   // locations, favourite cities, where you are / love
+  work:            string[];   // what you do, make, or are building (professional layer)
   voice_text:      string;
 }
 
@@ -30,7 +32,7 @@ export interface TasteProfile extends TasteFields {
   version: number;
 }
 
-const EMPTY: TasteFields = { references: [], obsessions: [], aesthetic_vocab: [], anti_references: [], voice_text: '' };
+const EMPTY: TasteFields = { references: [], obsessions: [], aesthetic_vocab: [], anti_references: [], places: [], work: [], voice_text: '' };
 
 function asStringArray(v: unknown): string[] {
   if (!Array.isArray(v)) return [];
@@ -40,7 +42,7 @@ function asStringArray(v: unknown): string[] {
 export async function getActiveProfile(platform: MemberPlatform, memberType: MemberType, memberRef: string): Promise<TasteProfile | null> {
   const { data } = await db
     .from('app_taste_profiles')
-    .select('id, version, "references", obsessions, aesthetic_vocab, anti_references, voice_text')
+    .select('id, version, "references", obsessions, aesthetic_vocab, anti_references, places, work, voice_text')
     .eq('member_platform', platform)
     .eq('member_type', memberType)
     .eq('member_ref', memberRef)
@@ -55,6 +57,8 @@ export async function getActiveProfile(platform: MemberPlatform, memberType: Mem
     obsessions: asStringArray(d.obsessions),
     aesthetic_vocab: asStringArray(d.aesthetic_vocab),
     anti_references: asStringArray(d.anti_references),
+    places: asStringArray(d.places),
+    work: asStringArray(d.work),
     voice_text: String(d.voice_text ?? ''),
   };
 }
@@ -103,6 +107,8 @@ export async function saveProfile(platform: MemberPlatform, memberType: MemberTy
       obsessions: asStringArray(fields.obsessions),
       aesthetic_vocab: asStringArray(fields.aesthetic_vocab),
       anti_references: asStringArray(fields.anti_references),
+      places: asStringArray(fields.places),
+      work: asStringArray(fields.work),
       voice_text: (fields.voice_text ?? '').slice(0, 4000),
     })
     .select('id, version')
@@ -149,6 +155,8 @@ export async function saveDraftProfile(platform: MemberPlatform, memberType: Mem
       obsessions: asStringArray(fields.obsessions),
       aesthetic_vocab: asStringArray(fields.aesthetic_vocab),
       anti_references: asStringArray(fields.anti_references),
+      places: asStringArray(fields.places),
+      work: asStringArray(fields.work),
       voice_text: (fields.voice_text ?? '').slice(0, 4000),
     })
     .select('id, version')
@@ -161,7 +169,7 @@ export async function saveDraftProfile(platform: MemberPlatform, memberType: Mem
 export async function getDraftProfile(platform: MemberPlatform, memberType: MemberType, memberRef: string): Promise<TasteProfile | null> {
   const { data } = await db
     .from('app_taste_profiles')
-    .select('id, version, "references", obsessions, aesthetic_vocab, anti_references, voice_text')
+    .select('id, version, "references", obsessions, aesthetic_vocab, anti_references, places, work, voice_text')
     .eq('member_platform', platform)
     .eq('member_type', memberType)
     .eq('member_ref', memberRef)
@@ -178,6 +186,8 @@ export async function getDraftProfile(platform: MemberPlatform, memberType: Memb
     obsessions: asStringArray(d.obsessions),
     aesthetic_vocab: asStringArray(d.aesthetic_vocab),
     anti_references: asStringArray(d.anti_references),
+    places: asStringArray(d.places),
+    work: asStringArray(d.work),
     voice_text: String(d.voice_text ?? ''),
   };
 }
@@ -188,6 +198,8 @@ function normalise(f: TasteFields): TasteFields {
     obsessions: asStringArray(f.obsessions),
     aesthetic_vocab: asStringArray(f.aesthetic_vocab),
     anti_references: asStringArray(f.anti_references),
+    places: asStringArray(f.places),
+    work: asStringArray(f.work),
     voice_text: (f.voice_text ?? '').slice(0, 4000),
   };
 }
@@ -204,18 +216,22 @@ interface MemberLlmFields {
   llm_byo_model?:         string | null;
 }
 
-const INTERVIEW_SYSTEM = `You are conducting a warm, spoken taste interview for a member of a private room. It is a conversation, not a form. You are collecting the member's DECLARED taste so their VIA can genuinely know them.
+const INTERVIEW_SYSTEM = `You are conducting a warm, spoken profile interview for a member of a private network. It is a conversation, not a form. You are collecting the member's DECLARED self so their VIA can genuinely know them and introduce them to the right people. The member may be here for culture, for professional networking, or both, so cover taste AND what they do.
 
-You are given the profile so far and the member's latest answer. Merge only what the member actually said into the structured fields. Never invent taste the member did not state. Keep existing entries unless the member changes them.
+You are given the profile so far and the member's latest answer. Merge only what the member actually said into the structured fields. Never invent anything the member did not state. Keep existing entries unless the member changes them.
+
+Ask about all of these over the conversation, one question at a time, starting from whatever they raised: what they love; what they keep returning to; how they like things to feel; what they are not; where they are based and the cities or places that matter to them; and what they do, make, or are building, and who they would like to meet or work with. Weave the professional questions in naturally, not as a separate CV section.
 
 Return a JSON object with exactly these keys:
-- references: string[]  (records, films, designers, eras, places they love)
+- references: string[]  (records, films, designers, eras, works they love)
 - obsessions: string[]  (what they keep returning to)
 - aesthetic_vocab: string[]  (words for how things should feel)
 - anti_references: string[]  (what they are NOT, what they reject)
+- places: string[]  (where they are based, and cities or places that matter to them)
+- work: string[]  (what they do, make, or are building; their field; what they are looking for, e.g. collaborators, clients, a co-founder)
 - voice_text: string  (a short paragraph in the member's own words, updated)
 - next_question: string  (one short, specific question to ask next; British English; no em dashes)
-- complete: boolean  (true once references, obsessions, aesthetic and anti-references each have a few entries)
+- complete: boolean  (true once references, obsessions, aesthetic, anti-references, places and work each have at least one entry)
 
 Only JSON. No prose outside it.`;
 
@@ -259,6 +275,8 @@ export async function interviewStep(
     obsessions: asStringArray(parsed.obsessions ?? prior.obsessions),
     aesthetic_vocab: asStringArray(parsed.aesthetic_vocab ?? prior.aesthetic_vocab),
     anti_references: asStringArray(parsed.anti_references ?? prior.anti_references),
+    places: asStringArray(parsed.places ?? prior.places),
+    work: asStringArray(parsed.work ?? prior.work),
     voice_text: typeof parsed.voice_text === 'string' ? parsed.voice_text : prior.voice_text,
   });
   return {

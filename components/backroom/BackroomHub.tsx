@@ -137,7 +137,7 @@ export function BackroomHub({ handle, platform, memberType, label, rooms }: { ha
               </div>
             </div>
           ))}
-          {isBuyer && <HubLink href={`/you?handle=${encodeURIComponent(handle)}`} title="Your taste" desc="The references and obsessions VIA matches you on. Yours to write and change." />}
+          <HubLink href={`/you?ref=${encodeURIComponent(handle)}`} title="Your card" desc="Who you are, in your words: what you do, where you are, what you love. Build it and share it." />
           {isBuyer && <HubLink href={`/door?handle=${encodeURIComponent(handle)}`} title="The Door" desc="Where introductions arrive. Accept, decline, or leave them." />}
           {rooms.length === 0 ? (
             <div style={cardStyle}>

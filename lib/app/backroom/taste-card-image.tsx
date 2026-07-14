@@ -54,11 +54,18 @@ function joined(entries: string[], maxChars: number): string {
 
 function sectionsFor(card: TasteCard, maxChars: number): Section[] {
   const out: Section[] = [];
+  if (card.work.length) out.push({ label: 'Work', text: joined(card.work, maxChars) });
+  if (card.places.length) out.push({ label: 'Places', text: joined(card.places, maxChars) });
   if (card.references.length) out.push({ label: 'References', text: joined(card.references, maxChars) });
   if (card.obsessions.length) out.push({ label: 'Obsessions', text: joined(card.obsessions, maxChars) });
   if (card.vocab.length) out.push({ label: 'Aesthetic', text: joined(card.vocab, maxChars) });
   if (card.anti_references.length) out.push({ label: 'Not', text: joined(card.anti_references, maxChars), italic: true });
   return out;
+}
+
+/** The og canvas is short: show only the first few sections so nothing clips. */
+function limitForFormat(sections: Section[], tall: boolean): Section[] {
+  return tall ? sections : sections.slice(0, 4);
 }
 
 export async function renderCardImage(card: TasteCard, format: CardImageFormat): Promise<ImageResponse> {
@@ -69,8 +76,9 @@ export async function renderCardImage(card: TasteCard, format: CardImageFormat):
   const nameSize = tall ? 76 : 46;
   const entrySize = tall ? 40 : 25;
   const labelSize = tall ? 24 : 15;
-  // The og canvas is short; bound each section to roughly one wrapped line.
-  const sections = sectionsFor(card, tall ? 160 : 76);
+  // The og canvas is short; bound each section to roughly one wrapped line and
+  // cap how many sections appear so the fixed height never clips.
+  const sections = limitForFormat(sectionsFor(card, tall ? 160 : 76), tall);
 
   return new ImageResponse(
     (

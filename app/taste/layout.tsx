@@ -1,9 +1,10 @@
 import type { ReactNode } from 'react';
 import { Newsreader, Source_Sans_3 } from 'next/font/google';
 
-// The public taste card lives outside the (backroom) route group but wears the
-// same paper-and-ink skin, so the shared artifact and the room feel like one
-// place. Fonts load here to keep them scoped, exactly as the group layout does.
+// The public taste surfaces (the /taste landing and every /taste/[slug] card)
+// live outside the (backroom) route group but wear the same paper-and-ink skin,
+// so the shared artifact and the room feel like one place. Fonts load here to
+// keep them scoped, exactly as the group layout does.
 const newsreader = Newsreader({
   variable: '--font-newsreader',
   subsets: ['latin'],

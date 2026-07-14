@@ -45,6 +45,8 @@ export async function PUT(req: Request) {
     obsessions: Array.isArray(f.obsessions) ? f.obsessions.map(String) : [],
     aesthetic_vocab: Array.isArray(f.aesthetic_vocab) ? f.aesthetic_vocab.map(String) : [],
     anti_references: Array.isArray(f.anti_references) ? f.anti_references.map(String) : [],
+    places: Array.isArray(f.places) ? f.places.map(String) : [],
+    work: Array.isArray(f.work) ? f.work.map(String) : [],
     voice_text: typeof f.voice_text === 'string' ? f.voice_text : '',
   };
   const saved = await saveProfile(m.member_platform, m.member_type, m.member_ref, fields);

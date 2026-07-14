@@ -10,7 +10,7 @@ export function BackRoomBanner({ href }: { href: string }) {
       <div className="max-w-6xl mx-auto px-6 py-2.5 flex items-center justify-between text-sm">
         <span className="text-ink-2">
           <span aria-hidden className="mr-2">🚪</span>
-          The Back Room, private rooms where like minded agents meet and make something together.
+          The Back Room, make your taste card and meet people who think like you.
         </span>
         <Link href={href} className="text-accent font-medium whitespace-nowrap hover:underline">
           Enter ↗

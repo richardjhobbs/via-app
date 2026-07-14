@@ -45,6 +45,8 @@ export interface TasteCard {
   obsessions:       string[];
   anti_references:  string[];
   vocab:            string[];
+  places:           string[];
+  work:             string[];
   profile_version:  number | null;
   matching_enabled: boolean;
   teaser_d:         string;
@@ -61,6 +63,8 @@ export interface CardInput {
   obsessions?:       string[];
   anti_references?:  string[];
   vocab?:            string[];
+  places?:           string[];
+  work?:             string[];
   matching_enabled?: boolean;
 }
 
@@ -69,7 +73,7 @@ export type SaveCardResult =
   | { ok: false; error: string };
 
 /** Display caps: a card is a face, not the archive. */
-export const CARD_CAPS = { references: 7, obsessions: 5, anti_references: 5, vocab: 6 } as const;
+export const CARD_CAPS = { references: 15, obsessions: 5, anti_references: 5, vocab: 6, places: 6, work: 6 } as const;
 const HEADLINE_MAX = 140;
 
 const SLUG_RE = /^[a-z0-9-]{3,40}$/;
@@ -83,7 +87,7 @@ const APP_BASE = (process.env.NEXT_PUBLIC_SITE_URL ?? 'https://app.getvia.xyz').
 
 const SELECT_COLS =
   'id, member_platform, member_type, member_ref, slug, status, display_name, headline, accent, ' +
-  'card_references, card_obsessions, card_anti_references, card_vocab, ' +
+  'card_references, card_obsessions, card_anti_references, card_vocab, card_places, card_work, ' +
   'profile_version, matching_enabled, teaser_d, agent_identity, published_at';
 
 function asStrings(v: unknown, cap: number): string[] {
@@ -107,6 +111,8 @@ function rowToCard(d: Record<string, unknown>): TasteCard {
     obsessions: asStrings(d.card_obsessions, CARD_CAPS.obsessions),
     anti_references: asStrings(d.card_anti_references, CARD_CAPS.anti_references),
     vocab: asStrings(d.card_vocab, CARD_CAPS.vocab),
+    places: asStrings(d.card_places, CARD_CAPS.places),
+    work: asStrings(d.card_work, CARD_CAPS.work),
     profile_version: d.profile_version == null ? null : Number(d.profile_version),
     matching_enabled: d.matching_enabled !== false,
     teaser_d: String(d.teaser_d),
@@ -320,6 +326,8 @@ export async function saveCard(member: CardMember, input: CardInput): Promise<Sa
     card_obsessions: subsetOf(input.obsessions ?? existing?.obsessions ?? [], profile.obsessions, CARD_CAPS.obsessions),
     card_anti_references: subsetOf(input.anti_references ?? existing?.anti_references ?? [], profile.anti_references, CARD_CAPS.anti_references),
     card_vocab: subsetOf(input.vocab ?? existing?.vocab ?? [], profile.aesthetic_vocab, CARD_CAPS.vocab),
+    card_places: subsetOf(input.places ?? existing?.places ?? [], profile.places, CARD_CAPS.places),
+    card_work: subsetOf(input.work ?? existing?.work ?? [], profile.work, CARD_CAPS.work),
     profile_version: profile.version,
     matching_enabled: input.matching_enabled ?? existing?.matching_enabled ?? true,
     agent_identity: identity,
@@ -332,7 +340,12 @@ export async function saveCard(member: CardMember, input: CardInput): Promise<Sa
     .select(SELECT_COLS)
     .single();
   if (error) return { ok: false, error: error.message };
-  return { ok: true, card: rowToCard(data as unknown as Record<string, unknown>) };
+  const card = rowToCard(data as unknown as Record<string, unknown>);
+  // If the member edits an already-public card, the public page and JSON update
+  // the instant this row is written; re-fire the teaser so the open rail and the
+  // matcher corpus reflect the change too (best-effort).
+  if (card.status === 'published') await fireTeaser(card, 'open');
+  return { ok: true, card };
 }
 
 export type PublishResult =
@@ -343,7 +356,8 @@ export type PublishResult =
 export async function publishCard(member: CardMember): Promise<PublishResult> {
   const card = await getCardForMember(member.member_platform, member.member_type, member.member_ref);
   if (!card) return { ok: false, error: 'no card to publish: save the card first' };
-  const hasContent = card.references.length || card.obsessions.length || card.anti_references.length || card.vocab.length;
+  const hasContent = card.references.length || card.obsessions.length || card.anti_references.length
+    || card.vocab.length || card.places.length || card.work.length;
   if (!hasContent) return { ok: false, error: 'the card is empty: pick at least one entry before publishing' };
 
   const { data, error } = await db
@@ -404,6 +418,8 @@ export function cardJson(card: TasteCard): Record<string, unknown> {
     obsessions: card.obsessions,
     anti_references: card.anti_references,
     vocab: card.vocab,
+    places: card.places,
+    work: card.work,
     agent: {
       mcp_url: card.agent_identity.mcp_url,
       erc8004_agent_id: card.agent_identity.erc8004_agent_id,

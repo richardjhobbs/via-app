@@ -89,6 +89,8 @@ export async function POST(req: Request) {
     obsessions: prior.obsessions,
     aesthetic_vocab: prior.aesthetic_vocab,
     anti_references: prior.anti_references,
+    places: prior.places,
+    work: prior.work,
     voice_text: prior.voice_text,
   }, transcript);
 

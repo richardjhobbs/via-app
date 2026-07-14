@@ -33,9 +33,9 @@ export function tasteMatchThreshold(): number {
 }
 export const SAME_DISCIPLINE_BUMP = 7;
 
-const JUDGE_SYSTEM = `You judge whether two people would genuinely enjoy a conversation, from their declared taste alone. You are given profile A and profile B: what each makes or does (their kind and headline), their references, obsessions, aesthetic vocabulary, and anti-references (what they reject).
+const JUDGE_SYSTEM = `You judge whether two people would genuinely enjoy meeting, from their declared profiles alone. You are given profile A and profile B: what each does or is building (kind, headline and work), where they are based (places), their references, obsessions, aesthetic vocabulary, and anti-references (what they reject).
 
-Score 0-100. Reward SPECIFIC shared references and obsessions over generic vibe words. Reward complementary disciplines: a furniture maker and a label owner who love the same records beat two people with identical adjective lists. Penalise hard: two people making the same kind of thing in the same discipline (and set same_discipline true); one side's loves appearing in the other's anti-references; overlap that is only mass-market defaults.
+Score 0-100. Reward SPECIFIC shared references and obsessions over generic vibe words, and reward a genuine professional reason to meet (complementary work, one making what the other needs, a shared city or scene). Reward complementary disciplines: a furniture maker and a label owner who love the same records beat two people with identical adjective lists. Penalise hard: two people making the same kind of thing in the same discipline with nothing else in common (and set same_discipline true); one side's loves appearing in the other's anti-references; overlap that is only mass-market defaults.
 
 Return a JSON object with exactly these keys:
 - score: number (0-100)
@@ -50,6 +50,8 @@ function cardSide(card: TasteCard): Record<string, unknown> {
   return {
     kind: card.member_type,
     headline: card.headline || null,
+    work: card.work,
+    places: card.places,
     references: card.references,
     obsessions: card.obsessions,
     aesthetic_vocab: card.vocab,
@@ -59,7 +61,7 @@ function cardSide(card: TasteCard): Record<string, unknown> {
 
 function allEntries(card: TasteCard): Set<string> {
   return new Set(
-    [...card.references, ...card.obsessions, ...card.vocab, ...card.anti_references]
+    [...card.references, ...card.obsessions, ...card.vocab, ...card.anti_references, ...card.places, ...card.work]
       .map((s) => s.trim().toLowerCase()),
   );
 }

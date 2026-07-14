@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { getPublishedCardBySlug } from '@/lib/app/backroom/taste-cards';
 import { TasteCard } from '@/components/backroom/TasteCard';
 import { KnockButton } from '@/components/backroom/KnockButton';
+import { TasteFaq } from '@/components/backroom/TasteFaq';
 
 export const dynamic = 'force-dynamic';
 
@@ -51,12 +52,23 @@ export default async function TasteCardPage({ params }: { params: Promise<{ slug
         </section>
       )}
 
-      <section className="br-sans" style={{ marginTop: 40, fontSize: 14, color: 'var(--ink-2)' }}>
-        <p style={{ margin: 0 }}>
-          A taste card is what its owner chose to say about themselves, in their own words.{' '}
-          <Link href="/backroom" style={{ color: card.accent }}>Make your own</Link>.
+      <section style={{ marginTop: 44, borderTop: '1px solid var(--line)', paddingTop: 24 }}>
+        <h2 className="br-serif" style={{ fontSize: 24, fontWeight: 400, margin: '0 0 6px', color: 'var(--ink)' }}>
+          Meet people who think like you
+        </h2>
+        <p className="br-sans" style={{ fontSize: 15, color: 'var(--ink-2)', lineHeight: 1.55, margin: '0 0 16px' }}>
+          A taste card is what its owner chose to say about themselves, in their own words. Make yours,
+          and the right people can find you too.
         </p>
+        <Link href="/taste" className="br-sans"
+          style={{ display: 'inline-block', padding: '12px 26px', borderRadius: 999, border: '1px solid var(--ink)', background: 'var(--ink)', color: 'var(--bg)', fontSize: 14, textDecoration: 'none' }}>
+          Make your own card
+        </Link>
       </section>
+
+      <div style={{ marginTop: 32 }}>
+        <TasteFaq />
+      </div>
     </main>
   );
 }
