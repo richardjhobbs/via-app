@@ -11,6 +11,7 @@
  */
 import { useCallback, useEffect, useState } from 'react';
 import { TasteCard, type TasteCardView } from './TasteCard';
+import { ShareButtons } from './ShareButtons';
 
 interface ProfileFields {
   references:      string[];
@@ -158,21 +159,6 @@ export function CardStudio({ memberRef, profile }: { memberRef: string; profile:
     try { await navigator.clipboard.writeText(cardUrl); setNote('Link copied.'); } catch { setNote(cardUrl); }
   }
 
-  // A ready-to-send invitation others can act on: my card, plus where to make
-  // their own. Uses the native share sheet on mobile, clipboard otherwise.
-  async function shareInvite() {
-    const site = (cardUrl ?? 'https://app.getvia.xyz').replace(/\/taste\/.*$/, '');
-    const message = cardUrl
-      ? `I made my taste card on VIA. Here is mine: ${cardUrl}\n\nIt is a better way to meet people who think like you. Make yours: ${site}/taste`
-      : `Meet people who think like you. Make your taste card on VIA: ${site}/taste`;
-    const nav = navigator as Navigator & { share?: (d: { text: string }) => Promise<void> };
-    if (nav.share) {
-      try { await nav.share({ text: message }); return; } catch { /* fall through to copy */ }
-    }
-    try { await navigator.clipboard.writeText(message); setNote('Invite copied. Paste it anywhere.'); }
-    catch { setNote(message); }
-  }
-
   if (!loaded) return null;
 
   const w = working();
@@ -311,12 +297,10 @@ export function CardStudio({ memberRef, profile }: { memberRef: string; profile:
       {published && cardUrl && (
         <div style={{ marginTop: 16, border: '1px solid var(--line)', background: 'var(--paper)', borderRadius: 6, padding: '14px 16px' }}>
           <p className="br-serif" style={{ fontSize: 18, margin: '0 0 4px', color: 'var(--ink)' }}>Bring someone in</p>
-          <p className="br-sans" style={{ fontSize: 13.5, color: 'var(--ink-2)', margin: '0 0 10px', lineHeight: 1.5 }}>
+          <p className="br-sans" style={{ fontSize: 13.5, color: 'var(--ink-2)', margin: '0 0 12px', lineHeight: 1.5 }}>
             The network is only as good as who is in it. Share your card and invite the people you would want to meet here.
           </p>
-          <button type="button" onClick={() => void shareInvite()} className="br-sans" style={buttonStyle(true)}>
-            I have my card. Invite others
-          </button>
+          <ShareButtons cardUrl={cardUrl} accent={w.accent} />
         </div>
       )}
       {!published && (
