@@ -7,23 +7,25 @@
  * app_sellers / app_seller_products (this app has the live data; the marketing
  * site queries the same Supabase project but is rebuilt less often).
  *
- * Tools (24):
+ * Tools (27):
  *   Discovery      : list_sellers, find_seller, get_seller_products, seller_mcp_url,
  *                    submit_intent, find_buyers, get_taste_card, get_via_overview
  *   Onboard        : register_store, get_store_status, import_preference_appraisal
  *   Free pass      : claim_pass (no payment, no x402)
- *   Gateway/seller : get_product, get_shipping_quote, buy_product, ask_sales_agent,
- *                    get_offering_schema, request_quote, get_quote, counter_quote,
- *                    get_download_challenge, get_download_links , each FORWARDS to the
- *                    owning seller's MCP (mcp_ref.seller_mcp_url), so the whole
- *                    discovery -> quote -> buy -> settle loop runs from one connector
+ *   Gateway/seller : get_product, get_shipping_quote, buy_product, confirm_purchase,
+ *                    ask_sales_agent, get_offering_schema, request_quote, get_quote,
+ *                    counter_quote, get_download_challenge, get_download_links , each
+ *                    FORWARDS to the owning seller's MCP (mcp_ref.seller_mcp_url), so
+ *                    the whole discovery -> quote -> buy -> settle loop runs here
  *   Gateway/buyer  : get_buyer_preferences, get_buyer_briefs, negotiate, accept_offer
  *                    , forwarded to a buyer's MCP so a seller can sell TO live demand
  *
  * The gateway tools reuse the per-seller / per-buyer MCP logic verbatim (one
  * implementation, no drift) and preserve the paid-door invariant: the same x402
- * settlement and the same paid brief door. Federated members (RRG) return an
- * honest pointer until member identifier/arg translation is wired.
+ * settlement and the same paid brief door. FEDERATED MEMBERS (RRG): the buy loop
+ * (get_product -> buy_product -> confirm_purchase) is translated to the member's
+ * own contract (token_id + initiate/confirm); secondary seller tools return a
+ * pointer to the member endpoint.
  *   submit_intent     : submit a buyer's intent; the full agentic matcher returns
  *                       genuine matches (requirements enforced) across the network
  *   find_buyers       : discover live DEMAND , buyers whose open briefs match what
@@ -48,7 +50,7 @@ import { verifyMindLinkToken } from '@/lib/app/minds-link';
 import { PreferenceAppraisalSchema, importPreferenceAppraisal } from '@/lib/app/minds-appraisal';
 import { getPublishedCardBySlug, cardJson, cardUrl } from '@/lib/app/backroom/taste-cards';
 import { claimEventPass } from '@/lib/app/event-passes';
-import { forwardMcpTool } from '@/lib/app/mcp-forward';
+import { forwardMcpTool, isMemberMcpUrl, memberCentralMcpUrl } from '@/lib/app/mcp-forward';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -308,8 +310,8 @@ function createServer(req: Request) {
     } catch { return false; }
   };
   const memberPending = (seller_mcp_url: string) => asJson({
-    status:  'member_gateway_pending',
-    message: 'Buying this network member\'s listings straight from this connector is being wired. For now, connect to the seller_mcp_url below and use its own get_product / buy_product tools.',
+    status:  'not_available_for_member',
+    message: 'This action is not offered for network-member listings from the gateway. Buying IS: use get_product, then buy_product, then confirm_purchase. For anything else, connect to the seller_mcp_url and use its own tools.',
     seller_mcp_url,
   });
 
@@ -321,6 +323,11 @@ function createServer(req: Request) {
       product_id:     z.string().min(1).describe('The listing id from discovery (mcp_ref.product_id).'),
     },
     async ({ seller_mcp_url, product_id }) => {
+      if (isMemberMcpUrl(seller_mcp_url)) {
+        // Members key a product by a numeric token id (mcp_ref.token_id).
+        const r = await forwardMcpTool(seller_mcp_url, 'get_product', { token_id: Number(product_id) }, { viaAgentId });
+        return asJson(r.ok ? r.payload : { error: r.error ?? 'forward_failed', message: 'Could not reach the member seller. Pass mcp_ref.token_id as product_id, or connect to the seller_mcp_url directly.', seller_mcp_url });
+      }
       if (!isViaSellerUrl(seller_mcp_url)) return memberPending(seller_mcp_url);
       const r = await forwardMcpTool(seller_mcp_url, 'get_product', { product_id }, { viaAgentId });
       return asJson(r.ok ? r.payload : { error: r.error ?? 'forward_failed', message: 'Could not reach the seller to fetch this listing. Retry, or connect to the seller_mcp_url directly.', seller_mcp_url });
@@ -335,6 +342,13 @@ function createServer(req: Request) {
       buyer_country:  z.string().min(2).max(2).describe('ISO 3166-1 alpha-2 destination country code (e.g. GB, US, JP).'),
     },
     async ({ seller_mcp_url, buyer_country }) => {
+      if (isMemberMcpUrl(seller_mcp_url)) {
+        return asJson({
+          status:  'member_flow',
+          message: 'This network member includes shipping in the purchase flow rather than a standalone quote. Call buy_product to get the payment total, then provide the shipping address at confirm_purchase.',
+          buyer_country: buyer_country.toUpperCase(),
+        });
+      }
       if (!isViaSellerUrl(seller_mcp_url)) return memberPending(seller_mcp_url);
       const r = await forwardMcpTool(seller_mcp_url, 'get_shipping_quote', { buyer_country }, { viaAgentId });
       return asJson(r.ok ? r.payload : { error: r.error ?? 'forward_failed', message: 'Could not reach the seller for a shipping quote. Retry, or connect to the seller_mcp_url directly.', seller_mcp_url });
@@ -366,11 +380,74 @@ function createServer(req: Request) {
         email:   z.string().email().max(200).describe('Email the organiser will send the pass and any follow-up to.'),
         country: z.string().min(2).max(60).describe('Attendee country (name or ISO code), for the organiser.'),
       }).optional().describe('Required for event passes.'),
+      selected_size:  z.string().optional().describe('Variant size, for network-member products that have a size axis (e.g. S, M, L). Ignored by VIA-native listings.'),
+      selected_color: z.string().optional().describe('Variant colour, for network-member products that have a colour axis. Ignored by VIA-native listings.'),
     },
-    async ({ seller_mcp_url, ...args }) => {
+    async ({ seller_mcp_url, product_id, buyer_wallet, selected_size, selected_color, ...rest }) => {
+      if (isMemberMcpUrl(seller_mcp_url)) {
+        // Member buy: RRG's per-brand buy_product returns payment instructions
+        // (USDC on Base); the buyer then sends USDC and calls confirm_purchase.
+        // Its contract is token_id + size/color + buyer_wallet, not x402.
+        const r = await forwardMcpTool(seller_mcp_url, 'buy_product', {
+          token_id: Number(product_id), size: selected_size, color: selected_color, buyer_wallet,
+        }, { viaAgentId });
+        const next = { next_step: 'After sending the USDC, call confirm_purchase with the same seller_mcp_url, token_id (as product_id), buyer_wallet, and your USDC tx hash.' };
+        return asJson(r.ok ? { ...(r.payload as object), ...next } : { error: r.error ?? 'forward_failed', message: 'Could not reach the member seller to place this order. Connect to the seller_mcp_url directly.', seller_mcp_url });
+      }
       if (!isViaSellerUrl(seller_mcp_url)) return memberPending(seller_mcp_url);
-      const r = await forwardMcpTool(seller_mcp_url, 'buy_product', args, { viaAgentId });
+      const r = await forwardMcpTool(seller_mcp_url, 'buy_product', { product_id, buyer_wallet, ...rest }, { viaAgentId });
       return asJson(r.ok ? r.payload : { error: r.error ?? 'forward_failed', message: 'Could not reach the seller to place this order. Retry, or connect to the seller_mcp_url directly.', seller_mcp_url });
+    },
+  );
+
+  server.tool(
+    'confirm_purchase',
+    "Settle a network-MEMBER (e.g. RRG) purchase after you have sent the USDC that buy_product asked for. This is the member two-step: buy_product returns a pay-to address and amount, you transfer USDC on Base, then call this with the tx hash to mint, pay out, and get your download. For physical products include the shipping block and buyer_email. VIA-native purchases do NOT use this: they settle at the /api/x402/purchase endpoint that buy_product returns.",
+    {
+      seller_mcp_url: z.string().min(1).describe('The member seller_mcp_url you called buy_product on.'),
+      product_id:     z.string().min(1).describe('The member listing/token id (mcp_ref.token_id).'),
+      buyer_wallet:   z.string().regex(/^0x[a-fA-F0-9]{40}$/).describe('The wallet that sent the USDC.'),
+      tx_hash:        z.string().regex(/^0x[a-fA-F0-9]{64}$/).describe('The USDC transfer transaction hash on Base.'),
+      buyer_email:    z.string().email().optional().describe('For order confirmation and file delivery. Required for physical products.'),
+      buyer_agent_id: z.number().int().positive().optional().describe('Your ERC-8004 agent id, for an on-chain trust signal.'),
+      selected_size:  z.string().optional().describe('The size you chose at buy_product (must match).'),
+      selected_color: z.string().optional().describe('The colour you chose at buy_product (must match).'),
+      shipping:       z.object({
+        name:          z.string().min(1).max(200),
+        address_line1: z.string().min(1).max(200),
+        address_line2: z.string().max(200).optional(),
+        city:          z.string().min(1).max(120),
+        state:         z.string().max(120).optional(),
+        postal_code:   z.string().min(1).max(40),
+        country:       z.string().min(2).max(60),
+        phone:         z.string().min(4).max(40),
+      }).optional().describe('Required for physical member products.'),
+    },
+    async ({ seller_mcp_url, product_id, buyer_wallet, tx_hash, buyer_email, buyer_agent_id, selected_size, selected_color, shipping }) => {
+      const central = memberCentralMcpUrl(seller_mcp_url);
+      if (!central) {
+        return asJson({ error: 'not_a_member', message: 'confirm_purchase settles network-member purchases only. VIA-native orders settle at the /api/x402/purchase endpoint that buy_product returned.', seller_mcp_url });
+      }
+      const r = await forwardMcpTool(central, 'confirm_agent_purchase', {
+        tokenId:     Number(product_id),
+        buyerWallet: buyer_wallet,
+        txHash:      tx_hash,
+        ...(buyer_email    ? { buyerEmail: buyer_email }     : {}),
+        ...(buyer_agent_id ? { buyerAgentId: buyer_agent_id } : {}),
+        ...(selected_size  ? { selected_size }  : {}),
+        ...(selected_color ? { selected_color } : {}),
+        ...(shipping ? {
+          shipping_name:          shipping.name,
+          shipping_address_line1: shipping.address_line1,
+          shipping_address_line2: shipping.address_line2,
+          shipping_city:          shipping.city,
+          shipping_state:         shipping.state,
+          shipping_postal_code:   shipping.postal_code,
+          shipping_country:       shipping.country,
+          shipping_phone:         shipping.phone,
+        } : {}),
+      }, { viaAgentId });
+      return asJson(r.ok ? r.payload : { error: r.error ?? 'forward_failed', message: 'Could not reach the member to confirm this purchase. Retry, or connect to the member central MCP directly.', central_mcp_url: central });
     },
   );
 
@@ -681,7 +758,8 @@ function createServer(req: Request) {
         claim_pass:       'Claim a FREE guest-list pass ($0 tier) straight from discovery with name + email. No payment, no wallet, no x402.',
         get_product:      'Full detail for one listing before buying, forwarded to the owning seller. Pass mcp_ref.seller_mcp_url + mcp_ref.product_id from a discovery result.',
         get_shipping_quote: 'Shipping cost to a country for a listing, forwarded to the seller. Call before buy_product.',
-        buy_product:      'Place a paid order from this connector: forwards to the owning seller, returns an x402 USDC requirement + order_ref, settle at /api/x402/purchase. Discovery -> get_product -> get_shipping_quote -> buy_product -> settle, all from one connector.',
+        buy_product:      'Place a paid order from this connector: forwards to the owning seller. VIA-native returns an x402 USDC requirement + order_ref (settle at /api/x402/purchase); a network member (RRG) returns pay-to instructions, then call confirm_purchase. Discovery -> get_product -> buy_product -> settle, all from one connector.',
+        confirm_purchase: 'Settle a network-MEMBER (RRG) purchase after sending the USDC buy_product asked for: pass the tx hash to mint, pay out, and get your download. VIA-native orders do not use this (they settle at /api/x402/purchase).',
         seller_mcp_url:   'Resolve a VIA-app slug to its per-seller MCP URL',
         register_store:   'Self-register a new store with a single payout wallet, the platform creates your identity wallet (pending human review)',
         get_store_status: 'Check whether your registered store is pending, approved, or rejected',

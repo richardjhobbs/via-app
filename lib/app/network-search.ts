@@ -135,6 +135,11 @@ function viaToUnified(p: PublicProduct): UnifiedProduct {
 function networkToUnified(r: NetworkResult): UnifiedProduct {
   const brand = r.detail ? (r.detail.split('·')[0]?.trim() || null) : null;
   const priceMatch = r.detail ? r.detail.match(/([0-9]+(?:\.[0-9]+)?)\s*USDC/i) : null;
+  // Members key a product by their own listing/token id, carried in the product
+  // web_url (e.g. .../rrg/drop/1234 or .../drop/1234). Lift it into mcp_ref so the
+  // network gateway can route a buy back to the member without a second lookup.
+  const tokenMatch = r.web_url ? r.web_url.match(/\/(?:[a-z]+\/)?drop\/(\d+)/i) : null;
+  const tokenId = tokenMatch ? Number(tokenMatch[1]) : null;
   return {
     source:        r.platform,
     title:         r.name,
@@ -149,7 +154,7 @@ function networkToUnified(r: NetworkResult): UnifiedProduct {
     category:      null, // members do not send a clean category yet; not gated
     image_url:     r.image,
     page_url:      r.web_url,
-    mcp_ref:       { seller_mcp_url: r.mcp_url },
+    mcp_ref:       { seller_mcp_url: r.mcp_url, token_id: tokenId },
   };
 }
 

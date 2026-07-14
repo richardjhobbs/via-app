@@ -40,6 +40,26 @@ const ALLOWED_HOSTS = new Set<string>([
 // per-brand `/brand{,s}/{slug}/mcp`.
 const MCP_PATH = /^\/(?:mcp|sellers?\/[^/]+\/mcp|buyers?\/[^/]+\/mcp|brands?\/[^/]+\/mcp)\/?$/i;
 
+// Hosts of federated members (RRG today), for member-vs-VIA routing decisions.
+const MEMBER_HOSTS = new Set<string>(
+  NETWORK_MEMBERS.map((m) => { try { return new URL(m.searchUrl).hostname; } catch { return ''; } }).filter(Boolean),
+);
+
+/** True when this MCP url belongs to a federated member (not a VIA-app endpoint). */
+export function isMemberMcpUrl(raw: string): boolean {
+  try { return MEMBER_HOSTS.has(new URL(raw).hostname); } catch { return false; }
+}
+
+/** The member's CENTRAL MCP url (…/mcp on the same host), where a member settles
+ *  a purchase (RRG's confirm_agent_purchase lives on central, not per-brand). */
+export function memberCentralMcpUrl(raw: string): string | null {
+  try {
+    const u = new URL(raw);
+    if (!MEMBER_HOSTS.has(u.hostname)) return null;
+    return `https://${u.hostname}/mcp`;
+  } catch { return null; }
+}
+
 function allowedMcpUrl(raw: string): URL | null {
   let u: URL;
   try { u = new URL(raw); } catch { return null; }
