@@ -273,6 +273,31 @@ export function SellerDetailClient({ seller, memories, interactions, purchases, 
     });
   }
 
+  const [imgBusy, setImgBusy] = useState(false);
+
+  async function uploadProductImage(p: Product, file: File) {
+    setErr(''); setInfo(''); setImgBusy(true);
+    try {
+      const fd = new FormData();
+      fd.append('file', file);
+      const res = await fetch(`/api/admin/sellers/${seller.id}/products/${p.id}/image`, {
+        method: 'POST',
+        body:   fd,
+      });
+      const json = await res.json();
+      if (!res.ok) {
+        setErr(json.error || `Image upload failed (${res.status})`);
+        return;
+      }
+      setInfo(`Updated image for "${p.title}".`);
+      router.refresh();
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : 'Network error');
+    } finally {
+      setImgBusy(false);
+    }
+  }
+
   async function saveProduct(p: Product) {
     setErr(''); setInfo(''); setBusy(true);
     try {
@@ -749,6 +774,28 @@ export function SellerDetailClient({ seller, memories, interactions, purchases, 
                             <Field label="Description">
                               <textarea rows={3} className="w-full bg-paper border border-line-strong rounded-md px-3 py-2 text-sm"
                                 value={pForm.description} onChange={(e) => setPForm({ ...pForm, description: e.target.value })} />
+                            </Field>
+                          </div>
+                          <div className="md:col-span-2">
+                            <Field label="Product image (JPEG, PNG or WebP, 8 MB max)">
+                              <div className="flex items-center gap-4">
+                                {p.image_url && (
+                                  // eslint-disable-next-line @next/next/no-img-element
+                                  <img src={p.image_url} alt={p.title} className="h-16 w-16 object-cover rounded border border-line bg-background" />
+                                )}
+                                <input
+                                  type="file"
+                                  accept="image/jpeg,image/png,image/webp"
+                                  disabled={imgBusy}
+                                  onChange={(e) => {
+                                    const f = e.target.files?.[0];
+                                    if (f) void uploadProductImage(p, f);
+                                    e.target.value = '';
+                                  }}
+                                  className="text-xs text-ink-2 file:mr-3 file:rounded-md file:border file:border-line-strong file:bg-paper file:px-3 file:py-2 file:text-xs file:font-mono file:uppercase file:tracking-widest file:text-ink-2 hover:file:border-ink disabled:opacity-50"
+                                />
+                                {imgBusy && <span className="text-[10px] font-mono uppercase tracking-widest text-ink-3">Uploading…</span>}
+                              </div>
                             </Field>
                           </div>
                         </div>
