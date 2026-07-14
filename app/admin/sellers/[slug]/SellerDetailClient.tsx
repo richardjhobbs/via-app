@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useState } from 'react';
+import { Fragment, useState } from 'react';
 
 interface Seller {
   id:                    string;
@@ -52,6 +52,8 @@ interface Purchase {
 interface Product {
   id:                   string;
   title:                string;
+  description:          string | null;
+  url:                  string | null;
   kind:                 string;
   price_minor:          number;
   currency:             string;
@@ -246,6 +248,56 @@ export function SellerDetailClient({ seller, memories, interactions, purchases, 
         return;
       }
       setInfo(action === 'delete' ? `Deleted "${title}".` : action === 'cancel' ? `Cancelled "${title}".` : `Restored "${title}".`);
+      router.refresh();
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : 'Network error');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  // Inline superadmin product edit. One product open at a time; the form
+  // mirrors the seller's editable surface (title/description/price/stock/link).
+  const [editProductId, setEditProductId] = useState<string | null>(null);
+  const [pForm, setPForm] = useState({ title: '', description: '', price_usdc: '', stock: '', url: '' });
+
+  function openProductEdit(p: Product) {
+    setErr(''); setInfo('');
+    setEditProductId(p.id);
+    setPForm({
+      title:       p.title,
+      description: p.description ?? '',
+      price_usdc:  (p.price_minor / 1_000_000).toString(),
+      stock:       p.stock === null ? '' : String(p.stock),
+      url:         p.url ?? '',
+    });
+  }
+
+  async function saveProduct(p: Product) {
+    setErr(''); setInfo(''); setBusy(true);
+    try {
+      const payload: Record<string, unknown> = {
+        title:       pForm.title,
+        description: pForm.description.trim() === '' ? null : pForm.description,
+        stock:       pForm.stock.trim() === '' ? null : Number(pForm.stock),
+        url:         pForm.url.trim() === '' ? null : pForm.url.trim(),
+      };
+      // Price is immutable once registered on-chain; only send it when editable.
+      if (p.on_chain_status !== 'registered') {
+        payload.price_usdc = Number(pForm.price_usdc);
+      }
+      const res = await fetch(`/api/admin/sellers/${seller.id}/products/${p.id}`, {
+        method:  'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify(payload),
+      });
+      const json = await res.json();
+      if (!res.ok) {
+        setErr(json.error || `Save failed (${res.status})`);
+        return;
+      }
+      setInfo(`Updated "${json.product?.title ?? p.title}".`);
+      setEditProductId(null);
       router.refresh();
     } catch (e) {
       setErr(e instanceof Error ? e.message : 'Network error');
@@ -583,7 +635,8 @@ export function SellerDetailClient({ seller, memories, interactions, purchases, 
               </thead>
               <tbody className="divide-y divide-line">
                 {products.map((p) => (
-                  <tr key={p.id} className={p.admin_removed ? 'bg-red-50' : undefined}>
+                  <Fragment key={p.id}>
+                  <tr className={p.admin_removed ? 'bg-red-50' : undefined}>
                     <td className="px-4 py-3">
                       {p.asset_is_image && p.admin_asset_url ? (
                         // Digital image asset: private, signed for admin only.
@@ -638,17 +691,23 @@ export function SellerDetailClient({ seller, memories, interactions, purchases, 
                       )}
                     </td>
                     <td className="px-4 py-3 text-right whitespace-nowrap">
+                      <button
+                        type="button" disabled={busy} onClick={() => editProductId === p.id ? setEditProductId(null) : openProductEdit(p)}
+                        className="text-[10px] font-mono uppercase tracking-widest text-ink-2 underline hover:no-underline disabled:opacity-50"
+                      >
+                        {editProductId === p.id ? 'Close' : 'Edit'}
+                      </button>
                       {p.admin_removed ? (
                         <button
                           type="button" disabled={busy} onClick={() => void moderateProduct(p.id, p.title, 'restore')}
-                          className="text-[10px] font-mono uppercase tracking-widest text-emerald-700 underline hover:no-underline disabled:opacity-50"
+                          className="ml-4 text-[10px] font-mono uppercase tracking-widest text-emerald-700 underline hover:no-underline disabled:opacity-50"
                         >
                           Restore
                         </button>
                       ) : (
                         <button
                           type="button" disabled={busy} onClick={() => void moderateProduct(p.id, p.title, 'cancel')}
-                          className="text-[10px] font-mono uppercase tracking-widest text-red-700 underline hover:no-underline disabled:opacity-50"
+                          className="ml-4 text-[10px] font-mono uppercase tracking-widest text-red-700 underline hover:no-underline disabled:opacity-50"
                         >
                           Cancel
                         </button>
@@ -661,6 +720,56 @@ export function SellerDetailClient({ seller, memories, interactions, purchases, 
                       </button>
                     </td>
                   </tr>
+                  {editProductId === p.id && (
+                    <tr className="bg-background">
+                      <td colSpan={6} className="px-4 py-5">
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          <Field label="Title">
+                            <input className="w-full bg-paper border border-line-strong rounded-md px-3 py-2 text-sm"
+                              value={pForm.title} onChange={(e) => setPForm({ ...pForm, title: e.target.value })} />
+                          </Field>
+                          <Field label={p.on_chain_status === 'registered' ? 'Price (locked on-chain)' : `Price (${p.currency})`}>
+                            <input
+                              type="number" step="0.01" min="0"
+                              disabled={p.on_chain_status === 'registered'}
+                              className="w-full bg-paper border border-line-strong rounded-md px-3 py-2 text-sm font-mono disabled:bg-background disabled:text-ink-3"
+                              value={pForm.price_usdc} onChange={(e) => setPForm({ ...pForm, price_usdc: e.target.value })} />
+                          </Field>
+                          <Field label="Stock (blank = unlimited)">
+                            <input
+                              type="number" min="0"
+                              className="w-full bg-paper border border-line-strong rounded-md px-3 py-2 text-sm font-mono"
+                              value={pForm.stock} onChange={(e) => setPForm({ ...pForm, stock: e.target.value })} />
+                          </Field>
+                          <Field label="Link">
+                            <input className="w-full bg-paper border border-line-strong rounded-md px-3 py-2 text-sm font-mono"
+                              value={pForm.url} onChange={(e) => setPForm({ ...pForm, url: e.target.value })} />
+                          </Field>
+                          <div className="md:col-span-2">
+                            <Field label="Description">
+                              <textarea rows={3} className="w-full bg-paper border border-line-strong rounded-md px-3 py-2 text-sm"
+                                value={pForm.description} onChange={(e) => setPForm({ ...pForm, description: e.target.value })} />
+                            </Field>
+                          </div>
+                        </div>
+                        <div className="flex gap-3 pt-4">
+                          <button
+                            type="button" onClick={() => void saveProduct(p)} disabled={busy}
+                            className="px-5 py-2.5 bg-ink text-background text-xs font-mono tracking-widest uppercase hover:opacity-90 transition-opacity rounded-md disabled:opacity-50"
+                          >
+                            {busy ? 'Saving…' : 'Save product'}
+                          </button>
+                          <button
+                            type="button" onClick={() => setEditProductId(null)}
+                            className="px-5 py-2.5 bg-paper border border-line-strong text-ink-2 text-xs font-mono tracking-widest uppercase hover:border-ink transition-colors rounded-md"
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                  </Fragment>
                 ))}
               </tbody>
             </table>

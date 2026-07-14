@@ -64,7 +64,7 @@ export default async function AdminSellerDetailPage({
       .order('created_at', { ascending: false })
       .limit(20),
     db.from('app_seller_products')
-      .select('id, title, kind, price_minor, currency, stock, token_id, on_chain_status, active, admin_removed, admin_removed_reason, image_url, metadata')
+      .select('id, title, description, url, kind, price_minor, currency, stock, token_id, on_chain_status, active, admin_removed, admin_removed_reason, image_url, metadata')
       .eq('seller_id', sellerId)
       .order('created_at', { ascending: false }),
   ]);
@@ -83,6 +83,8 @@ export default async function AdminSellerDetailPage({
     return {
       id:                   p.id as string,
       title:                p.title as string,
+      description:          p.description as string | null,
+      url:                  p.url as string | null,
       kind:                 p.kind as string,
       price_minor:          p.price_minor as number,
       currency:             p.currency as string,
