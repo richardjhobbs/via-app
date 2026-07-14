@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/app/db';
 import { extractPaymentProof, verifyAndExecutePayment, verifyUsdcTransfer } from '@/lib/app/x402-server';
 import { getRRGContract, toUsdc6dp, mintContractAddress } from '@/lib/app/contract';
-import { calculateSplit, PLATFORM_WALLET } from '@/lib/app/splits';
+import { calculateSplit, calculateCoCreationSplit, PLATFORM_WALLET, type CoCreatorShare, type SplitResult } from '@/lib/app/splits';
 import { insertDistributionAndPay } from '@/lib/app/auto-payout';
 import { shouldSkipErc8004 } from '@/lib/app/test-mode';
 import { postViaReputationSignal, parseAgentId } from '@/lib/app/via-reputation';
@@ -389,11 +389,27 @@ export async function POST(req: NextRequest) {
   }
 
   // ── 5. Pay the seller their 97.5% (platform keeps 2.5%) ──────────────
-  const split = calculateSplit({
-    totalUsdc,
-    sellerWallet:      seller.wallet_address as string,
-    sellerPctOverride: seller.seller_pct_override as number | null,
-  });
+  // A room co-created product splits the seller take between its locked
+  // co-creators; a normal product pays the single seller wallet.
+  const { data: cocreatorRows } = await db
+    .from('app_product_cocreators')
+    .select('payout_wallet, pct, role')
+    .eq('product_id', product.id as string);
+  const cocreators = (cocreatorRows as { payout_wallet: string; pct: number; role: string }[] | null) ?? [];
+  let split: SplitResult;
+  if (cocreators.length > 0) {
+    split = calculateCoCreationSplit({
+      totalUsdc,
+      sellerPctOverride: seller.seller_pct_override as number | null,
+      cocreators: cocreators.map((c): CoCreatorShare => ({ wallet: c.payout_wallet, pct: Number(c.pct), role: c.role })),
+    });
+  } else {
+    split = calculateSplit({
+      totalUsdc,
+      sellerWallet:      seller.wallet_address as string,
+      sellerPctOverride: seller.seller_pct_override as number | null,
+    });
+  }
 
   let payout = { distributionId: null as string | null, sellerTxHash: null as string | null };
   if (skipChain) {

@@ -222,6 +222,86 @@ export async function createPendingAgentStore(
   };
 }
 
+export interface CreateRoomStoreInput {
+  roomId:       string;
+  /** The founder's VIA account: owns the store row so it has a human operator. */
+  ownerUserId:  string;
+  contactEmail: string;
+  /** Nominal store payout wallet (the room agent wallet). Co-created products
+   *  override this with their locked split; it is only used if a product on this
+   *  store has no co-creation split. */
+  roomWallet:   string;
+  storeName:    string;
+  slug?:        string;
+  description?: string | null;
+  headline?:    string | null;
+}
+
+export type CreateRoomStoreResult =
+  | { ok: true; slug: string; sellerId: string }
+  | { ok: false; code: string; error: string };
+
+/**
+ * Create a store that a Back Room graduated into: pending + inactive like any
+ * agent store (human approval + ERC-8004 mint via approveAgentStore), but owned
+ * by the founder's existing VIA account and linked to the room. It deliberately
+ * skips the one-store-per-email and per-wallet caps: a co-created store is
+ * room-owned, its real payout is the per-product split, and the store wallet is
+ * only a nominal fallback. The agent identity wallet is platform-derived.
+ */
+export async function createRoomStore(input: CreateRoomStoreInput): Promise<CreateRoomStoreResult> {
+  const storeName = String(input.storeName ?? '').trim();
+  const email     = String(input.contactEmail ?? '').trim().toLowerCase();
+  const roomWallet = String(input.roomWallet ?? '').trim().toLowerCase();
+  if (!storeName)                        return { ok: false, code: 'missing_name', error: 'store name is required.' };
+  if (!input.ownerUserId)                return { ok: false, code: 'no_owner', error: 'a founder VIA account is required to own the store.' };
+  if (!ethers.isAddress(roomWallet))     return { ok: false, code: 'invalid_wallet', error: 'the room has no valid agent wallet.' };
+  if (!platformAgentWalletsEnabled())    return { ok: false, code: 'agent_wallet_unavailable', error: 'Platform-managed identity wallets are not enabled.' };
+
+  const slug = normaliseSlug(input.slug, storeName);
+  if (!slug) return { ok: false, code: 'invalid_slug', error: 'store name must contain alphanumeric characters.' };
+  const { data: existingSlug } = await db.from('app_sellers').select('id').eq('slug', slug).maybeSingle();
+  if (existingSlug) return { ok: false, code: 'slug_taken', error: `slug "${slug}" is already taken.` };
+
+  const now      = new Date();
+  const eligible = new Date(now.getTime() + APPROVAL_WINDOW_MS);
+  const { data: seller, error: sellerErr } = await db
+    .from('app_sellers')
+    .insert({
+      slug,
+      name:                 storeName,
+      kind:                 'product',
+      contact_email:        email,
+      owner_user_id:        input.ownerUserId,
+      description:          input.description ?? null,
+      headline:            input.headline ?? null,
+      wallet_address:       roomWallet,
+      agent_wallet_address: null,
+      active:               false,
+      approval_status:      'pending',
+      created_via:          'room_graduation',
+      room_id:              input.roomId,
+      submitted_at:         now.toISOString(),
+      approval_eligible_at: eligible.toISOString(),
+    })
+    .select('id, slug')
+    .single();
+  if (sellerErr || !seller) {
+    if (sellerErr?.code === '23505') return { ok: false, code: 'slug_taken', error: 'slug taken (race). Pick a different name.' };
+    console.error('[store-registration] room store insert failed', sellerErr);
+    return { ok: false, code: 'insert_failed', error: 'Failed to create the store record.' };
+  }
+
+  const derived = deriveAgentWallet(seller.id);
+  if (derived) {
+    await db.from('app_sellers').update({ agent_wallet_address: derived.address.toLowerCase() }).eq('id', seller.id);
+  } else {
+    console.error('[store-registration] AGENT_WALLET_SEED unavailable post-insert for room store', seller.slug);
+  }
+
+  return { ok: true, slug: seller.slug, sellerId: seller.id };
+}
+
 export interface ApproveAgentStoreResult {
   ok:                boolean;
   slug:              string;

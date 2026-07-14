@@ -12,6 +12,7 @@ const nextConfig: NextConfig = {
   outputFileTracingIncludes: {
     '/taste/**': ['./assets/fonts/*.ttf'],
     '/api/taste/**': ['./assets/fonts/*.ttf'],
+    '/store/**': ['./assets/fonts/*.ttf'],
   },
   async headers() {
     // Agent-useful Link relations on the homepage so crawlers and agents can

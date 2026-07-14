@@ -427,6 +427,10 @@ export function RoomClient({ roomId, handle, isAdmin = false }: { roomId: string
           </section>
         )}
 
+        {youAreFounder && handle && (
+          <MakeTogether roomId={roomId} handle={handle} members={members.filter((m) => m.status === 'active')} accent={meta?.accent_hex ?? 'var(--accent)'} />
+        )}
+
         {said && (
           <p className="br-sans" style={{ fontSize: 14, color: 'var(--ink-3)', fontStyle: 'italic', marginBottom: 20 }}>VIA: {said}</p>
         )}
@@ -613,6 +617,141 @@ export function RoomClient({ roomId, handle, isAdmin = false }: { roomId: string
       )}
       {handle && <HoldToSpeak onUtterance={onUtterance} />}
     </div>
+  );
+}
+
+interface Suggestion { from: string; title: string; pitch: string; format: string; suggested_price_usd: number; }
+
+/**
+ * The exit ramp, in the room: a founder asks a matched agent for a digital idea
+ * (member-triggered, human-gated), then turns it into a product for sale with an
+ * agreed split. Everything runs through the graduate + suggest routes.
+ */
+function MakeTogether({ roomId, handle, members, accent }: { roomId: string; handle: string; members: Member[]; accent: string }) {
+  const [open, setOpen] = useState(false);
+  const [suggestion, setSuggestion] = useState<Suggestion | null>(null);
+  const [suggestBusy, setSuggestBusy] = useState<string | null>(null);
+  const [title, setTitle] = useState('');
+  const [price, setPrice] = useState('4');
+  const [pcts, setPcts] = useState<Record<string, number>>({});
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<string | null>(null);
+  const [cardUrl, setCardUrl] = useState<string | null>(null);
+
+  const key = (m: Member) => `${m.member_platform}/${m.member_type}/${m.member_ref}`;
+  const others = members.filter((m) => !(m.member_platform === 'via' && m.member_ref === handle));
+
+  function ensurePcts(): Record<string, number> {
+    if (Object.keys(pcts).length) return pcts;
+    const each = Math.floor((100 / members.length) * 100) / 100;
+    const seed: Record<string, number> = {};
+    members.forEach((m, i) => { seed[key(m)] = i === members.length - 1 ? Math.round((100 - each * (members.length - 1)) * 100) / 100 : each; });
+    setPcts(seed);
+    return seed;
+  }
+
+  async function ask(m: Member) {
+    setSuggestBusy(key(m)); setMsg(null);
+    const res = await fetch(`/api/backroom/room/${roomId}/suggest`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ref: handle, from_ref: m.member_ref, from_platform: m.member_platform, from_type: m.member_type }),
+    });
+    const json = await res.json().catch(() => ({})) as { suggestion?: Suggestion; error?: string };
+    setSuggestBusy(null);
+    if (json.suggestion) { setSuggestion(json.suggestion); }
+    else setMsg(json.error || 'Could not get an idea right now.');
+  }
+
+  async function addSuggestionToTable() {
+    if (!suggestion) return;
+    await fetch(`/api/backroom/room/${roomId}/suggest`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ref: handle, action: 'accept', suggestion }),
+    });
+    setMsg('Added to the table.');
+  }
+
+  function useIdea() {
+    if (!suggestion) return;
+    setTitle(suggestion.title);
+    setPrice(String(suggestion.suggested_price_usd));
+    ensurePcts();
+  }
+
+  async function make() {
+    const p = ensurePcts();
+    setBusy(true); setMsg(null); setCardUrl(null);
+    const cocreators = members.map((m) => ({ platform: m.member_platform, type: m.member_type, ref: m.member_ref, pct: p[key(m)] ?? 0 }));
+    const res = await fetch(`/api/backroom/room/${roomId}/graduate`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ref: handle, title: title.trim(), price_usd: Number(price), cocreators }),
+    });
+    const json = await res.json().catch(() => ({})) as { card_url?: string; error?: string };
+    setBusy(false);
+    if (json.card_url) { setCardUrl(json.card_url); setMsg('Made. Pending VIA approval before it goes on sale.'); }
+    else setMsg(json.error || 'Could not make it.');
+  }
+
+  const p = ensurePctsView();
+  function ensurePctsView(): Record<string, number> { return Object.keys(pcts).length ? pcts : {}; }
+
+  return (
+    <section style={{ border: '1px solid var(--line-strong)', borderRadius: 6, padding: 16, marginBottom: 24, background: 'var(--paper)' }}>
+      <button type="button" onClick={() => setOpen((v) => !v)} className="br-sans"
+        style={{ display: 'flex', width: '100%', justifyContent: 'space-between', alignItems: 'center', background: 'transparent', border: 'none', cursor: 'pointer', padding: 0, color: 'var(--ink)', fontSize: 16 }}>
+        <span className="br-serif" style={{ fontSize: 18 }}>Make something together</span>
+        <span aria-hidden style={{ color: 'var(--ink-3)', fontSize: 18 }}>{open ? '−' : '+'}</span>
+      </button>
+
+      {open && (
+        <div style={{ marginTop: 14 }}>
+          <p className="br-sans" style={{ fontSize: 11, letterSpacing: '0.14em', textTransform: 'uppercase', color: 'var(--ink-3)', margin: '0 0 8px' }}>Ask for an idea</p>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+            {others.map((m) => (
+              <button key={key(m)} type="button" onClick={() => void ask(m)} disabled={suggestBusy === key(m)} className="br-sans"
+                style={{ padding: '7px 14px', borderRadius: 999, border: '1px solid var(--line-strong)', background: 'transparent', color: 'var(--ink-2)', fontSize: 13, cursor: 'pointer' }}>
+                {suggestBusy === key(m) ? 'Thinking...' : `Ask ${m.member_ref}`}
+              </button>
+            ))}
+          </div>
+
+          {suggestion && (
+            <div style={{ marginTop: 12, border: `1px solid ${accent}`, borderRadius: 6, padding: '12px 14px', background: 'var(--bg)' }}>
+              <p className="br-sans" style={{ fontSize: 11, letterSpacing: '0.14em', textTransform: 'uppercase', color: 'var(--ink-3)', margin: 0 }}>{suggestion.from} suggested</p>
+              <p className="br-serif" style={{ fontSize: 19, margin: '4px 0 2px', color: 'var(--ink)' }}>{suggestion.title}</p>
+              <p className="br-sans" style={{ fontSize: 14, color: 'var(--ink-2)', margin: '0 0 8px' }}>{suggestion.pitch} ({suggestion.format}, about {suggestion.suggested_price_usd} USDC)</p>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button type="button" onClick={() => void addSuggestionToTable()} className="br-sans" style={{ padding: '6px 14px', borderRadius: 999, border: '1px solid var(--line-strong)', background: 'transparent', color: 'var(--ink-2)', fontSize: 13, cursor: 'pointer' }}>Add to table</button>
+                <button type="button" onClick={useIdea} className="br-sans" style={{ padding: '6px 14px', borderRadius: 999, border: `1px solid ${accent}`, background: accent, color: 'var(--bg)', fontSize: 13, cursor: 'pointer' }}>Use this idea</button>
+              </div>
+            </div>
+          )}
+
+          <div style={{ marginTop: 18, borderTop: '1px solid var(--line)', paddingTop: 14 }}>
+            <p className="br-sans" style={{ fontSize: 11, letterSpacing: '0.14em', textTransform: 'uppercase', color: 'var(--ink-3)', margin: '0 0 8px' }}>Post it for sale (digital)</p>
+            <input className="br-sans" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="What are you selling?" style={{ ...inviteInput, marginBottom: 8 }} />
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+              <span className="br-sans" style={{ fontSize: 13, color: 'var(--ink-3)' }}>Price USDC</span>
+              <input className="br-sans" value={price} onChange={(e) => setPrice(e.target.value.replace(/[^0-9.]/g, ''))} style={{ ...inviteInput, width: 90 }} />
+            </div>
+            <p className="br-sans" style={{ fontSize: 12.5, color: 'var(--ink-3)', margin: '0 0 6px' }}>Split of the seller take (after VIA 2.5%), must total 100%:</p>
+            {members.map((m) => (
+              <div key={key(m)} className="br-sans" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginBottom: 6 }}>
+                <span style={{ fontSize: 14, color: 'var(--ink)' }}>{m.member_ref}</span>
+                <input className="br-sans" value={String(p[key(m)] ?? '')} onChange={(e) => setPcts({ ...p, [key(m)]: Number(e.target.value.replace(/[^0-9.]/g, '')) || 0 })}
+                  style={{ ...inviteInput, width: 70, textAlign: 'right' }} />
+              </div>
+            ))}
+            <button type="button" onClick={() => void make()} disabled={busy || !title.trim()} className="br-sans"
+              style={{ marginTop: 8, padding: '10px 22px', borderRadius: 999, border: '1px solid var(--ink)', background: 'var(--ink)', color: 'var(--bg)', fontSize: 14, cursor: 'pointer', opacity: busy || !title.trim() ? 0.5 : 1 }}>
+              {busy ? 'Making...' : 'Make it'}
+            </button>
+          </div>
+
+          {msg && <p className="br-sans" style={{ fontSize: 13, color: 'var(--live)', margin: '10px 0 0' }}>{msg}{cardUrl && <> <a href={cardUrl} style={{ color: accent }}>View the store card</a></>}</p>}
+        </div>
+      )}
+    </section>
   );
 }
 

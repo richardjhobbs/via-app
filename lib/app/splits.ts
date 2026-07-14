@@ -17,7 +17,7 @@
  * if commercial terms require it (e.g. 95/5 for a high-touch onboard).
  */
 
-export type SplitType = 'seller_product_tiered';
+export type SplitType = 'seller_product_tiered' | 'room_cocreation';
 
 export interface SplitInput {
   totalUsdc: number;
@@ -26,14 +26,35 @@ export interface SplitInput {
   sellerPctOverride?: number | null;
 }
 
+/** One paid leg of a settled sale: a wallet, its USDC share, and its role. */
+export interface SplitRecipient {
+  wallet: string;
+  usdc:   number;
+  role:   string;
+}
+
 export interface SplitResult {
   splitType: SplitType;
   totalUsdc: number;
   sellerUsdc: number;
   platformUsdc: number;
   sellerWallet: string;
+  /**
+   * When present, the seller share is paid to THESE wallets (a room co-creation
+   * split), summing exactly to sellerUsdc. When absent, the single sellerWallet
+   * is paid. auto-payout branches on this.
+   */
+  recipients?: SplitRecipient[];
   /** Address to pass to registerDrop() as the on-chain "creator" */
   onChainCreator: string;
+}
+
+/** A locked co-creation participant: their payout wallet and share of the seller take. */
+export interface CoCreatorShare {
+  wallet: string;
+  /** Percentage of the SELLER take (after platform 2.5%). Shares sum to 100. */
+  pct:    number;
+  role?:  string;
 }
 
 export const PLATFORM_WALLET = process.env.NEXT_PUBLIC_PLATFORM_WALLET
@@ -68,6 +89,52 @@ export function calculateSplit(input: SplitInput): SplitResult {
     sellerUsdc,
     platformUsdc,
     sellerWallet,
+    onChainCreator: PLATFORM_WALLET,
+  };
+}
+
+/**
+ * A room co-creation split: the platform still takes the exact 2.5% (or the
+ * store's override), and the seller take is divided between the locked
+ * co-creators by their agreed percentages. Percentages are treated as shares
+ * of the seller take and normalised, so they need only be positive and roughly
+ * proportional; the last recipient absorbs the rounding remainder so the legs
+ * sum EXACTLY to sellerUsdc (no dust left in, and none over-paid out).
+ *
+ * onChainCreator stays PLATFORM_WALLET so the on-chain invariant is untouched;
+ * the seller share is paid to the recipient wallets off-chain by auto-payout.
+ */
+export function calculateCoCreationSplit(input: {
+  totalUsdc: number;
+  cocreators: CoCreatorShare[];
+  sellerPctOverride?: number | null;
+}): SplitResult {
+  const { totalUsdc, cocreators, sellerPctOverride } = input;
+  if (!cocreators.length) throw new Error('co-creation split needs at least one recipient');
+  const sellerPct = getSellerPct(sellerPctOverride);
+  const sellerUsdc   = round6(totalUsdc * sellerPct / 100);
+  const platformUsdc = round6(totalUsdc - sellerUsdc);
+
+  const pctTotal = cocreators.reduce((s, c) => s + c.pct, 0);
+  if (pctTotal <= 0) throw new Error('co-creation split percentages must be positive');
+
+  const recipients: SplitRecipient[] = [];
+  let allocated = 0;
+  cocreators.forEach((c, i) => {
+    const last = i === cocreators.length - 1;
+    // Last recipient takes the exact remainder so the legs sum to sellerUsdc.
+    const usdc = last ? round6(sellerUsdc - allocated) : round6(sellerUsdc * c.pct / pctTotal);
+    allocated = round6(allocated + usdc);
+    recipients.push({ wallet: c.wallet, usdc, role: c.role ?? 'co-creator' });
+  });
+
+  return {
+    splitType:      'room_cocreation',
+    totalUsdc,
+    sellerUsdc,
+    platformUsdc,
+    sellerWallet:   recipients[0].wallet,  // nominal; recipients[] is authoritative
+    recipients,
     onChainCreator: PLATFORM_WALLET,
   };
 }

@@ -49,6 +49,7 @@ import { insertNotification } from '@/lib/app/notifications';
 import { verifyMindLinkToken } from '@/lib/app/minds-link';
 import { PreferenceAppraisalSchema, importPreferenceAppraisal } from '@/lib/app/minds-appraisal';
 import { getPublishedCardBySlug, cardJson, cardUrl } from '@/lib/app/backroom/taste-cards';
+import { getStoreCardBySlug, storeCardJson, storeCardUrl } from '@/lib/app/backroom/store-card';
 import { claimEventPass } from '@/lib/app/event-passes';
 import { forwardMcpTool, isMemberMcpUrl, memberCentralMcpUrl } from '@/lib/app/mcp-forward';
 
@@ -941,6 +942,22 @@ function createServer(req: Request) {
     },
   );
 
+  // ── get_store_card ───────────────────────────────────────────────
+  // Read a room-graduated store's marketing card: the co-created product, its
+  // price, the co-creators with verifiable identity, and the buy pointer.
+  server.tool(
+    'get_store_card',
+    'Read a VIA store card by its slug: a product co-created by members of a Back Room, with its price, the co-creators (name, share, payout wallet, ERC-8004 id), and how to buy it (the seller MCP buy_product tool over the x402 door). Returns not_found for unknown slugs.',
+    {
+      slug: z.string().min(2).max(60).describe('The store slug from a shared link, e.g. app.getvia.xyz/store/<slug>.'),
+    },
+    async ({ slug }) => {
+      const card = await getStoreCardBySlug(slug);
+      if (!card) return asJson({ status: 'not_found', message: 'No store card at this slug.' });
+      return asJson({ ...storeCardJson(card), card_url: storeCardUrl(card.slug) });
+    },
+  );
+
   return server;
 }
 
@@ -951,7 +968,7 @@ export async function GET() {
     description: 'VIA Labs central discovery MCP. POST JSON-RPC to this endpoint to call tools.',
     protocol:    'MCP Streamable HTTP',
     base:        APP_BASE,
-    tools:       ['list_sellers', 'find_seller', 'get_seller_products', 'seller_mcp_url', 'get_via_overview', 'register_store', 'get_store_status', 'import_preference_appraisal', 'get_taste_card'],
+    tools:       ['list_sellers', 'find_seller', 'get_seller_products', 'seller_mcp_url', 'get_via_overview', 'register_store', 'get_store_status', 'import_preference_appraisal', 'get_taste_card', 'get_store_card'],
   });
 }
 

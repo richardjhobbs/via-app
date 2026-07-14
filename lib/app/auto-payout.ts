@@ -21,7 +21,7 @@
 
 import { db } from '@/lib/app/db';
 import { transferUsdc, getRRGReadOnly } from '@/lib/app/contract';
-import { type SplitResult, PLATFORM_WALLET } from '@/lib/app/splits';
+import { type SplitResult, type SplitRecipient, PLATFORM_WALLET } from '@/lib/app/splits';
 
 export interface AutoPayoutInput {
   purchaseId: string;
@@ -121,7 +121,14 @@ export async function insertDistributionAndPay(
     return result;
   }
 
-  // ── 3. Send the seller's 97.5% share via USDC ERC-20 transfer ──────
+  // ── 3. Pay the seller share ─────────────────────────────────────────
+  // A co-creation split pays each locked wallet its leg; a normal sale pays the
+  // single seller wallet. Either way the platform's 2.5% stays in the platform
+  // wallet (it was never sent out).
+  if (split.recipients && split.recipients.length > 0) {
+    return payRecipients(dist.id, purchaseId, split.recipients, result);
+  }
+
   try {
     if (split.sellerUsdc <= 0 || !split.sellerWallet) {
       await db.from('app_distributions')
@@ -154,6 +161,66 @@ export async function insertDistributionAndPay(
 }
 
 /**
+ * Pay each leg of a co-creation split. One app_distribution_recipients row per
+ * wallet; sequential transfers use incrementing nonces so they never collide.
+ * A leg that fails is recorded 'failed' and does not abort the others; the
+ * distribution is marked 'paid' only when every leg paid.
+ */
+async function payRecipients(
+  distId: string,
+  purchaseId: string,
+  recipients: SplitRecipient[],
+  result: AutoPayoutResult,
+): Promise<AutoPayoutResult> {
+  // Pre-insert the legs so a partial failure leaves a full record to retry from.
+  const { data: legs } = await db
+    .from('app_distribution_recipients')
+    .insert(recipients.map((r) => ({ distribution_id: distId, wallet: r.wallet, usdc: r.usdc, role: r.role, status: 'pending' })))
+    .select('id, wallet, usdc, role');
+  const legRows = (legs as { id: string; wallet: string; usdc: number; role: string }[] | null) ?? [];
+
+  let baseNonce: number | null = null;
+  let anyFailed = false;
+  let firstHash: string | null = null;
+
+  for (let i = 0; i < legRows.length; i++) {
+    const leg = legRows[i];
+    if (Number(leg.usdc) <= 0 || !leg.wallet) {
+      await db.from('app_distribution_recipients').update({ status: 'paid', tx_hash: null }).eq('id', leg.id);
+      continue;
+    }
+    try {
+      const nonce = baseNonce == null ? undefined : baseNonce + i;
+      const tx = await transferUsdc(leg.wallet, Number(leg.usdc), nonce);
+      if (baseNonce == null) baseNonce = tx.nonce;  // anchor sequential nonces to the first send
+      firstHash = firstHash ?? tx.hash;
+      await db.from('app_distribution_recipients').update({ status: 'paid', tx_hash: tx.hash }).eq('id', leg.id);
+      console.log(`[auto-payout] ${distId} leg ${leg.role} paid ${leg.wallet} ${leg.usdc} USDC tx=${tx.hash}`);
+    } catch (err) {
+      anyFailed = true;
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error(`[auto-payout] ${distId} leg ${leg.wallet} failed:`, msg);
+      await db.from('app_distribution_recipients').update({ status: 'failed' }).eq('id', leg.id);
+    }
+  }
+
+  result.sellerTxHash = firstHash;
+  if (anyFailed) {
+    await db.from('app_distributions')
+      .update({ status: 'failed', notes: 'one or more co-creation legs failed; see app_distribution_recipients' })
+      .eq('id', distId);
+  } else {
+    await db.from('app_distributions')
+      .update({ status: 'paid', seller_tx_hash: firstHash, notes: null })
+      .eq('id', distId);
+    await db.from('app_purchases')
+      .update({ payout_tx_hash: firstHash, status: 'paid_out' })
+      .eq('id', purchaseId);
+  }
+  return result;
+}
+
+/**
  * Release every HELD distribution for a store, once it is approved (active).
  * Transfers each held 97.5% share to the seller's payout wallet and marks the
  * row 'paid' + its purchase 'paid_out'. Idempotent: acts only on rows still in
@@ -175,6 +242,15 @@ export async function releaseHeldDistributions(sellerId: string): Promise<{ rele
   for (const d of held ?? []) {
     const amount = Number(d.seller_usdc);
     try {
+      // A co-created product splits the held seller share across its locked
+      // wallets; a normal product pays the single seller wallet.
+      const recipients = await heldRecipients(d.purchase_id, amount);
+      if (recipients) {
+        const result: AutoPayoutResult = { distributionId: d.id, sellerTxHash: null };
+        const paid = await payRecipients(d.id, d.purchase_id, recipients, result);
+        if (paid.sellerTxHash) out.released += 1; else out.failed += 1;
+        continue;
+      }
       if (amount <= 0 || !wallet) {
         await db.from('app_distributions').update({ status: 'paid', notes: 'released: no seller share' }).eq('id', d.id);
         out.released += 1;
@@ -193,4 +269,33 @@ export async function releaseHeldDistributions(sellerId: string): Promise<{ rele
     }
   }
   return out;
+}
+
+/**
+ * If the held distribution's product has a locked co-creation split, divide the
+ * held seller share across those wallets and return the legs; else null (pay the
+ * single seller wallet). The last leg absorbs the rounding remainder so the legs
+ * sum exactly to the held amount.
+ */
+async function heldRecipients(purchaseId: string, sellerUsdc: number): Promise<SplitRecipient[] | null> {
+  const { data: purchase } = await db
+    .from('app_purchases').select('product_id').eq('id', purchaseId).maybeSingle();
+  const productId = (purchase as { product_id: string } | null)?.product_id;
+  if (!productId) return null;
+  const { data: rows } = await db
+    .from('app_product_cocreators').select('payout_wallet, pct, role').eq('product_id', productId);
+  const cocreators = (rows as { payout_wallet: string; pct: number; role: string }[] | null) ?? [];
+  if (!cocreators.length) return null;
+
+  const round6 = (n: number) => parseFloat(n.toFixed(6));
+  const pctTotal = cocreators.reduce((s, c) => s + Number(c.pct), 0);
+  const recipients: SplitRecipient[] = [];
+  let allocated = 0;
+  cocreators.forEach((c, i) => {
+    const last = i === cocreators.length - 1;
+    const usdc = last ? round6(sellerUsdc - allocated) : round6(sellerUsdc * Number(c.pct) / pctTotal);
+    allocated = round6(allocated + usdc);
+    recipients.push({ wallet: c.payout_wallet, usdc, role: c.role });
+  });
+  return recipients;
 }
