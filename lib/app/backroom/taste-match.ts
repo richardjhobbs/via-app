@@ -27,9 +27,12 @@ export interface SensibilityVerdict {
   opening_thread:  string;    // one specific question one could ask the other
 }
 
-/** Judge threshold; +SAME_DISCIPLINE_BUMP when the judge flags same discipline. */
+/** Judge threshold; +SAME_DISCIPLINE_BUMP when the judge flags same discipline.
+ *  Tuned to 80 from real judge behaviour: the DeepSeek judge lands a strong
+ *  cross-discipline pair with many shared specifics around 85, and holds weaker
+ *  pairs at 65-72, so 80 cleanly separates them. Same-discipline still needs 87. */
 export function tasteMatchThreshold(): number {
-  return Number(process.env.TASTE_MATCH_THRESHOLD ?? '88');
+  return Number(process.env.TASTE_MATCH_THRESHOLD ?? '80');
 }
 export const SAME_DISCIPLINE_BUMP = 7;
 
