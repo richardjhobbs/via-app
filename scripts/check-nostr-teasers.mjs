@@ -16,7 +16,9 @@ if (relays.length === 0) { console.error('Usage: node scripts/check-nostr-teaser
 
 const pool = new SimplePool();
 const events = [];
-const sub = pool.subscribeMany(relays, [{ kinds: [1], '#t': ['via'], limit: 30 }], {
+// nostr-tools 2.23+ subscribeMany takes ONE filter object, not an array; an
+// array is silently matched against nothing (or rejected) by relays.
+const sub = pool.subscribeMany(relays, { kinds: [1], '#t': ['via'], limit: 30 }, {
   onevent(e) { events.push(e); },
 });
 
