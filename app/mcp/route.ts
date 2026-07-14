@@ -7,16 +7,23 @@
  * app_sellers / app_seller_products (this app has the live data; the marketing
  * site queries the same Supabase project but is rebuilt less often).
  *
- * Tools (13):
- *   list_sellers      : active VIA sellers, paginated, with per-seller MCP URL
- *   find_seller       : product + seller search; returns product-level results
- *                       (direct web_url + mcp_ref) or need_more_info when loose
- *   claim_pass        : claim a FREE guest-list pass directly from discovery (no
- *                       payment, no x402); paid products stay on the seller x402 door
- *   get_product       : gateway to full listing detail, forwarded to the owning seller
- *   get_shipping_quote: gateway to shipping cost for a country, forwarded to the seller
- *   buy_product       : gateway to a paid order + the x402 requirement, forwarded to
- *                       the owning seller; settles at /api/x402/purchase
+ * Tools (24):
+ *   Discovery      : list_sellers, find_seller, get_seller_products, seller_mcp_url,
+ *                    submit_intent, find_buyers, get_taste_card, get_via_overview
+ *   Onboard        : register_store, get_store_status, import_preference_appraisal
+ *   Free pass      : claim_pass (no payment, no x402)
+ *   Gateway/seller : get_product, get_shipping_quote, buy_product, ask_sales_agent,
+ *                    get_offering_schema, request_quote, get_quote, counter_quote,
+ *                    get_download_challenge, get_download_links , each FORWARDS to the
+ *                    owning seller's MCP (mcp_ref.seller_mcp_url), so the whole
+ *                    discovery -> quote -> buy -> settle loop runs from one connector
+ *   Gateway/buyer  : get_buyer_preferences, get_buyer_briefs, negotiate, accept_offer
+ *                    , forwarded to a buyer's MCP so a seller can sell TO live demand
+ *
+ * The gateway tools reuse the per-seller / per-buyer MCP logic verbatim (one
+ * implementation, no drift) and preserve the paid-door invariant: the same x402
+ * settlement and the same paid brief door. Federated members (RRG) return an
+ * honest pointer until member identifier/arg translation is wired.
  *   submit_intent     : submit a buyer's intent; the full agentic matcher returns
  *                       genuine matches (requirements enforced) across the network
  *   find_buyers       : discover live DEMAND , buyers whose open briefs match what
@@ -365,6 +372,154 @@ function createServer(req: Request) {
       const r = await forwardMcpTool(seller_mcp_url, 'buy_product', args, { viaAgentId });
       return asJson(r.ok ? r.payload : { error: r.error ?? 'forward_failed', message: 'Could not reach the seller to place this order. Retry, or connect to the seller_mcp_url directly.', seller_mcp_url });
     },
+  );
+
+  // Forward a seller-scoped tool: VIA-native forwards; a member (RRG) target
+  // returns the honest pointer until member translation is wired (slice 4).
+  const fwdSeller = async (seller_mcp_url: string, tool: string, args: Record<string, unknown>) => {
+    if (!isViaSellerUrl(seller_mcp_url)) return memberPending(seller_mcp_url);
+    const r = await forwardMcpTool(seller_mcp_url, tool, args, { viaAgentId });
+    return asJson(r.ok ? r.payload : { error: r.error ?? 'forward_failed', message: 'Could not reach the seller. Retry, or connect to the seller_mcp_url directly.', seller_mcp_url });
+  };
+  // A VIA per-buyer MCP (this app). Buyers are VIA-only (no member buyer MCPs).
+  const isViaBuyerUrl = (url: string): boolean => {
+    try {
+      const u = new URL(url);
+      return (u.hostname === 'app.getvia.xyz' || u.hostname.endsWith('.getvia.xyz') || u.hostname === 'getvia.xyz')
+        && /^\/buyers\/[^/]+\/mcp\/?$/.test(u.pathname);
+    } catch { return false; }
+  };
+  const fwdBuyer = async (buyer_mcp_url: string, tool: string, args: Record<string, unknown>) => {
+    if (!isViaBuyerUrl(buyer_mcp_url)) return asJson({ error: 'not_a_via_buyer', message: 'Pass a VIA buyer MCP url (…/buyers/{handle}/mcp) from a find_buyers result.', buyer_mcp_url });
+    const r = await forwardMcpTool(buyer_mcp_url, tool, args, { viaAgentId });
+    return asJson(r.ok ? r.payload : { error: r.error ?? 'forward_failed', message: 'Could not reach the buyer. Retry, or connect to the buyer_mcp_url directly.', buyer_mcp_url });
+  };
+
+  // ── Gateway: seller Sales Agent, quotes, downloads (forwarded) ────────
+  server.tool(
+    'ask_sales_agent',
+    "Ask a seller's Sales Agent a question, from anywhere on the network, without leaving this connector. It answers in the seller's voice using their locked-in memories (events, promotions, policies, stock). Pass the seller_mcp_url from a discovery result and an optional contact so the seller can reach back.",
+    {
+      seller_mcp_url: z.string().min(1).describe('mcp_ref.seller_mcp_url from a find_seller / get_seller_products result.'),
+      question:       z.string().min(1).max(2000).describe('Free-form buyer question.'),
+      contact:        z.string().max(300).optional().describe('Optional reach-back identifier (email, handle, or the buyer agent MCP url).'),
+    },
+    async ({ seller_mcp_url, question, contact }) => fwdSeller(seller_mcp_url, 'ask_sales_agent', { question, contact }),
+  );
+
+  server.tool(
+    'get_offering_schema',
+    "Fetch the configurable option space for a per-order (configurable) product before requesting a quote, forwarded to the owning seller. Returns option groups, choices, quantity rules and surcharges. Fixed-price products have no schema; buy those with buy_product.",
+    {
+      seller_mcp_url: z.string().min(1).describe('mcp_ref.seller_mcp_url from a discovery result.'),
+      product_id:     z.string().min(1).describe('The configurable product id from discovery.'),
+    },
+    async ({ seller_mcp_url, product_id }) => fwdSeller(seller_mcp_url, 'get_offering_schema', { product_id }),
+  );
+
+  server.tool(
+    'request_quote',
+    "Request an advisory price for a configurable product, forwarded to the owning seller. Pass the selections from get_offering_schema. Returns a quote_ref and a NON-BINDING proposed_total the seller reviews. Poll get_quote for the decision.",
+    {
+      seller_mcp_url: z.string().min(1).describe('mcp_ref.seller_mcp_url from a discovery result.'),
+      product_id:     z.string().min(1),
+      selections: z.object({
+        options:  z.record(z.string(), z.any()).describe('Map of option group key to the chosen value.'),
+        quantity: z.number().int().min(1).max(100000).optional().describe('Order quantity (default 1).'),
+      }),
+      spec:    z.record(z.string(), z.any()).optional().describe('Free-form brief: deadline, artwork notes. Not priced, surfaced to the seller.'),
+      contact: z.string().max(300).optional().describe('Reach-back identifier so the seller can follow up.'),
+    },
+    async ({ seller_mcp_url, ...args }) => fwdSeller(seller_mcp_url, 'request_quote', args),
+  );
+
+  server.tool(
+    'get_quote',
+    "Check a quote's status by quote_ref, forwarded to the owning seller. Returns the current status, the binding total once approved, and the negotiation thread.",
+    {
+      seller_mcp_url: z.string().min(1).describe('mcp_ref.seller_mcp_url from a discovery result.'),
+      quote_ref:      z.string().min(3).max(40).describe('The quote_ref from request_quote, e.g. "QUO-2605-7K3PQM".'),
+    },
+    async ({ seller_mcp_url, quote_ref }) => fwdSeller(seller_mcp_url, 'get_quote', { quote_ref }),
+  );
+
+  server.tool(
+    'counter_quote',
+    "Counter an existing quote, forwarded to the owning seller. Pass the quote_ref and a target price, revised selections, or both. Appends a round to the negotiation; stays non-binding until the seller approves.",
+    {
+      seller_mcp_url:     z.string().min(1).describe('mcp_ref.seller_mcp_url from a discovery result.'),
+      quote_ref:          z.string().min(3).max(40),
+      counter_total_usdc: z.number().min(0).optional().describe('Your proposed price for the configuration.'),
+      selections: z.object({
+        options:  z.record(z.string(), z.any()),
+        quantity: z.number().int().min(1).max(100000).optional(),
+      }).optional().describe('Revised configuration, if you are changing what you want.'),
+      note: z.string().max(1000).optional().describe('Free-form message to the seller.'),
+    },
+    async ({ seller_mcp_url, ...args }) => fwdSeller(seller_mcp_url, 'counter_quote', args),
+  );
+
+  server.tool(
+    'get_download_challenge',
+    "Begin retrieving a digital deliverable you bought, forwarded to the owning seller. Returns a message to SIGN with the paying wallet plus a challenge token; then call get_download_links.",
+    {
+      seller_mcp_url: z.string().min(1).describe('mcp_ref.seller_mcp_url from a discovery result.'),
+      product_id:     z.string().min(1).describe('The purchased digital product id.'),
+      buyer_wallet:   z.string().regex(/^0x[0-9a-fA-F]{40}$/).describe('The wallet that settled the purchase.'),
+    },
+    async ({ seller_mcp_url, product_id, buyer_wallet }) => fwdSeller(seller_mcp_url, 'get_download_challenge', { product_id, buyer_wallet }),
+  );
+
+  server.tool(
+    'get_download_links',
+    "Retrieve time-limited download links for a digital product you bought and settled, forwarded to the owning seller. Call get_download_challenge first, sign the message with the paying wallet, then call this with the challenge and signature.",
+    {
+      seller_mcp_url: z.string().min(1).describe('mcp_ref.seller_mcp_url from a discovery result.'),
+      product_id:     z.string().min(1).describe('The purchased digital product id.'),
+      buyer_wallet:   z.string().regex(/^0x[0-9a-fA-F]{40}$/).describe('The wallet that settled the purchase.'),
+      challenge:      z.string().min(8).describe('The challenge token from get_download_challenge.'),
+      signature:      z.string().min(8).describe('Signature of the challenge message, signed by buyer_wallet.'),
+    },
+    async ({ seller_mcp_url, ...args }) => fwdSeller(seller_mcp_url, 'get_download_links', args),
+  );
+
+  // ── Gateway: buyer side, sell TO live demand (forwarded) ──────────────
+  server.tool(
+    'get_buyer_preferences',
+    "Read a buyer's public buying preferences, forwarded to their buyer MCP. Pass the buyer_mcp_url from a find_buyers result. Delegation caps and private notes are never exposed.",
+    { buyer_mcp_url: z.string().min(1).describe("A buyer's mcp_url from a find_buyers result (…/buyers/{handle}/mcp).") },
+    async ({ buyer_mcp_url }) => fwdBuyer(buyer_mcp_url, 'get_buyer_preferences', {}),
+  );
+
+  server.tool(
+    'get_buyer_briefs',
+    "See a buyer's OPEN demand as free teasers, forwarded to their buyer MCP. Each teaser carries a paid door_url: the FULL brief and the ability to offer are paid at that x402 door, not here. Use a teaser to decide if your stock fits, then go to the door.",
+    { buyer_mcp_url: z.string().min(1).describe("A buyer's mcp_url from a find_buyers result.") },
+    async ({ buyer_mcp_url }) => fwdBuyer(buyer_mcp_url, 'get_buyer_briefs', {}),
+  );
+
+  server.tool(
+    'negotiate',
+    "Negotiate a PAID offer with a buyer's Buying Agent, forwarded to their buyer MCP. This is the post-door step: submit a paid offer at the brief door first (POST /api/via/brief/[brief_id]/offer), then pass that brief_id and the offer's payment_tx_hash here. There is no free pre-door pitch.",
+    {
+      buyer_mcp_url:   z.string().min(1).describe("The buyer's mcp_url from a find_buyers result."),
+      brief_id:        z.string().min(1).describe('The brief you made a paid offer against.'),
+      payment_tx_hash: z.string().min(1).describe('The on-chain payment tx from your door offer.'),
+      offer_text:      z.string().min(1).max(4000).describe('Your full pitch: what you are offering, terms, and price.'),
+    },
+    async ({ buyer_mcp_url, ...args }) => fwdBuyer(buyer_mcp_url, 'negotiate', args),
+  );
+
+  server.tool(
+    'accept_offer',
+    "Ask a buyer's Buying Agent to accept a negotiated offer, forwarded to their buyer MCP. The agent auto-accepts only within the buyer's delegation caps, otherwise it queues the offer for the buyer's approval.",
+    {
+      buyer_mcp_url: z.string().min(1).describe("The buyer's mcp_url from a find_buyers result."),
+      offer_id:      z.string().min(1).max(120).describe('Your reference id for the offer being accepted.'),
+      amount_usd:    z.number().min(0).optional().describe('Total order amount in USD, for the caps check.'),
+      category:      z.string().min(1).max(60).optional().describe("Product category, checked against the buyer's lists."),
+    },
+    async ({ buyer_mcp_url, ...args }) => fwdBuyer(buyer_mcp_url, 'accept_offer', args),
   );
 
   server.tool(

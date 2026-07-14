@@ -36,8 +36,9 @@ const ALLOWED_HOSTS = new Set<string>([
   }).filter(Boolean),
 ]);
 
-// Central `/mcp`, per-seller `/sellers/{slug}/mcp`, per-brand `/brand{,s}/{slug}/mcp`.
-const MCP_PATH = /^\/(?:mcp|sellers?\/[^/]+\/mcp|brands?\/[^/]+\/mcp)\/?$/i;
+// Central `/mcp`, per-seller `/sellers/{slug}/mcp`, per-buyer `/buyers/{handle}/mcp`,
+// per-brand `/brand{,s}/{slug}/mcp`.
+const MCP_PATH = /^\/(?:mcp|sellers?\/[^/]+\/mcp|buyers?\/[^/]+\/mcp|brands?\/[^/]+\/mcp)\/?$/i;
 
 function allowedMcpUrl(raw: string): URL | null {
   let u: URL;
