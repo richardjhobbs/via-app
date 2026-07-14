@@ -1267,6 +1267,92 @@ export async function sendEventGuestEmail({
   await sendEmail({ to, subject: `You are on the guest list for ${eventName}`, html });
 }
 
+// ── 11. Free event pass: admin notification ────────────────────────────
+//
+// Sent to each event admin (owner + accepted admins) when a free guest-list pass
+// is claimed, by a human through the signup funnel or by an agent via claim_pass.
+// No payment, so no price, tx, or "action required" language: this is a record of
+// who has joined the guest list, with the details the organiser needs to admit
+// them. VIA-branded, no em/en dashes.
+
+export async function sendEventGuestToAdmins({
+  to,
+  eventName,
+  tierTitle,
+  guestName,
+  guestEmail,
+  passRef,
+  source,
+  dashboardUrl,
+}: {
+  to: string;
+  eventName: string;
+  tierTitle: string;
+  guestName: string;
+  guestEmail: string;
+  passRef: string;
+  source: 'web_signup' | 'mcp_agent';
+  dashboardUrl?: string | null;
+}): Promise<void> {
+  if (!to) return;
+  const rowStyle = 'padding:10px 16px;font-size:13px;border-bottom:1px solid #e8e3db;';
+  const lblStyle = 'color:#6e665c;font-size:13px;white-space:nowrap;padding-right:16px;';
+  const valStyle = 'color:#1a1612;font-weight:500;text-align:right;font-size:13px;';
+  const monoStyle = "font-family:'Courier New',Courier,monospace;font-size:11px;";
+  const via = source === 'mcp_agent' ? 'an agent' : 'the signup funnel';
+
+  const mkRow = (label: string, valueHtml: string, last = false) =>
+    `<tr><td style="${rowStyle}${last ? 'border-bottom:none;' : ''}${lblStyle}">${label}</td><td style="${rowStyle}${last ? 'border-bottom:none;' : ''}${valStyle}">${valueHtml}</td></tr>`;
+
+  const html = `
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><style>
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', sans-serif; background: #faf7f2; color: #1a1612; margin: 0; padding: 40px 20px; }
+  .wrap { max-width: 560px; margin: 0 auto; }
+  .wordmark { font-family: Georgia, 'Times New Roman', serif; font-size: 18px; font-weight: 400; font-style: italic; color: #1a1612; margin: 0 0 24px; }
+  .card { background: #ffffff; border: 1px solid #e8e3db; }
+  .card-head { padding: 28px 32px 24px; border-bottom: 1px solid #e8e3db; }
+  .eyebrow { font-family: 'Courier New', Courier, monospace; font-size: 10px; letter-spacing: 0.16em; text-transform: uppercase; color: #2b9a66; margin: 0 0 8px; }
+  h1 { margin: 0 0 4px; font-family: Georgia, 'Times New Roman', serif; font-size: 24px; font-weight: 400; font-style: italic; color: #1a1612; }
+  .sub { font-size: 13px; color: #6e665c; margin: 0; }
+  .body { padding: 28px 32px; }
+  .lbl { font-family: 'Courier New', Courier, monospace; font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; color: #6e665c; margin: 0 0 12px; }
+  .btn { display: inline-block; background: #1a1612; color: #faf7f2; padding: 12px 22px; text-decoration: none; font-size: 12px; letter-spacing: 0.04em; font-weight: 500; }
+</style></head>
+<body>
+<div class="wrap">
+  <p class="wordmark">VIA</p>
+  <div class="card">
+    <div class="card-head">
+      <p class="eyebrow">New guest on the list</p>
+      <h1>${escHtml(tierTitle)}</h1>
+      <p class="sub">${escHtml(eventName)}</p>
+    </div>
+    <div class="body">
+      <p style="font-size:13px;color:#3a342d;line-height:1.6;margin:0 0 20px;">A free pass was claimed via ${via}. The guest has a confirmed place on your list. Their details are below.</p>
+
+      <p class="lbl">Guest</p>
+      <table width="100%" cellpadding="0" cellspacing="0" style="border:1px solid #e8e3db;margin:0 0 20px;border-collapse:collapse;"><tbody>
+        ${mkRow('Name', guestName ? escHtml(guestName) : '<span style="color:#b0442e;">not provided</span>')}
+        ${mkRow('Email', guestEmail ? `<a href="mailto:${escHtml(guestEmail)}" style="color:#6b4f3a;">${escHtml(guestEmail)}</a>` : '<span style="color:#b0442e;">not provided</span>')}
+        ${mkRow('Pass reference', `<span style="${monoStyle}">${escHtml(passRef)}</span>`, true)}
+      </tbody></table>
+
+      ${dashboardUrl ? `<a class="btn" href="${escHtml(dashboardUrl)}" style="color:#faf7f2;text-decoration:none;">View guest list</a>` : ''}
+    </div>
+  </div>
+  <table width="100%" cellpadding="0" cellspacing="0" style="margin-top:32px;padding-top:20px;border-top:1px solid #e8e3db;"><tbody><tr>
+    <td style="font-family:'Courier New',Courier,monospace;font-size:10px;letter-spacing:0.12em;text-transform:uppercase;color:#6e665c;">VIA</td>
+    <td align="right" style="font-family:'Courier New',Courier,monospace;font-size:10px;letter-spacing:0.12em;text-transform:uppercase;color:#6e665c;text-align:right;"><a href="${SITE_URL}" style="color:#6e665c;text-decoration:none;">app.getvia.xyz</a></td>
+  </tr></tbody></table>
+</div>
+</body>
+</html>`;
+
+  await sendEmail({ to, subject: `New ${eventName} guest: ${guestName || guestEmail} (${passRef})`, html });
+}
+
 // ── HTML escape helper ─────────────────────────────────────────────────
 function escHtml(str: string): string {
   return str

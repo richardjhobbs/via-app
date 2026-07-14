@@ -17,7 +17,8 @@
  * app_claim_event_seat (migration 0032) with the unique indexes as the backstop.
  */
 import { db } from './db';
-import { sendEventGuestEmail } from './email';
+import { sendEventGuestEmail, sendEventGuestToAdmins } from './email';
+import { listAdminEmails } from './seller-team';
 import { insertNotification } from './notifications';
 
 /** True when this product is a free guest-list pass tier (not a paid voucher). */
@@ -91,7 +92,7 @@ export async function claimEventPass(p: ClaimEventPassParams): Promise<ClaimEven
 
   const { data: seller } = await db
     .from('app_sellers')
-    .select('id, name, slug, owner_user_id, active')
+    .select('id, name, slug, owner_user_id, contact_email, active')
     .eq('id', p.sellerId)
     .maybeSingle();
   if (!seller || !seller.active) return { outcome: 'not_available', error: 'event not found or not active' };
@@ -119,11 +120,29 @@ export async function claimEventPass(p: ClaimEventPassParams): Promise<ClaimEven
   const guestId = (row?.guest_id ?? undefined) as string | undefined;
 
   if (outcome === 'confirmed') {
+    const passRef = guestId ? `PASS-${guestId.slice(0, 8).toUpperCase()}` : 'PASS';
     // Fire-and-forget side effects: the place is already recorded.
     try {
       await sendEventGuestEmail({ to: email, guestName: name, eventName, tierTitle, redemption: getEventRedemption(product.metadata) });
     } catch (mailErr) {
       console.warn('[event-passes] guest email failed (non-fatal):', mailErr);
+    }
+    // Notify each event admin (owner + accepted admins) with the guest's details.
+    try {
+      const adminEmails = await listAdminEmails(seller.id as string);
+      const recipients  = adminEmails.length > 0
+        ? adminEmails
+        : [String(seller.contact_email ?? '').trim().toLowerCase()].filter((e) => e.includes('@'));
+      const dashboardUrl = `${process.env.NEXT_PUBLIC_SITE_URL ?? 'https://app.getvia.xyz'}/seller/${seller.slug}/admin/guests`;
+      for (const to of recipients) {
+        await sendEventGuestToAdmins({
+          to, eventName, tierTitle,
+          guestName: name, guestEmail: email, passRef,
+          source: p.source, dashboardUrl,
+        });
+      }
+    } catch (adminErr) {
+      console.warn('[event-passes] admin guest email failed (non-fatal):', adminErr);
     }
     void insertNotification({
       ownerUserId: seller.owner_user_id as string,
