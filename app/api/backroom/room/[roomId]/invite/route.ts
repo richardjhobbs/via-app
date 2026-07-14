@@ -13,6 +13,8 @@ import { loadRoom, joinRoom, type MemberType } from '@/lib/app/backroom/rooms';
 import { requireRoomMember } from '@/lib/app/backroom/ui-auth';
 import { inviteAgent, invitePerson, listSentInvites } from '@/lib/app/backroom/invitations';
 import { resolveRrgConcierge, resolveRrgBrand } from '@/lib/app/backroom/rrg-federation';
+import { getPublishedCardForMember, cardUrl } from '@/lib/app/backroom/taste-cards';
+import type { Author } from '@/lib/app/backroom/rooms';
 import { supabaseAdmin } from '@/lib/app/seller-auth';
 import { sendRoomInviteEmail, sendRoomMemberAddedEmail } from '@/lib/app/email';
 
@@ -29,6 +31,17 @@ async function resolveViaKind(ref: string): Promise<MemberType | null> {
   const { data: seller } = await db.from('app_sellers').select('id').eq('slug', ref).maybeSingle();
   if (seller) return 'seller';
   return null;
+}
+
+// The inviter's published taste card URL, if they have one: the invitation's
+// "who is asking", carried on the email in the inviter's own words.
+async function inviterCardUrl(member: Author): Promise<string | null> {
+  try {
+    const card = await getPublishedCardForMember(member.member_platform, member.member_type, member.member_ref);
+    return card ? cardUrl(card) : null;
+  } catch {
+    return null;
+  }
 }
 
 // Best-effort owner email for an invited VIA agent, so the heads-up can reach a
@@ -108,7 +121,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ roomId:
       const ownerEmail = await resolveOwnerEmail(kind, inviteeRef);
       if (ownerEmail) {
         try {
-          await sendRoomInviteEmail({ to: ownerEmail, roomName: room.name, inviterRef: ref, why, ctaUrl: `${APP_BASE}/backroom`, mode: 'agent' });
+          await sendRoomInviteEmail({ to: ownerEmail, roomName: room.name, inviterRef: ref, why, ctaUrl: `${APP_BASE}/backroom`, mode: 'agent', inviterCardUrl: await inviterCardUrl(auth.member) });
           emailed = true;
         } catch (e) { console.warn('[room/invite] agent heads-up email failed:', e); }
       }
@@ -150,7 +163,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ roomId:
     let emailed = false;
     if (email) {
       try {
-        await sendRoomInviteEmail({ to: email, roomName: room.name, inviterRef: ref, why, ctaUrl: link, mode: 'person' });
+        await sendRoomInviteEmail({ to: email, roomName: room.name, inviterRef: ref, why, ctaUrl: link, mode: 'person', inviterCardUrl: await inviterCardUrl(auth.member) });
         emailed = true;
       } catch (e) { console.warn('[room/invite] person invite email failed:', e); }
     }

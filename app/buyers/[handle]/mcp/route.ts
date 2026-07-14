@@ -37,6 +37,7 @@ import { hasCredits, deductCredits } from '@/lib/app/buyer-credits';
 import { resolveBuyerLlm } from '@/lib/app/buyer-llm';
 import { dryRunMatchForBuyer } from '@/lib/app/buyer-matching';
 import { listBuyerTeasers, paidOfferExists, briefDoorUrl } from '@/lib/app/demand';
+import { getPublishedCardForMember, cardJson, cardUrl } from '@/lib/app/backroom/taste-cards';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -279,6 +280,24 @@ function createServer(buyer: BuyerRow, req: Request) {
       const prefs = await loadPublicPreferences(buyer.handle);
       const out = asJson({ handle: buyer.handle, count: prefs.length, preferences: prefs });
       void logInteraction(buyer.id, 'get_buyer_preferences', identity, {}, { count: prefs.length }, 200, Date.now() - t0);
+      return out;
+    },
+  );
+
+  // ── get_taste_card ───────────────────────────────────────────────
+  server.tool(
+    'get_taste_card',
+    `Read @${buyer.handle}'s published taste card: the public, human-curated identity subset (references, obsessions, aesthetic words, anti-references). Returns not_published if the member has not published a card. The full taste profile is private and never exposed.`,
+    {},
+    async () => {
+      const t0 = Date.now();
+      const card = await getPublishedCardForMember('via', 'buyer', buyer.handle);
+      if (!card) {
+        void logInteraction(buyer.id, 'get_taste_card', identity, {}, { status: 'not_published' }, 404, Date.now() - t0);
+        return asJson({ status: 'not_published', message: 'This member has not published a taste card.' });
+      }
+      const out = asJson({ ...cardJson(card), card_url: cardUrl(card) });
+      void logInteraction(buyer.id, 'get_taste_card', identity, {}, { slug: card.slug }, 200, Date.now() - t0);
       return out;
     },
   );

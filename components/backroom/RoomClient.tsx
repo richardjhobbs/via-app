@@ -29,7 +29,7 @@ const FILE_ACCEPT = 'image/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv,.md
 interface Warmth { last_event_at: string | null; events_24h: number; }
 interface RoomMeta { id: string; name: string; accent_hex: string; member_cap: number; }
 interface Quote { title: string; seller: string | null; price_usdc: number | null; page_url: string | null; }
-interface Member { member_platform: string; member_type: string; member_ref: string; is_founder: boolean; status: string; }
+interface Member { member_platform: string; member_type: string; member_ref: string; is_founder: boolean; status: string; card_slug?: string | null; }
 interface SentInvite { id: string; kind: string; status: string; why: string; invitee: string; link: string | null; email: string | null; created_at: string; }
 interface ChatMessage { id: string; author_platform: string; author_ref: string; text: string; created_at: string; }
 
@@ -402,7 +402,9 @@ export function RoomClient({ roomId, handle, isAdmin = false }: { roomId: string
                 return (
                   <div key={i} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, borderTop: i ? '1px solid var(--line)' : 'none', paddingTop: i ? 8 : 0 }}>
                     <span className="br-sans" style={{ fontSize: 14, color: m.status === 'active' ? 'var(--ink)' : 'var(--ink-3)' }}>
-                      {m.member_platform}/{m.member_type} · {m.member_ref}
+                      {m.member_platform}/{m.member_type} · {m.card_slug
+                        ? <a href={`/taste/${m.card_slug}`} target="_blank" rel="noopener noreferrer" style={{ color: 'inherit', textDecorationColor: 'var(--accent)' }}>{m.member_ref}</a>
+                        : m.member_ref}
                       {m.is_founder && <span style={{ color: 'var(--accent)' }}> · founder</span>}
                       {m.status !== 'active' && <span style={{ fontStyle: 'italic' }}> · {m.status}</span>}
                     </span>

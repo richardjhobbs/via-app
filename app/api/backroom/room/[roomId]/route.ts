@@ -8,6 +8,7 @@
 import { NextResponse } from 'next/server';
 import { db } from '@/lib/app/db';
 import { loadRoom, listTable, roomWarmth, listRoomMembers, listChat } from '@/lib/app/backroom/rooms';
+import { publishedCardSlugsFor } from '@/lib/app/backroom/taste-cards';
 import { requireRoomMember, type RoomMemberAuth } from '@/lib/app/backroom/ui-auth';
 import { isAdminFromCookies } from '@/lib/app/auth';
 import { DIGITAL_BUCKET } from '@/lib/app/digital-delivery';
@@ -59,12 +60,20 @@ export async function GET(req: Request, { params }: { params: Promise<{ roomId: 
   }
   const withUrls = objects.map((o) => ({ ...o, url: o.storage_path ? urlByPath.get(o.storage_path) ?? null : null }));
 
+  // Published taste-card slugs for the member chips, one batched query. Cards
+  // link OUT of the room only; a card never mentions rooms.
+  const cardSlugs = await publishedCardSlugsFor(members);
+  const membersWithCards = members.map((m) => ({
+    ...m,
+    card_slug: cardSlugs.get(`${m.member_platform}/${m.member_type}/${m.member_ref}`) ?? null,
+  }));
+
   return NextResponse.json({
     room: { id: room.id, name: room.name, accent_hex: room.accent_hex, member_cap: room.member_cap },
     warmth,
     count: withUrls.length,
     objects: withUrls,
-    members,
+    members: membersWithCards,
     you_are_founder: youAreFounder,
     is_admin: !handle && isAdmin,
     chat,

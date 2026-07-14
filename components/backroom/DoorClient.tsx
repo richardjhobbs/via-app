@@ -14,12 +14,13 @@ interface ContextPack {
   they_make?: string;
   opening_thread?: string;
 }
-interface Knock { id: string; other: Party; context_pack: ContextPack; status: string; }
+interface Knock { id: string; other: Party; context_pack: ContextPack; status: string; other_card_slug?: string | null; }
 
 export function DoorClient({ handle }: { handle: string }) {
   const [knocks, setKnocks] = useState<Knock[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [note, setNote] = useState<string | null>(null);
+  const [noteCardSlug, setNoteCardSlug] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
 
   useEffect(() => {
@@ -43,16 +44,20 @@ export function DoorClient({ handle }: { handle: string }) {
     });
     if (res.ok) {
       const json = await res.json() as { outcome: string };
+      const answered = knocks.find((k) => k.id === introId);
       setKnocks((ks) => ks.filter((k) => k.id !== introId));
       // Only an accept is acknowledged; a decline leaves nothing behind.
       if (accept) {
-        setNote(json.outcome === 'connected' ? 'Connected. A room can form when you are both ready.' : 'Accepted. If they accept too, you connect.');
+        const connected = json.outcome === 'connected';
+        setNote(connected ? 'Connected. A room can form when you are both ready.' : 'Accepted. If they accept too, you connect.');
+        setNoteCardSlug(connected ? answered?.other_card_slug ?? null : null);
       } else {
         setNote(null);
+        setNoteCardSlug(null);
       }
     }
     setBusyId(null);
-  }, [handle]);
+  }, [handle, knocks]);
 
   if (!handle) {
     return (
@@ -67,7 +72,15 @@ export function DoorClient({ handle }: { handle: string }) {
       <p className="br-sans" style={{ fontSize: 12, letterSpacing: '0.14em', textTransform: 'uppercase', color: 'var(--ink-3)' }}>The Door</p>
 
       {note && (
-        <p className="br-serif" style={{ fontSize: 20, color: 'var(--ink)', marginTop: 20 }}>{note}</p>
+        <p className="br-serif" style={{ fontSize: 20, color: 'var(--ink)', marginTop: 20 }}>
+          {note}
+          {noteCardSlug && (
+            <>
+              {' '}
+              <a href={`/taste/${noteCardSlug}`} className="br-sans" style={{ fontSize: 15, color: 'var(--accent)' }}>Their card</a>
+            </>
+          )}
+        </p>
       )}
 
       {loaded && knocks.length === 0 && !note && (
@@ -88,6 +101,13 @@ export function DoorClient({ handle }: { handle: string }) {
             )}
             {k.context_pack.they_make && <Line label="They make" value={k.context_pack.they_make} />}
             {k.context_pack.opening_thread && <Line label="A way in" value={k.context_pack.opening_thread} />}
+            {k.other_card_slug && (
+              <p className="br-sans" style={{ margin: '0 0 8px', fontSize: 15, lineHeight: 1.5 }}>
+                <a href={`/taste/${k.other_card_slug}`} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--accent)' }}>
+                  See their taste card, in their own words
+                </a>
+              </p>
+            )}
 
             <div style={{ display: 'flex', gap: 12, marginTop: 18 }}>
               <button

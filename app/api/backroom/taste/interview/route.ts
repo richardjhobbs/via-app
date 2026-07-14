@@ -2,7 +2,8 @@
  * Back Room taste interview: one spoken (or typed) answer at a time.
  *
  * POST multipart or JSON with:
- *   handle  , the member (buyer) whose profile this is
+ *   ref     , the member whose profile this is (buyer handle, seller slug, or
+ *             federated brand slug; `handle` accepted as an alias)
  *   audio   , an optional recorded answer (transcribed server-side), OR
  *   answer  , the answer as text (fallback)
  *
@@ -12,25 +13,21 @@
  */
 import { NextResponse } from 'next/server';
 import { db } from '@/lib/app/db';
-import { getBuyerUser } from '@/lib/app/buyer-auth';
+import { resolveOwnedMember } from '@/lib/app/backroom/ui-auth';
 import { transcribe, SttError } from '@/lib/app/backroom/voice';
 import { getActiveProfile, saveProfile, interviewStep, EMPTY_TASTE } from '@/lib/app/backroom/taste';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 
-interface BuyerRow {
-  owner_user_id:         string;
+interface BuyerLlmRow {
   llm_byo_provider:      string | null;
   llm_byo_key_encrypted: string | null;
   llm_byo_model:         string | null;
 }
 
 export async function POST(req: Request) {
-  const user = await getBuyerUser();
-  if (!user) return NextResponse.json({ error: 'not authenticated' }, { status: 401 });
-
-  let handle = '';
+  let ref = '';
   let answerText = '';
   let audioBytes: ArrayBuffer | null = null;
   let audioType = 'audio/webm';
@@ -38,7 +35,7 @@ export async function POST(req: Request) {
   const contentType = req.headers.get('content-type') ?? '';
   if (contentType.includes('multipart/form-data')) {
     const form = await req.formData();
-    handle = String(form.get('handle') ?? '').trim();
+    ref = String(form.get('ref') ?? form.get('handle') ?? '').trim();
     answerText = String(form.get('answer') ?? '').trim();
     const audio = form.get('audio');
     if (audio instanceof Blob && audio.size > 0) {
@@ -46,22 +43,27 @@ export async function POST(req: Request) {
       audioType = audio.type || 'audio/webm';
     }
   } else {
-    let body: { handle?: string; answer?: string };
+    let body: { ref?: string; handle?: string; answer?: string };
     try { body = await req.json(); } catch { return NextResponse.json({ error: 'invalid JSON' }, { status: 400 }); }
-    handle = body.handle?.trim() ?? '';
+    ref = (body.ref ?? body.handle)?.trim() ?? '';
     answerText = body.answer?.trim() ?? '';
   }
 
-  if (!handle) return NextResponse.json({ error: 'handle required' }, { status: 400 });
+  if (!ref) return NextResponse.json({ error: 'ref required' }, { status: 400 });
+  const auth = await resolveOwnedMember(ref);
+  if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
+  const m = auth.member;
 
-  const { data } = await db
-    .from('app_buyers')
-    .select('owner_user_id, llm_byo_provider, llm_byo_key_encrypted, llm_byo_model')
-    .eq('handle', handle)
-    .maybeSingle();
-  const buyer = data as BuyerRow | null;
-  if (!buyer || buyer.owner_user_id !== user.id) {
-    return NextResponse.json({ error: 'not authorized for this member' }, { status: 403 });
+  // Only VIA buyers carry a BYO LLM config; every other kind interviews on the
+  // platform key (resolveBuyerLlm falls back when the fields are absent).
+  let llmFields: BuyerLlmRow = { llm_byo_provider: null, llm_byo_key_encrypted: null, llm_byo_model: null };
+  if (m.member_platform === 'via' && m.member_type === 'buyer') {
+    const { data } = await db
+      .from('app_buyers')
+      .select('llm_byo_provider, llm_byo_key_encrypted, llm_byo_model')
+      .eq('handle', m.member_ref)
+      .maybeSingle();
+    if (data) llmFields = data as BuyerLlmRow;
   }
 
   let transcript = answerText;
@@ -77,12 +79,12 @@ export async function POST(req: Request) {
   }
 
   if (!transcript) {
-    const current = (await getActiveProfile('via', 'buyer', handle)) ?? { id: null, version: 0, ...EMPTY_TASTE };
-    return NextResponse.json({ handle, transcript: '', profile: current, next_question: 'I did not catch that. Say it again?', complete: false });
+    const current = (await getActiveProfile(m.member_platform, m.member_type, m.member_ref)) ?? { id: null, version: 0, ...EMPTY_TASTE };
+    return NextResponse.json({ ref, handle: ref, transcript: '', profile: current, next_question: 'I did not catch that. Say it again?', complete: false });
   }
 
-  const prior = (await getActiveProfile('via', 'buyer', handle)) ?? { id: null, version: 0, ...EMPTY_TASTE };
-  const step = await interviewStep(buyer, {
+  const prior = (await getActiveProfile(m.member_platform, m.member_type, m.member_ref)) ?? { id: null, version: 0, ...EMPTY_TASTE };
+  const step = await interviewStep(llmFields, {
     references: prior.references,
     obsessions: prior.obsessions,
     aesthetic_vocab: prior.aesthetic_vocab,
@@ -90,6 +92,6 @@ export async function POST(req: Request) {
     voice_text: prior.voice_text,
   }, transcript);
 
-  const saved = await saveProfile('via', 'buyer', handle, step.fields);
-  return NextResponse.json({ handle, transcript, profile: saved, next_question: step.next_question, complete: step.complete });
+  const saved = await saveProfile(m.member_platform, m.member_type, m.member_ref, step.fields);
+  return NextResponse.json({ ref, handle: ref, transcript, profile: saved, next_question: step.next_question, complete: step.complete });
 }

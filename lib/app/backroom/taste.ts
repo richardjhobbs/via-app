@@ -72,6 +72,16 @@ export async function saveProfile(platform: MemberPlatform, memberType: MemberTy
     .maybeSingle();
   const nextVersion = ((prior as { version: number } | null)?.version ?? 0) + 1;
 
+  // A human save consumes any agent-drafted rows: promotion is the ONLY way a
+  // draft becomes real, and it becomes real as the member's own edit.
+  await db
+    .from('app_taste_profiles')
+    .delete()
+    .eq('member_platform', platform)
+    .eq('member_type', memberType)
+    .eq('member_ref', memberRef)
+    .eq('is_draft', true);
+
   // Retire the current active row first so the partial unique index holds.
   await db
     .from('app_taste_profiles')
@@ -99,6 +109,77 @@ export async function saveProfile(platform: MemberPlatform, memberType: MemberTy
     .single();
   if (error) throw error;
   return { id: String((data as { id: string }).id), version: nextVersion, ...normalise(fields) };
+}
+
+/**
+ * Store an agent-drafted profile (RRG brand seeding). A draft is never active:
+ * it waits for the human to edit and Save, which promotes it as their own
+ * words and deletes the draft row. One draft at a time per member.
+ */
+export async function saveDraftProfile(platform: MemberPlatform, memberType: MemberType, memberRef: string, fields: TasteFields): Promise<TasteProfile> {
+  const { data: prior } = await db
+    .from('app_taste_profiles')
+    .select('version')
+    .eq('member_platform', platform)
+    .eq('member_type', memberType)
+    .eq('member_ref', memberRef)
+    .order('version', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  const nextVersion = ((prior as { version: number } | null)?.version ?? 0) + 1;
+
+  await db
+    .from('app_taste_profiles')
+    .delete()
+    .eq('member_platform', platform)
+    .eq('member_type', memberType)
+    .eq('member_ref', memberRef)
+    .eq('is_draft', true);
+
+  const { data, error } = await db
+    .from('app_taste_profiles')
+    .insert({
+      member_platform: platform,
+      member_type: memberType,
+      member_ref: memberRef,
+      version: nextVersion,
+      is_active: false,
+      is_draft: true,
+      references: asStringArray(fields.references),
+      obsessions: asStringArray(fields.obsessions),
+      aesthetic_vocab: asStringArray(fields.aesthetic_vocab),
+      anti_references: asStringArray(fields.anti_references),
+      voice_text: (fields.voice_text ?? '').slice(0, 4000),
+    })
+    .select('id, version')
+    .single();
+  if (error) throw error;
+  return { id: String((data as { id: string }).id), version: nextVersion, ...normalise(fields) };
+}
+
+/** The pending agent-drafted profile for a member, if any. */
+export async function getDraftProfile(platform: MemberPlatform, memberType: MemberType, memberRef: string): Promise<TasteProfile | null> {
+  const { data } = await db
+    .from('app_taste_profiles')
+    .select('id, version, "references", obsessions, aesthetic_vocab, anti_references, voice_text')
+    .eq('member_platform', platform)
+    .eq('member_type', memberType)
+    .eq('member_ref', memberRef)
+    .eq('is_draft', true)
+    .order('version', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (!data) return null;
+  const d = data as Record<string, unknown>;
+  return {
+    id: String(d.id),
+    version: Number(d.version),
+    references: asStringArray(d.references),
+    obsessions: asStringArray(d.obsessions),
+    aesthetic_vocab: asStringArray(d.aesthetic_vocab),
+    anti_references: asStringArray(d.anti_references),
+    voice_text: String(d.voice_text ?? ''),
+  };
 }
 
 function normalise(f: TasteFields): TasteFields {

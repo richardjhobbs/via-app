@@ -7,6 +7,12 @@ const nextConfig: NextConfig = {
   // caused MIDDLEWARE_INVOCATION_FAILED on the first deploy.
   turbopack: {},
   serverExternalPackages: ['agentmail', 'ethers'],
+  // The taste-card image renderer reads TTFs off disk at runtime; make sure
+  // Vercel's file tracing ships them with the functions that render cards.
+  outputFileTracingIncludes: {
+    '/taste/**': ['./assets/fonts/*.ttf'],
+    '/api/taste/**': ['./assets/fonts/*.ttf'],
+  },
   async headers() {
     // Agent-useful Link relations on the homepage so crawlers and agents can
     // discover the A2A card, MCP server card, and API catalog from the root

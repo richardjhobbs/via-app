@@ -33,6 +33,7 @@ import { findOpenBriefs } from '@/lib/app/demand';
 import { insertNotification } from '@/lib/app/notifications';
 import { verifyMindLinkToken } from '@/lib/app/minds-link';
 import { PreferenceAppraisalSchema, importPreferenceAppraisal } from '@/lib/app/minds-appraisal';
+import { getPublishedCardBySlug, cardJson, cardUrl } from '@/lib/app/backroom/taste-cards';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -539,6 +540,23 @@ function createServer(req: Request) {
     },
   );
 
+  // ── get_taste_card ───────────────────────────────────────────────
+  // Read ONE published card by its slug (from a shared link). Deliberately no
+  // list or search companion: taste cards are shared person to person, never
+  // browsed as a directory.
+  server.tool(
+    'get_taste_card',
+    'Read a published VIA taste card by its slug: the public, human-curated identity subset (references, obsessions, aesthetic words, anti-references) plus the member agent address. Cards are shared by their owners; there is no directory or search. Returns not_published for unknown or unpublished slugs.',
+    {
+      slug: z.string().min(3).max(40).describe('The card slug from a shared link, e.g. app.getvia.xyz/taste/<slug>.'),
+    },
+    async ({ slug }) => {
+      const card = await getPublishedCardBySlug(slug);
+      if (!card) return asJson({ status: 'not_published', message: 'No published taste card at this slug.' });
+      return asJson({ ...cardJson(card), card_url: cardUrl(card) });
+    },
+  );
+
   return server;
 }
 
@@ -549,7 +567,7 @@ export async function GET() {
     description: 'VIA Labs central discovery MCP. POST JSON-RPC to this endpoint to call tools.',
     protocol:    'MCP Streamable HTTP',
     base:        APP_BASE,
-    tools:       ['list_sellers', 'find_seller', 'get_seller_products', 'seller_mcp_url', 'get_via_overview', 'register_store', 'get_store_status', 'import_preference_appraisal'],
+    tools:       ['list_sellers', 'find_seller', 'get_seller_products', 'seller_mcp_url', 'get_via_overview', 'register_store', 'get_store_status', 'import_preference_appraisal', 'get_taste_card'],
   });
 }
 

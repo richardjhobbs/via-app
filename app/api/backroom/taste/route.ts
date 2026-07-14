@@ -1,51 +1,43 @@
 /**
  * Back Room taste profile: read and save.
  *
- * GET  ?handle=<buyer>   , the member's active taste profile (empty if none).
- * PUT  { handle, fields } , save an edited profile (the member owns and edits it).
+ * GET  ?ref=<member>      , the member's active taste profile (empty if none).
+ * PUT  { ref, fields }    , save an edited profile (the member owns and edits it).
  *
- * The profile is the member's own. Only the signed-in owner of the buyer handle
- * may read or write it (same owner session as the buyer admin).
+ * The profile is the member's own. Any of the four member kinds may hold one;
+ * the signed-in session must own the ref (buyer handle, seller slug, or the
+ * federated RRG brand session). `handle` is accepted as an alias for `ref`.
  */
 import { NextResponse } from 'next/server';
-import { db } from '@/lib/app/db';
-import { getBuyerUser } from '@/lib/app/buyer-auth';
-import { getActiveProfile, saveProfile, EMPTY_TASTE, type TasteFields } from '@/lib/app/backroom/taste';
+import { resolveOwnedMember } from '@/lib/app/backroom/ui-auth';
+import { getActiveProfile, getDraftProfile, saveProfile, EMPTY_TASTE, type TasteFields } from '@/lib/app/backroom/taste';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 
-async function requireOwnedBuyer(handle: string): Promise<{ ok: true } | { ok: false; res: NextResponse }> {
-  const user = await getBuyerUser();
-  if (!user) return { ok: false, res: NextResponse.json({ error: 'not authenticated' }, { status: 401 }) };
-  const { data } = await db
-    .from('app_buyers')
-    .select('owner_user_id')
-    .eq('handle', handle)
-    .maybeSingle();
-  if (!data || (data as { owner_user_id: string }).owner_user_id !== user.id) {
-    return { ok: false, res: NextResponse.json({ error: 'not authorized for this member' }, { status: 403 }) };
-  }
-  return { ok: true };
-}
-
 export async function GET(req: Request) {
-  const handle = new URL(req.url).searchParams.get('handle')?.trim() ?? '';
-  if (!handle) return NextResponse.json({ error: 'handle required' }, { status: 400 });
-  const auth = await requireOwnedBuyer(handle);
-  if (!auth.ok) return auth.res;
+  const params = new URL(req.url).searchParams;
+  const ref = (params.get('ref') ?? params.get('handle'))?.trim() ?? '';
+  if (!ref) return NextResponse.json({ error: 'ref required' }, { status: 400 });
+  const auth = await resolveOwnedMember(ref);
+  if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
+  const m = auth.member;
 
-  const profile = await getActiveProfile('via', 'buyer', handle);
-  return NextResponse.json({ handle, profile: profile ?? { id: null, version: 0, ...EMPTY_TASTE } });
+  const profile = await getActiveProfile(m.member_platform, m.member_type, m.member_ref);
+  // Surface a pending agent-drafted profile (brand seeding) only while there is
+  // no active profile; a human save consumes the draft.
+  const draft = profile ? null : await getDraftProfile(m.member_platform, m.member_type, m.member_ref);
+  return NextResponse.json({ ref, handle: ref, member: m, profile: profile ?? { id: null, version: 0, ...EMPTY_TASTE }, draft });
 }
 
 export async function PUT(req: Request) {
-  let body: { handle?: string; fields?: Partial<TasteFields> };
+  let body: { ref?: string; handle?: string; fields?: Partial<TasteFields> };
   try { body = await req.json(); } catch { return NextResponse.json({ error: 'invalid JSON' }, { status: 400 }); }
-  const handle = body.handle?.trim() ?? '';
-  if (!handle) return NextResponse.json({ error: 'handle required' }, { status: 400 });
-  const auth = await requireOwnedBuyer(handle);
-  if (!auth.ok) return auth.res;
+  const ref = (body.ref ?? body.handle)?.trim() ?? '';
+  if (!ref) return NextResponse.json({ error: 'ref required' }, { status: 400 });
+  const auth = await resolveOwnedMember(ref);
+  if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
+  const m = auth.member;
 
   const f = body.fields ?? {};
   const fields: TasteFields = {
@@ -55,6 +47,6 @@ export async function PUT(req: Request) {
     anti_references: Array.isArray(f.anti_references) ? f.anti_references.map(String) : [],
     voice_text: typeof f.voice_text === 'string' ? f.voice_text : '',
   };
-  const saved = await saveProfile('via', 'buyer', handle, fields);
-  return NextResponse.json({ handle, profile: saved });
+  const saved = await saveProfile(m.member_platform, m.member_type, m.member_ref, fields);
+  return NextResponse.json({ ref, handle: ref, member: m, profile: saved });
 }

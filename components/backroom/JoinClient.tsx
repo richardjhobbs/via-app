@@ -7,7 +7,7 @@
 import { useState } from 'react';
 import Link from 'next/link';
 
-interface TokenInvite { room_id: string; room_name: string; inviter_ref: string; why: string; }
+interface TokenInvite { room_id: string; room_name: string; inviter_ref: string; why: string; inviter_card_slug?: string | null; }
 
 export function JoinClient({ token, invite, memberRef, memberLabel }: {
   token: string;
@@ -49,7 +49,17 @@ export function JoinClient({ token, invite, memberRef, memberLabel }: {
           <h1 className="br-serif" style={{ fontSize: 32, fontWeight: 400, margin: '10px 0 6px', lineHeight: 1.15 }}>
             You are invited to {invite.room_name}.
           </h1>
-          <p className="br-sans" style={{ fontSize: 15, color: 'var(--ink-3)', margin: '0 0 16px' }}>Vouched by {invite.inviter_ref}.</p>
+          <p className="br-sans" style={{ fontSize: 15, color: 'var(--ink-3)', margin: '0 0 16px' }}>
+            Vouched by {invite.inviter_ref}.
+            {invite.inviter_card_slug && (
+              <>
+                {' '}
+                <a href={`/taste/${invite.inviter_card_slug}`} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--accent)' }}>
+                  See who they are, in their own words
+                </a>
+              </>
+            )}
+          </p>
           {invite.why && (
             <p className="br-serif" style={{ fontSize: 19, color: 'var(--ink)', lineHeight: 1.5, borderLeft: '2px solid var(--accent)', paddingLeft: 14, margin: '0 0 28px' }}>
               {invite.why}

@@ -6,6 +6,7 @@
   "crons": [
     { "path": "/api/cron/cleanup-intents", "schedule": "47 3 * * *" },
     { "path": "/api/cron/drain-erc8004-signals", "schedule": "30 3 * * *" },
-    { "path": "/api/cron/sync-rrg-memories", "schedule": "15 4 * * *" }
+    { "path": "/api/cron/sync-rrg-memories", "schedule": "15 4 * * *" },
+    { "path": "/api/cron/match-taste", "schedule": "20 5 * * 1" }
   ]
 }

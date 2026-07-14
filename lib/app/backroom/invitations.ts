@@ -6,6 +6,7 @@
 import crypto from 'crypto';
 import { db } from '../db';
 import { joinRoom, type Author, type MemberPlatform, type MemberType } from './rooms';
+import { getPublishedCardForMember } from './taste-cards';
 
 export interface InviterRef { platform: MemberPlatform; type: MemberType; ref: string; }
 
@@ -165,13 +166,21 @@ export async function respondAgentInvite(inviteId: string, member: Author, accep
   return { outcome: res.outcome as 'full' | 'blocked' };
 }
 
-export interface TokenInvite { room_id: string; room_name: string; inviter_ref: string; why: string; }
+export interface TokenInvite {
+  room_id: string;
+  room_name: string;
+  inviter_ref: string;
+  why: string;
+  /** The inviter's published taste card, when they have one: the invitation's
+   *  "who is asking", in the inviter's own words. */
+  inviter_card_slug: string | null;
+}
 
 /** Look up a person invitation by its token (for the join page). */
 export async function invitationByToken(token: string): Promise<TokenInvite | null> {
   const { data } = await db
     .from('app_room_invitations')
-    .select('room_id, inviter_ref, why, status, expires_at, app_rooms!inner(name, status)')
+    .select('room_id, inviter_platform, inviter_type, inviter_ref, why, status, expires_at, app_rooms!inner(name, status)')
     .eq('kind', 'person')
     .eq('invite_token', token)
     .maybeSingle();
@@ -181,7 +190,18 @@ export async function invitationByToken(token: string): Promise<TokenInvite | nu
   if (r.expires_at && new Date(String(r.expires_at)) < new Date()) return null;
   const room = (Array.isArray(r.app_rooms) ? r.app_rooms[0] : r.app_rooms) as { name: string; status: string };
   if (room.status !== 'active') return null;
-  return { room_id: String(r.room_id), room_name: room.name, inviter_ref: String(r.inviter_ref), why: String(r.why ?? '') };
+  const inviterCard = await getPublishedCardForMember(
+    r.inviter_platform as MemberPlatform,
+    r.inviter_type as MemberType,
+    String(r.inviter_ref),
+  );
+  return {
+    room_id: String(r.room_id),
+    room_name: room.name,
+    inviter_ref: String(r.inviter_ref),
+    why: String(r.why ?? ''),
+    inviter_card_slug: inviterCard?.slug ?? null,
+  };
 }
 
 /** Redeem a person invitation for a now-registered member: join and mark accepted. */

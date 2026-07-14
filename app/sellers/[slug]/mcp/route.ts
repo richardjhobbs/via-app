@@ -35,6 +35,7 @@ import { isVoucherProduct, availableVoucherCount } from '@/lib/app/vouchers';
 import { isGuestListProduct, claimEventPass } from '@/lib/app/event-passes';
 import { issueDownloadChallenge, verifyDownloadChallenge } from '@/lib/app/store-auth';
 import { enrichmentFromMetadata } from '@/lib/app/via-product';
+import { getPublishedCardForMember, cardJson, cardUrl } from '@/lib/app/backroom/taste-cards';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -445,6 +446,24 @@ function createServer(seller: SellerRow, req: Request) {
       const t0 = Date.now();
       const out = asJson(publicSellerInfo(seller));
       void logInteraction(seller.id, 'get_seller_info', identity, {}, { ok: true }, 200, Date.now() - t0);
+      return out;
+    },
+  );
+
+  // ── get_taste_card ───────────────────────────────────────────────
+  server.tool(
+    'get_taste_card',
+    `Read ${seller.name}'s published taste card: the public, human-curated identity subset (references, obsessions, aesthetic words, anti-references). Returns not_published if the seller has not published a card. The full taste profile is private and never exposed.`,
+    {},
+    async () => {
+      const t0 = Date.now();
+      const card = await getPublishedCardForMember('via', 'seller', seller.slug);
+      if (!card) {
+        void logInteraction(seller.id, 'get_taste_card', identity, {}, { status: 'not_published' }, 404, Date.now() - t0);
+        return asJson({ status: 'not_published', message: 'This seller has not published a taste card.' });
+      }
+      const out = asJson({ ...cardJson(card), card_url: cardUrl(card) });
+      void logInteraction(seller.id, 'get_taste_card', identity, {}, { slug: card.slug }, 200, Date.now() - t0);
       return out;
     },
   );

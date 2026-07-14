@@ -40,11 +40,13 @@ export const VIA_NOSTR_VERSION = 'via-1';
 export const KIND_DEMAND = Number(process.env.NOSTR_VIA_DEMAND_KIND ?? '30495');
 export const KIND_INTENT_REQUEST = Number(process.env.NOSTR_VIA_INTENT_KIND ?? '30496');
 export const KIND_OFFER_RECEIPT = Number(process.env.NOSTR_VIA_OFFER_KIND ?? '30497');
+export const KIND_TASTE_TEASER = Number(process.env.NOSTR_VIA_TASTE_KIND ?? '30498');
 
 /** Namespace `t` tags so a single relay subscription selects only VIA events. */
 export const T_DEMAND = 'via-demand';
 export const T_INTENT_REQUEST = 'via-intent-request';
 export const T_OFFER_RECEIPT = 'via-offer-receipt';
+export const T_TASTE = 'via-taste';
 
 const USDC_BASE = '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913';
 const NETWORK = 'base';
@@ -226,6 +228,61 @@ export function buildOfferReceiptEvent(o: OfferReceiptInput): EventTemplate {
     + `${o.priceUsdc != null ? ` for ${o.priceUsdc} USDC` : ''}. Accept by buying it through VIA (see buy.via_mcp_url).\n`
     + JSON.stringify(machine);
   return { kind: KIND_OFFER_RECEIPT, created_at: Math.floor(Date.now() / 1000), tags, content };
+}
+
+/**
+ * The published-card fields a taste teaser samples from. Deliberately NOT the
+ * card itself: no slug, no display name, no member ref, no door URL. The
+ * teaser is a corpus/reach artifact (kind 30498, VIA Taste); connection only
+ * ever happens through published cards and the Door, so an anonymised sketch
+ * on the open rail can never be walked back to a person by itself.
+ */
+export interface TasteTeaserInput {
+  /** Opaque uuid minted with the card; the addressable `d` tag. Never the slug. */
+  teaser_d:        string;
+  member_type:     'buyer' | 'seller';
+  vocab:           string[];
+  references:      string[];
+  anti_references: string[];
+}
+
+/**
+ * Build the addressable VIA Taste event for a published card. `d` = the card's
+ * opaque teaser_d, so re-publishing replaces and unpublishing flips `status`
+ * to closed. Content carries one human line plus a machine block sampled from
+ * the PUBLISHED card subset (already the public tier), capped smaller still.
+ */
+export function buildTasteTeaserEvent(input: TasteTeaserInput, opts?: { status?: 'open' | 'closed' }): EventTemplate {
+  const status = opts?.status ?? 'open';
+  const machine = {
+    v: VIA_NOSTR_VERSION,
+    type: T_TASTE,
+    teaser_id: input.teaser_d,
+    member_kind: input.member_type,
+    vocab: input.vocab.slice(0, 6),
+    references_sketch: input.references.slice(0, 6),
+    anti_sketch: input.anti_references.slice(0, 3),
+    status,
+  };
+
+  const tags: string[][] = [
+    ['d', input.teaser_d],
+    ['t', T_TASTE],
+    ['status', status],
+    ['v', VIA_NOSTR_VERSION],
+  ];
+
+  const content = status === 'closed'
+    ? `VIA taste teaser CLOSED.\n${JSON.stringify(machine)}`
+    : 'A member of the VIA back room with this sensibility exists.\n'
+      + JSON.stringify(machine);
+
+  return {
+    kind: KIND_TASTE_TEASER,
+    created_at: Math.floor(Date.now() / 1000),
+    tags,
+    content,
+  };
 }
 
 /** Structured demand an external agent submits over NOSTR (parsed by the inbound

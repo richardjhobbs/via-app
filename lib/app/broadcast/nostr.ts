@@ -22,7 +22,7 @@ import { SimplePool, useWebSocketImplementation } from 'nostr-tools/pool';
 import { nip19 } from 'nostr-tools';
 import WebSocket from 'ws';
 import type { TeaserBrief } from '../demand';
-import { buildDemandEvent, buildHumanNote, buildOfferReceiptEvent, type OfferReceiptInput } from './nostr-protocol';
+import { buildDemandEvent, buildHumanNote, buildOfferReceiptEvent, buildTasteTeaserEvent, type OfferReceiptInput, type TasteTeaserInput } from './nostr-protocol';
 
 // Node has no dependable global WebSocket across versions; give nostr-tools one.
 useWebSocketImplementation(WebSocket as unknown as typeof globalThis.WebSocket);
@@ -158,4 +158,11 @@ export async function publishTeaserToNostr(teaser: TeaserBrief): Promise<NostrPu
  *  so it can accept by settling THROUGH VIA. Best-effort, never throws. */
 export async function publishOfferReceiptToNostr(input: OfferReceiptInput): Promise<NostrPublishResult> {
   return publishSignedEvent(buildOfferReceiptEvent(input));
+}
+
+/** Publish (or close) the anonymised taste teaser for a published card (VIA
+ *  Taste event, kind 30498). Addressable on the card's opaque teaser_d, so
+ *  publish replaces and unpublish closes. Best-effort, never throws. */
+export async function publishTasteTeaserToNostr(input: TasteTeaserInput, status: 'open' | 'closed' = 'open'): Promise<NostrPublishResult> {
+  return publishSignedEvent(buildTasteTeaserEvent(input, { status }));
 }

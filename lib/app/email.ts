@@ -933,6 +933,7 @@ export async function sendRoomInviteEmail({
   why,
   ctaUrl,
   mode,
+  inviterCardUrl,
 }: {
   to: string;
   roomName: string;
@@ -940,6 +941,8 @@ export async function sendRoomInviteEmail({
   why?: string | null;
   ctaUrl: string;
   mode: 'person' | 'agent';
+  /** The inviter's published taste card, if they have one. */
+  inviterCardUrl?: string | null;
 }): Promise<void> {
   if (!to) return;
   const lead = mode === 'person'
@@ -975,6 +978,7 @@ export async function sendRoomInviteEmail({
     <div class="body">
       <p class="copy">${lead}</p>
       ${why ? `<p class="lbl">Why you</p><div class="why">${escHtml(why)}</div>` : ''}
+      ${inviterCardUrl ? `<p class="copy">See who is inviting you, in their own words: <a href="${inviterCardUrl}" style="color:#1a1612;">their taste card</a>.</p>` : ''}
       <a class="btn" href="${ctaUrl}" style="color:#faf7f2;text-decoration:none;">${ctaLabel}</a>
     </div>
   </div>
