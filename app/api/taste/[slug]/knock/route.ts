@@ -16,7 +16,7 @@
 import { NextResponse } from 'next/server';
 import { sessionMembers, resolveOwnedMember } from '@/lib/app/backroom/ui-auth';
 import { getPublishedCardBySlug, getPublishedCardForMember, type TasteCard } from '@/lib/app/backroom/taste-cards';
-import { proposeIntroduction, type Party } from '@/lib/app/backroom/introductions';
+import { registerKnock, type Party } from '@/lib/app/backroom/introductions';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -90,9 +90,10 @@ export async function POST(req: Request, { params }: { params: Promise<{ slug: s
     member_type: target.member_type,
     member_ref: target.member_ref,
   };
-  await proposeIntroduction(knocker!, targetParty, knockContextPack(knockerCard, target));
+  await registerKnock(knocker!, targetParty, knockContextPack(knockerCard, target));
 
-  // Neutral either way: 'proposed' and 'exists' answer identically so a knock
-  // can never be used to probe prior state or a silent decline.
+  // Neutral either way: a fresh knock and a re-knock answer identically, so a
+  // knock can never be used to probe prior state or a silent decline. The
+  // knocker has opted in; the recipient accepting at their Door connects them.
   return NextResponse.json({ ok: true, message: 'Knock delivered.' });
 }

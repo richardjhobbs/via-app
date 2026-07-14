@@ -122,6 +122,14 @@
   font-family: var(--font-sans);
 }
 
+/* A soft pulse for a pending knock: presence without a loud badge. */
+@keyframes br-pulse {
+  0%   { box-shadow: 0 0 0 0 rgba(168, 68, 58, 0.5); }
+  70%  { box-shadow: 0 0 0 9px rgba(168, 68, 58, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(168, 68, 58, 0); }
+}
+.br-pulse { animation: br-pulse 1.8s ease-out infinite; }
+
 * { box-sizing: border-box; }
 html, body { margin: 0; padding: 0; }
 

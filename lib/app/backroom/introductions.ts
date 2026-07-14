@@ -19,12 +19,57 @@
  * (platform, kind, ref).
  */
 import { db } from '../db';
+import { createRoom, joinRoom, RoomNameTakenError, type Author } from './rooms';
+import { getCardForMember } from './taste-cards';
 
 export type MemberPlatform = 'via' | 'rrg';
 export type MemberType = 'buyer' | 'seller';
 export type IntroStatus = 'proposed' | 'accepted' | 'declined' | 'connected';
 
 export interface Party { member_platform: MemberPlatform; member_type: MemberType; member_ref: string; }
+
+// ── Connection -> room ───────────────────────────────────────────────
+// When two members connect, a room forms and seats them both. This is the
+// roadmap's exit from the introduction: agents matched, humans accepted, now
+// they have a private place to make something. Best-effort: a failure here
+// must not undo the connection, so callers log and carry on.
+
+async function partyName(p: Party): Promise<string> {
+  const card = await getCardForMember(p.member_platform, p.member_type, p.member_ref);
+  return (card?.display_name || p.member_ref).trim();
+}
+
+// A federated (RRG) member has no locally-resolvable wallet; take it from the
+// wallet snapshot on their published card. VIA members resolve in joinRoom.
+async function partyWallet(p: Party): Promise<string | null> {
+  if (p.member_platform !== 'rrg') return null;
+  const card = await getCardForMember(p.member_platform, p.member_type, p.member_ref);
+  return card?.agent_identity.agent_wallet ?? null;
+}
+
+/**
+ * Form the room for a freshly connected pair and seat both as founders. Returns
+ * the new room id, or null if room creation failed (the connection still holds).
+ */
+export async function createRoomForConnection(a: Party, b: Party): Promise<string | null> {
+  try {
+    const [an, bn, aw, bw] = await Promise.all([partyName(a), partyName(b), partyWallet(a), partyWallet(b)]);
+    const base = `${an} and ${bn}`.slice(0, 56);
+    let room = null;
+    for (let n = 0; n < 6 && !room; n++) {
+      const name = n === 0 ? base : `${base} ${n + 1}`.slice(0, 60);
+      try { room = await createRoom({ name, created_from: 'introduction', createdBy: a as Author }); }
+      catch (e) { if (!(e instanceof RoomNameTakenError)) throw e; }
+    }
+    if (!room) return null;
+    await joinRoom(room.id, a as Author, null, true, aw);
+    await joinRoom(room.id, b as Author, a.member_ref, true, bw);
+    return room.id;
+  } catch (e) {
+    console.warn(`[introductions] room-from-connection failed (non-fatal): ${e instanceof Error ? e.message : e}`);
+    return null;
+  }
+}
 
 export interface IntroductionRow {
   id: string;
@@ -110,8 +155,26 @@ export async function listKnocksForMember(platform: MemberPlatform, ref: string)
 export type RespondResult =
   | { outcome: 'declined' }
   | { outcome: 'accepted_waiting' }
-  | { outcome: 'connected' }
+  | { outcome: 'connected'; room_id: string | null }
   | { outcome: 'not_found' };
+
+/** Mark one side connected: flip both accepted, set status, form the room. */
+async function connect(row: IntroductionRow, meIsA: boolean): Promise<{ outcome: 'connected'; room_id: string | null }> {
+  await db
+    .from('app_introductions')
+    .update({
+      [meIsA ? 'a_accepted' : 'b_accepted']: true,
+      status: 'connected',
+      connected_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', row.id);
+  const a: Party = { member_platform: row.a_platform, member_type: row.a_type, member_ref: row.a_ref };
+  const b: Party = { member_platform: row.b_platform, member_type: row.b_type, member_ref: row.b_ref };
+  const roomId = await createRoomForConnection(a, b);
+  await db.from('app_introductions').update({ room_id: roomId }).eq('id', row.id);
+  return { outcome: 'connected', room_id: roomId };
+}
 
 /** A member answers a knock. Accepting is one of the three deliberate taps. */
 export async function respondToKnock(introId: string, platform: MemberPlatform, ref: string, accept: boolean): Promise<RespondResult> {
@@ -134,23 +197,61 @@ export async function respondToKnock(introId: string, platform: MemberPlatform, 
     return { outcome: 'declined' };
   }
 
+  // The other side has already opted in (a knock pre-accepts the knocker, or a
+  // matcher intro whose counterpart accepted first): accepting connects, and a
+  // room forms.
   const otherAccepted = a ? row.b_accepted : row.a_accepted;
-  if (otherAccepted === true) {
-    await db
-      .from('app_introductions')
-      .update({
-        [a ? 'a_accepted' : 'b_accepted']: true,
-        status: 'connected',
-        connected_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      })
-      .eq('id', introId);
-    return { outcome: 'connected' };
-  }
+  if (otherAccepted === true) return connect(row, a);
 
   await db
     .from('app_introductions')
     .update({ [a ? 'a_accepted' : 'b_accepted']: true, status: 'accepted', updated_at: new Date().toISOString() })
     .eq('id', introId);
   return { outcome: 'accepted_waiting' };
+}
+
+export type KnockResult =
+  | { outcome: 'knocked' }
+  | { outcome: 'connected'; room_id: string | null };
+
+/**
+ * A member knocks on another's card: this IS the knocker's opt-in. If no
+ * introduction exists yet, one is created with the knocker already accepted, so
+ * the recipient accepting alone connects them. If an introduction already
+ * exists (e.g. the matcher proposed this pair), the knock records the knocker's
+ * acceptance on their side, connecting immediately when the other side had
+ * already accepted. Order-independent on the pair, like proposeIntroduction.
+ */
+export async function registerKnock(knocker: Party, target: Party, contextPack: Record<string, unknown>): Promise<KnockResult> {
+  const matchA = `and(a_platform.eq.${knocker.member_platform},a_ref.eq.${knocker.member_ref},b_platform.eq.${target.member_platform},b_ref.eq.${target.member_ref})`;
+  const matchB = `and(a_platform.eq.${target.member_platform},a_ref.eq.${target.member_ref},b_platform.eq.${knocker.member_platform},b_ref.eq.${knocker.member_ref})`;
+  const { data: existing } = await db
+    .from('app_introductions')
+    .select('id, a_platform, a_type, a_ref, b_platform, b_type, b_ref, a_accepted, b_accepted, status')
+    .or(`${matchA},${matchB}`)
+    .maybeSingle();
+
+  if (!existing) {
+    await db
+      .from('app_introductions')
+      .insert({
+        a_platform: knocker.member_platform, a_type: knocker.member_type, a_ref: knocker.member_ref,
+        b_platform: target.member_platform, b_type: target.member_type, b_ref: target.member_ref,
+        a_accepted: true,        // the knock is the knocker's acceptance
+        status: 'accepted',      // waiting on the recipient at their Door
+        context_pack: contextPack,
+      });
+    return { outcome: 'knocked' };
+  }
+
+  const row = existing as IntroductionRow;
+  const knockerIsA = row.a_platform === knocker.member_platform && row.a_ref === knocker.member_ref;
+  const otherAccepted = knockerIsA ? row.b_accepted : row.a_accepted;
+  if (otherAccepted === true) return connect(row, knockerIsA);
+
+  await db
+    .from('app_introductions')
+    .update({ [knockerIsA ? 'a_accepted' : 'b_accepted']: true, status: 'accepted', updated_at: new Date().toISOString() })
+    .eq('id', row.id);
+  return { outcome: 'knocked' };
 }

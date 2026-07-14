@@ -33,6 +33,7 @@ export function BackroomHub({ handle, platform, memberType, label, rooms }: { ha
   const [creating, setCreating] = useState(false);
   const [createErr, setCreateErr] = useState<string | null>(null);
   const [invites, setInvites] = useState<Invite[]>([]);
+  const [knockCount, setKnockCount] = useState(0);
 
   const loadInvites = useCallback(async () => {
     if (!handle) return;
@@ -40,7 +41,13 @@ export function BackroomHub({ handle, platform, memberType, label, rooms }: { ha
     if (res.ok) { const j = await res.json() as { invites: Invite[] }; setInvites(j.invites); }
   }, [handle]);
 
-  useEffect(() => { void loadInvites(); }, [loadInvites]);
+  const loadKnocks = useCallback(async () => {
+    if (!handle) return;
+    const res = await fetch(`/api/backroom/door?ref=${encodeURIComponent(handle)}`);
+    if (res.ok) { const j = await res.json() as { count: number }; setKnockCount(j.count ?? 0); }
+  }, [handle]);
+
+  useEffect(() => { void loadInvites(); void loadKnocks(); }, [loadInvites, loadKnocks]);
 
   async function respondInvite(id: string, accept: boolean, roomId: string) {
     const res = await fetch(`/api/backroom/invitations/${id}/respond`, {
@@ -137,7 +144,7 @@ export function BackroomHub({ handle, platform, memberType, label, rooms }: { ha
             </div>
           ))}
           <HubLink href={`/you?ref=${encodeURIComponent(handle)}`} title="Your card" desc="Who you are, in your words: what you do, where you are, what you love. Build it and share it." />
-          <HubLink href={`/door?ref=${encodeURIComponent(handle)}`} title="The Door" desc="Where introductions arrive. Accept, decline, or leave them." />
+          <HubLink href={`/door?ref=${encodeURIComponent(handle)}`} title="The Door" desc={knockCount > 0 ? `${knockCount} ${knockCount === 1 ? 'knock is' : 'knocks are'} waiting. Accept, decline, or leave them.` : 'Where introductions arrive. Accept, decline, or leave them.'} badge={knockCount} />
           {rooms.length === 0 ? (
             <div style={cardStyle}>
               <p className="br-serif" style={{ fontSize: 18, margin: 0 }}>Your rooms</p>
@@ -200,12 +207,25 @@ const cardStyle: React.CSSProperties = {
   background: 'var(--paper)', textDecoration: 'none',
 };
 
-function HubLink({ href, title, desc, accent }: { href: string; title: string; desc: string; accent?: string }) {
+function HubLink({ href, title, desc, accent, badge }: { href: string; title: string; desc: string; accent?: string; badge?: number }) {
+  const hasBadge = (badge ?? 0) > 0;
   return (
-    <Link href={href} style={cardStyle}>
+    <Link href={href} style={hasBadge ? { ...cardStyle, borderColor: 'var(--danger)' } : cardStyle}>
       <span style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
         {accent && <span style={{ display: 'inline-block', width: 10, height: 10, borderRadius: 999, background: accent }} />}
         <span className="br-serif" style={{ fontSize: 18, color: 'var(--ink)' }}>{title}</span>
+        {hasBadge && (
+          <span
+            className="br-pulse"
+            style={{
+              display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+              minWidth: 20, height: 20, padding: '0 6px', borderRadius: 999,
+              background: 'var(--danger)', color: '#fff', fontSize: 12, fontWeight: 600,
+            }}
+          >
+            {badge}
+          </span>
+        )}
       </span>
       <span className="br-sans" style={{ display: 'block', fontSize: 14, color: 'var(--ink-3)', marginTop: 4 }}>{desc}</span>
     </Link>

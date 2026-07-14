@@ -21,6 +21,7 @@ export function DoorClient({ handle }: { handle: string }) {
   const [loaded, setLoaded] = useState(false);
   const [note, setNote] = useState<string | null>(null);
   const [noteCardSlug, setNoteCardSlug] = useState<string | null>(null);
+  const [noteRoomId, setNoteRoomId] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
 
   useEffect(() => {
@@ -43,17 +44,19 @@ export function DoorClient({ handle }: { handle: string }) {
       body: JSON.stringify({ handle, intro_id: introId, accept }),
     });
     if (res.ok) {
-      const json = await res.json() as { outcome: string };
+      const json = await res.json() as { outcome: string; room_id?: string | null };
       const answered = knocks.find((k) => k.id === introId);
       setKnocks((ks) => ks.filter((k) => k.id !== introId));
       // Only an accept is acknowledged; a decline leaves nothing behind.
       if (accept) {
         const connected = json.outcome === 'connected';
-        setNote(connected ? 'Connected. A room can form when you are both ready.' : 'Accepted. If they accept too, you connect.');
+        setNote(connected ? 'Connected. Your room is ready.' : 'Accepted. If they accept too, you connect and a room forms.');
         setNoteCardSlug(connected ? answered?.other_card_slug ?? null : null);
+        setNoteRoomId(connected ? json.room_id ?? null : null);
       } else {
         setNote(null);
         setNoteCardSlug(null);
+        setNoteRoomId(null);
       }
     }
     setBusyId(null);
@@ -68,19 +71,27 @@ export function DoorClient({ handle }: { handle: string }) {
   }
 
   return (
-    <main style={{ maxWidth: 560, margin: '0 auto', padding: '56px 20px 120px' }}>
+    <main style={{ maxWidth: 560, margin: '0 auto', padding: '32px 20px 120px' }}>
+      <a href="/backroom" className="br-sans" style={{ display: 'inline-block', marginBottom: 20, fontSize: 13, color: 'var(--ink-3)', textDecoration: 'none' }}>
+        &larr; The Back Room
+      </a>
       <p className="br-sans" style={{ fontSize: 12, letterSpacing: '0.14em', textTransform: 'uppercase', color: 'var(--ink-3)' }}>The Door</p>
 
       {note && (
-        <p className="br-serif" style={{ fontSize: 20, color: 'var(--ink)', marginTop: 20 }}>
-          {note}
-          {noteCardSlug && (
-            <>
-              {' '}
-              <a href={`/taste/${noteCardSlug}`} className="br-sans" style={{ fontSize: 15, color: 'var(--accent)' }}>Their card</a>
-            </>
-          )}
-        </p>
+        <div style={{ marginTop: 20 }}>
+          <p className="br-serif" style={{ fontSize: 20, color: 'var(--ink)', margin: 0 }}>{note}</p>
+          <div style={{ display: 'flex', gap: 14, marginTop: 10, alignItems: 'center' }}>
+            {noteRoomId && (
+              <a href={`/room/${noteRoomId}?handle=${encodeURIComponent(handle)}`} className="br-sans"
+                style={{ display: 'inline-block', padding: '10px 22px', borderRadius: 999, border: '1px solid var(--ink)', background: 'var(--ink)', color: 'var(--bg)', fontSize: 14, textDecoration: 'none' }}>
+                Open your room
+              </a>
+            )}
+            {noteCardSlug && (
+              <a href={`/taste/${noteCardSlug}`} className="br-sans" style={{ fontSize: 14, color: 'var(--accent)' }}>Their card</a>
+            )}
+          </div>
+        </div>
       )}
 
       {loaded && knocks.length === 0 && !note && (
