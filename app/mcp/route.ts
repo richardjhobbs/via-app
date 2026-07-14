@@ -7,12 +7,16 @@
  * app_sellers / app_seller_products (this app has the live data; the marketing
  * site queries the same Supabase project but is rebuilt less often).
  *
- * Tools (10):
+ * Tools (13):
  *   list_sellers      : active VIA sellers, paginated, with per-seller MCP URL
  *   find_seller       : product + seller search; returns product-level results
  *                       (direct web_url + mcp_ref) or need_more_info when loose
  *   claim_pass        : claim a FREE guest-list pass directly from discovery (no
  *                       payment, no x402); paid products stay on the seller x402 door
+ *   get_product       : gateway to full listing detail, forwarded to the owning seller
+ *   get_shipping_quote: gateway to shipping cost for a country, forwarded to the seller
+ *   buy_product       : gateway to a paid order + the x402 requirement, forwarded to
+ *                       the owning seller; settles at /api/x402/purchase
  *   submit_intent     : submit a buyer's intent; the full agentic matcher returns
  *                       genuine matches (requirements enforced) across the network
  *   find_buyers       : discover live DEMAND , buyers whose open briefs match what
@@ -37,6 +41,7 @@ import { verifyMindLinkToken } from '@/lib/app/minds-link';
 import { PreferenceAppraisalSchema, importPreferenceAppraisal } from '@/lib/app/minds-appraisal';
 import { getPublishedCardBySlug, cardJson, cardUrl } from '@/lib/app/backroom/taste-cards';
 import { claimEventPass } from '@/lib/app/event-passes';
+import { forwardMcpTool } from '@/lib/app/mcp-forward';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -129,7 +134,7 @@ function createServer(req: Request) {
     'List active sellers across the VIA network (VIA app + RRG + integrated platforms). Each result is tagged with its platform and includes the per-seller MCP URL to connect to for deeper interaction (list_products, ask_sales_agent, buy_product).',
     {
       category: z.enum(['product', 'service', 'mixed']).optional().describe('Optional kind filter (applies to VIA-app sellers only).'),
-      limit:    z.number().int().min(1).optional().describe('Optional cap on results. Omit to enumerate the ENTIRE network (no limit) — that is the default.'),
+      limit:    z.number().int().min(1).optional().describe('Optional cap on results. Omit to enumerate the ENTIRE network (no limit), which is the default.'),
     },
     async ({ category, limit }) => {
       // Enumerate ALL active VIA-app sellers. A fixed cap silently truncates the
@@ -271,6 +276,94 @@ function createServer(req: Request) {
         default:
           return asJson({ claimed: false, error: 'claim_failed', message: result.error ?? 'Could not record your place. Please retry.' });
       }
+    },
+  );
+
+  // ── Gateway: transact without leaving the connector ──────────────────
+  // get_product / get_shipping_quote / buy_product here FORWARD to the owning
+  // seller's MCP (resolved from a find_seller / get_seller_products result's
+  // mcp_ref.seller_mcp_url), so an agent on this one connector can go discovery
+  // -> detail -> quote -> buy -> settle without attaching a second endpoint.
+  // Forwarding reuses the per-seller MCP's full purchase logic (Stage-1 gate,
+  // vouchers, free-pass routing, delivery/attendee validation, stock, x402), so
+  // there is ONE implementation of each action and the gateway can never drift
+  // from it. Settlement is unaffected: buy_product returns an absolute
+  // /api/x402/purchase settle endpoint regardless of which MCP fronted the call.
+  const viaAgentId = req.headers.get('x-via-agent-id');
+  // VIA-native seller MCP (this app). Federated members (RRG) are reachable by
+  // the forwarder but their identifier/arg translation lands in a later slice;
+  // until then a member target returns an honest pointer, never a broken call.
+  const isViaSellerUrl = (url: string): boolean => {
+    try {
+      const u = new URL(url);
+      return (u.hostname === 'app.getvia.xyz' || u.hostname.endsWith('.getvia.xyz') || u.hostname === 'getvia.xyz')
+        && /^\/sellers\/[^/]+\/mcp\/?$/.test(u.pathname);
+    } catch { return false; }
+  };
+  const memberPending = (seller_mcp_url: string) => asJson({
+    status:  'member_gateway_pending',
+    message: 'Buying this network member\'s listings straight from this connector is being wired. For now, connect to the seller_mcp_url below and use its own get_product / buy_product tools.',
+    seller_mcp_url,
+  });
+
+  server.tool(
+    'get_product',
+    'Fetch full detail for ONE listing before buying, from anywhere on the network, without leaving this connector. Pass the seller_mcp_url and product_id exactly as they appear in a find_seller / get_seller_products result (mcp_ref.seller_mcp_url and mcp_ref.product_id). Returns the listing with price, stock, and what the purchase requires. This forwards to the owning seller; the same buy loop (get_product -> get_shipping_quote -> buy_product) then settles here.',
+    {
+      seller_mcp_url: z.string().min(1).describe('mcp_ref.seller_mcp_url from a find_seller / get_seller_products result.'),
+      product_id:     z.string().min(1).describe('The listing id from discovery (mcp_ref.product_id).'),
+    },
+    async ({ seller_mcp_url, product_id }) => {
+      if (!isViaSellerUrl(seller_mcp_url)) return memberPending(seller_mcp_url);
+      const r = await forwardMcpTool(seller_mcp_url, 'get_product', { product_id }, { viaAgentId });
+      return asJson(r.ok ? r.payload : { error: r.error ?? 'forward_failed', message: 'Could not reach the seller to fetch this listing. Retry, or connect to the seller_mcp_url directly.', seller_mcp_url });
+    },
+  );
+
+  server.tool(
+    'get_shipping_quote',
+    "Resolve a seller's shipping cost to a destination country before buying, without leaving this connector. Pass the seller_mcp_url from the listing's mcp_ref and the ISO 3166-1 alpha-2 country. Returns the flat rate, a per-order-quote signal, or a rejection. Call this before buy_product and pass buyer_country there to fold shipping into the total.",
+    {
+      seller_mcp_url: z.string().min(1).describe('mcp_ref.seller_mcp_url from a find_seller / get_seller_products result.'),
+      buyer_country:  z.string().min(2).max(2).describe('ISO 3166-1 alpha-2 destination country code (e.g. GB, US, JP).'),
+    },
+    async ({ seller_mcp_url, buyer_country }) => {
+      if (!isViaSellerUrl(seller_mcp_url)) return memberPending(seller_mcp_url);
+      const r = await forwardMcpTool(seller_mcp_url, 'get_shipping_quote', { buyer_country }, { viaAgentId });
+      return asJson(r.ok ? r.payload : { error: r.error ?? 'forward_failed', message: 'Could not reach the seller for a shipping quote. Retry, or connect to the seller_mcp_url directly.', seller_mcp_url });
+    },
+  );
+
+  server.tool(
+    'buy_product',
+    'Buy a listing from anywhere on the network, settled in USDC on Base, without leaving this connector. Pass the seller_mcp_url and product_id from the listing (mcp_ref). For physical products include the full delivery block; for event passes include the attendee block; the call rejects with the missing fields listed if any are blank. Free passes are not bought here: use claim_pass. Returns an x402 payment requirement and an order_ref, then settle at the absolute /api/x402/purchase endpoint it returns (sign an EIP-2612 USDC permit and POST { order_ref, x_payment }, OR send a raw USDC transfer to payTo and POST { order_ref, payment_tx_hash }). Call get_shipping_quote first and pass buyer_country to include shipping.',
+    {
+      seller_mcp_url: z.string().min(1).describe('mcp_ref.seller_mcp_url from a find_seller / get_seller_products result.'),
+      product_id:     z.string().min(1).describe('The listing id from discovery (mcp_ref.product_id).'),
+      qty:            z.number().int().min(1).max(1000).default(1),
+      buyer_wallet:   z.string().regex(/^0x[a-fA-F0-9]{40}$/, 'invalid Base wallet address').describe('The buyer wallet that will settle in USDC on Base.'),
+      buyer_agent_id: z.string().optional().describe("ERC-8004 agent id of the Buying Agent acting on the buyer's behalf."),
+      buyer_country:  z.string().length(2).optional().describe('ISO 3166-1 alpha-2 destination country. Required when the seller ships; folds the shipping quote into the total.'),
+      delivery:       z.object({
+        name:          z.string().min(1).max(200),
+        address_line1: z.string().min(1).max(200),
+        address_line2: z.string().max(200).optional(),
+        city:          z.string().min(1).max(120),
+        region:        z.string().max(120).optional(),
+        postcode:      z.string().min(1).max(40),
+        country:       z.string().length(2).describe('ISO 3166-1 alpha-2; must match buyer_country if both are supplied'),
+        phone:         z.string().min(4).max(40),
+      }).optional().describe('Required for physical products. Omit for digital / service.'),
+      attendee:       z.object({
+        name:    z.string().min(1).max(200).describe('Full name of the person the pass is for.'),
+        email:   z.string().email().max(200).describe('Email the organiser will send the pass and any follow-up to.'),
+        country: z.string().min(2).max(60).describe('Attendee country (name or ISO code), for the organiser.'),
+      }).optional().describe('Required for event passes.'),
+    },
+    async ({ seller_mcp_url, ...args }) => {
+      if (!isViaSellerUrl(seller_mcp_url)) return memberPending(seller_mcp_url);
+      const r = await forwardMcpTool(seller_mcp_url, 'buy_product', args, { viaAgentId });
+      return asJson(r.ok ? r.payload : { error: r.error ?? 'forward_failed', message: 'Could not reach the seller to place this order. Retry, or connect to the seller_mcp_url directly.', seller_mcp_url });
     },
   );
 
@@ -430,7 +523,10 @@ function createServer(req: Request) {
         list_sellers:     'Browse active sellers across the whole network',
         get_seller_products: 'Drill into one seller/brand catalogue (pass its mcp_url) to answer "is X available at seller Y", with prices, in-stock sizes, and direct product links.',
         find_seller:      'Search products and sellers across the whole network. Defined intent returns `results`, one relevance-ranked list blending every source. Each result has a working page_url (direct product page), image_url when one exists, and an mcp_ref to transact. Multiple matches should be shown with their differences. A loose / zero-match query returns need_more_info: ask a clarifying question or broaden, never say "nothing available".',
-        claim_pass:       'Claim a FREE guest-list pass ($0 tier) straight from discovery with name + email. No payment, no wallet, no x402. Paid products are not claimable here; buy those with buy_product at the seller MCP.',
+        claim_pass:       'Claim a FREE guest-list pass ($0 tier) straight from discovery with name + email. No payment, no wallet, no x402.',
+        get_product:      'Full detail for one listing before buying, forwarded to the owning seller. Pass mcp_ref.seller_mcp_url + mcp_ref.product_id from a discovery result.',
+        get_shipping_quote: 'Shipping cost to a country for a listing, forwarded to the seller. Call before buy_product.',
+        buy_product:      'Place a paid order from this connector: forwards to the owning seller, returns an x402 USDC requirement + order_ref, settle at /api/x402/purchase. Discovery -> get_product -> get_shipping_quote -> buy_product -> settle, all from one connector.',
         seller_mcp_url:   'Resolve a VIA-app slug to its per-seller MCP URL',
         register_store:   'Self-register a new store with a single payout wallet, the platform creates your identity wallet (pending human review)',
         get_store_status: 'Check whether your registered store is pending, approved, or rejected',
