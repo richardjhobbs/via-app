@@ -7,10 +7,12 @@
  * app_sellers / app_seller_products (this app has the live data; the marketing
  * site queries the same Supabase project but is rebuilt less often).
  *
- * Tools (9):
+ * Tools (10):
  *   list_sellers      : active VIA sellers, paginated, with per-seller MCP URL
  *   find_seller       : product + seller search; returns product-level results
  *                       (direct web_url + mcp_ref) or need_more_info when loose
+ *   claim_pass        : claim a FREE guest-list pass directly from discovery (no
+ *                       payment, no x402); paid products stay on the seller x402 door
  *   submit_intent     : submit a buyer's intent; the full agentic matcher returns
  *                       genuine matches (requirements enforced) across the network
  *   find_buyers       : discover live DEMAND , buyers whose open briefs match what
@@ -34,6 +36,7 @@ import { insertNotification } from '@/lib/app/notifications';
 import { verifyMindLinkToken } from '@/lib/app/minds-link';
 import { PreferenceAppraisalSchema, importPreferenceAppraisal } from '@/lib/app/minds-appraisal';
 import { getPublishedCardBySlug, cardJson, cardUrl } from '@/lib/app/backroom/taste-cards';
+import { claimEventPass } from '@/lib/app/event-passes';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -220,6 +223,57 @@ function createServer(req: Request) {
     },
   );
 
+  // ── claim_pass (free event passes — routed from discovery, no x402) ───
+  // The one action a buyer can complete straight from the network connector,
+  // because it involves no money: a FREE guest-list pass. claimEventPass
+  // validates the product is an active guest_list tier (price 0) and refuses
+  // anything else, so a paid product can never settle here — its x402 door on
+  // the per-seller MCP stays the only paid path (paid-door invariant).
+  server.tool(
+    'claim_pass',
+    "Claim a FREE entry pass to an event on the VIA network, directly from discovery. FREE guest-list tiers only (price 0, the kind find_seller / get_seller_products surface at $0). No payment, no wallet, no x402: provide the attendee name and email, and VIA records the place, emails a confirmation, and notifies the organiser. One pass per email / per account. Paid products are NOT claimable here: connect to the seller's per-seller MCP and use buy_product (USDC via x402). Pass the product_id from a find_seller result (mcp_ref.product_id) or get_seller_products.",
+    {
+      product_id:     z.string().uuid().describe('UUID of the free pass tier, from a find_seller / get_seller_products result.'),
+      name:           z.string().min(1).max(200).describe('Name of the person attending, for the guest list.'),
+      email:          z.string().email().max(200).describe('Email to confirm the place to and for the organiser to admit by.'),
+      buyer_wallet:   z.string().regex(/^0x[a-fA-F0-9]{40}$/).optional().describe('Optional Base wallet, if the claimer has a VIA buyer identity.'),
+      buyer_agent_id: z.string().optional().describe("Optional ERC-8004 agent id of the agent claiming on the buyer's behalf."),
+    },
+    async ({ product_id, name, email, buyer_wallet, buyer_agent_id }) => {
+      // Resolve the tier's seller; claimEventPass re-checks the product belongs to
+      // it and is a free guest_list tier, so this lookup only routes, never trusts.
+      const { data: product } = await db
+        .from('app_seller_products')
+        .select('seller_id')
+        .eq('id', product_id)
+        .maybeSingle();
+      if (!product) {
+        return asJson({ claimed: false, error: 'not_found', message: 'No such product. Use the product_id from a find_seller / get_seller_products result.' });
+      }
+      const result = await claimEventPass({
+        sellerId:     product.seller_id as string,
+        productId:    product_id,
+        name,
+        email,
+        buyerWallet:  buyer_wallet ?? null,
+        buyerAgentId: buyer_agent_id ?? null,
+        source:       'mcp_agent',
+      });
+      switch (result.outcome) {
+        case 'confirmed':
+          return asJson({ claimed: true, status: 'confirmed', event: result.eventName, tier: result.tierTitle, guest_id: result.guestId, message: `You are on the guest list for ${result.eventName}. A confirmation email is on its way. There was nothing to pay.` });
+        case 'already':
+          return asJson({ claimed: true, status: 'already_claimed', event: result.eventName, tier: result.tierTitle, message: 'This email or account already holds a pass for this tier. One pass per email / per account.' });
+        case 'sold_out':
+          return asJson({ claimed: false, error: 'sold_out', message: `"${result.tierTitle ?? 'This tier'}" has reached its allocation.` });
+        case 'not_available':
+          return asJson({ claimed: false, error: 'not_available', message: result.error ?? 'This is not a free pass. Paid products are bought with buy_product at the seller MCP, not claimed here.' });
+        default:
+          return asJson({ claimed: false, error: 'claim_failed', message: result.error ?? 'Could not record your place. Please retry.' });
+      }
+    },
+  );
+
   server.tool(
     'submit_intent',
     "Submit a buyer's INTENT in their own words and get back the products across the VIA network that genuinely match it , the full agentic matcher (it reads each product's data and reasons, it is not keyword search). Use this when you are buying ON BEHALF of someone and want defined matches, not a raw search. State the brief naturally, including any hard requirements (\"raw selvedge denim, 32 waist\", \"first pressing on the Stiff label\", \"a gift of coffee\"). Hard requirements are enforced (a product that fails one is excluded); broad briefs return on-category options. Returns matches with seller, price, a direct page_url, and the mcp_url to transact. For matching tied to a specific VIA buyer's saved taste and budget, call submit_intent on that buyer's MCP (/buyers/{handle}/mcp) instead.",
@@ -376,6 +430,7 @@ function createServer(req: Request) {
         list_sellers:     'Browse active sellers across the whole network',
         get_seller_products: 'Drill into one seller/brand catalogue (pass its mcp_url) to answer "is X available at seller Y", with prices, in-stock sizes, and direct product links.',
         find_seller:      'Search products and sellers across the whole network. Defined intent returns `results`, one relevance-ranked list blending every source. Each result has a working page_url (direct product page), image_url when one exists, and an mcp_ref to transact. Multiple matches should be shown with their differences. A loose / zero-match query returns need_more_info: ask a clarifying question or broaden, never say "nothing available".',
+        claim_pass:       'Claim a FREE guest-list pass ($0 tier) straight from discovery with name + email. No payment, no wallet, no x402. Paid products are not claimable here; buy those with buy_product at the seller MCP.',
         seller_mcp_url:   'Resolve a VIA-app slug to its per-seller MCP URL',
         register_store:   'Self-register a new store with a single payout wallet, the platform creates your identity wallet (pending human review)',
         get_store_status: 'Check whether your registered store is pending, approved, or rejected',
