@@ -21,6 +21,7 @@ import { db } from '../db';
 import { getBuyerUser, getUserBuyers } from '../buyer-auth';
 import { getSellerUser, isSellerMember, getUserBrands } from '../seller-auth';
 import { getBrandSession } from './brand-session';
+import { getConciergeSession } from './concierge-session';
 import { isMember, type Author, type MemberPlatform, type MemberType } from './rooms';
 
 export type RoomMemberAuth =
@@ -52,6 +53,10 @@ export async function resolveOwnedMember(ref: string): Promise<RoomMemberAuth> {
   if (brand && brand.slug === ref) {
     return { ok: true, member: { member_platform: 'rrg', member_type: 'seller', member_ref: ref } };
   }
+  const concierge = await getConciergeSession();
+  if (concierge && concierge.ref === ref) {
+    return { ok: true, member: { member_platform: 'rrg', member_type: 'buyer', member_ref: ref } };
+  }
   return { ok: false, status: 401, error: 'not authenticated for this member' };
 }
 
@@ -80,6 +85,10 @@ export async function sessionMembers(): Promise<SessionMember[]> {
   const brand = await getBrandSession();
   if (brand) {
     out.push({ platform: 'rrg', type: 'seller', ref: brand.slug, label: brand.name || brand.slug });
+  }
+  const concierge = await getConciergeSession();
+  if (concierge) {
+    out.push({ platform: 'rrg', type: 'buyer', ref: concierge.ref, label: concierge.name || concierge.ref });
   }
   return out;
 }

@@ -139,7 +139,10 @@ export async function POST(req: Request, { params }: { params: Promise<{ roomId:
     if (!rrgKind || !identity) return NextResponse.json({ error: 'no such VIA or RRG agent' }, { status: 404 });
     if (!identity.wallet_address) return NextResponse.json({ error: 'could not resolve that RRG agent wallet; add it from the operator console with the wallet' }, { status: 422 });
 
-    const joined = await joinRoom(roomId, { member_platform: 'rrg', member_type: rrgKind, member_ref: inviteeRef }, ref, false, identity.wallet_address);
+    // A concierge is seated under its NAME (what its Back Room handoff carries),
+    // so its owner's session matches the membership. A brand is seated by slug.
+    const seatRef = rrgKind === 'buyer' ? (identity.name?.trim() || inviteeRef) : inviteeRef;
+    const joined = await joinRoom(roomId, { member_platform: 'rrg', member_type: rrgKind, member_ref: seatRef }, ref, false, identity.wallet_address);
     if (joined.outcome === 'blocked') return NextResponse.json({ status: 'blocked', message: 'They cannot join this room.' }, { status: 409 });
     if (joined.outcome === 'full') return NextResponse.json({ status: 'full', message: 'This room is full.' }, { status: 409 });
 
@@ -151,7 +154,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ roomId:
         emailed = true;
       } catch (e) { console.warn('[room/invite] rrg seat heads-up email failed:', e); }
     }
-    return NextResponse.json({ status: 'seated', platform: 'rrg', kind: rrgKind, invitee_ref: inviteeRef, name: identity.name, emailed }, { status: 201 });
+    return NextResponse.json({ status: 'seated', platform: 'rrg', kind: rrgKind, invitee_ref: seatRef, name: identity.name, emailed }, { status: 201 });
   }
 
   if (body.mode === 'person') {

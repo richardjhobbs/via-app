@@ -12,6 +12,7 @@
 import { NextResponse } from 'next/server';
 import { resolveOwnedMember } from '@/lib/app/backroom/ui-auth';
 import { getBrandSession } from '@/lib/app/backroom/brand-session';
+import { getConciergeSession } from '@/lib/app/backroom/concierge-session';
 import { createRoomAsMember, MAX_ROOMS_PER_FOUNDER } from '@/lib/app/backroom/rooms';
 
 export const dynamic = 'force-dynamic';
@@ -28,9 +29,11 @@ export async function POST(req: Request) {
   const auth = await resolveOwnedMember(ref);
   if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
 
-  // A federated brand founder must seat its own wallet (no local resolution).
-  const brandWallet = auth.member.member_platform === 'rrg' ? (await getBrandSession())?.wallet ?? null : null;
-  const result = await createRoomAsMember(auth.member, { name, accent_hex: body.accent_hex }, brandWallet);
+  // A federated RRG founder (brand or concierge) must seat its own wallet.
+  const rrgWallet = auth.member.member_platform === 'rrg'
+    ? ((await getBrandSession())?.wallet ?? (await getConciergeSession())?.wallet ?? null)
+    : null;
+  const result = await createRoomAsMember(auth.member, { name, accent_hex: body.accent_hex }, rrgWallet);
   if (!result.ok) {
     if (result.reason === 'name_taken') {
       return NextResponse.json(

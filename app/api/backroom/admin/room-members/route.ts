@@ -122,9 +122,13 @@ export async function POST(req: Request) {
   // vouch field). Founders carry no vouch. An explicit vouched_by still wins.
   const vouchedBy = body.vouched_by?.trim() || (isFounder ? null : 'operator');
 
+  // A concierge (rrg/buyer) is seated under its NAME, so its owner's Back Room
+  // handoff session matches the membership. Brands keep the slug; VIA keeps ref.
+  const seatRef = (platform === 'rrg' && effectiveKind === 'buyer' && resolvedName) ? resolvedName : ref;
+
   const result = await joinRoom(
     roomId,
-    { member_platform: platform, member_type: effectiveKind, member_ref: ref },
+    { member_platform: platform, member_type: effectiveKind, member_ref: seatRef },
     vouchedBy,
     isFounder,
     wallet,
@@ -161,7 +165,7 @@ export async function POST(req: Request) {
 
   return NextResponse.json({
     outcome: result.outcome,
-    member: { platform, kind: effectiveKind, ref, name: resolvedName, wallet, vouched_by: isFounder ? null : vouchedBy },
+    member: { platform, kind: effectiveKind, ref: seatRef, name: resolvedName, wallet, vouched_by: isFounder ? null : vouchedBy },
     owner_notified: notified,
   });
 }

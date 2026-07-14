@@ -6,6 +6,7 @@
 import { NextResponse } from 'next/server';
 import { resolveOwnedMember } from '@/lib/app/backroom/ui-auth';
 import { getBrandSession } from '@/lib/app/backroom/brand-session';
+import { getConciergeSession } from '@/lib/app/backroom/concierge-session';
 import { redeemPersonInvite, invitationByToken } from '@/lib/app/backroom/invitations';
 
 export const dynamic = 'force-dynamic';
@@ -24,7 +25,7 @@ export async function POST(req: Request) {
   const invite = await invitationByToken(token);
   if (!invite) return NextResponse.json({ error: 'invitation is not valid or has expired' }, { status: 404 });
 
-  const brandWallet = auth.member.member_platform === 'rrg' ? (await getBrandSession())?.wallet ?? null : null;
+  const brandWallet = auth.member.member_platform === 'rrg' ? ((await getBrandSession())?.wallet ?? (await getConciergeSession())?.wallet ?? null) : null;
   const result = await redeemPersonInvite(token, auth.member, brandWallet);
   if (result.outcome === 'joined') {
     return NextResponse.json({ status: 'joined', room_id: invite.room_id });

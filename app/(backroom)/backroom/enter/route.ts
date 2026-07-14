@@ -15,9 +15,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { verifyBrandHandoffToken } from '@/lib/app/backroom/brand-handoff';
 import { setBrandSessionCookie } from '@/lib/app/backroom/brand-session';
+import { verifyConciergeHandoffToken } from '@/lib/app/backroom/concierge-handoff';
+import { setConciergeSessionCookie } from '@/lib/app/backroom/concierge-session';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
+
+const WEEK = 60 * 60 * 24 * 7;
 
 export async function GET(req: NextRequest) {
   const origin = req.nextUrl.origin;
@@ -28,17 +32,22 @@ export async function GET(req: NextRequest) {
 
   if (!token) return fail('missing');
 
-  const verified = verifyBrandHandoffToken(token);
-  if (!verified.ok) return fail(verified.error);
-  const p = verified.payload;
+  // A brand (rrg/seller) handoff or a personal-concierge (rrg/buyer) handoff.
+  const brand = verifyBrandHandoffToken(token);
+  if (brand.ok) {
+    const p = brand.payload;
+    const response = NextResponse.redirect(new URL(p.room_id ? `/room/${p.room_id}` : '/backroom', origin));
+    setBrandSessionCookie(response, { slug: p.slug, wallet: p.wallet_address, name: p.name ?? null, exp: Math.floor(Date.now() / 1000) + WEEK });
+    return response;
+  }
 
-  const dest = p.room_id ? `/room/${p.room_id}` : '/backroom';
-  const response = NextResponse.redirect(new URL(dest, origin));
-  setBrandSessionCookie(response, {
-    slug: p.slug,
-    wallet: p.wallet_address,
-    name: p.name ?? null,
-    exp: Math.floor(Date.now() / 1000) + 60 * 60 * 24 * 7,
-  });
-  return response;
+  const concierge = verifyConciergeHandoffToken(token);
+  if (concierge.ok) {
+    const p = concierge.payload;
+    const response = NextResponse.redirect(new URL(p.room_id ? `/room/${p.room_id}` : '/backroom', origin));
+    setConciergeSessionCookie(response, { ref: p.ref, wallet: p.wallet_address, name: p.name ?? null, exp: Math.floor(Date.now() / 1000) + WEEK });
+    return response;
+  }
+
+  return fail(concierge.error);
 }
