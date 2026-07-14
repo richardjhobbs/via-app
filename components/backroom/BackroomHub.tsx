@@ -22,7 +22,6 @@ interface VoiceResult {
 }
 
 export function BackroomHub({ handle, platform, memberType, label, rooms }: { handle: string | null; platform: string | null; memberType: string | null; label: string | null; rooms: HubRoom[] }) {
-  const isBuyer = memberType === 'buyer';
   // Back to the member's own dashboard (VIA members only; an RRG brand arrived
   // over the handoff and has no VIA dashboard to return to).
   const dashboardHref = platform === 'via' && handle && memberType
@@ -138,7 +137,7 @@ export function BackroomHub({ handle, platform, memberType, label, rooms }: { ha
             </div>
           ))}
           <HubLink href={`/you?ref=${encodeURIComponent(handle)}`} title="Your card" desc="Who you are, in your words: what you do, where you are, what you love. Build it and share it." />
-          {isBuyer && <HubLink href={`/door?handle=${encodeURIComponent(handle)}`} title="The Door" desc="Where introductions arrive. Accept, decline, or leave them." />}
+          <HubLink href={`/door?ref=${encodeURIComponent(handle)}`} title="The Door" desc="Where introductions arrive. Accept, decline, or leave them." />
           {rooms.length === 0 ? (
             <div style={cardStyle}>
               <p className="br-serif" style={{ fontSize: 18, margin: 0 }}>Your rooms</p>
