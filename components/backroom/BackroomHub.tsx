@@ -11,7 +11,7 @@ import { HoldToSpeak } from './HoldToSpeak';
 
 interface Invite { id: string; room_id: string; room_name: string; inviter_ref: string; why: string; }
 
-interface HubRoom { id: string; name: string; accent_hex: string }
+interface HubRoom { id: string; name: string; accent_hex: string; new_count: number }
 
 interface VoiceResult {
   transcript: string;
@@ -21,7 +21,7 @@ interface VoiceResult {
   note?: string;
 }
 
-export function BackroomHub({ handle, platform, memberType, label, rooms }: { handle: string | null; platform: string | null; memberType: string | null; label: string | null; rooms: HubRoom[] }) {
+export function BackroomHub({ handle, platform, memberType, label, rooms, emailDigest = true }: { handle: string | null; platform: string | null; memberType: string | null; label: string | null; rooms: HubRoom[]; emailDigest?: boolean }) {
   // Back to the member's own dashboard (VIA members only; an RRG brand arrived
   // over the handoff and has no VIA dashboard to return to).
   const dashboardHref = platform === 'via' && handle && memberType
@@ -34,6 +34,17 @@ export function BackroomHub({ handle, platform, memberType, label, rooms }: { ha
   const [createErr, setCreateErr] = useState<string | null>(null);
   const [invites, setInvites] = useState<Invite[]>([]);
   const [knockCount, setKnockCount] = useState(0);
+  const [digestOn, setDigestOn] = useState(emailDigest);
+
+  const toggleDigest = useCallback(async () => {
+    if (!handle) return;
+    const next = !digestOn;
+    setDigestOn(next);
+    await fetch('/api/backroom/prefs', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ref: handle, email_digest: next }),
+    }).catch(() => setDigestOn(!next));
+  }, [handle, digestOn]);
 
   const loadInvites = useCallback(async () => {
     if (!handle) return;
@@ -152,7 +163,9 @@ export function BackroomHub({ handle, platform, memberType, label, rooms }: { ha
             </div>
           ) : (
             rooms.map((r) => (
-              <HubLink key={r.id} href={`/room/${r.id}?handle=${encodeURIComponent(handle)}`} title={r.name} desc="Open the room and its table." accent={r.accent_hex} />
+              <HubLink key={r.id} href={`/room/${r.id}?handle=${encodeURIComponent(handle)}`} title={r.name}
+                desc={r.new_count > 0 ? `${r.new_count} new ${r.new_count === 1 ? 'entry' : 'entries'} since you were last here.` : 'Open the room and its table.'}
+                accent={r.accent_hex} badge={r.new_count} />
             ))
           )}
 
@@ -174,6 +187,17 @@ export function BackroomHub({ handle, platform, memberType, label, rooms }: { ha
               </button>
             </div>
             {createErr && <p className="br-sans" style={{ fontSize: 13, color: 'var(--danger)', margin: '8px 0 0' }}>{createErr}</p>}
+          </div>
+
+          {/* Notifications */}
+          <div style={cardStyle}>
+            <p className="br-serif" style={{ fontSize: 18, margin: 0 }}>Notifications</p>
+            <label style={{ display: 'flex', alignItems: 'flex-start', gap: 10, marginTop: 10, cursor: 'pointer' }}>
+              <input type="checkbox" checked={digestOn} onChange={toggleDigest} style={{ marginTop: 3 }} />
+              <span className="br-sans" style={{ fontSize: 14, color: 'var(--ink-2)', lineHeight: 1.5 }}>
+                Email me a daily summary of new activity in my rooms. At most once every 24 hours, and only when there is something new.
+              </span>
+            </label>
           </div>
         </div>
       )}

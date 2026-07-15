@@ -11,6 +11,7 @@ import { loadRoom, listTable, roomWarmth, listRoomMembers, listChat } from '@/li
 import { publishedCardSlugsFor } from '@/lib/app/backroom/taste-cards';
 import { requireRoomMember, type RoomMemberAuth } from '@/lib/app/backroom/ui-auth';
 import { isAdminFromCookies } from '@/lib/app/auth';
+import { markRoomSeen } from '@/lib/app/backroom/notifications';
 import { DIGITAL_BUCKET } from '@/lib/app/digital-delivery';
 
 export const dynamic = 'force-dynamic';
@@ -49,6 +50,9 @@ export async function GET(req: Request, { params }: { params: Promise<{ roomId: 
   const youAreFounder = !!(me && members.some(
     (m) => m.member_platform === me.member_platform && m.member_type === me.member_type && m.member_ref === me.member_ref && m.is_founder,
   ));
+
+  // Opening the room clears its pulse for this member.
+  if (me) await markRoomSeen(roomId, me);
 
   // Batch-sign file/image URLs in one storage call, mapping by INDEX (the batch
   // return path is URL-encoded, so a key with a space would never match by path).

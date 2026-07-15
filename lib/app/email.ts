@@ -1050,6 +1050,67 @@ export async function sendRoomMemberAddedEmail({
   await sendEmail({ to, subject: `Your concierge was added to ${roomName} on VIA`, html });
 }
 
+// ── 7f. Back Room daily digest ────────────────────────────────────────
+//
+// Sent at most once per 24h to a member with new activity in their rooms (chat
+// or table additions by others they have not seen). Only when there is new
+// content. VIA-branded, no em/en dashes.
+
+export async function sendRoomDigestEmail({
+  to,
+  rooms,
+}: {
+  to: string;
+  rooms: { name: string; count: number }[];
+}): Promise<void> {
+  if (!to || rooms.length === 0) return;
+  const total = rooms.reduce((a, r) => a + r.count, 0);
+  const rows = rooms
+    .map((r) => `<tr><td style="padding:10px 16px;font-size:14px;border-bottom:1px solid #e8e3db;color:#1a1612;">${escHtml(r.name)}</td><td style="padding:10px 16px;font-size:14px;border-bottom:1px solid #e8e3db;color:#6b4f3a;font-weight:600;text-align:right;">${r.count} new</td></tr>`)
+    .join('');
+
+  const html = `
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><style>
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', sans-serif; background: #faf7f2; color: #1a1612; margin: 0; padding: 40px 20px; }
+  .wrap { max-width: 560px; margin: 0 auto; }
+  .wordmark { font-family: Georgia, 'Times New Roman', serif; font-size: 18px; font-weight: 400; font-style: italic; color: #1a1612; margin: 0 0 24px; }
+  .card { background: #ffffff; border: 1px solid #e8e3db; }
+  .card-head { padding: 28px 32px 24px; border-bottom: 1px solid #e8e3db; }
+  .eyebrow { font-family: 'Courier New', Courier, monospace; font-size: 10px; letter-spacing: 0.16em; text-transform: uppercase; color: #2b9a66; margin: 0 0 8px; }
+  h1 { margin: 0; font-family: Georgia, 'Times New Roman', serif; font-size: 26px; font-weight: 400; font-style: italic; color: #1a1612; letter-spacing: -0.01em; }
+  .body { padding: 28px 32px; }
+  .copy { margin: 0 0 16px; line-height: 1.6; color: #3a342d; font-size: 14px; }
+  .btn { display: inline-block; background: #1a1612; color: #faf7f2; padding: 12px 22px; text-decoration: none; font-size: 12px; letter-spacing: 0.04em; font-weight: 500; }
+  .note { font-size: 12px; color: #6e665c; margin: 20px 0 0; }
+</style></head>
+<body>
+<div class="wrap">
+  <p class="wordmark">VIA</p>
+  <div class="card">
+    <div class="card-head">
+      <p class="eyebrow">New in your rooms</p>
+      <h1>${total} new ${total === 1 ? 'entry' : 'entries'} while you were away</h1>
+    </div>
+    <div class="body">
+      <p class="copy">There is new activity in the Back Room, chat and things placed on the table by the other people at it.</p>
+      <table width="100%" cellpadding="0" cellspacing="0" style="border:1px solid #e8e3db;border-collapse:collapse;margin:0 0 24px;"><tbody>${rows}</tbody></table>
+      <a class="btn" href="${SITE_URL}/backroom" style="color:#faf7f2;text-decoration:none;">Open the Back Room</a>
+      <p class="note">You get this at most once a day, and only when something is new. Turn it off any time on the Back Room page.</p>
+    </div>
+  </div>
+  <table width="100%" cellpadding="0" cellspacing="0" style="margin-top:32px;padding-top:20px;border-top:1px solid #e8e3db;"><tbody><tr>
+    <td style="font-family:'Courier New',Courier,monospace;font-size:10px;letter-spacing:0.12em;text-transform:uppercase;color:#6e665c;">VIA</td>
+    <td align="right" style="font-family:'Courier New',Courier,monospace;font-size:10px;letter-spacing:0.12em;text-transform:uppercase;color:#6e665c;text-align:right;"><a href="${SITE_URL}" style="color:#6e665c;text-decoration:none;">app.getvia.xyz</a></td>
+  </tr></tbody></table>
+</div>
+</body>
+</html>`;
+
+  await sendEmail({ to, subject: `${total} new in your Back Room ${total === 1 ? 'room' : 'rooms'}`, html });
+}
+
 // ── 8. Seller team invite ──────────────────────────────────────────────
 //
 // Sent when a seller owner/admin invites a teammate. The link carries an
