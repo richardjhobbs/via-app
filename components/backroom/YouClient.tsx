@@ -153,6 +153,7 @@ export function YouClient({ member, members }: { member: YouMember | null; membe
 
   return (
     <main style={{ maxWidth: 620, margin: '0 auto', padding: '48px 20px 180px' }}>
+      <a href="/backroom" className="br-sans" style={{ display: 'inline-block', fontSize: 13, color: 'var(--ink-3)', textDecoration: 'none', marginBottom: 18 }}>&larr; Back to the Back Room</a>
       <p className="br-sans" style={{ fontSize: 12, letterSpacing: '0.14em', textTransform: 'uppercase', color: 'var(--ink-3)' }}>You</p>
       <h1 className="br-serif" style={{ fontSize: 32, fontWeight: 400, margin: '8px 0 12px' }}>Your taste, in your words</h1>
       <p className="br-sans" style={{ fontSize: 15, color: 'var(--ink-2)', lineHeight: 1.55, margin: '0 0 16px' }}>
