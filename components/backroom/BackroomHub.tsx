@@ -8,6 +8,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
 import { HoldToSpeak } from './HoldToSpeak';
+import { PushToggle } from './PushToggle';
 
 interface Invite { id: string; room_id: string; room_name: string; inviter_ref: string; why: string; }
 
@@ -198,6 +199,7 @@ export function BackroomHub({ handle, platform, memberType, label, rooms, emailD
                 Email me a daily summary of new activity in my rooms. At most once every 24 hours, and only when there is something new.
               </span>
             </label>
+            <PushToggle handle={handle} />
           </div>
         </div>
       )}

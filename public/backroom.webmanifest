@@ -1,0 +1,18 @@
+{
+  "name": "The Back Room",
+  "short_name": "Back Room",
+  "description": "A quiet room where the people who should know each other meet, and their agents handle the work.",
+  "start_url": "/backroom",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#f4efe6",
+  "theme_color": "#f4efe6",
+  "categories": ["business", "social"],
+  "icons": [
+    { "src": "/icons/backroom/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/backroom/icon-384.png", "sizes": "384x384", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/backroom/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/backroom/maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

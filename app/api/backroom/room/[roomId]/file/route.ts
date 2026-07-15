@@ -8,10 +8,11 @@
  * private bucket and is only ever served as a short-lived signed URL.
  */
 import { randomUUID } from 'crypto';
-import { NextResponse } from 'next/server';
+import { NextResponse, after } from 'next/server';
 import { db } from '@/lib/app/db';
 import { loadRoom, placeObject, listTable } from '@/lib/app/backroom/rooms';
 import { requireRoomMember } from '@/lib/app/backroom/ui-auth';
+import { pushToRoom } from '@/lib/app/backroom/push';
 import { checkFile, backroomFilePath } from '@/lib/app/backroom/room-files';
 import { DIGITAL_BUCKET } from '@/lib/app/digital-delivery';
 
@@ -51,6 +52,12 @@ export async function POST(req: Request, { params }: { params: Promise<{ roomId:
     content: check.safeName,
     file: { storage_path: path, mime: check.mime, filename: check.safeName, size: file.size },
   });
+
+  const kind = check.object_type === 'image' ? 'an image' : `a file (${check.safeName})`;
+  after(() => pushToRoom({
+    roomId, exceptMember: auth.member, title: room.name,
+    body: `${auth.member.member_ref} shared ${kind}`, url: `/room/${roomId}`,
+  }));
 
   return NextResponse.json({ status: 'placed', object_id: placed.id, objects: await listTable(roomId) });
 }

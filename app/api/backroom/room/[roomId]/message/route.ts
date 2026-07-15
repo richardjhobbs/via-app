@@ -5,9 +5,16 @@
  * anyone who would rather type. It places the same 'note' object the voice loop
  * and the MCP place the table's other notes as, so it reads identically.
  */
-import { NextResponse } from 'next/server';
+import { NextResponse, after } from 'next/server';
 import { loadRoom, placeObject, listTable } from '@/lib/app/backroom/rooms';
 import { requireRoomMember } from '@/lib/app/backroom/ui-auth';
+import { pushToRoom } from '@/lib/app/backroom/push';
+
+/** A short, single-line preview for a push body. */
+function preview(s: string, max = 90): string {
+  const t = s.replace(/\s+/g, ' ').trim();
+  return t.length > max ? `${t.slice(0, max)}…` : t;
+}
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -39,6 +46,11 @@ export async function POST(req: Request, { params }: { params: Promise<{ roomId:
     object_type: isUrl(text) ? 'link' : 'note',
     content: text,
   });
+
+  after(() => pushToRoom({
+    roomId, exceptMember: auth.member, title: room.name,
+    body: `${auth.member.member_ref} added to the table: ${preview(text)}`, url: `/room/${roomId}`,
+  }));
 
   return NextResponse.json({ status: 'placed', object_id: placed.id, objects: await listTable(roomId) });
 }

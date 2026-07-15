@@ -6,7 +6,7 @@ const nextConfig: NextConfig = {
   // (__dirname, require) that the Edge runtime rejects, which is what
   // caused MIDDLEWARE_INVOCATION_FAILED on the first deploy.
   turbopack: {},
-  serverExternalPackages: ['agentmail', 'ethers'],
+  serverExternalPackages: ['agentmail', 'ethers', 'web-push'],
   // The taste-card image renderer reads TTFs off disk at runtime; make sure
   // Vercel's file tracing ships them with the functions that render cards.
   outputFileTracingIncludes: {

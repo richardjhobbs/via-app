@@ -11,7 +11,7 @@
  * stages a vouch; joining needs the confirm press.
  */
 import { randomUUID } from 'crypto';
-import { NextResponse } from 'next/server';
+import { NextResponse, after } from 'next/server';
 import { db } from '@/lib/app/db';
 import { transcribe, SttError } from '@/lib/app/backroom/voice';
 import { resolveUtterance } from '@/lib/app/backroom/resolve';
@@ -20,6 +20,13 @@ import { requireRoomMember } from '@/lib/app/backroom/ui-auth';
 import { backroomFilePath } from '@/lib/app/backroom/room-files';
 import { DIGITAL_BUCKET } from '@/lib/app/digital-delivery';
 import { dryRunMatch } from '@/lib/app/buyer-matching';
+import { pushToRoom } from '@/lib/app/backroom/push';
+
+/** A short, single-line preview for a push body. */
+function preview(s: string, max = 90): string {
+  const t = s.replace(/\s+/g, ' ').trim();
+  return t.length > max ? `${t.slice(0, max)}…` : t;
+}
 
 // Map a recorded audio MIME to a file extension for the stored voice note.
 function audioExt(mime: string): string {
@@ -72,6 +79,10 @@ export async function POST(req: Request, { params }: { params: Promise<{ roomId:
       content: 'Voice note',
       file: { storage_path: path, mime, filename, size: buffer.length },
     });
+    after(() => pushToRoom({
+      roomId, exceptMember: auth.member, title: room.name,
+      body: `${auth.member.member_ref} left a voice note`, url: `/room/${roomId}`,
+    }));
     return NextResponse.json({ transcript: '', action: { tool: 'room_place_object', say: 'Voice note on the table.' }, objects: await listTable(roomId) });
   }
 
@@ -93,11 +104,19 @@ export async function POST(req: Request, { params }: { params: Promise<{ roomId:
   // skip the LLM and send the words straight there (predictable, no ambiguity).
   if (target === 'chat') {
     await sayToRoom(roomId, auth.member, transcript);
+    after(() => pushToRoom({
+      roomId, exceptMember: auth.member, title: room.name,
+      body: `${auth.member.member_ref}: ${preview(transcript)}`, url: `/room/${roomId}`,
+    }));
     return NextResponse.json({ transcript, action: { tool: 'room_say', say: 'Added to chat.' }, objects: await listTable(roomId) });
   }
   if (target === 'table') {
     const isUrl = /^https?:\/\/\S+$/i.test(transcript) || /^www\.\S+\.\S+$/i.test(transcript);
     await placeObject(roomId, auth.member, { object_type: isUrl ? 'link' : 'note', content: transcript });
+    after(() => pushToRoom({
+      roomId, exceptMember: auth.member, title: room.name,
+      body: `${auth.member.member_ref} added to the table: ${preview(transcript)}`, url: `/room/${roomId}`,
+    }));
     return NextResponse.json({ transcript, action: { tool: 'room_place_object', say: 'On the table.' }, objects: await listTable(roomId) });
   }
 
@@ -121,12 +140,25 @@ export async function POST(req: Request, { params }: { params: Promise<{ roomId:
           corner: a.corner ?? null,
         });
         extra = { placed: { object_id: placed.id } };
+        const content = a.content;
+        after(() => pushToRoom({
+          roomId, exceptMember: auth.member, title: room.name,
+          body: `${auth.member.member_ref} added to the table: ${preview(content)}`, url: `/room/${roomId}`,
+        }));
       }
       break;
     }
     case 'room_say': {
       const a = action.arguments as { text?: string };
-      if (a.text) { const said = await sayToRoom(roomId, auth.member, a.text); extra = { said: { event_id: said.id } }; }
+      if (a.text) {
+        const said = await sayToRoom(roomId, auth.member, a.text);
+        extra = { said: { event_id: said.id } };
+        const text = a.text;
+        after(() => pushToRoom({
+          roomId, exceptMember: auth.member, title: room.name,
+          body: `${auth.member.member_ref}: ${preview(text)}`, url: `/room/${roomId}`,
+        }));
+      }
       break;
     }
     case 'errand_request_quote': {

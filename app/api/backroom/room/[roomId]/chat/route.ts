@@ -8,9 +8,16 @@
  * is the permanent surface. Members @ each other in the text; mentions are
  * rendered client-side against the room's member list.
  */
-import { NextResponse } from 'next/server';
+import { NextResponse, after } from 'next/server';
 import { loadRoom, sayToRoom, listChat } from '@/lib/app/backroom/rooms';
 import { requireRoomMember } from '@/lib/app/backroom/ui-auth';
+import { pushToRoom } from '@/lib/app/backroom/push';
+
+/** A short, single-line preview for a push body. */
+function preview(s: string, max = 90): string {
+  const t = s.replace(/\s+/g, ' ').trim();
+  return t.length > max ? `${t.slice(0, max)}…` : t;
+}
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -48,5 +55,9 @@ export async function POST(req: Request, { params }: { params: Promise<{ roomId:
   if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
 
   await sayToRoom(roomId, auth.member, text);
+  after(() => pushToRoom({
+    roomId, exceptMember: auth.member, title: room.name,
+    body: `${auth.member.member_ref}: ${preview(text)}`, url: `/room/${roomId}`,
+  }));
   return NextResponse.json({ status: 'said', messages: await listChat(roomId) });
 }
