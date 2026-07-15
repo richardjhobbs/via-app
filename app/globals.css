@@ -25,6 +25,10 @@
   --danger: #b5453a;
   --warning: #9a6b2b;
 
+  /* Global corner rounding. Slight by design; pills/dots keep their own
+     explicit radii. Theme-agnostic, inherits everywhere (incl. backroom). */
+  --radius: 6px;
+
   /* Back-compat aliases for any remaining legacy classes. */
   --background: var(--bg);
   --foreground: var(--ink);
@@ -1370,4 +1374,52 @@ body {
     animation: none;
     box-shadow: 0 0 6px 1px color-mix(in srgb, var(--live) 70%, transparent), 0 0 0 3px color-mix(in srgb, var(--live) 40%, transparent);
   }
+}
+
+/* ─── Global corner rounding ──────────────────────────────────────────────
+   Slight rounded edges on every card, panel, button, chip, tag, and bordered
+   container across all live pages. Appended last so it overrides the sharp
+   `border-radius: 0` on buttons. Pills, dots, avatars, the nav search input,
+   and the theme toggle keep their own explicit radii and are excluded. */
+
+/* Cards, panels, framed containers, image wraps */
+.cover,
+.concierge-card,
+.brand-card,
+.pdp-image-wrap,
+.pdp-agent,
+.dialog,
+.finding,
+.finding-img,
+.collab-card,
+.panel,
+.nego-card,
+.dash-metrics,
+.trust-grid,
+.brand-dir-image-wrap,
+.brand-dir-logo-overlay,
+.brand-cover-logo,
+.agent-reveal {
+  border-radius: var(--radius);
+}
+
+/* Buttons (override the deliberate sharp 0) and interactive pills-that-aren't */
+.btn,
+.nego-btn {
+  border-radius: var(--radius);
+}
+
+/* Chips, status tags, small bordered labels */
+.chip,
+.pdp-badge,
+.pdp-agent-tags span,
+.lst-tag,
+.nego-pill,
+.lg-status,
+.dash-agentpill,
+.via-foot-badge,
+.foot-bot .agent-badge,
+.cover-tag,
+.feat-chip {
+  border-radius: var(--radius);
 }
