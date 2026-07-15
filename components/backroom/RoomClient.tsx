@@ -427,54 +427,12 @@ export function RoomClient({ roomId, handle, isAdmin = false }: { roomId: string
           </section>
         )}
 
-        {youAreFounder && handle && (
-          <MakeTogether roomId={roomId} handle={handle} members={members.filter((m) => m.status === 'active')} accent={meta?.accent_hex ?? 'var(--accent)'} />
-        )}
-
         {said && (
           <p className="br-sans" style={{ fontSize: 14, color: 'var(--ink-3)', fontStyle: 'italic', marginBottom: 20 }}>VIA: {said}</p>
         )}
 
-        {/* Compose: hold to speak is the promoted way in (floating below), but
-            you can also type a note or attach a file. Images and documents only. */}
-        {handle && (
-          <section style={{ border: '1px solid var(--line)', borderRadius: 6, padding: 12, marginBottom: 24, background: 'var(--paper)' }}>
-            <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end' }}>
-              <textarea
-                className="br-sans"
-                value={note}
-                onChange={(e) => setNote(e.target.value)}
-                onKeyDown={(e) => composerKeyDown(e, note, setNote, () => { void placeNote(); })}
-                placeholder="Type a note, or paste a link. Or hold to speak."
-                rows={4}
-                style={{ flex: 1, resize: 'vertical', minHeight: 84, background: 'var(--bg)', color: 'var(--ink)', border: '1px solid var(--line-strong)', borderRadius: 4, padding: '10px 12px', fontSize: 15, fontFamily: 'inherit', lineHeight: 1.45 }}
-              />
-              <button type="button" onClick={() => fileInputRef.current?.click()} disabled={composerBusy} className="br-sans"
-                title="Attach an image or document"
-                style={{ padding: '10px 12px', borderRadius: 4, border: '1px solid var(--line-strong)', background: 'transparent', color: 'var(--ink-2)', fontSize: 14, cursor: 'pointer', whiteSpace: 'nowrap' }}>
-                Attach
-              </button>
-              <button type="button" onClick={placeNote} disabled={composerBusy || !note.trim()} className="br-sans"
-                style={{ padding: '10px 18px', borderRadius: 4, border: '1px solid var(--ink)', background: 'var(--ink)', color: 'var(--bg)', fontSize: 14, cursor: 'pointer', opacity: composerBusy || !note.trim() ? 0.5 : 1, whiteSpace: 'nowrap' }}>
-                Place
-              </button>
-            </div>
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept={FILE_ACCEPT}
-              onChange={(e) => { const f = e.target.files?.[0]; if (f) void attachFile(f); }}
-              style={{ display: 'none' }}
-            />
-            <p className="br-sans" style={{ fontSize: 11, color: 'var(--ink-3)', margin: '8px 2px 0' }}>
-              Images and documents up to 15 MB. Enter places a note, Ctrl or Cmd + Enter for a new line.
-            </p>
-            {composerErr && <p className="br-sans" style={{ fontSize: 13, color: 'var(--danger)', margin: '6px 2px 0' }}>{composerErr}</p>}
-          </section>
-        )}
-
-        {/* Group chat: the room's ambient talk, a larger box at the top of the
-            table. Newest message at the TOP (input is here too); older below. */}
+        {/* Group chat sits above the table inputs. The room's ambient talk, a
+            larger box; newest message at the TOP (input is here too), older below. */}
         {handle && (
           <section style={{ border: '1px solid var(--line-strong)', borderRadius: 8, background: 'var(--paper)', marginBottom: 24, overflow: 'hidden' }}>
             <div style={{ padding: '12px 14px 10px', borderBottom: '1px solid var(--line)', position: 'relative' }}>
@@ -522,6 +480,44 @@ export function RoomClient({ roomId, handle, isAdmin = false }: { roomId: string
           </section>
         )}
 
+        {/* Table inputs: type a note or attach a file. Hold to speak floats below.
+            Images and documents only. Sits under the chat. */}
+        {handle && (
+          <section style={{ border: '1px solid var(--line)', borderRadius: 6, padding: 12, marginBottom: 24, background: 'var(--paper)' }}>
+            <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end' }}>
+              <textarea
+                className="br-sans"
+                value={note}
+                onChange={(e) => setNote(e.target.value)}
+                onKeyDown={(e) => composerKeyDown(e, note, setNote, () => { void placeNote(); })}
+                placeholder="Type a note, or paste a link. Or hold to speak."
+                rows={4}
+                style={{ flex: 1, resize: 'vertical', minHeight: 84, background: 'var(--bg)', color: 'var(--ink)', border: '1px solid var(--line-strong)', borderRadius: 4, padding: '10px 12px', fontSize: 15, fontFamily: 'inherit', lineHeight: 1.45 }}
+              />
+              <button type="button" onClick={() => fileInputRef.current?.click()} disabled={composerBusy} className="br-sans"
+                title="Attach an image or document"
+                style={{ padding: '10px 12px', borderRadius: 4, border: '1px solid var(--line-strong)', background: 'transparent', color: 'var(--ink-2)', fontSize: 14, cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                Attach
+              </button>
+              <button type="button" onClick={placeNote} disabled={composerBusy || !note.trim()} className="br-sans"
+                style={{ padding: '10px 18px', borderRadius: 4, border: '1px solid var(--ink)', background: 'var(--ink)', color: 'var(--bg)', fontSize: 14, cursor: 'pointer', opacity: composerBusy || !note.trim() ? 0.5 : 1, whiteSpace: 'nowrap' }}>
+                Place
+              </button>
+            </div>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept={FILE_ACCEPT}
+              onChange={(e) => { const f = e.target.files?.[0]; if (f) void attachFile(f); }}
+              style={{ display: 'none' }}
+            />
+            <p className="br-sans" style={{ fontSize: 11, color: 'var(--ink-3)', margin: '8px 2px 0' }}>
+              Images and documents up to 15 MB. Enter places a note, Ctrl or Cmd + Enter for a new line.
+            </p>
+            {composerErr && <p className="br-sans" style={{ fontSize: 13, color: 'var(--danger)', margin: '6px 2px 0' }}>{composerErr}</p>}
+          </section>
+        )}
+
         {/* Errand: quotes VIA sourced, then bring a paid order back to the table.
             Paying happens at the existing checkout, the deliberate money press. */}
         {quotes.length > 0 && (
@@ -563,6 +559,14 @@ export function RoomClient({ roomId, handle, isAdmin = false }: { roomId: string
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 16, alignItems: 'start' }}>
           {objects.map((o) => <ObjectCard key={o.id} o={o} onOpen={setModalObject} canModerate={youAreFounder || isAdmin} onDelete={deleteObject} />)}
         </div>
+
+        {/* Make something together: a founder can spin room work into a store.
+            Not a priority, so it sits at the bottom, but stays visible. */}
+        {youAreFounder && handle && (
+          <div style={{ marginTop: 32 }}>
+            <MakeTogether roomId={roomId} handle={handle} members={members.filter((m) => m.status === 'active')} accent={meta?.accent_hex ?? 'var(--accent)'} />
+          </div>
+        )}
       </main>
 
       {modalObject && (
