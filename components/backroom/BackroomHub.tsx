@@ -101,10 +101,27 @@ export function BackroomHub({ handle, platform, memberType, label, rooms, emailD
 
   return (
     <main style={{ maxWidth: 640, margin: '0 auto', padding: '56px 20px 180px' }}>
-      {dashboardHref && (
-        <Link href={dashboardHref} className="br-sans" style={{ display: 'inline-block', marginBottom: 20, fontSize: 13, color: 'var(--ink-3)', textDecoration: 'none' }}>
+      {/* Always a way out. VIA members go to their dashboard; everyone else
+          (RRG concierges/brands over the handoff, or a signed-out visitor) goes
+          back the way they came, falling back to the VIA home. */}
+      {dashboardHref ? (
+        <Link href={dashboardHref} className="br-sans" style={backLinkStyle}>
           &larr; Your dashboard
         </Link>
+      ) : (
+        <a
+          href="/"
+          onClick={(e) => {
+            if (typeof window !== 'undefined' && window.history.length > 1) {
+              e.preventDefault();
+              window.history.back();
+            }
+          }}
+          className="br-sans"
+          style={backLinkStyle}
+        >
+          &larr; Back
+        </a>
       )}
       <p className="br-sans" style={{ fontSize: 12, letterSpacing: '0.14em', textTransform: 'uppercase', color: 'var(--ink-3)' }}>The Back Room</p>
       <h1 className="br-serif" style={{ fontSize: 36, fontWeight: 400, margin: '8px 0 16px', lineHeight: 1.1 }}>
@@ -231,6 +248,10 @@ export function BackroomHub({ handle, platform, memberType, label, rooms, emailD
 const cardStyle: React.CSSProperties = {
   display: 'block', border: '1px solid var(--line)', borderRadius: 8, padding: '16px 18px',
   background: 'var(--paper)', textDecoration: 'none',
+};
+
+const backLinkStyle: React.CSSProperties = {
+  display: 'inline-block', marginBottom: 20, fontSize: 13, color: 'var(--ink-3)', textDecoration: 'none',
 };
 
 function HubLink({ href, title, desc, accent, badge }: { href: string; title: string; desc: string; accent?: string; badge?: number }) {
