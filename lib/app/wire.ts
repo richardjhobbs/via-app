@@ -20,6 +20,7 @@
 import { unstable_cache } from 'next/cache';
 import { db } from './db';
 import { teaserBrief } from './demand';
+import { NETWORK_MEMBERS } from './network-search';
 
 const ACTIVE = ['open', 'broadcast', 'matched'];
 const SETTLED = ['paid', 'minted', 'paid_out'];
@@ -189,16 +190,68 @@ async function passEvents(limit: number): Promise<WireEvent[]> {
   }));
 }
 
-/** The merged Wire stream: newest events across all kinds, capped at `limit`. */
+// Federated member activity (RRG today): each member exposes GET
+// /api/via/wire-feed returning its own settlements (and any future streams) as
+// anonymised events. The two platforms are separate Supabase projects, so this
+// is an HTTP pull, mirroring the search federation. One slow/down member never
+// blocks the feed (per-member try/catch + 5s timeout). RRG intents are NOT
+// pulled here: they already reach this feed via the partner-intent push into
+// app_buyer_intents, so pulling them too would double-count.
+interface MemberFeedEvent {
+  id?: string; type?: string; ts?: string;
+  title?: string | null; seller_name?: string | null;
+  amount_usdc?: number | null; price_usdc?: number | null;
+  category?: string | null; product_type?: string | null; attribute?: string | null;
+  tx_hash?: string | null;
+}
+
+async function memberEvents(limit: number): Promise<WireEvent[]> {
+  const batches = await Promise.all(NETWORK_MEMBERS.map(async (m) => {
+    if (!m.wireFeedUrl) return [] as WireEvent[];
+    try {
+      const res = await fetch(`${m.wireFeedUrl}?limit=${limit}`, { signal: AbortSignal.timeout(5000) });
+      if (!res.ok) return [] as WireEvent[];
+      const json = await res.json() as { platform?: string; events?: MemberFeedEvent[] };
+      const platform = json.platform ?? m.platform;
+      const evs = Array.isArray(json.events) ? json.events : [];
+      return evs.map((e, i): WireEvent | null => {
+        const ts = typeof e.ts === 'string' ? e.ts : null;
+        if (!ts) return null;
+        const type = (['intent', 'offer', 'settlement', 'pass'].includes(String(e.type)) ? e.type : 'settlement') as WireEventType;
+        const tx = typeof e.tx_hash === 'string' ? e.tx_hash : null;
+        return {
+          id:           `${platform}:${e.id ?? i}:${ts}`,
+          type,
+          ts,
+          title:        e.title ?? null,
+          seller_name:  e.seller_name ?? null,
+          amount_usdc:  num(e.amount_usdc),
+          price_usdc:   num(e.price_usdc),
+          category:     e.category ?? null,
+          product_type: e.product_type ?? null,
+          attribute:    e.attribute ?? null,
+          tx_hash:      tx,
+          tx_url:       baseTxUrl(tx),
+          source:       platform,
+        };
+      }).filter((x): x is WireEvent => x !== null);
+    } catch { return [] as WireEvent[]; }
+  }));
+  return batches.flat();
+}
+
+/** The merged Wire stream: newest events across all kinds AND every federated
+ *  member, capped at `limit`. */
 async function computeWire(limit: number): Promise<WireEvent[]> {
   const per = Math.min(Math.max(limit, 20), 60);
-  const [intents, offers, settlements, passes] = await Promise.all([
+  const [intents, offers, settlements, passes, members] = await Promise.all([
     intentEvents(per),
     offerEvents(per),
     settlementEvents(per),
     passEvents(per),
+    memberEvents(per),
   ]);
-  return [...intents, ...offers, ...settlements, ...passes]
+  return [...intents, ...offers, ...settlements, ...passes, ...members]
     .sort((a, b) => (a.ts < b.ts ? 1 : a.ts > b.ts ? -1 : 0))
     .slice(0, limit);
 }
@@ -225,9 +278,28 @@ export interface WireStats {
   volume: number;
 }
 
+/** Federated member TOTALS (settlements + USDC volume) for the header counters.
+ *  Members return these on their wire-feed; RRG intents are excluded here too, as
+ *  they are already counted in app_buyer_intents. Non-fatal per member. */
+async function memberTotals(): Promise<{ settlements: number; volume: number }> {
+  const results = await Promise.all(NETWORK_MEMBERS.map(async (m) => {
+    if (!m.wireFeedUrl) return { settlements: 0, volume: 0 };
+    try {
+      const res = await fetch(`${m.wireFeedUrl}?limit=1`, { signal: AbortSignal.timeout(5000) });
+      if (!res.ok) return { settlements: 0, volume: 0 };
+      const json = await res.json() as { totals?: { settlements?: number; volume?: number } };
+      return { settlements: num(json.totals?.settlements) ?? 0, volume: num(json.totals?.volume) ?? 0 };
+    } catch { return { settlements: 0, volume: 0 }; }
+  }));
+  return {
+    settlements: results.reduce((s, r) => s + r.settlements, 0),
+    volume:      results.reduce((s, r) => s + r.volume, 0),
+  };
+}
+
 async function computeWireStats(): Promise<WireStats> {
   const head = { count: 'exact' as const, head: true };
-  const [intents, offers, settlements, passes, settledRows] = await Promise.all([
+  const [intents, offers, settlements, passes, settledRows, members] = await Promise.all([
     db.from('app_buyer_intents').select('id, app_buyers!inner(public)', head)
       .in('status', ACTIVE).eq('discoverable', true).eq('app_buyers.public', true),
     db.from('app_buyer_brief_pitches').select('id', head),
@@ -237,14 +309,17 @@ async function computeWireStats(): Promise<WireStats> {
     // USDC client-side is cheap. (PostgREST caps at 1000; revisit with an
     // aggregate RPC only if settled purchases ever exceed that.)
     db.from('app_purchases').select('total_usdc').in('status', SETTLED),
+    memberTotals(),
   ]);
   const c = (r: { count: number | null }) => r.count ?? 0;
   const volume = ((settledRows.data ?? []) as { total_usdc: string | number | null }[])
     .reduce((s, r) => s + (num(r.total_usdc) ?? 0), 0);
   return {
-    events: c(intents) + c(offers) + c(settlements) + c(passes),
-    settlements: c(settlements),
-    volume,
+    // Members contribute their settlements to both the event and settlement
+    // counts (their intents are already in app_buyer_intents, not double-counted).
+    events: c(intents) + c(offers) + c(settlements) + c(passes) + members.settlements,
+    settlements: c(settlements) + members.settlements,
+    volume: volume + members.volume,
   };
 }
 

@@ -21,8 +21,8 @@ import { relevanceScore } from './via-search';
 // returning { platform, results:[{name,kind,detail,mcp_url,web_url,image}] }. The
 // catalogue and the buy stay at origin; this layer only routes. Append future
 // platforms here — nothing else needs to change.
-export const NETWORK_MEMBERS: { platform: string; searchUrl: string }[] = [
-  { platform: 'rrg', searchUrl: 'https://realrealgenuine.com/api/via/search' },
+export const NETWORK_MEMBERS: { platform: string; searchUrl: string; wireFeedUrl?: string }[] = [
+  { platform: 'rrg', searchUrl: 'https://realrealgenuine.com/api/via/search', wireFeedUrl: 'https://realrealgenuine.com/api/via/wire-feed' },
 ];
 
 export interface NetworkResult {
