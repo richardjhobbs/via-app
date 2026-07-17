@@ -3,10 +3,9 @@ import Link from 'next/link';
 import { getWireEvents, getWireStats } from '@/lib/app/wire';
 import ThemeToggle from '@/components/app/ThemeToggle';
 import WireStream from './WireStream';
+import WireBackLink from './WireBackLink';
 
 export const dynamic = 'force-dynamic';
-
-const RRG_BASE = 'https://realrealgenuine.com';
 
 const APP_BASE = (process.env.NEXT_PUBLIC_APP_BASE_URL || 'https://app.getvia.xyz').replace(/\/$/, '');
 
@@ -38,10 +37,6 @@ export default async function WirePage({
     getWireEvents(50),
     getWireStats(),
   ]);
-  // Arrivals from RRG carry ?from=rrg so Back returns there, not to VIA home.
-  const back = from === 'rrg'
-    ? { href: RRG_BASE, label: 'Back to RRG', external: true }
-    : { href: '/', label: 'Back to VIA', external: false };
 
   return (
     <div style={{ minHeight: '100vh', background: 'var(--bg)' }}>
@@ -49,15 +44,7 @@ export default async function WirePage({
       style={{ maxWidth: 720, margin: '0 auto', padding: '56px 20px 120px', color: 'var(--ink-2)' }}
     >
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 24 }}>
-        {back.external ? (
-          <a href={back.href} className="text-xs font-mono tracking-widest uppercase text-ink-3 hover:text-ink">
-            <span aria-hidden>←</span> {back.label}
-          </a>
-        ) : (
-          <Link href={back.href} className="text-xs font-mono tracking-widest uppercase text-ink-3 hover:text-ink">
-            <span aria-hidden>←</span> {back.label}
-          </Link>
-        )}
+        <WireBackLink initialFrom={from} />
         <ThemeToggle />
       </div>
 
