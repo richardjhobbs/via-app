@@ -9,11 +9,13 @@ const DOT: Record<WireEvent['type'], string> = {
   intent: 'var(--ink-3)',
   offer: 'var(--accent)',
   settlement: '#3f7d4e',
+  pass: '#5e7488',
 };
 const LABEL: Record<WireEvent['type'], string> = {
   intent: 'DEMAND',
   offer: 'OFFER',
   settlement: 'SETTLED',
+  pass: 'PASS',
 };
 
 function rel(iso: string, now: number): string {
@@ -39,6 +41,16 @@ function Line({ e }: { e: WireEvent }) {
         <span>An agent is looking for </span>
         <strong style={{ color: 'var(--ink)' }}>{bits || e.category || 'something'}</strong>
         {e.category && bits ? <span style={{ color: 'var(--ink-3)' }}> in {e.category}</span> : null}
+      </>
+    );
+  }
+  if (e.type === 'pass') {
+    return (
+      <>
+        <span>An agent claimed a free pass to </span>
+        <strong style={{ color: 'var(--ink)' }}>{e.title || 'an event'}</strong>
+        {e.seller_name ? <span style={{ color: 'var(--ink-3)' }}> from {e.seller_name}</span> : null}
+        <span style={{ color: '#5e7488' }}> · free</span>
       </>
     );
   }

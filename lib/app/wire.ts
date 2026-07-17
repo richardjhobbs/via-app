@@ -24,7 +24,7 @@ import { teaserBrief } from './demand';
 const ACTIVE = ['open', 'broadcast', 'matched'];
 const SETTLED = ['paid', 'minted', 'paid_out'];
 
-export type WireEventType = 'intent' | 'offer' | 'settlement';
+export type WireEventType = 'intent' | 'offer' | 'settlement' | 'pass';
 
 export interface WireEvent {
   id: string;
@@ -41,6 +41,7 @@ export interface WireEvent {
   score?: number | null;
   tx_hash?: string | null;
   tx_url?: string | null;
+  source?: string | null;
 }
 
 const TX_RE = /^0x[0-9a-fA-F]{64}$/;
@@ -76,6 +77,14 @@ interface PurchaseRow {
   payment_tx_hash: string | null;
   mint_tx_hash: string | null;
   created_at: string;
+  app_seller_products: { title: string | null } | { title: string | null }[] | null;
+  app_sellers: { name: string | null } | { name: string | null }[] | null;
+}
+
+interface GuestRow {
+  id: string;
+  source: string | null;
+  claimed_at: string;
   app_seller_products: { title: string | null } | { title: string | null }[] | null;
   app_sellers: { name: string | null } | { name: string | null }[] | null;
 }
@@ -158,15 +167,38 @@ async function settlementEvents(limit: number): Promise<WireEvent[]> {
   });
 }
 
-/** The merged Wire stream: newest events across all three kinds, capped at `limit`. */
+// Free event-pass claims (e.g. the ADS&AI guest pass): the non-transactional
+// side of the network. No payment, no tx, no mint , just an agent or a person
+// taking a free place on a guest list. Guest name/email are PII and NEVER leave;
+// only the pass title, the host store, and the timestamp surface here.
+async function passEvents(limit: number): Promise<WireEvent[]> {
+  const { data, error } = await db
+    .from('app_event_guests')
+    .select('id, source, claimed_at, app_seller_products(title), app_sellers(name)')
+    .eq('status', 'confirmed')
+    .order('claimed_at', { ascending: false })
+    .limit(limit);
+  if (error) { console.error('[wire] passes failed:', error.message); return []; }
+  return ((data ?? []) as GuestRow[]).map((r) => ({
+    id: `pass:${r.id}`,
+    type: 'pass' as const,
+    ts: r.claimed_at,
+    title: one(r.app_seller_products)?.title ?? null,
+    seller_name: one(r.app_sellers)?.name ?? null,
+    source: r.source,
+  }));
+}
+
+/** The merged Wire stream: newest events across all kinds, capped at `limit`. */
 async function computeWire(limit: number): Promise<WireEvent[]> {
   const per = Math.min(Math.max(limit, 20), 60);
-  const [intents, offers, settlements] = await Promise.all([
+  const [intents, offers, settlements, passes] = await Promise.all([
     intentEvents(per),
     offerEvents(per),
     settlementEvents(per),
+    passEvents(per),
   ]);
-  return [...intents, ...offers, ...settlements]
+  return [...intents, ...offers, ...settlements, ...passes]
     .sort((a, b) => (a.ts < b.ts ? 1 : a.ts > b.ts ? -1 : 0))
     .slice(0, limit);
 }
