@@ -53,6 +53,7 @@ import { getStoreCardBySlug, storeCardJson, storeCardUrl } from '@/lib/app/backr
 import { claimEventPass } from '@/lib/app/event-passes';
 import { forwardMcpTool, isMemberMcpUrl, memberCentralMcpUrl } from '@/lib/app/mcp-forward';
 import { broadcastNetworkIntent } from '@/lib/app/network-intent';
+import { after } from 'next/server';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -284,6 +285,14 @@ function createServer(req: Request) {
         searchNetwork(query, max),
         resolveNamedViaStore(query, max),
       ]);
+
+      // Any network check is live demand: after the response, broadcast the
+      // intent as an anonymised teaser (category + product type + one attribute
+      // only, never the raw text or any identity) onto the demand feed + The
+      // Wire, so a concierge "just checking availability" still surfaces as
+      // network activity. Runs via after() so it never adds latency to discovery,
+      // and is deduped so repeated searches resurface instead of spamming.
+      after(async () => { await broadcastNetworkIntent(query, agentic.intent); });
 
       // A query that NAMES a specific VIA store (e.g. "Ads & AI #12") resolves
       // directly to that store and its listings. Put those FIRST and dedupe the
