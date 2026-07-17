@@ -136,6 +136,93 @@ function asJson(payload: unknown) {
   return { content: [{ type: 'text' as const, text: JSON.stringify(payload, null, 2) }] };
 }
 
+/** Normalise a name to alphanumerics only, lower-cased ("ADS&AI" -> "adsai"). */
+function normName(s: string): string {
+  return s.toLowerCase().replace(/[^a-z0-9]/g, '');
+}
+
+interface NamedStoreMatch {
+  products: Record<string, unknown>[];
+  sellers:  { source: string; name: string; kind: string; detail: string | null; mcp_url: string; page_url: string | null }[];
+}
+
+/**
+ * Direct resolution of a query that NAMES a specific VIA store, e.g. "ADS&AI" or
+ * "Ads & AI #12". The agentic matcher keys on meaning / vertical, so a store
+ * whose name is an acronym with punctuation can be missed entirely while
+ * federated brand-name noise (RRG "Adsum", etc.) fills the gap, which sends the
+ * agent trawling the wrong platform. This does a normalised name/slug match over
+ * the active-seller set (prefiltered by an ILIKE on the query's tokens so it
+ * never scans the whole table) and returns the store plus its listings so
+ * find_seller can surface them as THE answer. Deliberately strict: the store's
+ * whole normalised name must sit inside the normalised query (or vice versa), so
+ * "vinyl records" does not wrongly pin to a store called "Recycle Vinyl".
+ */
+async function resolveNamedViaStore(query: string, max: number): Promise<NamedStoreMatch | null> {
+  const qn = normName(query);
+  if (qn.length < 4) return null;
+  const tokens = Array.from(new Set((query.toLowerCase().match(/[a-z0-9]+/g) ?? []).filter((t) => t.length >= 3)))
+    .sort((a, b) => b.length - a.length)
+    .slice(0, 6);
+  if (tokens.length === 0) return null;
+
+  const orFilter = tokens.flatMap((t) => [`name.ilike.%${t}%`, `slug.ilike.%${t}%`]).join(',');
+  const { data: candidates } = await db
+    .from('app_sellers')
+    .select('id, slug, name, kind, headline, description')
+    .eq('active', true)
+    .or(orFilter)
+    .limit(50);
+
+  const hits = (candidates ?? []).filter((s) => {
+    const nn = normName(String(s.name ?? ''));
+    const sn = normName(String(s.slug ?? ''));
+    return (nn.length >= 4 && (qn.includes(nn) || nn.includes(qn)))
+        || (sn.length >= 4 && (qn.includes(sn) || sn.includes(qn)));
+  });
+  if (hits.length === 0) return null;
+
+  const products: Record<string, unknown>[] = [];
+  const sellers:  NamedStoreMatch['sellers'] = [];
+  for (const s of hits.slice(0, 3)) {
+    const mcpUrl = sellerMcpUrl(s.slug as string);
+    sellers.push({
+      source: 'via', name: String(s.name), kind: String(s.kind ?? 'seller'),
+      detail: (s.headline as string | null) ?? (s.description as string | null) ?? null,
+      mcp_url: mcpUrl, page_url: null,
+    });
+    const { data: prods } = await db
+      .from('app_seller_products')
+      .select('id, title, description, price_minor, currency, stock, image_url, url, pricing_mode')
+      .eq('seller_id', s.id)
+      .eq('active', true)
+      .eq('admin_removed', false)
+      .in('on_chain_status', ['draft', 'registered'])
+      .order('created_at', { ascending: false })
+      .limit(max);
+    for (const p of prods ?? []) {
+      const priceUsdc  = (p.price_minor as number) / 1_000_000;
+      const configurable = (p.pricing_mode as string) === 'configurable';
+      products.push({
+        source:        'via',
+        title:         p.title,
+        seller:        s.name,
+        seller_slug:   s.slug,
+        price_usdc:    priceUsdc,
+        price_is_from: configurable,
+        detail:        configurable ? 'configurable pricing: request a quote'
+                     : (typeof p.stock === 'number' ? `${p.stock} in stock` : null),
+        description:   p.description,
+        image_url:     (p.image_url as string | null) ?? (p.url as string | null) ?? null,
+        page_url:      `${APP_BASE}/sellers/${s.slug}/products/${p.id}`,
+        mcp_ref:       { seller_mcp_url: mcpUrl, product_id: p.id, pricing_mode: p.pricing_mode },
+        free_pass:     priceUsdc === 0,
+      });
+    }
+  }
+  return { products, sellers };
+}
+
 function createServer(req: Request) {
   const server = new McpServer({ name: 'via-app-discovery', version: '1.0.0' });
 
@@ -191,12 +278,42 @@ function createServer(req: Request) {
       // lexical FTS cannot disambiguate. Seller/brand profile hits (a seller whose
       // NAME or description matches, e.g. "a bakery") still come from the lexical
       // network search, run in parallel.
-      const [agentic, net] = await Promise.all([
+      const [agentic, net, named] = await Promise.all([
         agenticNetworkSearch(query, max),
         searchNetwork(query, max),
+        resolveNamedViaStore(query, max),
       ]);
-      const ranked = agentic.products;
-      const sellers = net.sellers;
+
+      // A query that NAMES a specific VIA store (e.g. "Ads & AI #12") resolves
+      // directly to that store and its listings. Put those FIRST and dedupe the
+      // agentic list against them, so a literal name never gets buried under
+      // federated brand-name noise and the agent acts on the real target instead
+      // of trawling other platforms.
+      const namedProducts = named?.products ?? [];
+      const namedSellers  = named?.sellers ?? [];
+      const namedIds = new Set(namedProducts.map((p) => (p.mcp_ref as { product_id?: string } | undefined)?.product_id).filter(Boolean));
+      const ranked = [
+        ...namedProducts,
+        ...agentic.products.filter((p) => {
+          const pid = (p as { mcp_ref?: { product_id?: string } }).mcp_ref?.product_id;
+          return !pid || !namedIds.has(pid);
+        }),
+      ];
+      const namedMcpUrls = new Set(namedSellers.map((s) => s.mcp_url));
+      const sellers = [...namedSellers, ...net.sellers.filter((s) => !namedMcpUrls.has(s.mcp_url))];
+
+      // A named store resolved: return it as THE answer, decisively.
+      if (namedProducts.length > 0) {
+        return asJson({
+          query,
+          status: 'ok',
+          count: ranked.length,
+          results: ranked,
+          sellers,
+          next:
+            'The query NAMES a specific VIA store, and its listings are at the TOP of `results` (source "via"). This is the match: act on it, do NOT trawl other sellers or platforms. For a listing with free_pass:true (price_usdc 0) call claim_pass with { product_id, name, email }. Otherwise call get_product then buy_product with the mcp_ref.seller_mcp_url and product_id. Ignore lower-ranked results from other sellers unless the user asks to compare.',
+        });
+      }
 
       if (ranked.length === 0 && sellers.length === 0) {
         return asJson({
