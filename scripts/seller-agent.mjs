@@ -131,8 +131,7 @@ const RRG_BRANDS = [
 async function buildRoster() {
   let via = [];
   try {
-    const headers = process.env.CRON_SECRET ? { authorization: `Bearer ${process.env.CRON_SECRET}` } : {};
-    const res = await fetch(`${VIA_BASE}/api/via/agent-roster`, { headers, signal: AbortSignal.timeout(8000) });
+    const res = await fetch(`${VIA_BASE}/api/via/agent-roster`, { signal: AbortSignal.timeout(8000) });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     via = (await res.json()).sellers ?? [];
   } catch (e) {

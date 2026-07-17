@@ -9,27 +9,25 @@
  * VIA half of the ROSTER array, so onboarding a seller (register -> approve ->
  * enable-agent) makes it pitch on the next agent pass with no code change.
  *
- * The agent still resolves each seller's SIGNING key itself, in memory, from
- * AGENT_WALLET_SEED + store_id (never returned here); this endpoint only lists
- * WHO to run, never HOW to pay. Every field returned is otherwise public
- * (slug/name, on-chain wallet + erc8004 id); store_id is the app_sellers UUID,
- * inert without the seed. Gated on CRON_SECRET as defence in depth all the same.
+ * The agent resolves each seller's SIGNING key itself, in memory, from
+ * AGENT_WALLET_SEED + store_id; this endpoint only lists WHO to run, never HOW
+ * to pay. It is deliberately UNAUTHENTICATED: seller identity is already public
+ * (the list_sellers MCP tool returns the same roster to any agent), and every
+ * field here is public or inert, slug/name, on-chain agent wallet + erc8004 id,
+ * and store_id (the app_sellers UUID). store_id is only the HMAC MESSAGE in
+ * wallet derivation; all security rests on the seed's secrecy (see
+ * lib/app/agent-wallet.ts), so exposing the UUID reveals nothing exploitable.
  *
  * RRG-source brands are NOT here: they live in RRG's separate database and each
  * needs its <SLUG>_WALLET_PRIVATE_KEY placed on the VPS by hand before it can
  * pay, so they stay an explicit, key-gated list in seller-agent.mjs.
  */
-import { NextRequest, NextResponse } from 'next/server';
+import { NextResponse } from 'next/server';
 import { db } from '@/lib/app/db';
 
 export const dynamic = 'force-dynamic';
 
-export async function GET(req: NextRequest) {
-  const cronSecret = process.env.CRON_SECRET;
-  if (cronSecret && req.headers.get('authorization') !== `Bearer ${cronSecret}`) {
-    return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
-  }
-
+export async function GET() {
   const { data, error } = await db
     .from('app_sellers')
     .select('id, slug, name, agent_wallet_address, erc8004_agent_id, approval_status')
