@@ -1324,6 +1324,11 @@ body {
 .deal-thread { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; justify-content: flex-end; gap: 16px; padding: 14px 0; overflow: hidden; }
 .deal-settle { flex: 0 0 auto; height: 46px; display: flex; align-items: center; justify-content: center; }
 
+/* The Wire feed inside the seam: a scrollable live stream, newest at top. */
+.wire-thread { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding: 4px 0; }
+.wire-thread::-webkit-scrollbar { width: 6px; }
+.wire-thread::-webkit-scrollbar-thumb { background: var(--line-strong); border-radius: 3px; }
+
 .via-stats { display: grid; grid-template-columns: repeat(3, 1fr); border-top: 1px solid var(--line); max-width: 1440px; margin: 0 auto; width: 100%; box-sizing: border-box; }
 .stat-cell { padding: 18px 44px; display: flex; align-items: baseline; gap: 12px; border-right: 1px solid var(--line); }
 .stat-cell:last-child { border-right: none; }

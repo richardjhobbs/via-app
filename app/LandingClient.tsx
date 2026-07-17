@@ -1,11 +1,12 @@
 'use client';
 
-import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import ThemeToggle from '@/components/app/ThemeToggle';
 import { Wordmark } from '@/components/app/Wordmark';
 import TestAgentBadge from '@/components/app/TestAgentBadge';
+import WireStream from './wire/WireStream';
 import type { NetworkMetrics } from '@/lib/app/network-stats';
+import type { WireEvent } from '@/lib/app/wire';
 
 /* ──────────────────────────────────────────────────────────────────────────
    Landing "The Seam", Maison design. Sellers left, buyers right, one live deal
@@ -16,42 +17,6 @@ const MARQUEE = [
   'AGENT MATCHED', 'WHOLESALE LOAVES · 240 USDC', 'SETTLED IN USDC',
   'KYOTO RYOKAN · BOOKED', 'SECURITY AUDIT · NEGOTIATING', 'NEGOTIATING · 4 OPEN',
   'NO ADS · NO ALGORITHM', 'COACHING BLOCK · 540 USDC', 'TRADEMARK FILING · RETAINED',
-];
-
-type Turn = { who: 'buy' | 'sell'; text: string };
-type Deal = { sector: string; turns: Turn[]; settle: string };
-
-const DEALS: Deal[] = [
-  { sector: 'FOOD & RETAIL', turns: [
-    { who: 'buy',  text: 'A daily croissant supply for our cafe. Fresh by 7am.' },
-    { who: 'sell', text: 'A bakery two streets over. Butter croissants, daily.' },
-    { who: 'buy',  text: '32 a dozen on a standing order?' },
-    { who: 'sell', text: 'Agreed at 32. First delivery tomorrow.' },
-  ], settle: 'Booked · 32 USDC / day' },
-  { sector: 'TRAVEL', turns: [
-    { who: 'buy',  text: 'Four nights in Kyoto. A quiet ryokan with an onsen.' },
-    { who: 'sell', text: 'Garden rooms, kaiseki dinner, open in March.' },
-    { who: 'buy',  text: 'All in under 1,800? Transfers included.' },
-    { who: 'sell', text: 'Held at 1,740. Transfers and tax in.' },
-  ], settle: 'Booked · 1,740 USDC' },
-  { sector: 'PROFESSIONAL SERVICES', turns: [
-    { who: 'buy',  text: 'A trademark filing for a new mark. Fixed fee.' },
-    { who: 'sell', text: 'A firm that searches, files and monitors it.' },
-    { who: 'buy',  text: 'Filed within the week? Offer 900.' },
-    { who: 'sell', text: 'Agreed at 900. Drafting the search now.' },
-  ], settle: 'Retained · 900 USDC' },
-  { sector: 'HEALTH & WELLNESS', turns: [
-    { who: 'buy',  text: 'Twelve weeks of strength and mobility, coached remotely.' },
-    { who: 'sell', text: 'A coach with your history. Weekly plan, video review.' },
-    { who: 'buy',  text: 'Under 600 for the block?' },
-    { who: 'sell', text: 'Set at 540. Your first session is Monday.' },
-  ], settle: 'Enrolled · 540 USDC' },
-  { sector: 'IT / TECH SERVICES', turns: [
-    { who: 'buy',  text: 'A security audit of our web app. Reported, not just scanned.' },
-    { who: 'sell', text: 'A team that audits and writes the fixes. Two weeks.' },
-    { who: 'buy',  text: 'Scope the API too. Offer 2,400.' },
-    { who: 'sell', text: 'Scoped and booked at 2,400. Starting Thursday.' },
-  ], settle: 'Booked · 2,400 USDC' },
 ];
 
 function LiveDot() {
@@ -85,58 +50,27 @@ function Marquee() {
   );
 }
 
-function Msg({ m, latest }: { m: Turn; latest: boolean }) {
-  const seller = m.who === 'sell';
-  return (
-    <div className="via-rise" style={{ display: 'flex', flexDirection: 'column', gap: 5,
-      alignItems: seller ? 'flex-start' : 'flex-end', textAlign: seller ? 'left' : 'right' }}>
-      <div className="uc-mono" style={{ fontSize: 9, letterSpacing: '0.16em', color: 'var(--ink-3)', display: 'flex', gap: 6 }}>
-        {seller ? <><span style={{ color: 'var(--accent)' }}>→</span> SALES AGENT</> : <>BUYING AGENT <span style={{ color: 'var(--accent)' }}>←</span></>}
-      </div>
-      <div className={latest ? 'via-caret' : ''} style={{ fontFamily: 'var(--font-fraunces), serif', fontWeight: 300, fontSize: 18,
-        lineHeight: 1.32, letterSpacing: '-0.005em', color: 'var(--ink)', maxWidth: '94%' }}>{m.text}</div>
-    </div>
-  );
-}
-
-function LiveDeal() {
-  const [di, setDi] = useState(0);
-  const [n, setN] = useState(0);
-  const deal = DEALS[di];
-  useEffect(() => {
-    let alive = true; const timers: ReturnType<typeof setTimeout>[] = [];
-    setN(0);
-    const T = deal.turns.length;
-    for (let i = 1; i <= T; i++) timers.push(setTimeout(() => { if (alive) setN(i); }, 500 + i * 1150));
-    timers.push(setTimeout(() => { if (alive) setDi((d) => (d + 1) % DEALS.length); }, 500 + T * 1150 + 3000));
-    return () => { alive = false; timers.forEach(clearTimeout); };
-  }, [di]); // eslint-disable-line react-hooks/exhaustive-deps
-  const settled = n >= deal.turns.length;
+/** The middle seam panel: the live network feed off The Wire, newest first,
+ *  scrollable, capped at the 50 most recent events. Server-seeded then polled. */
+function WireSeam({ initial }: { initial: WireEvent[] }) {
   return (
     <div className="seam-deal">
       <div className="deal-head">
         <div className="uc-mono" style={{ fontSize: 9.5, color: 'var(--ink-3)', display: 'flex', alignItems: 'center', gap: 7 }}>
-          <LiveDot /> LIVE · <span style={{ color: 'var(--ink-2)' }}>{deal.sector}</span>
+          <LiveDot /> LIVE · <span style={{ color: 'var(--ink-2)' }}>THE WIRE</span>
         </div>
-        <div className="uc-mono" style={{ fontSize: 9.5, color: 'var(--ink-3)' }}>{String(di + 1).padStart(2, '0')}/{String(DEALS.length).padStart(2, '0')}</div>
+        <Link href="/wire" className="uc-mono" style={{ fontSize: 9.5, color: 'var(--ink-3)', textDecoration: 'none' }}>
+          OPEN <span aria-hidden>↗</span>
+        </Link>
       </div>
-      <div className="deal-thread">
-        {deal.turns.slice(0, n).map((m, i) => <Msg key={di + '-' + i} m={m} latest={i === n - 1} />)}
-      </div>
-      <div className="deal-settle">
-        {settled && (
-          <div className="via-rise uc-mono" style={{ display: 'inline-flex', alignItems: 'center', gap: 9, fontSize: 10,
-            letterSpacing: '0.16em', color: 'var(--accent)', border: '1px solid var(--accent)', padding: '9px 14px' }}>
-            <span style={{ width: 6, height: 6, borderRadius: 999, background: 'var(--accent)' }} />
-            {deal.settle.toUpperCase()}
-          </div>
-        )}
+      <div className="wire-thread">
+        <WireStream initial={initial} limit={50} compact />
       </div>
     </div>
   );
 }
 
-export default function LandingClient({ metrics }: { metrics: NetworkMetrics }) {
+export default function LandingClient({ metrics, wire }: { metrics: NetworkMetrics; wire: WireEvent[] }) {
   const stats: [string, string, string][] = [
     ['LIVE SELLERS', metrics.sellers.toLocaleString(), 'across the network'],
     ['LIVE BUYING AGENTS', metrics.buyingAgents.toLocaleString(), 'trained and active'],
@@ -182,7 +116,7 @@ export default function LandingClient({ metrics }: { metrics: NetworkMetrics }) 
           </div>
         </section>
 
-        <LiveDeal />
+        <WireSeam initial={wire} />
 
         <section className="seam-side seam-buyer">
           <div>

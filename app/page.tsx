@@ -1,5 +1,6 @@
 import LandingClient from './LandingClient';
 import { getNetworkMetrics } from '@/lib/app/network-stats';
+import { getWireEvents } from '@/lib/app/wire';
 
 export const metadata = {
   title: 'VIA · Sales & Buying Agents',
@@ -13,6 +14,6 @@ export const metadata = {
 export const dynamic = 'force-dynamic';
 
 export default async function HomePage() {
-  const metrics = await getNetworkMetrics();
-  return <LandingClient metrics={metrics} />;
+  const [metrics, wire] = await Promise.all([getNetworkMetrics(), getWireEvents(50)]);
+  return <LandingClient metrics={metrics} wire={wire} />;
 }

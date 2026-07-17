@@ -26,7 +26,7 @@ export const metadata: Metadata = {
 };
 
 export default async function WirePage() {
-  const events = await getWireEvents(60);
+  const events = await getWireEvents(50);
   const settled = events.filter((e) => e.type === 'settlement');
   const volume = settled.reduce((s, e) => s + (e.amount_usdc ?? 0), 0);
 
@@ -35,6 +35,12 @@ export default async function WirePage() {
       className="br-sans"
       style={{ maxWidth: 720, margin: '0 auto', padding: '56px 20px 120px', color: 'var(--ink-2)' }}
     >
+      <div style={{ marginBottom: 24 }}>
+        <Link href="/" className="text-xs font-mono tracking-widest uppercase text-ink-3 hover:text-ink">
+          <span aria-hidden>←</span> Back to VIA
+        </Link>
+      </div>
+
       <header style={{ marginBottom: 28 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
           <span
@@ -84,7 +90,7 @@ export default async function WirePage() {
         <Stat label="Settled volume" value={volume > 0 ? `${volume.toLocaleString('en-US', { maximumFractionDigits: 2 })} USDC` : '—'} />
       </div>
 
-      <WireStream initial={events} limit={60} />
+      <WireStream initial={events} limit={50} />
 
       <footer style={{ marginTop: 40, paddingTop: 20, borderTop: '1px solid var(--line)', fontSize: 13.5, color: 'var(--ink-3)' }}>
         <p style={{ margin: '0 0 8px' }}>
