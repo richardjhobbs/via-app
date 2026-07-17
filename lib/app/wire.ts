@@ -215,3 +215,41 @@ const cached = unstable_cache(
 export function getWireEvents(limit = 50): Promise<WireEvent[]> {
   return cached(Math.min(Math.max(limit, 1), 100));
 }
+
+// ── Totals ───────────────────────────────────────────────────────────────────
+// The header counters are network TOTALS, not a count of the 50 shown events.
+
+export interface WireStats {
+  events: number;
+  settlements: number;
+  volume: number;
+}
+
+async function computeWireStats(): Promise<WireStats> {
+  const head = { count: 'exact' as const, head: true };
+  const [intents, offers, settlements, passes, settledRows] = await Promise.all([
+    db.from('app_buyer_intents').select('id, app_buyers!inner(public)', head)
+      .in('status', ACTIVE).eq('discoverable', true).eq('app_buyers.public', true),
+    db.from('app_buyer_brief_pitches').select('id', head),
+    db.from('app_purchases').select('id', head).in('status', SETTLED),
+    db.from('app_event_guests').select('id', head).eq('status', 'confirmed'),
+    // Settled purchases are the low-volume, high-value rows; summing their
+    // USDC client-side is cheap. (PostgREST caps at 1000; revisit with an
+    // aggregate RPC only if settled purchases ever exceed that.)
+    db.from('app_purchases').select('total_usdc').in('status', SETTLED),
+  ]);
+  const c = (r: { count: number | null }) => r.count ?? 0;
+  const volume = ((settledRows.data ?? []) as { total_usdc: string | number | null }[])
+    .reduce((s, r) => s + (num(r.total_usdc) ?? 0), 0);
+  return {
+    events: c(intents) + c(offers) + c(settlements) + c(passes),
+    settlements: c(settlements),
+    volume,
+  };
+}
+
+const cachedStats = unstable_cache(computeWireStats, ['via-wire-stats'], { revalidate: 60 });
+
+export function getWireStats(): Promise<WireStats> {
+  return cachedStats();
+}

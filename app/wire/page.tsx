@@ -1,9 +1,12 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
-import { getWireEvents } from '@/lib/app/wire';
+import { getWireEvents, getWireStats } from '@/lib/app/wire';
+import ThemeToggle from '@/components/app/ThemeToggle';
 import WireStream from './WireStream';
 
 export const dynamic = 'force-dynamic';
+
+const RRG_BASE = 'https://realrealgenuine.com';
 
 const APP_BASE = (process.env.NEXT_PUBLIC_APP_BASE_URL || 'https://app.getvia.xyz').replace(/\/$/, '');
 
@@ -25,20 +28,37 @@ export const metadata: Metadata = {
   },
 };
 
-export default async function WirePage() {
-  const events = await getWireEvents(50);
-  const settled = events.filter((e) => e.type === 'settlement');
-  const volume = settled.reduce((s, e) => s + (e.amount_usdc ?? 0), 0);
+export default async function WirePage({
+  searchParams,
+}: {
+  searchParams: Promise<{ from?: string }>;
+}) {
+  const [{ from }, events, stats] = await Promise.all([
+    searchParams,
+    getWireEvents(50),
+    getWireStats(),
+  ]);
+  // Arrivals from RRG carry ?from=rrg so Back returns there, not to VIA home.
+  const back = from === 'rrg'
+    ? { href: RRG_BASE, label: 'Back to RRG', external: true }
+    : { href: '/', label: 'Back to VIA', external: false };
 
   return (
+    <div style={{ minHeight: '100vh', background: 'var(--bg)' }}>
     <main
-      className="br-sans"
       style={{ maxWidth: 720, margin: '0 auto', padding: '56px 20px 120px', color: 'var(--ink-2)' }}
     >
-      <div style={{ marginBottom: 24 }}>
-        <Link href="/" className="text-xs font-mono tracking-widest uppercase text-ink-3 hover:text-ink">
-          <span aria-hidden>←</span> Back to VIA
-        </Link>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 24 }}>
+        {back.external ? (
+          <a href={back.href} className="text-xs font-mono tracking-widest uppercase text-ink-3 hover:text-ink">
+            <span aria-hidden>←</span> {back.label}
+          </a>
+        ) : (
+          <Link href={back.href} className="text-xs font-mono tracking-widest uppercase text-ink-3 hover:text-ink">
+            <span aria-hidden>←</span> {back.label}
+          </Link>
+        )}
+        <ThemeToggle />
       </div>
 
       <header style={{ marginBottom: 28 }}>
@@ -85,9 +105,9 @@ export default async function WirePage() {
           marginBottom: 22,
         }}
       >
-        <Stat label="Events shown" value={String(events.length)} />
-        <Stat label="Settlements" value={String(settled.length)} />
-        <Stat label="Settled volume" value={volume > 0 ? `${volume.toLocaleString('en-US', { maximumFractionDigits: 2 })} USDC` : '—'} />
+        <Stat label="Events" value={stats.events.toLocaleString('en-US')} />
+        <Stat label="Settlements" value={stats.settlements.toLocaleString('en-US')} />
+        <Stat label="Settled volume" value={stats.volume > 0 ? `${stats.volume.toLocaleString('en-US', { maximumFractionDigits: 2 })} USDC` : '—'} />
       </div>
 
       <WireStream initial={events} limit={50} />
@@ -108,6 +128,7 @@ export default async function WirePage() {
 
       <style>{`@keyframes wirePulse{0%,100%{opacity:1}50%{opacity:0.35}}`}</style>
     </main>
+    </div>
   );
 }
 
