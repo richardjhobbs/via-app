@@ -91,42 +91,55 @@ function keyFor(seller) {
   return { privkey: pk.trim(), erc8004_id: seller.erc8004_id };
 }
 
-// The onboarded sellers this process runs an agent for. ONE source of truth: each
-// entry carries everything needed to run + pay for that seller, so adding a partner
-// is a single line here (DB-driven roster is the next step; see the transfer brief).
-//   source     - 'via' (catalogue on app.getvia.xyz, MCP /sellers/<slug>/mcp) or
-//                'rrg' (catalogue on realrealgenuine.com, MCP /brand/<slug>/mcp).
-//   erc8004_id - on-chain identity id stamped onto each offer.
-//   VIA only:  store_id (derivation input) + expect (on-record agent wallet, self-check).
-//   RRG only:  env_key  (the named env var holding that brand's payer private key).
-// Verified against app_sellers + scripts/place-seller-keys.mjs, 2026-06-16.
-const ROSTER = [
-  { slug: 'drhobbs-knowledge',       name: 'DrHobbs Knowledge',       source: 'via', erc8004_id: '55552', store_id: 'dd0e81fd-586b-4196-99f3-5f3ed2974ad6', expect: '0x35bcf708834d1c38187a49705dfd7997b551d418' },
-  { slug: 'eli-s-artisan-bakery',    name: "Eli's Artisan Bakery",    source: 'via', erc8004_id: '55593', store_id: 'e6a32d65-c452-4e07-9393-4fd4c8e8fd6e', expect: '0xca11b205de3e4f52cc9b6ba4be1276a88b7cc33f' },
-  { slug: 'the-sentient-startup',    name: 'The Sentient Startup',    source: 'via', erc8004_id: '55594', store_id: '0296cc76-6e88-4459-b978-aea036a893d7', expect: '0xbfa26fba52fe8bd4d2dd28a25f85220cd5e5b3bc' },
-  { slug: 'clooudie',                name: 'Clooudie',                source: 'rrg', erc8004_id: '45691', env_key: 'CLOOUDIE_WALLET_PRIVATE_KEY' },
-  { slug: 'nolo',                    name: 'Nolo',                    source: 'rrg', erc8004_id: '45690', env_key: 'NOLO_WALLET_PRIVATE_KEY' },
-  { slug: 'jennys',                  name: "Jenny's",                 source: 'rrg', erc8004_id: '55583', env_key: 'JENNYS_WALLET_PRIVATE_KEY' },
-  { slug: 'unknown-union',           name: 'Unknown Union',           source: 'rrg', erc8004_id: '44897', env_key: 'UNKNOWN_UNION_WALLET_PRIVATE_KEY' },
-  { slug: 'tyo',                     name: 'The Year Of...',          source: 'rrg', erc8004_id: '47353', env_key: 'TYO_WALLET_PRIVATE_KEY' },
-  { slug: 'university-of-diversity', name: 'University of Diversity', source: 'rrg', erc8004_id: '47320', env_key: 'UNIVERSITY_OF_DIVERSITY_WALLET_PRIVATE_KEY' },
-  { slug: 'les-basics',              name: 'LES BASICS',              source: 'rrg', erc8004_id: '51037', env_key: 'LES_BASICS_WALLET_PRIVATE_KEY' },
-  { slug: 'frey-tailored',           name: 'Frey Tailored',           source: 'rrg', erc8004_id: '45686', env_key: 'FREY_TAILORED_WALLET_PRIVATE_KEY' },
-  { slug: 'gumball-3000',            name: 'Gumball 3000',            source: 'rrg', erc8004_id: '51174', env_key: 'GUMBALL_3000_WALLET_PRIVATE_KEY' },
-  { slug: 'livvium',                 name: 'LIVVIUM',                 source: 'rrg', erc8004_id: '55582', env_key: 'LIVVIUM_WALLET_PRIVATE_KEY' },
-  { slug: 'philleywood',             name: 'Philleywood',             source: 'rrg', erc8004_id: '50992', env_key: 'PHILLEYWOOD_WALLET_PRIVATE_KEY' },
-  { slug: 'pitchers-only',           name: 'Pitchers Only',           source: 'rrg', erc8004_id: '54261', env_key: 'PITCHERS_ONLY_WALLET_PRIVATE_KEY' },
-  // Demo sellers (temporary, until formally onboarded). VIA = ingested vinyl
-  // stores enabled via /api/admin/sellers/<id>/enable-agent (2026-06-18); RRG =
-  // signer EOA minted by rrg/scripts/register-brand-agent.mjs.
-  { slug: 'dear-vinyl',              name: 'Dear Vinyl',              source: 'via', erc8004_id: '55674', store_id: '617374b8-3724-49cd-9f93-2340926df960', expect: '0x5e912d07a3b3b2a2515df8a78c700f5bba737e3e' },
-  { slug: 'recycle-vinyl',           name: 'Recycle Vinyl',           source: 'via', erc8004_id: '55675', store_id: '5d48521a-5bd2-4d0c-aab0-cfb885106fe9', expect: '0xac9daccd67e09cc12471572244d2c0f11f07ad0b' },
-  { slug: 'snow-records',            name: 'Snow Records Japan',      source: 'via', erc8004_id: '55676', store_id: '7518f06d-1c46-4afb-a009-e0841272d81e', expect: '0x916fd056f096475d2c69e2f9e5af2eb3ffa6dce1' },
-  { slug: 'vinyleers',               name: 'Vinyleers',               source: 'via', erc8004_id: '55677', store_id: 'f227563f-cac5-45c8-8f66-92466b19a9f8', expect: '0x4a1a393c8def1bb520743cfd9656f1774bf84abf' },
-  { slug: 'danartist',               name: 'DANArtist',               source: 'via', erc8004_id: '55628', store_id: '60a10d29-1915-4573-b0d6-0f26f3ef4816', expect: '0xdd1ad7899e37ddce4bb70eebd8fdefdf8b9bc411' },
-  { slug: 'americanrag',             name: 'American Rag Cie',        source: 'rrg', erc8004_id: '55678', env_key: 'AMERICANRAG_WALLET_PRIVATE_KEY' },
-  { slug: 'standard-and-strange',    name: 'Standard & Strange',      source: 'rrg', erc8004_id: '55679', env_key: 'STANDARD_AND_STRANGE_WALLET_PRIVATE_KEY' },
-];
+// The onboarded sellers this process runs an agent for. The roster is built
+// fresh each pass (buildRoster) from TWO sources:
+//   VIA-source: fetched from app.getvia.xyz/api/via/agent-roster, which lists
+//     every app_sellers row with a derived agent wallet + an ERC-8004 identity.
+//     So onboarding a VIA seller (register -> approve -> enable-agent) makes it
+//     pitch on the next pass with NO code change here. This killed the old bug
+//     where a newly onboarded seller stayed silent until someone hand-added it.
+//   RRG-source: the explicit RRG_BRANDS list below. These live in RRG's separate
+//     database and each only pays once its <SLUG>_WALLET_PRIVATE_KEY is placed on
+//     this host by hand, so they cannot appear silently and stay hand-listed.
+// Each roster entry carries: source ('via' | 'rrg'), erc8004_id (stamped on every
+// offer), and the per-source key material: VIA -> store_id (derivation input) +
+// expect (on-record agent wallet, self-check); RRG -> env_key (the payer key var).
+
+// RRG-source brands the VIA runtime pitches for. env_key is derived from the slug
+// (<SLUG>_WALLET_PRIVATE_KEY) so each brand is a single {slug, name, erc8004_id}.
+const envKeyForSlug = (slug) => `${slug.toUpperCase().replace(/-/g, '_')}_WALLET_PRIVATE_KEY`;
+const RRG_BRANDS = [
+  { slug: 'clooudie',                name: 'Clooudie',                erc8004_id: '45691' },
+  { slug: 'nolo',                    name: 'Nolo',                    erc8004_id: '45690' },
+  { slug: 'jennys',                  name: "Jenny's",                 erc8004_id: '55583' },
+  { slug: 'unknown-union',           name: 'Unknown Union',           erc8004_id: '44897' },
+  { slug: 'tyo',                     name: 'The Year Of...',          erc8004_id: '47353' },
+  { slug: 'university-of-diversity', name: 'University of Diversity', erc8004_id: '47320' },
+  { slug: 'les-basics',              name: 'LES BASICS',              erc8004_id: '51037' },
+  { slug: 'frey-tailored',           name: 'Frey Tailored',           erc8004_id: '45686' },
+  { slug: 'gumball-3000',            name: 'Gumball 3000',            erc8004_id: '51174' },
+  { slug: 'livvium',                 name: 'LIVVIUM',                 erc8004_id: '55582' },
+  { slug: 'philleywood',             name: 'Philleywood',             erc8004_id: '50992' },
+  { slug: 'pitchers-only',           name: 'Pitchers Only',           erc8004_id: '54261' },
+  { slug: 'americanrag',             name: 'American Rag Cie',        erc8004_id: '55678' },
+  { slug: 'standard-and-strange',    name: 'Standard & Strange',      erc8004_id: '55679' },
+].map((b) => ({ ...b, source: 'rrg', env_key: envKeyForSlug(b.slug) }));
+
+// Build this pass's roster: DB-driven VIA sellers + the explicit RRG brands. A
+// VIA-roster fetch failure logs and falls back to RRG-only, so an app blip never
+// silently drops every seller mid-pass.
+async function buildRoster() {
+  let via = [];
+  try {
+    const headers = process.env.CRON_SECRET ? { authorization: `Bearer ${process.env.CRON_SECRET}` } : {};
+    const res = await fetch(`${VIA_BASE}/api/via/agent-roster`, { headers, signal: AbortSignal.timeout(8000) });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    via = (await res.json()).sellers ?? [];
+  } catch (e) {
+    console.error(`[seller-agents] VIA roster fetch failed (${e.message}) , running RRG brands only this pass`);
+  }
+  return [...via, ...RRG_BRANDS];
+}
 
 const catalogBase = (source) => (source === 'via' ? VIA_BASE : RRG_BASE);
 
@@ -489,8 +502,11 @@ async function run() {
   const feedRes = await fetch(url, { signal: AbortSignal.timeout(8000) }).catch(() => null);
   if (!feedRes || !feedRes.ok) { console.error('[seller-agents] feed unreachable'); return; }
   const teasers = (await feedRes.json()).teasers ?? [];
-  console.log(`[seller-agents] ${teasers.length} new teaser(s) since ${since ?? 'start'}; ${ROSTER.length} sellers`);
-  if (teasers.length === 0) { console.log('[seller-agents] no new broadcasts , nothing to do'); return; }
+  if (teasers.length === 0) { console.log(`[seller-agents] no new broadcasts since ${since ?? 'start'} , nothing to do`); return; }
+
+  const ROSTER = await buildRoster();
+  console.log(`[seller-agents] ${teasers.length} new teaser(s) since ${since ?? 'start'}; ${ROSTER.length} sellers (${ROSTER.filter((s) => s.source === 'via').length} via, ${ROSTER.filter((s) => s.source === 'rrg').length} rrg)`);
+  if (ROSTER.length === 0) { console.error('[seller-agents] roster empty , skipping pass'); return; }
 
   // Each seller's catalogue is brief-independent, so pull every roster seller's
   // own MCP catalogue ONCE per pass, then reason it against each new brief. Fetch
