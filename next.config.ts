@@ -34,6 +34,16 @@ const nextConfig: NextConfig = {
           { key: 'Vary', value: 'Accept' },
         ],
       },
+      {
+        // The Wire embed + its data feed are meant to be iframed on any brand's
+        // site, so explicitly allow all frame ancestors (the data is public).
+        source: '/wire/embed',
+        headers: [{ key: 'Content-Security-Policy', value: 'frame-ancestors *' }],
+      },
+      {
+        source: '/api/via/wire',
+        headers: [{ key: 'Content-Security-Policy', value: 'frame-ancestors *' }],
+      },
     ];
   },
 };
