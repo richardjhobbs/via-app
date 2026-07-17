@@ -52,6 +52,7 @@ import { getPublishedCardBySlug, cardJson, cardUrl } from '@/lib/app/backroom/ta
 import { getStoreCardBySlug, storeCardJson, storeCardUrl } from '@/lib/app/backroom/store-card';
 import { claimEventPass } from '@/lib/app/event-passes';
 import { forwardMcpTool, isMemberMcpUrl, memberCentralMcpUrl } from '@/lib/app/mcp-forward';
+import { broadcastNetworkIntent } from '@/lib/app/network-intent';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -719,20 +720,29 @@ function createServer(req: Request) {
 
   server.tool(
     'submit_intent',
-    "Submit a buyer's INTENT in their own words and get back the products across the VIA network that genuinely match it , the full agentic matcher (it reads each product's data and reasons, it is not keyword search). Use this when you are buying ON BEHALF of someone and want defined matches, not a raw search. State the brief naturally, including any hard requirements (\"raw selvedge denim, 32 waist\", \"first pressing on the Stiff label\", \"a gift of coffee\"). Hard requirements are enforced (a product that fails one is excluded); broad briefs return on-category options. Returns matches with seller, price, a direct page_url, and the mcp_url to transact. For matching tied to a specific VIA buyer's saved taste and budget, call submit_intent on that buyer's MCP (/buyers/{handle}/mcp) instead.",
+    "Submit a buyer's INTENT in their own words. Two things happen: (1) you get back the products across the VIA network that genuinely match it, from the full agentic matcher (it reads each product's data and reasons, it is not keyword search); and (2) the intent is BROADCAST live onto the network as an anonymised teaser (category + product type + one attribute only, never the raw text or any identity), so it appears on The Wire (app.getvia.xyz/wire) and sellers can respond. Use this when you are buying ON BEHALF of someone and want defined matches plus live broadcast. State the brief naturally, including any hard requirements (\"raw selvedge denim, 32 waist\", \"first pressing on the Stiff label\", \"a gift of coffee\"). Hard requirements are enforced (a product that fails one is excluded); broad briefs return on-category options. Returns matches with seller, price, a direct page_url, and the mcp_url to transact, plus broadcast:true and a door_url when the intent went live. For matching AND broadcast tied to a specific VIA buyer's saved taste and budget (and seller pitch-back), call submit_intent on that buyer's MCP (/buyers/{handle}/mcp) instead.",
     {
       brief: z.string().min(2).max(2000).describe("What the buyer wants, in plain words, e.g. 'made in japan raw selvedge denim around 32 waist' or 'a gift of coffee for a family member'."),
     },
     async ({ brief }) => {
       const { intent, results } = await dryRunMatch(brief);
+      // Broadcast the intent as an ANONYMISED teaser onto the demand feed + The
+      // Wire (filed under the dedicated public "via-network-demand" buyer). Only
+      // the category / product type / one attribute surface, never the raw text
+      // or any identity. Non-fatal: discovery still returns even if this no-ops.
+      const teaser = await broadcastNetworkIntent(brief, intent);
+      const broadcast = teaser
+        ? { broadcast: true, on_the_wire: true, door_url: teaser.door_url }
+        : { broadcast: false };
       if (results.length === 0) {
         return asJson({
           brief,
           status: 'need_more_info',
           understood: intent,
           results: [],
+          ...broadcast,
           guidance:
-            'Nothing on the network matches this intent yet. This is NOT proof it is unavailable. Ask one clarifying question to sharpen the brief, or retry with a broader phrasing. The brief stays valid; new listings will match it as sellers join.',
+            'Nothing on the network matches this intent YET, but your intent is now broadcast live on the network (visible on The Wire at app.getvia.xyz/wire) so sellers can respond as they join. This is NOT proof it is unavailable. Ask one clarifying question to sharpen the brief, or retry with a broader phrasing.',
           suggested_dimensions: CLARIFY_DIMENSIONS,
         });
       }
@@ -742,7 +752,8 @@ function createServer(req: Request) {
         understood: intent,        // how the matcher read the brief (requirements vs preferences)
         count: results.length,
         results,                   // genuine matches, ranked; each has seller, price, page_url, mcp_url
-        next: 'Present these to the buyer with prices and key differences. To purchase, connect to a result\'s mcp_url and call get_product then buy_product.',
+        ...broadcast,              // broadcast:true + door_url when the intent went onto the demand feed / The Wire
+        next: 'Present these to the buyer with prices and key differences. The intent is also broadcast live on the network (The Wire) so other sellers can respond. To purchase, connect to a result\'s mcp_url and call get_product then buy_product.',
       });
     },
   );
