@@ -1,5 +1,39 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "permissions": {
+    "defaultMode": "acceptEdits",
+    "allow": [
+      "Edit(app/**)",
+      "Edit(lib/**)",
+      "Edit(components/**)",
+      "Edit(scripts/**)",
+      "Bash(npm run build)",
+      "Bash(npm run dev)",
+      "Bash(npm ci)",
+      "Bash(tsc --noEmit)",
+      "Bash(npx tsc --noEmit)",
+      "Bash(vercel --prod)",
+      "Bash(vercel:*)",
+      "Bash(scp:*)",
+      "Bash(ssh:*)",
+      "Bash(node scripts/audit-agent-wallets.mjs)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git push:*)",
+      "Bash(git fetch:*)",
+      "Bash(git pull:*)",
+      "Bash(git checkout:*)",
+      "Bash(git status:*)",
+      "Bash(git diff:*)",
+      "Bash(git log:*)"
+    ],
+    "deny": [
+      "Read(**/.env*)",
+      "Edit(**/.env*)",
+      "Edit(lib/app/auto-payout.ts)",
+      "Edit(lib/app/agent-wallet.ts)"
+    ]
+  },
   "hooks": {
     "PreToolUse": [
       {
