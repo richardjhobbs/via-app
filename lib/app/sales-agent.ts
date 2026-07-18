@@ -438,7 +438,7 @@ const ANSWER_TOOLS: OpenAI.Chat.Completions.ChatCompletionTool[] = [
     type: 'function',
     function: {
       name: 'list_products',
-      description: 'List the seller\'s active, on-chain-registered products with price (USDC), stock, and description. Use to answer "what do you sell", pricing, and availability questions.',
+      description: 'List the seller\'s active, sellable products (including mint-on-purchase inventory) with price (USDC), stock, and description. Use to answer "what do you sell", pricing, and availability questions.',
       parameters: {
         type: 'object',
         properties: {
@@ -469,7 +469,12 @@ async function callProducts(
     .from('app_seller_products')
     .select('id, title, description, kind, price_minor, currency, stock, url, token_id, max_supply')
     .eq('seller_id', sellerId)
-    .eq('on_chain_status', 'registered')
+    // Match the per-seller MCP list_products surface: mint-on-purchase
+    // inventory sits in 'draft' and is minted at sale, so it must count as
+    // sellable here too. Filtering to 'registered' only made the Sales Agent
+    // report an empty catalogue for ingested / draft-inventory sellers while
+    // find_seller and list_products advertised the same products as buyable.
+    .in('on_chain_status', ['draft', 'registered'])
     .eq('active', true)
     .order('created_at', { ascending: false })
     .limit(200);

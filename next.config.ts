@@ -26,12 +26,36 @@ const nextConfig: NextConfig = {
       '</auth.md>; rel="describedby"; type="text/markdown"',
       '</sitemap.xml>; rel="sitemap"; type="application/xml"',
     ].join(', ');
+    // Framing-neutral hardening headers, safe on every route. These do not
+    // touch resource loading (no default-src CSP), so they cannot break the
+    // app. RRG already emits the equivalent set from nginx; on Vercel we
+    // emit them here.
+    const baseSecurity = [
+      { key: 'X-Content-Type-Options', value: 'nosniff' },
+      { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },
+      // microphone left at its default (self-allowed) for the Back Room voice rooms.
+      { key: 'Permissions-Policy', value: 'camera=(), geolocation=()' },
+    ];
     return [
       {
         source: '/',
         headers: [
           { key: 'Link', value: link },
           { key: 'Vary', value: 'Accept' },
+        ],
+      },
+      {
+        // Hardening headers on every route.
+        source: '/:path*',
+        headers: baseSecurity,
+      },
+      {
+        // Clickjacking protection everywhere EXCEPT the Wire embed + its feed,
+        // which are deliberately iframable on any brand's site (public data).
+        source: '/((?!wire/embed|api/via/wire).*)',
+        headers: [
+          { key: 'X-Frame-Options', value: 'SAMEORIGIN' },
+          { key: 'Content-Security-Policy', value: "frame-ancestors 'self'" },
         ],
       },
       {
