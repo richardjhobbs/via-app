@@ -25,7 +25,7 @@ import { NETWORK_MEMBERS } from './network-search';
 const ACTIVE = ['open', 'broadcast', 'matched'];
 const SETTLED = ['paid', 'minted', 'paid_out'];
 
-export type WireEventType = 'intent' | 'offer' | 'settlement' | 'pass';
+export type WireEventType = 'intent' | 'offer' | 'settlement' | 'pass' | 'proposed';
 
 export interface WireEvent {
   id: string;
@@ -43,6 +43,15 @@ export interface WireEvent {
   tx_hash?: string | null;
   tx_url?: string | null;
   source?: string | null;
+  /** Product page link for a `proposed` match (public catalogue page, not a tx). */
+  url?: string | null;
+}
+
+interface RawProposal {
+  title?: unknown;
+  seller_name?: unknown;
+  price_usdc?: unknown;
+  url?: unknown;
 }
 
 const TX_RE = /^0x[0-9a-fA-F]{64}$/;
@@ -115,6 +124,26 @@ async function intentEvents(limit: number): Promise<WireEvent[]> {
       product_type: teaser.product_type,
       attribute: teaser.attribute,
     });
+    // Products this search surfaced, shown as "Proposed" matches right under
+    // their demand (same ts; stable sort keeps demand first). Public catalogue
+    // data only, no payment, so distinct from a paid Offer.
+    const proposals = (r.structured ?? {})['proposals'];
+    if (Array.isArray(proposals)) {
+      proposals.slice(0, 6).forEach((p, i) => {
+        const pr = (p ?? {}) as RawProposal;
+        const title = typeof pr.title === 'string' ? pr.title : null;
+        if (!title) return;
+        out.push({
+          id: `proposed:${r.id}:${i}`,
+          type: 'proposed',
+          ts,
+          title,
+          seller_name: typeof pr.seller_name === 'string' ? pr.seller_name : null,
+          price_usdc: num(pr.price_usdc),
+          url: typeof pr.url === 'string' ? pr.url : null,
+        });
+      });
+    }
   }
   return out;
 }

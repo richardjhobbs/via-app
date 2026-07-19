@@ -7,6 +7,37 @@ import { isRateLimited } from '@/lib/app/rate-limit';
 
 export const dynamic = 'force-dynamic';
 
+/** A product the partner's search surfaced, shown on the Wire as a "Proposed"
+ *  match. Public catalogue data only; validated + clipped before it is stored. */
+export interface StoredProposal {
+  product_id: string | null;
+  title: string;
+  seller_name: string | null;
+  price_usdc: number | null;
+  url: string | null;
+}
+
+function cleanProposals(v: unknown): StoredProposal[] {
+  if (!Array.isArray(v)) return [];
+  const out: StoredProposal[] = [];
+  for (const p of v.slice(0, 6)) {
+    if (!p || typeof p !== 'object') continue;
+    const r = p as Record<string, unknown>;
+    const title = typeof r.title === 'string' ? r.title.trim().slice(0, 140) : '';
+    if (!title) continue;
+    const price = typeof r.price_usdc === 'number' && Number.isFinite(r.price_usdc) ? r.price_usdc : null;
+    const url = typeof r.url === 'string' && /^https?:\/\//i.test(r.url) ? r.url.slice(0, 300) : null;
+    out.push({
+      product_id: r.product_id != null ? String(r.product_id).slice(0, 64) : null,
+      title,
+      seller_name: typeof r.seller_name === 'string' ? r.seller_name.trim().slice(0, 80) : null,
+      price_usdc: price,
+      url,
+    });
+  }
+  return out;
+}
+
 /**
  * POST /api/via/partner/intent
  *
@@ -42,6 +73,7 @@ export async function POST(req: NextRequest) {
   const agentId = typeof body.agent_id === 'string' ? body.agent_id.trim() : '';
   const dedupeKey = typeof body.dedupe_key === 'string' ? body.dedupe_key.trim() : '';
   const intentText = typeof body.intent_text === 'string' ? body.intent_text.trim() : '';
+  const proposals = cleanProposals((body as { proposals?: unknown }).proposals);
   if (partner !== 'rrg' || !agentId || !dedupeKey || intentText.length < 2) {
     return NextResponse.json({ error: 'partner:"rrg", agent_id, dedupe_key and intent_text (>=2 chars) required' }, { status: 400 });
   }
@@ -58,11 +90,27 @@ export async function POST(req: NextRequest) {
   // create a second brief. The key is stored in structured.partner.dedupe_key.
   const { data: existing } = await db
     .from('app_buyer_intents')
-    .select('id')
+    .select('id, structured')
     .eq('buyer_id', inboundBuyerId)
     .eq('structured->partner->>dedupe_key', dedupeKey)
     .maybeSingle();
   if (existing) {
+    // Repeat search: refresh the surfaced proposals and resurface the demand
+    // (a re-search can return newer/different matches). Best-effort.
+    if (proposals.length) {
+      const prev = (existing.structured ?? {}) as Record<string, unknown>;
+      const merged = { ...prev, proposals };
+      const { data: bumped } = await db
+        .from('app_buyer_intents')
+        .update({ structured: merged, broadcast_at: new Date().toISOString() })
+        .eq('id', existing.id)
+        .select('id, structured')
+        .single();
+      if (bumped) {
+        const teaser = teaserBrief({ id: bumped.id as string, structured: bumped.structured as Record<string, unknown> | null });
+        if (teaser) await broadcastTeaser(teaser);
+      }
+    }
     return NextResponse.json({ intent_id: existing.id, door_url: `/api/via/brief/${existing.id}`, deduped: true });
   }
 
@@ -76,6 +124,7 @@ export async function POST(req: NextRequest) {
     search_terms: search_intent.terms,
     partner: { source: 'rrg-agent', agent_id: agentId, dedupe_key: dedupeKey },
     source: 'rrg-agent',
+    ...(proposals.length ? { proposals } : {}),
   };
 
   const { data, error } = await db

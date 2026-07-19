@@ -10,12 +10,14 @@ const DOT: Record<WireEvent['type'], string> = {
   offer: 'var(--accent)',
   settlement: '#3f7d4e',
   pass: '#5e7488',
+  proposed: '#7d6a9e',
 };
 const LABEL: Record<WireEvent['type'], string> = {
   intent: 'DEMAND',
   offer: 'OFFER',
   settlement: 'SETTLED',
   pass: 'PASS',
+  proposed: 'PROPOSED',
 };
 
 function rel(iso: string, now: number): string {
@@ -51,6 +53,18 @@ function Line({ e }: { e: WireEvent }) {
         <strong style={{ color: 'var(--ink)' }}>{e.title || 'an event'}</strong>
         {e.seller_name ? <span style={{ color: 'var(--ink-3)' }}> from {e.seller_name}</span> : null}
         <span style={{ color: '#5e7488' }}> · free</span>
+      </>
+    );
+  }
+  if (e.type === 'proposed') {
+    return (
+      <>
+        <strong style={{ color: 'var(--ink)' }}>{e.seller_name || 'A seller'}</strong>
+        <span> proposed </span>
+        <span style={{ color: 'var(--ink-2)' }}>{e.title || 'a product'}</span>
+        {typeof e.price_usdc === 'number' ? (
+          <span style={{ fontFamily: MONO, color: 'var(--ink-2)' }}> · {usdc(e.price_usdc)}</span>
+        ) : null}
       </>
     );
   }
@@ -187,6 +201,18 @@ export default function WireStream({
                   style={{ fontFamily: MONO, fontSize: 11.5, color: 'var(--accent)', textDecoration: 'none', whiteSpace: 'nowrap' }}
                 >
                   Base ↗
+                </a>
+              </>
+            ) : e.url ? (
+              <>
+                {' '}
+                <a
+                  href={e.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  style={{ fontFamily: MONO, fontSize: 11.5, color: DOT[e.type], textDecoration: 'none', whiteSpace: 'nowrap' }}
+                >
+                  View ↗
                 </a>
               </>
             ) : null}
