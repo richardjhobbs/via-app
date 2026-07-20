@@ -6,22 +6,95 @@
  * 2. File delivery: buyer receives download link after mint
  */
 
+import { createHmac, timingSafeEqual } from 'node:crypto';
+import { db } from './db';
+
 const RESEND_URL = 'https://api.resend.com/emails';
 const FROM       = process.env.FROM_EMAIL ?? 'deliver@getvia.xyz';
 const SITE_URL   = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://app.getvia.xyz';
+
+// ── Unsubscribe (notification-class email only) ───────────────────────
+//
+// iCloud rejects bulk-looking mail without an unsubscribe mechanism (554 5.7.1
+// [HM08]). Notification emails (digests, room notices, invitations, outreach)
+// carry List-Unsubscribe / List-Unsubscribe-Post headers plus a visible footer
+// link, all pointing at /api/email/unsubscribe with an HMAC-signed token for
+// the recipient address. Unsubscribed addresses land in app_email_suppressions
+// and sendEmail silently skips them for notification sends. Transactional
+// email (receipts, order delivery, pass confirmations) is unaffected.
+
+const UNSUB_SECRET = process.env.CRON_SECRET ?? '';
+
+export function unsubscribeToken(email: string): string {
+  const payload = Buffer.from(email.trim().toLowerCase()).toString('base64url');
+  const sig = createHmac('sha256', UNSUB_SECRET).update(payload).digest('base64url');
+  return `${payload}.${sig}`;
+}
+
+/** Verify a token and return the email it was issued for, or null. */
+export function emailFromUnsubscribeToken(token: string): string | null {
+  const dot = token.indexOf('.');
+  if (dot <= 0) return null;
+  const payload = token.slice(0, dot);
+  const sig = token.slice(dot + 1);
+  const expected = createHmac('sha256', UNSUB_SECRET).update(payload).digest('base64url');
+  const a = Buffer.from(sig);
+  const b = Buffer.from(expected);
+  if (a.length !== b.length || !timingSafeEqual(a, b)) return null;
+  try { return Buffer.from(payload, 'base64url').toString('utf8'); } catch { return null; }
+}
+
+export async function suppressEmail(email: string): Promise<void> {
+  await db.from('app_email_suppressions').upsert(
+    { email: email.trim().toLowerCase(), reason: 'unsubscribe' },
+    { onConflict: 'email' },
+  );
+}
+
+async function isSuppressed(email: string): Promise<boolean> {
+  const { data } = await db.from('app_email_suppressions')
+    .select('email')
+    .eq('email', email.trim().toLowerCase())
+    .maybeSingle();
+  return data != null;
+}
 
 async function sendEmail(payload: {
   to: string;
   subject: string;
   html: string;
+  /** Notification-class mail: skipped for suppressed addresses, sent with unsubscribe headers + footer link. */
+  notification?: boolean;
 }): Promise<void> {
+  let { html } = payload;
+  let headers: Record<string, string> | undefined;
+
+  if (payload.notification) {
+    if (await isSuppressed(payload.to)) return;
+    const unsubUrl = `${SITE_URL}/api/email/unsubscribe?token=${unsubscribeToken(payload.to)}`;
+    headers = {
+      'List-Unsubscribe': `<${unsubUrl}>`,
+      'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click',
+    };
+    html = html.replace(
+      '</body>',
+      `<p style="max-width:560px;margin:16px auto 0;text-align:center;font-size:11px;color:#6e665c;"><a href="${unsubUrl}" style="color:#6e665c;">Unsubscribe from these emails</a></p></body>`,
+    );
+  }
+
   const res = await fetch(RESEND_URL, {
     method: 'POST',
     headers: {
       Authorization:  `Bearer ${process.env.RESEND_API_KEY}`,
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify({ from: FROM, ...payload }),
+    body: JSON.stringify({
+      from: FROM,
+      to: payload.to,
+      subject: payload.subject,
+      html,
+      ...(headers ? { headers } : {}),
+    }),
   });
 
   if (!res.ok) {
@@ -636,6 +709,7 @@ export async function sendOutreachOwnerEmail({
     to,
     subject: `Your agent "${agentName}" received a collaboration request from RRG`,
     html,
+    notification: true,
   });
 }
 
@@ -990,7 +1064,7 @@ export async function sendRoomInviteEmail({
 </body>
 </html>`;
 
-  await sendEmail({ to, subject: `You are invited to ${roomName} on VIA`, html });
+  await sendEmail({ to, subject: `You are invited to ${roomName} on VIA`, html, notification: true });
 }
 
 // ── 7e. Back Room: concierge seated heads-up ──────────────────────────
@@ -1047,7 +1121,7 @@ export async function sendRoomMemberAddedEmail({
 </body>
 </html>`;
 
-  await sendEmail({ to, subject: `Your concierge was added to ${roomName} on VIA`, html });
+  await sendEmail({ to, subject: `Your concierge was added to ${roomName} on VIA`, html, notification: true });
 }
 
 // ── 7f. Back Room daily digest ────────────────────────────────────────
@@ -1108,7 +1182,7 @@ export async function sendRoomDigestEmail({
 </body>
 </html>`;
 
-  await sendEmail({ to, subject: `${total} new in your Back Room ${total === 1 ? 'room' : 'rooms'}`, html });
+  await sendEmail({ to, subject: `${total} new in your Back Room ${total === 1 ? 'room' : 'rooms'}`, html, notification: true });
 }
 
 // ── 8. Seller team invite ──────────────────────────────────────────────
