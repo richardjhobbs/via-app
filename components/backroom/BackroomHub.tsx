@@ -101,14 +101,11 @@ export function BackroomHub({ handle, platform, memberType, label, rooms, emailD
 
   return (
     <main style={{ maxWidth: 640, margin: '0 auto', padding: '56px 20px 180px' }}>
-      {/* Always a way out. VIA members go to their dashboard; everyone else
-          (RRG concierges/brands over the handoff, or a signed-out visitor) goes
-          back the way they came, falling back to the VIA home. */}
-      {dashboardHref ? (
-        <Link href={dashboardHref} className="br-sans" style={backLinkStyle}>
-          &larr; Your dashboard
-        </Link>
-      ) : (
+      {/* VIA members get the persistent "Your dashboard" exit in the layout
+          header. Everyone else (RRG concierges/brands over the handoff, or a
+          signed-out visitor) goes back the way they came, falling back to the
+          VIA home. */}
+      {!dashboardHref && (
         <a
           href="/"
           onClick={(e) => {
