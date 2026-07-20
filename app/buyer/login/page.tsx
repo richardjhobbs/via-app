@@ -11,6 +11,10 @@ function BuyerLoginInner() {
   const isReset      = searchParams.get('reset') === 'true';
   const isForgot     = searchParams.get('forgot') === 'true';
   const emailParam   = searchParams.get('email') ?? '';
+  // Where to land after sign-in (e.g. back to a room invitation). Same-origin
+  // relative paths only, so the param can never redirect off-site.
+  const nextRaw      = searchParams.get('next') ?? '';
+  const nextPath     = /^\/(?!\/)/.test(nextRaw) ? nextRaw : null;
 
   // Supabase returns the recovery tokens in the URL HASH fragment
   // (#access_token=…&refresh_token=…&type=recovery), which useSearchParams
@@ -56,11 +60,11 @@ function BuyerLoginInner() {
       .then((r) => r.json())
       .then((d) => {
         if (d.authenticated && d.buyers?.length > 0) {
-          router.push(`/buyer/${d.buyers[0].handle}/admin`);
+          router.push(nextPath ?? `/buyer/${d.buyers[0].handle}/admin`);
         }
       })
       .catch(() => {});
-  }, [router]);
+  }, [router, nextPath]);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -76,7 +80,7 @@ function BuyerLoginInner() {
     setLoading(false);
 
     if (res.ok && data.buyers?.length > 0) {
-      router.push(`/buyer/${data.buyers[0].handle}/admin`);
+      router.push(nextPath ?? `/buyer/${data.buyers[0].handle}/admin`);
     } else {
       setErr(data.error || 'Login failed');
     }

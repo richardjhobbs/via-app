@@ -36,6 +36,9 @@ export interface BuyerOnboardState {
   // Set when the user arrived from a free-event landing page: after registration
   // completes, the done step claims this pass and binds it to the new buyer.
   eventClaim?:         { slug: string; tier: string };
+  // Set when the user arrived from a room invitation link: after registration
+  // completes, the done step redeems the invite and lands them in the room.
+  roomInvite?:         { token: string };
 }
 
 export type OnboardState = SellerOnboardState | BuyerOnboardState;

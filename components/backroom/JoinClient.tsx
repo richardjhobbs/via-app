@@ -6,6 +6,7 @@
  */
 import { useState } from 'react';
 import Link from 'next/link';
+import { writeOnboardState } from '@/lib/app/onboarding-state';
 
 interface TokenInvite { room_id: string; room_name: string; inviter_ref: string; why: string; inviter_card_slug?: string | null; }
 
@@ -77,10 +78,11 @@ export function JoinClient({ token, invite, memberRef, memberLabel }: {
           ) : (
             <div>
               <p className="br-sans" style={{ fontSize: 15, color: 'var(--ink-2)', marginBottom: 14, lineHeight: 1.6 }}>
-                Create your buying agent or sign in, then open this invitation again to join the room.
+                Create your buying agent and you will land straight in the room. Already have one? Sign in and you come back here to join.
               </p>
               <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
                 <Link href={`/onboard?role=buyer&next=${back}`} className="br-sans"
+                  onClick={() => writeOnboardState({ role: 'buyer', roomInvite: { token } })}
                   style={{ display: 'inline-block', padding: '12px 24px', borderRadius: 999, border: '1px solid var(--ink)', background: 'var(--ink)', color: 'var(--bg)', fontSize: 14, textDecoration: 'none' }}>
                   Create an agent
                 </Link>

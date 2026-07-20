@@ -59,7 +59,28 @@ export default function BuyerDone() {
           return;
         }
         const ev = (state as { eventClaim?: { slug: string; tier: string } }).eventClaim;
+        const inv = (state as { roomInvite?: { token: string } }).roomInvite;
         clearOnboardState();
+        // Arrived from a room invitation link: redeem it now, as the new agent,
+        // and land them straight in the room. A failed redeem never undoes the
+        // agent: they fall back to the invitation page, signed in, one press
+        // from joining.
+        if (inv) {
+          try {
+            const jres = await fetch('/api/backroom/join', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ token: inv.token, ref: data.buyer.handle }),
+            });
+            const jdata = await jres.json().catch(() => ({}));
+            if (jres.ok && jdata.room_id) {
+              window.location.href = `/room/${jdata.room_id}?handle=${encodeURIComponent(data.buyer.handle)}`;
+              return;
+            }
+          } catch { /* fall through to the invitation page */ }
+          window.location.href = `/backroom/join?token=${encodeURIComponent(inv.token)}`;
+          return;
+        }
         // Arrived from a free-event landing page: claim the pass now and bind it
         // to the new buyer account, then show a combined confirmation (the agent
         // is the conversion; the pass is the incentive). A failed claim never
