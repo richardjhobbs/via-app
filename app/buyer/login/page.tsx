@@ -11,12 +11,14 @@ function BuyerLoginInner() {
   const isReset      = searchParams.get('reset') === 'true';
   const isForgot     = searchParams.get('forgot') === 'true';
   const emailParam   = searchParams.get('email') ?? '';
-  const accessToken  = searchParams.get('access_token');
-  const refreshToken = searchParams.get('refresh_token');
 
-  const [mode, setMode] = useState<'login' | 'forgot' | 'reset'>(
-    isReset && accessToken ? 'reset' : isForgot ? 'forgot' : 'login',
-  );
+  // Supabase returns the recovery tokens in the URL HASH fragment
+  // (#access_token=…&refresh_token=…&type=recovery), which useSearchParams
+  // cannot read. They are parsed from the hash in an effect below.
+  const [accessToken,  setAccessToken]  = useState<string | null>(null);
+  const [refreshToken, setRefreshToken] = useState<string | null>(null);
+
+  const [mode, setMode] = useState<'login' | 'forgot' | 'reset'>(isForgot ? 'forgot' : 'login');
 
   const [email,    setEmail]    = useState(emailParam);
   const [password, setPassword] = useState('');
@@ -26,8 +28,30 @@ function BuyerLoginInner() {
   const [loading,  setLoading]  = useState(false);
   const [resetDone, setResetDone] = useState(false);
 
+  // Recovery tokens arrive in the URL hash, not the query string. Parse them
+  // client-side and switch to the reset form so the user can set a new
+  // password. Without this the page falls back to the sign-in form.
+  useEffect(() => {
+    const raw = window.location.hash.replace(/^#/, '');
+    if (!raw) return;
+    const h  = new URLSearchParams(raw);
+    const at = h.get('access_token');
+    const rt = h.get('refresh_token');
+    if (at && (h.get('type') === 'recovery' || isReset)) {
+      setAccessToken(at);
+      setRefreshToken(rt);
+      setMode('reset');
+    } else if (h.get('error_description')) {
+      setMode('forgot');
+      setErr(String(h.get('error_description')).replace(/\+/g, ' '));
+    }
+  }, [isReset]);
+
   // Bounce already-signed-in buyers straight to their dashboard.
   useEffect(() => {
+    // A recovery visit carries its token in the hash; don't bounce it to the
+    // dashboard, let the user set a new password first.
+    if (window.location.hash.includes('access_token')) return;
     fetch('/api/buyer/auth/check')
       .then((r) => r.json())
       .then((d) => {

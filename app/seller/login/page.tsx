@@ -55,6 +55,11 @@ function SellerLoginInner() {
       setAccessToken(at);
       setRefreshToken(rt);
       setMode('reset');
+    } else if (h.get('error_description')) {
+      // Expired or already-used recovery link: land on the forgot form with
+      // the reason, not the plain sign-in form.
+      setMode('forgot');
+      setErr(String(h.get('error_description')).replace(/\+/g, ' '));
     }
   }, [isReset]);
 
