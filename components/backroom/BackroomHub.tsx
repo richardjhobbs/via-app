@@ -12,7 +12,13 @@ import { PushToggle } from './PushToggle';
 
 interface Invite { id: string; room_id: string; room_name: string; inviter_ref: string; why: string; }
 
-interface HubRoom { id: string; name: string; accent_hex: string; new_count: number }
+/** An invite tagged with which of the session's identities it is addressed to,
+ *  so accepting answers as that identity. */
+interface MemberInvite extends Invite { member_ref: string }
+
+export interface HubMember { platform: string; type: string; ref: string; label: string }
+
+export interface HubRoom { id: string; name: string; accent_hex: string; new_count: number; handle: string }
 
 interface VoiceResult {
   transcript: string;
@@ -22,20 +28,28 @@ interface VoiceResult {
   note?: string;
 }
 
-export function BackroomHub({ handle, platform, memberType, label, rooms, emailDigest = true }: { handle: string | null; platform: string | null; memberType: string | null; label: string | null; rooms: HubRoom[]; emailDigest?: boolean }) {
+export function BackroomHub({ members, rooms, emailDigest = true }: { members: HubMember[]; rooms: HubRoom[]; emailDigest?: boolean }) {
+  // The primary identity drives the single-identity surfaces (voice, prefs,
+  // card, door, forming a room). Invitations and rooms aggregate over ALL of
+  // them: a session holding a VIA agent and a federated concierge must see both
+  // inboxes, or an invite addressed to the other identity is invisible.
+  const primary = members[0] ?? null;
+  const handle = primary?.ref ?? null;
+  const label = members.length > 1 ? members.map((m) => m.label).join(', ') : (primary?.label ?? null);
   // Back to the member's own dashboard (VIA members only; an RRG brand arrived
   // over the handoff and has no VIA dashboard to return to).
-  const dashboardHref = platform === 'via' && handle && memberType
-    ? (memberType === 'buyer' ? `/buyer/${encodeURIComponent(handle)}/admin` : `/seller/${encodeURIComponent(handle)}/admin`)
+  const dashboardHref = primary && primary.platform === 'via'
+    ? (primary.type === 'buyer' ? `/buyer/${encodeURIComponent(primary.ref)}/admin` : `/seller/${encodeURIComponent(primary.ref)}/admin`)
     : null;
   const [result, setResult] = useState<VoiceResult | null>(null);
   const [busy, setBusy] = useState(false);
   const [newName, setNewName] = useState('');
   const [creating, setCreating] = useState(false);
   const [createErr, setCreateErr] = useState<string | null>(null);
-  const [invites, setInvites] = useState<Invite[]>([]);
+  const [invites, setInvites] = useState<MemberInvite[]>([]);
   const [knockCount, setKnockCount] = useState(0);
   const [digestOn, setDigestOn] = useState(emailDigest);
+  const memberRefs = JSON.stringify(members.map((m) => m.ref));
 
   const toggleDigest = useCallback(async () => {
     if (!handle) return;
@@ -48,10 +62,16 @@ export function BackroomHub({ handle, platform, memberType, label, rooms, emailD
   }, [handle, digestOn]);
 
   const loadInvites = useCallback(async () => {
-    if (!handle) return;
-    const res = await fetch(`/api/backroom/invitations?ref=${encodeURIComponent(handle)}`);
-    if (res.ok) { const j = await res.json() as { invites: Invite[] }; setInvites(j.invites); }
-  }, [handle]);
+    if (members.length === 0) return;
+    const all = await Promise.all(members.map(async (m) => {
+      const res = await fetch(`/api/backroom/invitations?ref=${encodeURIComponent(m.ref)}`);
+      if (!res.ok) return [] as MemberInvite[];
+      const j = await res.json() as { invites: Invite[] };
+      return j.invites.map((iv) => ({ ...iv, member_ref: m.ref }));
+    }));
+    setInvites(all.flat());
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [memberRefs]);
 
   const loadKnocks = useCallback(async () => {
     if (!handle) return;
@@ -61,15 +81,15 @@ export function BackroomHub({ handle, platform, memberType, label, rooms, emailD
 
   useEffect(() => { void loadInvites(); void loadKnocks(); }, [loadInvites, loadKnocks]);
 
-  async function respondInvite(id: string, accept: boolean, roomId: string) {
+  async function respondInvite(id: string, accept: boolean, roomId: string, memberRef: string) {
     const res = await fetch(`/api/backroom/invitations/${id}/respond`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ref: handle, accept }),
+      body: JSON.stringify({ ref: memberRef, accept }),
     });
     if (res.ok) {
       const j = await res.json() as { outcome: string };
       setInvites((xs) => xs.filter((i) => i.id !== id));
-      if (accept && j.outcome === 'joined') window.location.href = `/room/${roomId}`;
+      if (accept && j.outcome === 'joined') window.location.href = `/room/${roomId}?handle=${encodeURIComponent(memberRef)}`;
     }
   }
 
@@ -159,12 +179,12 @@ export function BackroomHub({ handle, platform, memberType, label, rooms, emailD
             <div key={iv.id} style={{ ...cardStyle, borderColor: 'var(--accent)' }}>
               <p className="br-sans" style={{ fontSize: 11, letterSpacing: '0.14em', textTransform: 'uppercase', color: 'var(--ink-3)', margin: 0 }}>An invitation</p>
               <p className="br-serif" style={{ fontSize: 20, margin: '4px 0 2px', color: 'var(--ink)' }}>{iv.room_name}</p>
-              <p className="br-sans" style={{ fontSize: 14, color: 'var(--ink-3)', margin: 0 }}>Vouched by {iv.inviter_ref}.</p>
+              <p className="br-sans" style={{ fontSize: 14, color: 'var(--ink-3)', margin: 0 }}>Vouched by {iv.inviter_ref}.{members.length > 1 ? ` For ${iv.member_ref}.` : ''}</p>
               {iv.why && <p className="br-sans" style={{ fontSize: 14, color: 'var(--ink-2)', margin: '8px 0 0' }}>{iv.why}</p>}
               <div style={{ display: 'flex', gap: 10, marginTop: 12 }}>
-                <button type="button" onClick={() => respondInvite(iv.id, true, iv.room_id)} className="br-sans"
+                <button type="button" onClick={() => respondInvite(iv.id, true, iv.room_id, iv.member_ref)} className="br-sans"
                   style={{ padding: '9px 20px', borderRadius: 999, border: '1px solid var(--ink)', background: 'var(--ink)', color: 'var(--bg)', fontSize: 13, cursor: 'pointer' }}>Accept</button>
-                <button type="button" onClick={() => respondInvite(iv.id, false, iv.room_id)} className="br-sans"
+                <button type="button" onClick={() => respondInvite(iv.id, false, iv.room_id, iv.member_ref)} className="br-sans"
                   style={{ padding: '9px 20px', borderRadius: 999, border: '1px solid var(--line-strong)', background: 'transparent', color: 'var(--ink-2)', fontSize: 13, cursor: 'pointer' }}>Decline</button>
               </div>
             </div>
@@ -178,7 +198,7 @@ export function BackroomHub({ handle, platform, memberType, label, rooms, emailD
             </div>
           ) : (
             rooms.map((r) => (
-              <HubLink key={r.id} href={`/room/${r.id}?handle=${encodeURIComponent(handle)}`} title={r.name}
+              <HubLink key={r.id} href={`/room/${r.id}?handle=${encodeURIComponent(r.handle)}`} title={r.name}
                 desc={r.new_count > 0 ? `${r.new_count} new ${r.new_count === 1 ? 'entry' : 'entries'} since you were last here.` : 'Open the room and its table.'}
                 accent={r.accent_hex} badge={r.new_count} />
             ))
