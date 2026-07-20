@@ -122,7 +122,7 @@ export function RoomClient({ roomId, handle, isAdmin = false }: { roomId: string
     if (res.ok) {
       if (json.link) {
         setInviteLink(json.link);
-        setInviteMsg(json.emailed ? `Emailed the link to ${inviteEmail.trim()}. You can also share it below.` : 'Share this link. It joins them when they register.');
+        setInviteMsg(json.emailed ? `Emailed the link to ${inviteEmail.trim()}. You can also share it below.` : 'Nothing has been emailed. Copy this link and send it to them yourself; they will not see the invitation any other way.');
         setInviteName(''); setInviteEmail('');
       } else if (json.status === 'seated') {
         setInviteMsg(`Added ${json.name || json.invitee_ref} to the room${json.emailed ? ', and emailed their owner.' : '.'}`);
@@ -345,14 +345,14 @@ export function RoomClient({ roomId, handle, isAdmin = false }: { roomId: string
             <input className="br-sans" value={inviteWhy} onChange={(e) => setInviteWhy(e.target.value)} placeholder="Why them? (shared with the invitation)"
               style={inviteInput} />
             <div style={{ marginTop: 10 }}>
-              <p className="br-sans" style={{ fontSize: 12, color: 'var(--ink-3)', margin: '0 0 6px' }}>A VIA agent by handle or store slug, or an RRG agent by its ID, wallet, or name:</p>
+              <p className="br-sans" style={{ fontSize: 12, color: 'var(--ink-3)', margin: '0 0 6px' }}>Someone already on VIA or RRG: enter their agent handle, store slug, or RRG agent name, not their personal name. The invitation reaches their dashboard directly:</p>
               <div style={{ display: 'flex', gap: 8 }}>
                 <input className="br-sans" value={inviteRef} onChange={(e) => setInviteRef(e.target.value)} placeholder="their-handle" style={{ ...inviteInput, marginTop: 0, flex: 1 }} />
                 <button type="button" onClick={() => invite('agent')} disabled={inviteBusy || !inviteRef.trim()} className="br-sans" style={inviteBtn}>Invite agent</button>
               </div>
             </div>
             <div style={{ marginTop: 12 }}>
-              <p className="br-sans" style={{ fontSize: 12, color: 'var(--ink-3)', margin: '0 0 6px' }}>Or someone not yet on VIA. Add their email to send it for them, or leave it blank to copy a link:</p>
+              <p className="br-sans" style={{ fontSize: 12, color: 'var(--ink-3)', margin: '0 0 6px' }}>Someone not on VIA yet. If they already have an agent, use the box above instead. With an email we send the invitation for them. Without one nothing is sent: you get a link you must share with them yourself:</p>
               <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                 <input className="br-sans" value={inviteName} onChange={(e) => setInviteName(e.target.value)} placeholder="Their name (optional)" style={{ ...inviteInput, marginTop: 0, flex: '1 1 140px' }} />
                 <input className="br-sans" type="email" value={inviteEmail} onChange={(e) => setInviteEmail(e.target.value)} placeholder="Their email (optional)" style={{ ...inviteInput, marginTop: 0, flex: '1 1 180px' }} />
@@ -374,6 +374,9 @@ export function RoomClient({ roomId, handle, isAdmin = false }: { roomId: string
                         {s.invitee}
                         <span style={{ color: 'var(--ink-3)' }}> · {s.kind === 'person' ? 'person' : 'agent'} · {s.status}</span>
                       </span>
+                      {s.kind === 'person' && s.status === 'pending' && !s.email && (
+                        <span className="br-sans" style={{ fontSize: 12, color: 'var(--ink-3)' }}>Not delivered yet. Only you have this link; send it to them.</span>
+                      )}
                       {s.kind === 'person' && s.status === 'pending' && s.link && (
                         <span style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                           <span className="br-sans" style={{ fontSize: 12, color: 'var(--accent)', wordBreak: 'break-all', flex: 1 }}>{s.link}</span>
