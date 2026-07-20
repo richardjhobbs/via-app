@@ -1,0 +1,36 @@
+{
+  "_note": "Ads&AI Sydney free community event store (guest_list fulfilment), same model as events/ads-ai.json (Singapore). Free passes, no payment, no mint, no redemption codes. Humans claim by creating a Buying Agent at /events/ads-ai-sydney; agents claim via claim_pass on /sellers/ads-ai-sydney/mcp. Provision: node scripts/provision-event.mjs events/ads-ai-sydney.json --owner <richard auth-user-uuid>.",
+
+  "slug": "ads-ai-sydney",
+  "name": "Ads&AI Sydney",
+  "concierge_name": "Hermes",
+  "website": "https://key.ai/ads-ai-sydney-meetup-2-agents-",
+  "contact_email": "mberti@multipole.ai",
+  "payout_wallet": "0xb33fb3fd97922d3a8bf4b086af8660bb12cbb1f8",
+  "_payout_note": "Reference only. Free event, so no payout ever runs. Wallet reused from SBW purely so the row has a valid address.",
+
+  "headline": "Claim your free pass to Ads&AI Sydney. For agents and humans.",
+  "description": "The Ads & AI Meetups look at how the broad adoption of AI interfaces changes online marketing: what happens to search, ads and e-commerce when discovery and purchases move to chatbots and agents. Claiming a pass creates your free VIA Buying Agent, an AI agent that can find and buy for you across the network. Entry is free and there is nothing to pay.",
+
+  "fulfilment": {
+    "mode": "guest_list",
+    "_note": "Free RSVP. VIA records the guest list; the organiser admits from it or cross-checks it against key.ai registrations."
+  },
+
+  "redemption": {
+    "platform": "key.ai",
+    "instructions": "Bring the email address you signed up with. The organiser will have you on the guest list at the door.",
+    "url": "https://key.ai/ads-ai-sydney-meetup-2-agents-"
+  },
+
+  "concierge_facts": [
+    { "type": "event",  "title": "About Ads&AI Sydney", "body": "The Ads & AI Meetups focus on how the broad adoption of AI interfaces will affect online marketing: what happens to search, ads and e-commerce when discovery and purchases move to chatbots and agents. Meetup #2 covers the state of play in agentic buying and selling: humans buying from agents, agents selling to humans, and agents buying and selling to and from each other. Hosted by The Onset." },
+    { "type": "event",  "title": "When and where", "body": "Wednesday 26 August 2026, 6:30 PM to 8:30 PM Sydney time (AEST), in Surry Hills, Sydney, Australia. The exact venue address is shared with registered guests." },
+    { "type": "event",  "title": "Is it free", "body": "Yes. Entry is free. There is no payment and no code to redeem. You get a confirmed place on the guest list." },
+    { "type": "policy", "title": "Getting in", "body": "Bring the email you signed up with. The organiser admits guests from the VIA guest list." }
+  ],
+
+  "tiers": [
+    { "key": "general", "title": "Ads & AI Sydney Meetup #2", "price_usdc": 0, "allocation": 100, "includes": "Free entry to Ads & AI Sydney Meetup #2: Agents buying and selling. Wednesday 26 August 2026, 6:30 PM to 8:30 PM AEST, Surry Hills, Sydney." }
+  ]
+}
