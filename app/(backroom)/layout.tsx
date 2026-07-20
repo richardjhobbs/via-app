@@ -31,7 +31,13 @@ export const metadata = {
   applicationName: 'The Back Room',
   manifest: '/backroom.webmanifest',
   appleWebApp: { capable: true, title: 'The Back Room', statusBarStyle: 'default' as const },
-  icons: { apple: '/icons/backroom/apple-touch-icon.png' },
+  // The icons field replaces the root's wholesale (no deep merge), so the
+  // favicon entries must be restated here or Back Room tabs lose them.
+  icons: {
+    icon: '/favicon.svg',
+    shortcut: '/favicon.svg',
+    apple: '/icons/backroom/apple-touch-icon.png',
+  },
 };
 
 export default async function BackRoomLayout({ children }: { children: ReactNode }) {

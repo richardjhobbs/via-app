@@ -16,6 +16,13 @@
       "url": "http://localhost:3007/"
     },
     {
+      "name": "via-app-alt",
+      "runtimeExecutable": "C:\\Program Files\\nodejs\\node.exe",
+      "runtimeArgs": ["node_modules/next/dist/bin/next", "dev", "--port", "3017"],
+      "port": 3017,
+      "url": "http://localhost:3017/"
+    },
+    {
       "name": "via-labs-static",
       "runtimeExecutable": "npx",
       "runtimeArgs": ["-y", "serve", "-l", "4321", "C:\\Users\\Richard\\Documents\\via-labs-website"],
