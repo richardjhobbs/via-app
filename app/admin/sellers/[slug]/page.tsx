@@ -47,7 +47,7 @@ export default async function AdminSellerDetailPage({
 
   const team = await listTeam(sellerId);
 
-  const [memoriesRes, interactionsRes, purchasesRes, productsRes] = await Promise.all([
+  const [memoriesRes, interactionsRes, purchasesRes, productsRes, guestsRes] = await Promise.all([
     db.from('app_seller_memories')
       .select('id, type, title, body, tags, active, created_at')
       .eq('seller_id', sellerId)
@@ -67,7 +67,22 @@ export default async function AdminSellerDetailPage({
       .select('id, title, description, url, kind, price_minor, currency, stock, token_id, on_chain_status, active, admin_removed, admin_removed_reason, image_url, metadata')
       .eq('seller_id', sellerId)
       .order('created_at', { ascending: false }),
+    // Free event-pass claims. These are guest-list rows, not purchases (no
+    // payment, no x402), so without this section a free-event store looks
+    // dead on superadmin even while passes are being claimed.
+    db.from('app_event_guests')
+      .select('id, product_id, name, email, source, status, claimed_at')
+      .eq('seller_id', sellerId)
+      .order('claimed_at', { ascending: false })
+      .limit(100),
   ]);
+
+  const guests = (guestsRes.data ?? []) as Array<{
+    id: string; product_id: string; name: string; email: string; source: string; status: string; claimed_at: string;
+  }>;
+  const tierTitleById = new Map(
+    ((productsRes.data ?? []) as Array<Record<string, unknown>>).map((p) => [p.id as string, p.title as string]),
+  );
 
   // For digital products the paid asset lives in the PRIVATE bucket and is never
   // public. Sign it here so the superadmin can view it for moderation (images
@@ -160,6 +175,53 @@ export default async function AdminSellerDetailPage({
             }>}
             products={products}
           />
+
+          {guests.length > 0 && (
+            <div className="mt-10">
+              <div className="flex items-end justify-between mb-4">
+                <h2 className="font-serif text-2xl tracking-tight">Event passes</h2>
+                <span className="text-[10px] font-mono uppercase tracking-widest text-ink-3">
+                  {guests.length} claimed
+                </span>
+              </div>
+              <p className="text-xs text-ink-3 mb-4 max-w-2xl">
+                Free guest-list claims. These are not purchases: there is no payment and no
+                settlement, so they appear here and on the seller&rsquo;s guest list, never under sales.
+              </p>
+              <div className="bg-paper border border-line rounded-lg overflow-hidden">
+                <table className="w-full text-sm">
+                  <thead className="bg-background text-xs font-mono uppercase tracking-widest text-ink-3">
+                    <tr>
+                      <th className="text-left px-4 py-3">Name</th>
+                      <th className="text-left px-4 py-3">Email</th>
+                      <th className="text-left px-4 py-3">Tier</th>
+                      <th className="text-left px-4 py-3">Source</th>
+                      <th className="text-left px-4 py-3">Status</th>
+                      <th className="text-left px-4 py-3">Claimed</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-[color:var(--line)]">
+                    {guests.map((g) => (
+                      <tr key={g.id} className="hover:bg-background">
+                        <td className="px-4 py-3">{g.name}</td>
+                        <td className="px-4 py-3 font-mono text-xs text-ink-2">{g.email}</td>
+                        <td className="px-4 py-3 text-xs text-ink-2">{tierTitleById.get(g.product_id) ?? '—'}</td>
+                        <td className="px-4 py-3 font-mono text-xs text-ink-3">{g.source}</td>
+                        <td className="px-4 py-3">
+                          <span className={`inline-block px-2 py-0.5 text-[10px] font-mono uppercase tracking-widest rounded ${
+                            g.status === 'confirmed' ? 'bg-emerald-100 text-emerald-900' : 'bg-neutral-200 text-neutral-700'
+                          }`}>
+                            {g.status}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3 font-mono text-xs text-ink-3">{new Date(g.claimed_at).toISOString().slice(0, 16).replace('T', ' ')}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
 
           <div className="mt-10">
             <AdminTeamSection

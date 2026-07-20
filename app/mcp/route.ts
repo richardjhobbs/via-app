@@ -382,6 +382,7 @@ function createServer(req: Request) {
       buyer_agent_id: z.string().optional().describe("Optional ERC-8004 agent id of the agent claiming on the buyer's behalf."),
     },
     async ({ product_id, name, email, buyer_wallet, buyer_agent_id }) => {
+      const t0 = Date.now();
       // Resolve the tier's seller; claimEventPass re-checks the product belongs to
       // it and is a free guest_list tier, so this lookup only routes, never trusts.
       const { data: product } = await db
@@ -401,6 +402,30 @@ function createServer(req: Request) {
         buyerAgentId: buyer_agent_id ?? null,
         source:       'mcp_agent',
       });
+      // The per-seller MCP logs every tool call to app_mcp_interactions; this
+      // gateway implements claim_pass directly (not by forwarding), so it must
+      // log the same way or the claim is invisible on the superadmin seller view.
+      {
+        const fwd = req.headers.get('x-forwarded-for');
+        const rawId = req.headers.get('x-via-agent-id');
+        const statusByOutcome: Record<string, number> = { confirmed: 200, already: 200, sold_out: 409, not_available: 404 };
+        db.from('app_mcp_interactions').insert({
+          seller_id:      product.seller_id as string,
+          tool_name:      'claim_pass',
+          agent_identity: {
+            via_agent_id: rawId ? Number(rawId) : null,
+            user_agent:   req.headers.get('user-agent'),
+            ip:           fwd ? fwd.split(',')[0].trim() : null,
+            gateway:      'network_mcp',
+          },
+          request:     { product_id, email },
+          response:    { outcome: result.outcome },
+          status_code: statusByOutcome[result.outcome] ?? 500,
+          duration_ms: Date.now() - t0,
+        }).then(() => {}, (err) => {
+          console.warn('[mcp] claim_pass audit log insert failed:', err);
+        });
+      }
       switch (result.outcome) {
         case 'confirmed':
           return asJson({ claimed: true, status: 'confirmed', event: result.eventName, tier: result.tierTitle, guest_id: result.guestId, message: `You are on the guest list for ${result.eventName}. A confirmation email is on its way. There was nothing to pay.` });
