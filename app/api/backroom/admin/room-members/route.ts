@@ -106,7 +106,9 @@ export async function POST(req: Request) {
       if (identity) { resolvedName = identity.name; wallet = wallet ?? identity.wallet_address; }
     } else {
       const identity = await resolveRrgConcierge(ref);
-      if (identity) { resolvedName = identity.name; wallet = wallet ?? identity.wallet_address; conciergeOwnerEmail = identity.email; }
+      // 'unavailable' falls through: the operator can still seat with a supplied
+      // wallet, same as when RRG exposes nothing.
+      if (identity && identity !== 'unavailable') { resolvedName = identity.name; wallet = wallet ?? identity.wallet_address; conciergeOwnerEmail = identity.email; }
     }
     if (!wallet) {
       return NextResponse.json({

@@ -36,7 +36,8 @@ async function memberEmail(platform: string, type: string, ref: string): Promise
       return u?.user?.email ?? null;
     }
     if (platform === 'rrg' && type === 'buyer') {
-      return (await resolveRrgConcierge(ref))?.email ?? null;
+      const c = await resolveRrgConcierge(ref);
+      return c && c !== 'unavailable' ? c.email : null;
     }
     return null;
   } catch { return null; }

@@ -132,11 +132,19 @@ export async function POST(req: Request, { params }: { params: Promise<{ roomId:
     // they are seated directly as a federated member carrying the inviter's
     // vouch (the same way the operator console seats them). Resolved by VIA id,
     // wallet, or unique name for a concierge, or a brand slug.
-    const concierge = await resolveRrgConcierge(inviteeRef);
+    const resolved = await resolveRrgConcierge(inviteeRef);
+    // An RRG blip must NOT read as "no such agent": that message sends the
+    // inviter down the person-link path for someone who has an agent.
+    if (resolved === 'unavailable') {
+      return NextResponse.json({ error: 'Could not reach RRG to check that agent just now. Nothing was created; try again in a minute.' }, { status: 503 });
+    }
+    const concierge = resolved;
     const brand = concierge ? null : await resolveRrgBrand(inviteeRef);
     const rrgKind: MemberType | null = concierge ? 'buyer' : brand ? 'seller' : null;
     const identity = concierge ?? brand;
-    if (!rrgKind || !identity) return NextResponse.json({ error: 'no such VIA or RRG agent' }, { status: 404 });
+    if (!rrgKind || !identity) {
+      return NextResponse.json({ error: `No agent named "${inviteeRef}" on VIA or RRG. Check their exact handle or store slug. Only use the person invite for someone without an agent.` }, { status: 404 });
+    }
     if (!identity.wallet_address) return NextResponse.json({ error: 'could not resolve that RRG agent wallet; add it from the operator console with the wallet' }, { status: 422 });
 
     // A concierge is seated under its NAME (what its Back Room handoff carries),

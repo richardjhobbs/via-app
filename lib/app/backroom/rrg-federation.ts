@@ -94,20 +94,28 @@ export interface RrgConciergeIdentity {
  * have no human handle, so `ref` is resolved on the RRG side by VIA id, wallet,
  * or a unique name. The concierge belongs to an individual, so this channel is
  * SECRET-GATED: we present the shared VIA_PLATFORM_SECRET, and RRG returns the
- * owner email (for the seat heads-up) only to a secret-holding caller. Returns
- * null (caller supplies the wallet) if RRG cannot resolve the ref or the
- * resolver is unavailable.
+ * owner email (for the seat heads-up) only to a secret-holding caller.
+ *
+ * Returns 'unavailable' when RRG could not be asked (network failure, timeout,
+ * secret missing or rejected, RRG-side lookup error). Callers MUST surface that
+ * differently from null (= RRG answered and no such agent exists): telling a
+ * member "no such agent" during an RRG blip sends them down the person-invite
+ * path for someone who has an agent.
  */
-export async function resolveRrgConcierge(ref: string): Promise<RrgConciergeIdentity | null> {
+export async function resolveRrgConcierge(ref: string): Promise<RrgConciergeIdentity | 'unavailable' | null> {
   const r = ref.trim();
   if (!r) return null;
   const secret = process.env.VIA_PLATFORM_SECRET;
-  if (!secret) return null;
+  if (!secret) return 'unavailable';
   try {
     const url = `${RRG_BASE}/api/via/identity?kind=buyer&ref=${encodeURIComponent(r)}`;
     const res = await fetch(url, { headers: { 'x-via-platform-secret': secret }, signal: AbortSignal.timeout(6000) });
-    if (!res.ok) return null;
-    const j = await res.json() as Partial<RrgConciergeIdentity>;
+    // 404 = RRG answered: no such concierge. 409 = ambiguous ref, also a real
+    // answer. Anything else (401 secret mismatch, 5xx, gateway) = could not ask.
+    if (res.status === 404 || res.status === 409) return null;
+    if (!res.ok) return 'unavailable';
+    const j = await res.json() as Partial<RrgConciergeIdentity> & { error?: string };
+    if (j?.error) return 'unavailable'; // RRG's lookup errored (identity_unavailable ships as 200)
     if (!j || j.kind !== 'buyer') return null;
     return {
       platform: 'rrg', kind: 'buyer', ref: r,
@@ -116,6 +124,6 @@ export async function resolveRrgConcierge(ref: string): Promise<RrgConciergeIden
       email: (j.email ?? null) as string | null,
     };
   } catch {
-    return null;
+    return 'unavailable';
   }
 }

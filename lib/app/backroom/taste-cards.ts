@@ -263,7 +263,8 @@ async function resolveAgentIdentity(member: CardMember): Promise<{ identity: Age
         displayName: brand?.name || ref,
       };
     }
-    const concierge = await resolveRrgConcierge(ref);
+    const resolved = await resolveRrgConcierge(ref);
+    const concierge = resolved === 'unavailable' ? null : resolved;
     return {
       identity: { mcp_url: null, erc8004_agent_id: null, agent_wallet: concierge?.wallet_address ?? null },
       displayName: concierge?.name || ref,
