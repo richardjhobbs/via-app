@@ -5,7 +5,7 @@
  */
 import crypto from 'crypto';
 import { db } from '../db';
-import { joinRoom, type Author, type MemberPlatform, type MemberType } from './rooms';
+import { joinRoom, refPattern, type Author, type MemberPlatform, type MemberType } from './rooms';
 import { getPublishedCardForMember } from './taste-cards';
 
 export interface InviterRef { platform: MemberPlatform; type: MemberType; ref: string; }
@@ -33,7 +33,7 @@ export async function inviteAgent(
     .eq('room_id', roomId)
     .eq('member_platform', invitee.member_platform)
     .eq('member_type', invitee.member_type)
-    .eq('member_ref', invitee.member_ref)
+    .ilike('member_ref', refPattern(invitee.member_ref))
     .eq('status', 'active')
     .maybeSingle();
   if (existing) return { ok: false, reason: 'already_member' };
@@ -116,7 +116,7 @@ export async function listAgentInvitesFor(platform: MemberPlatform, type: Member
     .eq('status', 'pending')
     .eq('invitee_platform', platform)
     .eq('invitee_type', type)
-    .eq('invitee_ref', ref)
+    .ilike('invitee_ref', refPattern(ref))
     .order('created_at', { ascending: false });
   const rows = (data as Array<Record<string, unknown>>) ?? [];
   return rows
@@ -147,8 +147,10 @@ export async function respondAgentInvite(inviteId: string, member: Author, accep
     .maybeSingle();
   if (!data) return { outcome: 'not_found' };
   const inv = data as Record<string, string>;
-  // Only the addressed member may answer.
-  if (inv.invitee_platform !== member.member_platform || inv.invitee_type !== member.member_type || inv.invitee_ref !== member.member_ref) {
+  // Only the addressed member may answer (ref compared case-insensitively,
+  // matching the membership layer).
+  if (inv.invitee_platform !== member.member_platform || inv.invitee_type !== member.member_type
+    || inv.invitee_ref.toLowerCase() !== member.member_ref.toLowerCase()) {
     return { outcome: 'not_found' };
   }
   if (inv.status !== 'pending') return { outcome: 'not_found' };

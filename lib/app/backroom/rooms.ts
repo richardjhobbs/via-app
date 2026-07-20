@@ -190,6 +190,16 @@ export async function resolveViaMemberWallet(memberType: MemberType, memberRef: 
   return (data as { agent_wallet_address: string | null } | null)?.agent_wallet_address ?? null;
 }
 
+/**
+ * Member refs match case-insensitively everywhere (migration 0049): RRG
+ * concierge refs carry whatever case the federation hands over, and a case
+ * mismatch must not read as "not a member". ilike with wildcards escaped is
+ * the PostgREST way to compare lower(member_ref) = lower(ref).
+ */
+export function refPattern(ref: string): string {
+  return ref.replace(/([\\%_])/g, '\\$1');
+}
+
 export async function isMember(roomId: string, platform: MemberPlatform, memberType: MemberType, memberRef: string): Promise<RoomMember | null> {
   const { data } = await db
     .from('app_room_members')
@@ -197,7 +207,7 @@ export async function isMember(roomId: string, platform: MemberPlatform, memberT
     .eq('room_id', roomId)
     .eq('member_platform', platform)
     .eq('member_type', memberType)
-    .eq('member_ref', memberRef)
+    .ilike('member_ref', refPattern(memberRef))
     .eq('status', 'active')
     .maybeSingle();
   return (data as RoomMember) ?? null;
@@ -211,7 +221,7 @@ export async function isFounder(roomId: string, member: Author): Promise<boolean
     .eq('room_id', roomId)
     .eq('member_platform', member.member_platform)
     .eq('member_type', member.member_type)
-    .eq('member_ref', member.member_ref)
+    .ilike('member_ref', refPattern(member.member_ref))
     .eq('is_founder', true)
     .eq('status', 'active')
     .maybeSingle();
@@ -238,7 +248,7 @@ export async function setMemberStatus(roomId: string, target: Author, status: 'a
     .eq('room_id', roomId)
     .eq('member_platform', target.member_platform)
     .eq('member_type', target.member_type)
-    .eq('member_ref', target.member_ref);
+    .ilike('member_ref', refPattern(target.member_ref));
   return !error;
 }
 

@@ -1,4 +1,5 @@
 import { db } from '@/lib/app/db';
+import { refPattern } from '@/lib/app/backroom/rooms';
 import { sessionMembers, type SessionMember } from '@/lib/app/backroom/ui-auth';
 import { roomNewCountsFor, getEmailDigestPref } from '@/lib/app/backroom/notifications';
 import { BackroomHub } from '@/components/backroom/BackroomHub';
@@ -15,7 +16,7 @@ async function loadMemberRooms(member: SessionMember): Promise<{ id: string; nam
     .select('room_id')
     .eq('member_platform', member.platform)
     .eq('member_type', member.type)
-    .eq('member_ref', member.ref)
+    .ilike('member_ref', refPattern(member.ref))
     .eq('status', 'active');
   const ids = ((memberships as { room_id: string }[]) ?? []).map((m) => m.room_id);
   if (ids.length === 0) return [];

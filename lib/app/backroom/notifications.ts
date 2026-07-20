@@ -4,7 +4,7 @@
  * per-member email-digest preference.
  */
 import { db } from '../db';
-import type { Author } from './rooms';
+import { refPattern, type Author } from './rooms';
 
 /** New content counts per room for a member (one round-trip via the RPC). */
 export async function roomNewCountsFor(member: Author): Promise<Map<string, number>> {
@@ -34,7 +34,7 @@ export async function markRoomSeen(roomId: string, member: Author): Promise<void
       .eq('room_id', roomId)
       .eq('member_platform', member.member_platform)
       .eq('member_type', member.member_type)
-      .eq('member_ref', member.member_ref);
+      .ilike('member_ref', refPattern(member.member_ref));
   } catch (e) { console.warn('[notifications] markRoomSeen failed:', e); }
 }
 

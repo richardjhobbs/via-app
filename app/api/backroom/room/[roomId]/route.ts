@@ -48,7 +48,8 @@ export async function GET(req: Request, { params }: { params: Promise<{ roomId: 
   // Founder flag from the members already fetched , no extra query.
   const me = auth && auth.ok ? auth.member : null;
   const youAreFounder = !!(me && members.some(
-    (m) => m.member_platform === me.member_platform && m.member_type === me.member_type && m.member_ref === me.member_ref && m.is_founder,
+    (m) => m.member_platform === me.member_platform && m.member_type === me.member_type
+      && m.member_ref.toLowerCase() === me.member_ref.toLowerCase() && m.is_founder,
   ));
 
   // Opening the room clears its pulse for this member.

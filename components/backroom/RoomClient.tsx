@@ -326,12 +326,10 @@ export function RoomClient({ roomId, handle, isAdmin = false }: { roomId: string
             <p className="br-sans" style={{ marginTop: 8, fontSize: 12, color: 'var(--accent)' }}>Superadmin view, read only. Members can be moderated below.</p>
           )}
           <span style={{ display: 'flex', gap: 16, marginTop: 10 }}>
-            {(youAreFounder || isAdmin) && (
-              <button type="button" onClick={() => setShowMembers((v) => !v)} className="br-sans"
-                style={{ fontSize: 12, color: 'var(--ink-3)', background: 'none', border: 'none', cursor: 'pointer', padding: 0, textDecoration: 'underline' }}>
-                {showMembers ? 'Hide members' : `Members (${members.filter((m) => m.status === 'active').length})`}
-              </button>
-            )}
+            <button type="button" onClick={() => setShowMembers((v) => !v)} className="br-sans"
+              style={{ fontSize: 12, color: 'var(--ink-3)', background: 'none', border: 'none', cursor: 'pointer', padding: 0, textDecoration: 'underline' }}>
+              {showMembers ? 'Hide members' : `Members (${members.filter((m) => m.status === 'active').length})`}
+            </button>
             {handle && !isAdmin && (
               <button type="button" onClick={() => setShowInvite((v) => !v)} className="br-sans"
                 style={{ fontSize: 12, color: 'var(--ink-3)', background: 'none', border: 'none', cursor: 'pointer', padding: 0, textDecoration: 'underline' }}>
@@ -391,14 +389,16 @@ export function RoomClient({ roomId, handle, isAdmin = false }: { roomId: string
           </section>
         )}
 
-        {(youAreFounder || isAdmin) && showMembers && (
+        {showMembers && (
           <section style={{ border: '1px solid var(--line-strong)', borderRadius: 6, padding: 16, marginBottom: 24, background: 'var(--paper)' }}>
             <p className="br-sans" style={{ fontSize: 11, letterSpacing: '0.14em', textTransform: 'uppercase', color: 'var(--ink-3)', margin: '0 0 12px' }}>
-              {isAdmin && !youAreFounder ? 'Members · superadmin' : 'Members · you found this room'}
+              {isAdmin && !youAreFounder ? 'Members · superadmin' : youAreFounder ? 'Members · you found this room' : 'Members'}
             </p>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-              {members.map((m, i) => {
-                const isYou = m.member_platform === 'via' && m.member_ref === handle;
+              {/* Everyone in the room sees who is in it; moderation states and
+                  buttons stay founder/superadmin-only. */}
+              {members.filter((m) => youAreFounder || isAdmin || m.status === 'active').map((m, i) => {
+                const isYou = m.member_ref.toLowerCase() === handle.toLowerCase();
                 return (
                   <div key={i} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, borderTop: i ? '1px solid var(--line)' : 'none', paddingTop: i ? 8 : 0 }}>
                     <span className="br-sans" style={{ fontSize: 14, color: m.status === 'active' ? 'var(--ink)' : 'var(--ink-3)' }}>
@@ -408,7 +408,7 @@ export function RoomClient({ roomId, handle, isAdmin = false }: { roomId: string
                       {m.is_founder && <span style={{ color: 'var(--accent)' }}> · founder</span>}
                       {m.status !== 'active' && <span style={{ fontStyle: 'italic' }}> · {m.status}</span>}
                     </span>
-                    {!m.is_founder && !isYou && (
+                    {(youAreFounder || isAdmin) && !m.is_founder && !isYou && (
                       <span style={{ display: 'flex', gap: 6 }}>
                         {m.status === 'active' ? (
                           <>
