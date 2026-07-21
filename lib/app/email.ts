@@ -10,7 +10,11 @@ import { createHmac, timingSafeEqual } from 'node:crypto';
 import { db } from './db';
 
 const RESEND_URL = 'https://api.resend.com/emails';
-const FROM       = process.env.FROM_EMAIL ?? 'deliver@getvia.xyz';
+const FROM_ADDR  = process.env.FROM_EMAIL ?? 'deliver@getvia.xyz';
+// Inboxes show the display name; without one they fall back to the local part
+// ("deliver"). Wrap a bare address so it shows as "VIA". If FROM_EMAIL already
+// carries its own display name (contains "<"), use it verbatim.
+const FROM       = FROM_ADDR.includes('<') ? FROM_ADDR : `VIA <${FROM_ADDR}>`;
 const SITE_URL   = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://app.getvia.xyz';
 
 // ── Unsubscribe (notification-class email only) ───────────────────────
