@@ -74,7 +74,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ roomId: 
   }));
 
   return NextResponse.json({
-    room: { id: room.id, name: room.name, accent_hex: room.accent_hex, member_cap: room.member_cap },
+    room: { id: room.id, name: room.name, accent_hex: room.accent_hex, member_cap: room.member_cap, banner_url: room.banner_url },
     warmth,
     count: withUrls.length,
     objects: withUrls,

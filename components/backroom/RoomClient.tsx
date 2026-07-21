@@ -27,7 +27,7 @@ interface TableObject {
 // accept hint; the server is the real gate.
 const FILE_ACCEPT = 'image/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv,.md,.rtf,.odt,.ods,.odp';
 interface Warmth { last_event_at: string | null; events_24h: number; }
-interface RoomMeta { id: string; name: string; accent_hex: string; member_cap: number; }
+interface RoomMeta { id: string; name: string; accent_hex: string; member_cap: number; banner_url: string | null; }
 interface Quote { title: string; seller: string | null; price_usdc: number | null; page_url: string | null; }
 interface Member { member_platform: string; member_type: string; member_ref: string; is_founder: boolean; status: string; card_slug?: string | null; }
 interface SentInvite { id: string; kind: string; status: string; why: string; invitee: string; link: string | null; email: string | null; created_at: string; }
@@ -74,7 +74,10 @@ export function RoomClient({ roomId, handle, isAdmin = false }: { roomId: string
   const [note, setNote] = useState('');
   const [composerBusy, setComposerBusy] = useState(false);
   const [composerErr, setComposerErr] = useState<string | null>(null);
+  const [bannerBusy, setBannerBusy] = useState(false);
+  const [bannerErr, setBannerErr] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const bannerInputRef = useRef<HTMLInputElement>(null);
 
   // One call returns the table, warmth, members, founder flag, and chat.
   const load = useCallback(async () => {
@@ -247,6 +250,37 @@ export function RoomClient({ roomId, handle, isAdmin = false }: { roomId: string
     if (fileInputRef.current) fileInputRef.current.value = '';
   }, [roomId, handle]);
 
+  // Founder: set or replace the room banner. The server enforces the founder
+  // gate, the image allowlist, and the size cap.
+  const uploadBanner = useCallback(async (file: File) => {
+    setBannerBusy(true); setBannerErr(null);
+    const fd = new FormData();
+    fd.append('ref', handle);
+    fd.append('file', file);
+    const res = await fetch(`/api/backroom/room/${roomId}/banner`, { method: 'POST', body: fd });
+    if (res.ok) {
+      const j = await res.json() as { banner_url?: string };
+      if (j.banner_url) setMeta((m) => (m ? { ...m, banner_url: j.banner_url as string } : m));
+    } else {
+      const j = await res.json().catch(() => ({}));
+      setBannerErr((j as { error?: string }).error ?? 'could not set the banner');
+    }
+    setBannerBusy(false);
+    if (bannerInputRef.current) bannerInputRef.current.value = '';
+  }, [roomId, handle]);
+
+  const removeBanner = useCallback(async () => {
+    if (!confirm('Remove the room banner?')) return;
+    setBannerBusy(true); setBannerErr(null);
+    const res = await fetch(`/api/backroom/room/${roomId}/banner?ref=${encodeURIComponent(handle)}`, { method: 'DELETE' });
+    if (res.ok) setMeta((m) => (m ? { ...m, banner_url: null } : m));
+    else {
+      const j = await res.json().catch(() => ({}));
+      setBannerErr((j as { error?: string }).error ?? 'could not remove the banner');
+    }
+    setBannerBusy(false);
+  }, [roomId, handle]);
+
   // Founder / superadmin: delete a post from the table (and its stored file).
   const deleteObject = useCallback(async (o: TableObject) => {
     if (!confirm('Delete this from the table? This cannot be undone.')) return;
@@ -319,6 +353,17 @@ export function RoomClient({ roomId, handle, isAdmin = false }: { roomId: string
         >
           &larr; {handle ? 'The Back Room' : 'Operator console'}
         </a>
+        {meta?.banner_url && (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={meta.banner_url}
+            alt=""
+            style={{
+              display: 'block', width: '100%', height: 200, objectFit: 'cover',
+              borderRadius: 10, border: '1px solid var(--line)', marginBottom: 20,
+            }}
+          />
+        )}
         <header style={{ marginBottom: 24 }}>
           <p className="br-sans" style={{ fontSize: 12, letterSpacing: '0.14em', textTransform: 'uppercase', color: 'var(--ink-3)', margin: 0 }}>The Room</p>
           <h1 className="br-serif" style={{ fontSize: 32, fontWeight: 400, margin: '6px 0 0' }}>{meta?.name ?? '...'}</h1>
@@ -336,7 +381,27 @@ export function RoomClient({ roomId, handle, isAdmin = false }: { roomId: string
                 {showInvite ? 'Hide invite' : 'Invite someone'}
               </button>
             )}
+            {youAreFounder && handle && !isAdmin && (
+              <button type="button" onClick={() => bannerInputRef.current?.click()} disabled={bannerBusy} className="br-sans"
+                style={{ fontSize: 12, color: 'var(--ink-3)', background: 'none', border: 'none', cursor: bannerBusy ? 'default' : 'pointer', padding: 0, textDecoration: 'underline' }}>
+                {bannerBusy ? 'Working…' : meta?.banner_url ? 'Change banner' : 'Add banner'}
+              </button>
+            )}
+            {youAreFounder && handle && !isAdmin && meta?.banner_url && (
+              <button type="button" onClick={removeBanner} disabled={bannerBusy} className="br-sans"
+                style={{ fontSize: 12, color: 'var(--ink-3)', background: 'none', border: 'none', cursor: bannerBusy ? 'default' : 'pointer', padding: 0, textDecoration: 'underline' }}>
+                Remove banner
+              </button>
+            )}
           </span>
+          {bannerErr && <p className="br-sans" style={{ fontSize: 12, color: 'var(--danger)', margin: '8px 0 0' }}>{bannerErr}</p>}
+          <input
+            ref={bannerInputRef}
+            type="file"
+            accept="image/jpeg,image/png,image/webp"
+            style={{ display: 'none' }}
+            onChange={(e) => { const f = e.target.files?.[0]; if (f) void uploadBanner(f); }}
+          />
         </header>
 
         {showInvite && handle && !isAdmin && (

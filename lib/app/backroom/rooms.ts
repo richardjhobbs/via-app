@@ -25,6 +25,7 @@ export interface RoomRow {
   created_from: string;
   member_cap: number;
   agent_wallet_address: string | null;
+  banner_url: string | null;
 }
 
 export interface RoomMember {
@@ -42,7 +43,7 @@ export type RoomEventKind = 'object_placed' | 'object_moved' | 'corner_assigned'
 export async function loadRoom(roomId: string): Promise<RoomRow | null> {
   const { data } = await db
     .from('app_rooms')
-    .select('id, name, accent_hex, created_from, member_cap, agent_wallet_address')
+    .select('id, name, accent_hex, created_from, member_cap, agent_wallet_address, banner_url')
     .eq('id', roomId)
     .maybeSingle();
   return (data as RoomRow) ?? null;
@@ -87,7 +88,7 @@ export async function createRoom(input: { name: string; accent_hex?: string; cre
       created_by_type: input.createdBy?.member_type ?? null,
       created_by_ref: input.createdBy?.member_ref ?? null,
     })
-    .select('id, name, accent_hex, created_from, member_cap, agent_wallet_address')
+    .select('id, name, accent_hex, created_from, member_cap, agent_wallet_address, banner_url')
     .single();
   if (error) throw error;
   const room = data as RoomRow;
