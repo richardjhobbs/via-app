@@ -7,7 +7,6 @@
  */
 import { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
-import { HoldToSpeak } from './HoldToSpeak';
 import { PushToggle } from './PushToggle';
 import { VibePicker } from './VibePicker';
 
@@ -22,14 +21,6 @@ interface MemberInvite extends Invite { member_ref: string }
 export interface HubMember { platform: string; type: string; ref: string; label: string }
 
 export interface HubRoom { id: string; name: string; accent_hex: string; new_count: number; handle: string }
-
-interface VoiceResult {
-  transcript: string;
-  action: { tool: string | null; say: string } | null;
-  total_ms?: number;
-  error?: string;
-  note?: string;
-}
 
 export function BackroomHub({ members, rooms, emailDigest = true, vibe = 'paper' }: { members: HubMember[]; rooms: HubRoom[]; emailDigest?: boolean; vibe?: Vibe }) {
   // The primary identity drives the single-identity surfaces (voice, prefs,
@@ -46,8 +37,6 @@ export function BackroomHub({ members, rooms, emailDigest = true, vibe = 'paper'
   const dashboardHref = primary && primary.platform === 'via'
     ? (primary.type === 'buyer' ? `/buyer/${encodeURIComponent(primary.ref)}/admin` : `/seller/${encodeURIComponent(primary.ref)}/admin`)
     : null;
-  const [result, setResult] = useState<VoiceResult | null>(null);
-  const [busy, setBusy] = useState(false);
   const [newName, setNewName] = useState('');
   const [creating, setCreating] = useState(false);
   const [createErr, setCreateErr] = useState<string | null>(null);
@@ -112,16 +101,6 @@ export function BackroomHub({ members, rooms, emailDigest = true, vibe = 'paper'
       setCreateErr(json.message || json.error || 'could not start the room');
       setCreating(false);
     }
-  }
-
-  async function onUtterance(blob: Blob) {
-    setBusy(true); setResult(null);
-    const form = new FormData();
-    form.append('audio', blob, 'utterance');
-    if (handle) form.append('member', handle);
-    const res = await fetch('/api/backroom/voice', { method: 'POST', body: form });
-    setResult((await res.json()) as VoiceResult);
-    setBusy(false);
   }
 
   return (
@@ -245,27 +224,6 @@ export function BackroomHub({ members, rooms, emailDigest = true, vibe = 'paper'
           <VibePicker handle={handle} current={vibe} />
         </div>
       )}
-
-      {/* Try the voice */}
-      <div style={{ marginTop: 40, borderTop: '1px solid var(--line)', paddingTop: 24 }}>
-        <p className="br-sans" style={{ fontSize: 11, letterSpacing: '0.14em', textTransform: 'uppercase', color: 'var(--ink-3)', margin: 0 }}>Try speaking</p>
-        <p className="br-serif" style={{ fontSize: 22, margin: '6px 0 4px' }}>Hold the button and say something</p>
-        <p className="br-sans" style={{ fontSize: 15, color: 'var(--ink-2)', margin: 0, lineHeight: 1.6 }}>
-          For example: put this link on the table, example dot com. Or: find a pressing plant that
-          does 180 gram. VIA turns your words into an action.
-        </p>
-        {busy && <p className="br-sans" style={{ marginTop: 16, color: 'var(--ink-3)' }}>One moment…</p>}
-        {result && !result.error && (
-          <div style={{ marginTop: 16 }}>
-            <p className="br-sans" style={{ fontSize: 12, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--ink-3)', margin: 0 }}>Heard</p>
-            <p className="br-serif" style={{ fontSize: 19, margin: '2px 0 10px', color: 'var(--ink)' }}>{result.transcript || result.note || '(nothing)'}</p>
-            {result.action?.say && <p className="br-sans" style={{ fontSize: 15, color: 'var(--ink-2)', fontStyle: 'italic' }}>VIA: {result.action.say}</p>}
-          </div>
-        )}
-        {result?.error && <p className="br-sans" style={{ marginTop: 12, color: 'var(--danger)' }}>{result.error}</p>}
-      </div>
-
-      <HoldToSpeak onUtterance={onUtterance} />
     </main>
   );
 }
