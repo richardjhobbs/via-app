@@ -13,7 +13,7 @@ import { useEffect, useState } from 'react';
 // The banner never shows when already installed (standalone), and a dismissal
 // is remembered for 30 days so we don't nag.
 
-const DISMISS_KEY = 'backroom-install-dismissed';
+const DEFAULT_DISMISS_KEY = 'backroom-install-dismissed';
 const DISMISS_DAYS = 30;
 const IOS_DELAY_MS = 4000;
 
@@ -36,9 +36,9 @@ function isIosSafari(): boolean {
   return ios && safari;
 }
 
-function recentlyDismissed(): boolean {
+function recentlyDismissed(dismissKey: string): boolean {
   try {
-    const raw = localStorage.getItem(DISMISS_KEY);
+    const raw = localStorage.getItem(dismissKey);
     if (!raw) return false;
     const ts = Number(raw);
     if (!Number.isFinite(ts)) return false;
@@ -48,7 +48,11 @@ function recentlyDismissed(): boolean {
   }
 }
 
-export function InstallPrompt() {
+export function InstallPrompt({
+  appName = 'The Back Room',
+  dismissKey = DEFAULT_DISMISS_KEY,
+  fontClass = 'br-sans',
+}: { appName?: string; dismissKey?: string; fontClass?: string } = {}) {
   const [deferred, setDeferred] = useState<BeforeInstallPromptEvent | null>(null);
   const [iosHint, setIosHint] = useState(false);
   const [visible, setVisible] = useState(false);
@@ -56,7 +60,7 @@ export function InstallPrompt() {
   useEffect(() => {
     if (typeof window === 'undefined') return;
     if (isStandalone()) return;
-    if (recentlyDismissed()) return;
+    if (recentlyDismissed(dismissKey)) return;
 
     const onBeforeInstall = (e: Event) => {
       e.preventDefault();
@@ -66,7 +70,7 @@ export function InstallPrompt() {
     const onInstalled = () => {
       setVisible(false);
       setDeferred(null);
-      try { localStorage.setItem(DISMISS_KEY, String(Date.now())); } catch {}
+      try { localStorage.setItem(dismissKey, String(Date.now())); } catch {}
     };
 
     window.addEventListener('beforeinstallprompt', onBeforeInstall);
@@ -82,11 +86,11 @@ export function InstallPrompt() {
       window.removeEventListener('appinstalled', onInstalled);
       if (iosTimer) clearTimeout(iosTimer);
     };
-  }, []);
+  }, [dismissKey]);
 
   const dismiss = () => {
     setVisible(false);
-    try { localStorage.setItem(DISMISS_KEY, String(Date.now())); } catch {}
+    try { localStorage.setItem(dismissKey, String(Date.now())); } catch {}
   };
 
   const install = async () => {
@@ -102,8 +106,8 @@ export function InstallPrompt() {
   return (
     <div
       role="dialog"
-      aria-label="Install The Back Room"
-      className="br-sans"
+      aria-label={`Install ${appName}`}
+      className={fontClass}
       style={{
         position: 'fixed', left: 16, right: 16, bottom: 16, zIndex: 60,
         margin: '0 auto', maxWidth: 420,
@@ -118,9 +122,9 @@ export function InstallPrompt() {
           <div style={{ fontSize: 11, letterSpacing: '0.14em', textTransform: 'uppercase', color: 'var(--ink-3)', marginBottom: 6 }}>Install</div>
           <div style={{ fontSize: 14, lineHeight: 1.45, color: 'var(--ink-2)' }}>
             {iosHint ? (
-              <>Add The Back Room to your home screen: tap the Share icon, then <strong style={{ color: 'var(--ink)' }}>Add to Home Screen</strong>.</>
+              <>Add {appName} to your home screen: tap the Share icon, then <strong style={{ color: 'var(--ink)' }}>Add to Home Screen</strong>.</>
             ) : (
-              <>Add The Back Room to your home screen for instant access and notifications.</>
+              <>Add {appName} to your home screen for instant access and notifications.</>
             )}
           </div>
         </div>

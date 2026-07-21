@@ -22,7 +22,10 @@ function BuyerLoginInner() {
   const [accessToken,  setAccessToken]  = useState<string | null>(null);
   const [refreshToken, setRefreshToken] = useState<string | null>(null);
 
-  const [mode, setMode] = useState<'login' | 'forgot' | 'reset'>(isForgot ? 'forgot' : 'login');
+  // 'magic' (email-first, a sign-in link is sent) is the default for returning
+  // users, mirroring the RRG login. Password stays available behind a toggle.
+  const [mode, setMode] = useState<'magic' | 'login' | 'forgot' | 'reset'>(isForgot ? 'forgot' : 'magic');
+  const [magicState, setMagicState] = useState<'idle' | 'sent' | 'unknown' | 'signing-in'>('idle');
 
   const [email,    setEmail]    = useState(emailParam);
   const [password, setPassword] = useState('');
@@ -45,11 +48,39 @@ function BuyerLoginInner() {
       setAccessToken(at);
       setRefreshToken(rt);
       setMode('reset');
+    } else if (at && rt) {
+      // A magic-link landing: exchange the hash tokens for app cookies, then
+      // continue to where the user was headed.
+      setMode('magic');
+      setMagicState('signing-in');
+      (async () => {
+        try {
+          const res = await fetch('/api/buyer/auth/session', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ access_token: at, refresh_token: rt }),
+          });
+          const d = await res.json().catch(() => ({}));
+          if (res.ok) {
+            window.history.replaceState(null, '', window.location.pathname + window.location.search);
+            const buyerDest = d.buyers?.[0]?.handle ? `/buyer/${d.buyers[0].handle}/admin` : null;
+            const sellerDest = d.sellers?.[0]?.sellerSlug ? `/seller/${d.sellers[0].sellerSlug}/admin` : null;
+            window.location.href = nextPath ?? buyerDest ?? sellerDest ?? '/';
+            return;
+          }
+          setMagicState('idle');
+          setErr('That sign-in link did not work; it may have expired. Request a new one.');
+        } catch {
+          setMagicState('idle');
+          setErr('That sign-in link did not work; request a new one.');
+        }
+      })();
     } else if (h.get('error_description')) {
-      setMode('forgot');
+      setMode('magic');
       setErr(String(h.get('error_description')).replace(/\+/g, ' '));
     }
-  }, [isReset]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isReset, nextPath]);
 
   // Bounce already-signed-in buyers straight to their dashboard.
   useEffect(() => {
@@ -65,6 +96,27 @@ function BuyerLoginInner() {
       })
       .catch(() => {});
   }, [router, nextPath]);
+
+  const handleMagic = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setErr('');
+    setMsg('');
+    setLoading(true);
+    const res = await fetch('/api/buyer/auth/magic-link', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, next: nextPath ?? undefined }),
+    });
+    const data = await res.json().catch(() => ({}));
+    setLoading(false);
+    if (res.ok && data.sent) {
+      setMagicState('sent');
+    } else if (res.ok && data.known === false) {
+      setMagicState('unknown');
+    } else {
+      setErr(data.error || 'Could not send the sign-in link.');
+    }
+  };
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -143,7 +195,72 @@ function BuyerLoginInner() {
   return (
     <div className="w-full max-w-sm px-6">
       <Link href="/" aria-label="VIA home" className="inline-block mb-8"><Wordmark /></Link>
-      <p className="text-xs font-mono tracking-widest uppercase text-ink-3 mb-2">Buying Agent</p>
+      <p className="text-xs font-mono tracking-widest uppercase text-ink-3 mb-2">VIA sign in</p>
+
+      {mode === 'magic' && magicState === 'signing-in' && (
+        <div className="space-y-2">
+          <h1 className="font-serif text-3xl tracking-tight mb-2">Signing you in</h1>
+          <p className="text-sm text-ink-2 font-mono">One moment…</p>
+        </div>
+      )}
+
+      {mode === 'magic' && magicState === 'sent' && (
+        <div className="space-y-3">
+          <h1 className="font-serif text-3xl tracking-tight mb-2">Check your email</h1>
+          <p className="text-sm text-ink-2">A sign-in link is on its way to <strong>{email}</strong>. Open it on this device and you are in.</p>
+          <button
+            type="button"
+            onClick={() => { setMagicState('idle'); setErr(''); }}
+            className="text-xs font-mono text-ink-3 hover:text-ink transition-colors"
+          >
+            <span aria-hidden>&larr;</span> Use a different email
+          </button>
+        </div>
+      )}
+
+      {mode === 'magic' && magicState === 'unknown' && (
+        <div className="space-y-3">
+          <h1 className="font-serif text-3xl tracking-tight mb-2">No account yet</h1>
+          <p className="text-sm text-ink-2">There is no VIA account for <strong>{email}</strong>. Create your Buying Agent and this email becomes your sign-in.</p>
+          <div className="flex items-center gap-4 pt-1">
+            <Link href="/onboard?role=buyer" className="btn">Create an agent <span aria-hidden>&rarr;</span></Link>
+            <button
+              type="button"
+              onClick={() => { setMagicState('idle'); setErr(''); }}
+              className="text-xs font-mono text-ink-3 hover:text-ink transition-colors"
+            >
+              Try another email
+            </button>
+          </div>
+        </div>
+      )}
+
+      {mode === 'magic' && magicState === 'idle' && (
+        <form onSubmit={handleMagic} className="space-y-4">
+          <h1 className="font-serif text-3xl tracking-tight mb-2">Sign in</h1>
+          <p className="text-sm text-ink-2 mb-2">Enter your email and we send you a sign-in link. No password needed.</p>
+          <div>
+            <label className="text-xs font-mono tracking-widest uppercase text-ink-3 block mb-1">Email</label>
+            <input type="email" required value={email} onChange={(e) => setEmail(e.target.value)} className={inputClass} autoFocus />
+          </div>
+          {err && <p className="text-sm text-[color:var(--danger)] font-mono">{err}</p>}
+          <button type="submit" disabled={loading} className="btn w-full justify-center disabled:opacity-40">
+            {loading ? 'Sending…' : 'Email me a sign-in link'}
+          </button>
+          <div className="flex items-center justify-between pt-2">
+            <button
+              type="button"
+              onClick={() => { setMode('login'); setErr(''); setMsg(''); }}
+              className="text-xs font-mono text-ink-3 hover:text-ink transition-colors"
+            >
+              Use password instead
+            </button>
+            <Link href="/onboard?role=buyer" className="text-xs font-mono text-ink-3 hover:text-ink transition-colors">
+              Create an agent <span aria-hidden>&rarr;</span>
+            </Link>
+          </div>
+        </form>
+      )}
 
       {mode === 'login' && (
         <form onSubmit={handleLogin} className="space-y-4">
@@ -168,9 +285,13 @@ function BuyerLoginInner() {
             >
               Forgot password?
             </button>
-            <Link href="/onboard?role=buyer" className="text-xs font-mono text-ink-3 hover:text-ink transition-colors">
-              Create an agent <span aria-hidden>&rarr;</span>
-            </Link>
+            <button
+              type="button"
+              onClick={() => { setMode('magic'); setMagicState('idle'); setErr(''); setMsg(''); }}
+              className="text-xs font-mono text-ink-3 hover:text-ink transition-colors"
+            >
+              Email me a sign-in link
+            </button>
           </div>
         </form>
       )}

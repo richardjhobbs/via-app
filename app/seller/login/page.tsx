@@ -218,6 +218,14 @@ function SellerLoginInner() {
             >
               Forgot password?
             </button>
+            {/* One credential covers buyer and seller; the sign-in-link flow
+                routes a seller-only account back to their seller admin. */}
+            <Link
+              href="/buyer/login"
+              className="text-[10px] font-mono uppercase tracking-widest text-ink-2 underline hover:no-underline"
+            >
+              Email me a sign-in link
+            </Link>
           </div>
           <button type="submit" disabled={loading} className="btn w-full justify-center disabled:opacity-50">
             {loading ? 'Signing in…' : 'Sign in'}

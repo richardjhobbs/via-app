@@ -50,8 +50,10 @@ function LinkInner() {
     [token, finish],
   );
 
-  // On load: validate token presence, then try to link using an existing
-  // session. If unauthenticated, fall back to the email/password form.
+  // On load: validate token presence, then link straight away. The server
+  // finishes automatically for an existing session OR by resolving the
+  // concierge owner's email over federation (the handoff token is the
+  // ownership proof); the email/password form is only the last resort.
   useEffect(() => {
     if (!token) {
       setPhase('error');
@@ -60,19 +62,9 @@ function LinkInner() {
     }
     let cancelled = false;
     (async () => {
-      try {
-        const r = await fetch('/api/buyer/auth/check');
-        const d = await r.json();
-        if (cancelled) return;
-        if (d.authenticated) {
-          setPhase('linking');
-          await submitLink();
-        } else {
-          setPhase('need-auth');
-        }
-      } catch {
-        if (!cancelled) setPhase('need-auth');
-      }
+      if (cancelled) return;
+      setPhase('linking');
+      await submitLink();
     })();
     return () => { cancelled = true; };
   }, [token, submitLink]);

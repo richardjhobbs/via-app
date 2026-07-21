@@ -128,15 +128,17 @@ export default function LandingClient({ metrics, wire }: { metrics: NetworkMetri
             <div className="uc-mono seam-note">No ads. No algorithm.</div>
           </div>
         </section>
-      </div>
 
-      <div className="via-stats">
-        {stats.map(([lbl, val, sub], i) => (
-          <div className="stat-cell" key={i}>
-            <span className="stat-val tnum">{val}</span>
-            <span className="uc-mono" style={{ fontSize: 9, color: 'var(--ink-3)' }}>{lbl} · {sub}</span>
-          </div>
-        ))}
+        {/* Stats live inside the seam grid so the mobile order can be
+            agents, stats, feed (grid areas per breakpoint). */}
+        <div className="via-stats">
+          {stats.map(([lbl, val, sub], i) => (
+            <div className="stat-cell" key={i}>
+              <span className="stat-val tnum">{val}</span>
+              <span className="uc-mono" style={{ fontSize: 9, color: 'var(--ink-3)' }}>{lbl} · {sub}</span>
+            </div>
+          ))}
+        </div>
       </div>
 
       <footer className="via-foot">

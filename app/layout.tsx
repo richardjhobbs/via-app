@@ -3,6 +3,7 @@ import { Fraunces, Inter, JetBrains_Mono } from 'next/font/google';
 import './globals.css';
 import { Providers } from './providers';
 import { SWRegister } from './sw-register';
+import { AppInstallPrompt } from '@/components/app/AppInstallPrompt';
 
 const fraunces = Fraunces({
   variable: '--font-fraunces',
@@ -85,6 +86,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <Providers>
           <SWRegister />
           {children}
+          <AppInstallPrompt />
         </Providers>
       </body>
     </html>
