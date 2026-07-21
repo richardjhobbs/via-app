@@ -1,7 +1,7 @@
 import { notFound } from 'next/navigation';
 import { db } from '@/lib/app/db';
 import { getBuyerUser } from '@/lib/app/buyer-auth';
-import { getBalance, usdToCredits } from '@/lib/app/buyer-credits';
+import { usdToCredits } from '@/lib/app/buyer-credits';
 import BuyerDashboardClient, { type BriefRow, type MatchRow, type PitchRow } from './BuyerDashboardClient';
 
 export const dynamic = 'force-dynamic';
@@ -25,7 +25,7 @@ export default async function BuyerAdminPage({
 
   const { data: buyer, error } = await db
     .from('app_buyers')
-    .select('id, handle, display_name, owner_user_id')
+    .select('id, handle, display_name, owner_user_id, credit_balance_usdc')
     .eq('handle', handle)
     .maybeSingle();
   if (error || !buyer) return notFound();
@@ -228,7 +228,7 @@ export default async function BuyerAdminPage({
   }));
   const openBriefs = briefs.filter((b) => OPEN_STATUSES.includes(b.status)).length;
 
-  const creditsBalance = usdToCredits(await getBalance(buyerId));
+  const creditsBalance = usdToCredits(Number(buyer.credit_balance_usdc ?? 0));
 
   const matches: MatchRow[] = (matchData ?? []).map((m) => ({
     id: m.id as string,

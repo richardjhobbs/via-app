@@ -1,9 +1,11 @@
 import type { Metadata, Viewport } from 'next';
+import { Suspense } from 'react';
 import { Fraunces, Inter, JetBrains_Mono } from 'next/font/google';
 import './globals.css';
 import { Providers } from './providers';
 import { SWRegister } from './sw-register';
 import { AppInstallPrompt } from '@/components/app/AppInstallPrompt';
+import { RouteProgress } from '@/components/app/RouteProgress';
 
 const fraunces = Fraunces({
   variable: '--font-fraunces',
@@ -84,6 +86,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       </head>
       <body className={`${fraunces.variable} ${inter.variable} ${jetbrains.variable}`}>
         <Providers>
+          <Suspense fallback={null}>
+            <RouteProgress />
+          </Suspense>
           <SWRegister />
           {children}
           <AppInstallPrompt />

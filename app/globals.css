@@ -228,6 +228,17 @@ body {
   transition: background 0.4s ease, color 0.4s ease;
 }
 
+/* ─── Loading skeletons ─────────────────────────────────────────────────
+   A neutral pulsing placeholder used by route-level loading.tsx files so a
+   heavy dashboard navigation shows an instant shape instead of a blank wait.
+   Theme-aware via the ink/line tokens, so it works on every skin. */
+@keyframes via-pulse { 0%, 100% { opacity: 0.55; } 50% { opacity: 0.22; } }
+.via-skeleton {
+  background: var(--line-strong, rgba(0, 0, 0, 0.12));
+  border-radius: 6px;
+  animation: via-pulse 1.3s ease-in-out infinite;
+}
+
 /* ─── Maison utility primitives ─────────────────────────────────────── */
 .font-serif { font-family: var(--font-fraunces), 'Fraunces', 'Times New Roman', serif; font-variation-settings: "opsz" 144; letter-spacing: -0.01em; }
 .font-mono  { font-family: var(--font-jetbrains), 'JetBrains Mono', ui-monospace, monospace; }

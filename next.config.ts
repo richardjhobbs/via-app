@@ -7,6 +7,12 @@ const nextConfig: NextConfig = {
   // caused MIDDLEWARE_INVOCATION_FAILED on the first deploy.
   turbopack: {},
   serverExternalPackages: ['agentmail', 'ethers', 'web-push'],
+  experimental: {
+    // Keep visited/prefetched dynamic segments in the client router cache for a
+    // short window so back/forward and repeat navigation between dashboards is
+    // instant instead of re-running the force-dynamic server render every time.
+    staleTimes: { dynamic: 30, static: 180 },
+  },
   // The taste-card image renderer reads TTFs off disk at runtime; make sure
   // Vercel's file tracing ships them with the functions that render cards.
   outputFileTracingIncludes: {

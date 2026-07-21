@@ -17,6 +17,7 @@
  * the RRG handoff. RRG personal concierges (rrg/buyer) are not seen here: they
  * import into VIA as a native via/buyer and are resolved on the buyer path.
  */
+import { cache } from 'react';
 import { db } from '../db';
 import { getBuyerUser, getUserBuyers } from '../buyer-auth';
 import { getSellerUser, isSellerMember, getUserBrands } from '../seller-auth';
@@ -98,7 +99,7 @@ export interface SessionMember { platform: MemberPlatform; type: MemberType; ref
  * Room reuse an existing agent-admin session, so a signed-in user never has to
  * log in again to reach a room. Empty when there is no session.
  */
-export async function sessionMembers(): Promise<SessionMember[]> {
+export const sessionMembers = cache(async (): Promise<SessionMember[]> => {
   const out: SessionMember[] = [];
   const buyerUser = await getBuyerUser();
   if (buyerUser) {
@@ -121,7 +122,7 @@ export async function sessionMembers(): Promise<SessionMember[]> {
     out.push({ platform: 'rrg', type: 'buyer', ref: concierge.ref, label: concierge.name || concierge.ref });
   }
   return out;
-}
+});
 
 /** The primary session member (first buyer, else first seller), or null. */
 export async function primarySessionMember(): Promise<SessionMember | null> {
