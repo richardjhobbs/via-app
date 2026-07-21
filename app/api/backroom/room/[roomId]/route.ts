@@ -8,6 +8,7 @@
 import { NextResponse } from 'next/server';
 import { db } from '@/lib/app/db';
 import { loadRoom, listTable, roomWarmth, listRoomMembers, listChat } from '@/lib/app/backroom/rooms';
+import { listRoomOffers } from '@/lib/app/backroom/offers';
 import { publishedCardSlugsFor } from '@/lib/app/backroom/taste-cards';
 import { requireRoomMember, type RoomMemberAuth } from '@/lib/app/backroom/ui-auth';
 import { isAdminFromCookies } from '@/lib/app/auth';
@@ -26,11 +27,12 @@ export async function GET(req: Request, { params }: { params: Promise<{ roomId: 
 
   // Auth runs alongside the data fetch so the request is one round-trip deep,
   // not a chain. Data is fetched optimistically and only returned if auth passes.
-  const [objects, warmth, members, chat, auth, isAdmin] = await Promise.all([
+  const [objects, warmth, members, chat, offers, auth, isAdmin] = await Promise.all([
     listTable(roomId),
     roomWarmth(roomId),
     listRoomMembers(roomId),
     listChat(roomId),
+    listRoomOffers(roomId),
     handle ? requireRoomMember(handle, roomId) : Promise.resolve<RoomMemberAuth | null>(null),
     handle ? Promise.resolve(false) : isAdminFromCookies(),
   ]);
@@ -82,5 +84,6 @@ export async function GET(req: Request, { params }: { params: Promise<{ roomId: 
     you_are_founder: youAreFounder,
     is_admin: !handle && isAdmin,
     chat,
+    offers,
   });
 }

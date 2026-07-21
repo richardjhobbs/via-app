@@ -8,6 +8,7 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { HoldToSpeak } from './HoldToSpeak';
+import { RoomOffers, type RoomOffer } from './RoomOffers';
 
 interface TableObject {
   id: string;
@@ -60,6 +61,7 @@ export function RoomClient({ roomId, handle, isAdmin = false }: { roomId: string
   const [quotes, setQuotes] = useState<Quote[]>([]);
   const [orderRef, setOrderRef] = useState('');
   const [members, setMembers] = useState<Member[]>([]);
+  const [offers, setOffers] = useState<RoomOffer[]>([]);
   const [youAreFounder, setYouAreFounder] = useState(false);
   const [showMembers, setShowMembers] = useState(false);
   const [showInvite, setShowInvite] = useState(false);
@@ -85,9 +87,10 @@ export function RoomClient({ roomId, handle, isAdmin = false }: { roomId: string
     const q = handle ? `?handle=${encodeURIComponent(handle)}` : '';
     const res = await fetch(`/api/backroom/room/${roomId}${q}`);
     if (res.ok) {
-      const json = await res.json() as { room: RoomMeta; warmth: Warmth; objects: TableObject[]; members: Member[]; you_are_founder: boolean; chat: ChatMessage[] };
+      const json = await res.json() as { room: RoomMeta; warmth: Warmth; objects: TableObject[]; members: Member[]; you_are_founder: boolean; chat: ChatMessage[]; offers?: RoomOffer[] };
       setMeta(json.room); setWarmth(json.warmth); setObjects(json.objects);
       setMembers(json.members ?? []); setYouAreFounder(!!json.you_are_founder);
+      if (Array.isArray(json.offers)) setOffers(json.offers);
       if (Array.isArray(json.chat)) setChat(json.chat);
     } else {
       const j = await res.json().catch(() => ({}));
@@ -497,6 +500,20 @@ export function RoomClient({ roomId, handle, isAdmin = false }: { roomId: string
 
         {said && (
           <p className="br-sans" style={{ fontSize: 14, color: 'var(--ink-3)', fontStyle: 'italic', marginBottom: 20 }}>VIA: {said}</p>
+        )}
+
+        {/* In-room exclusive offers: a brand member's product at the room price,
+            bought right here with the member's own wallet. */}
+        {handle && !isAdmin && (
+          <RoomOffers
+            roomId={roomId}
+            handle={handle}
+            offers={offers}
+            setOffers={setOffers}
+            youAreViaSeller={members.some((m) => m.status === 'active' && m.member_platform === 'via' && m.member_type === 'seller' && m.member_ref.toLowerCase() === handle.toLowerCase())}
+            youAreFounder={youAreFounder}
+            accent={accent}
+          />
         )}
 
         {/* Group chat sits above the table inputs. The room's ambient talk, a

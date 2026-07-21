@@ -18,7 +18,8 @@
     {
       "name": "via-app-alt",
       "runtimeExecutable": "C:\\Program Files\\nodejs\\node.exe",
-      "runtimeArgs": ["node_modules/next/dist/bin/next", "dev", "--port", "3017"],
+      "runtimeArgs": ["node_modules/next/dist/bin/next", "dev"],
+      "autoPort": true,
       "port": 3017,
       "url": "http://localhost:3017/"
     },
