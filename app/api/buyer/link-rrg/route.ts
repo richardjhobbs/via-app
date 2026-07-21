@@ -5,6 +5,7 @@ import { setBuyerAuthCookies, getBuyerUser } from '@/lib/app/buyer-auth';
 import { verifyHandoffToken } from '@/lib/app/rrg-handoff';
 import { importConcierge } from '@/lib/app/rrg-concierge-import';
 import { resolveRrgConcierge } from '@/lib/app/backroom/rrg-federation';
+import { mintPasswordlessSession } from '@/lib/app/passwordless';
 
 // Find-or-create the Supabase auth user for an email. Returns the user id.
 async function findOrCreateUser(email: string, walletAddress: string, source: string): Promise<string | null> {
@@ -19,17 +20,6 @@ async function findOrCreateUser(email: string, walletAddress: string, source: st
   return found?.id ?? null;
 }
 
-// Mint a session for a user WITHOUT their password: generate a magic-link
-// token server-side and consume it immediately. Used only where ownership is
-// already proven by a stronger signal (the signed RRG handoff).
-async function mintPasswordlessSession(email: string): Promise<{ access: string; refresh: string } | null> {
-  const { data: linkData, error: linkErr } = await supabaseAdmin.auth.admin.generateLink({ type: 'magiclink', email });
-  const tokenHash = linkData?.properties?.hashed_token;
-  if (linkErr || !tokenHash) return null;
-  const { data: otp, error: otpErr } = await supabase.auth.verifyOtp({ type: 'email', token_hash: tokenHash });
-  if (otpErr || !otp.session) return null;
-  return { access: otp.session.access_token, refresh: otp.session.refresh_token };
-}
 
 export const dynamic = 'force-dynamic';
 

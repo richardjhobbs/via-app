@@ -17,6 +17,10 @@ import { verifyBrandHandoffToken } from '@/lib/app/backroom/brand-handoff';
 import { setBrandSessionCookie } from '@/lib/app/backroom/brand-session';
 import { verifyConciergeHandoffToken } from '@/lib/app/backroom/concierge-handoff';
 import { setConciergeSessionCookie } from '@/lib/app/backroom/concierge-session';
+import { db } from '@/lib/app/db';
+import { supabaseAdmin } from '@/lib/app/seller-auth';
+import { setBuyerAuthCookies } from '@/lib/app/buyer-auth';
+import { mintPasswordlessSession } from '@/lib/app/passwordless';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -45,6 +49,34 @@ export async function GET(req: NextRequest) {
   if (concierge.ok) {
     const p = concierge.payload;
     const response = NextResponse.redirect(new URL(p.room_id ? `/room/${p.room_id}` : '/backroom', origin));
+
+    // An IMPORTED concierge is the same agent as its VIA buyer, so entering
+    // the Back Room from RRG opens the owner's full VIA session (the handoff
+    // token, minted inside their RRG session, is the ownership proof). Only a
+    // never-imported concierge stays a federated guest session.
+    try {
+      const { data: linked } = await db
+        .from('app_buyers')
+        .select('owner_user_id')
+        .not('linked_rrg_agent_id', 'is', null)
+        .ilike('wallet_address', p.wallet_address)
+        .maybeSingle();
+      const ownerId = (linked as { owner_user_id: string | null } | null)?.owner_user_id;
+      if (ownerId) {
+        const { data: u } = await supabaseAdmin.auth.admin.getUserById(ownerId);
+        const email = u?.user?.email;
+        if (email) {
+          const minted = await mintPasswordlessSession(email);
+          if (minted) {
+            setBuyerAuthCookies(response, minted.access, minted.refresh);
+            return response;
+          }
+        }
+      }
+    } catch (e) {
+      console.warn('[backroom/enter] linked-buyer session mint failed, falling back to concierge session:', e);
+    }
+
     setConciergeSessionCookie(response, { ref: p.ref, wallet: p.wallet_address, name: p.name ?? null, exp: Math.floor(Date.now() / 1000) + WEEK });
     return response;
   }

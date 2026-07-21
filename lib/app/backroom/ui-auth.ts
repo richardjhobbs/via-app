@@ -105,21 +105,6 @@ export async function sessionMembers(): Promise<SessionMember[]> {
     for (const b of await getUserBuyers(buyerUser.id)) {
       out.push({ platform: 'via', type: 'buyer', ref: b.handle, label: b.displayName || b.handle });
     }
-    // A buyer imported from RRG carries a second identity: the concierge
-    // itself (rrg/buyer/<name>), which is what its room memberships and taste
-    // cards hang off. Surface it so the owner's ordinary VIA session sees
-    // those rooms without re-entering through the RRG handoff.
-    const { data: linked } = await db
-      .from('app_buyers')
-      .select('display_name')
-      .eq('owner_user_id', buyerUser.id)
-      .not('linked_rrg_agent_id', 'is', null);
-    for (const r of (linked as { display_name: string | null }[]) ?? []) {
-      const ref = r.display_name?.trim();
-      if (ref && !out.some((m) => m.platform === 'rrg' && m.type === 'buyer' && m.ref.toLowerCase() === ref.toLowerCase())) {
-        out.push({ platform: 'rrg', type: 'buyer', ref, label: ref });
-      }
-    }
   }
   const sellerUser = await getSellerUser();
   if (sellerUser) {

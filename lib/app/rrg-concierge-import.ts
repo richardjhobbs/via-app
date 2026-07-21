@@ -295,6 +295,7 @@ export async function importConcierge(opts: {
     .maybeSingle();
   if (priorLink) {
     const memories = await syncConciergeMemories(priorLink.id as string, rrgAgentId).catch(() => null);
+    await claimFederatedIdentity(priorLink.display_name as string | null, priorLink.handle as string);
     return {
       ok: true,
       buyer: priorLink as ImportResult['buyer'],
@@ -363,5 +364,20 @@ export async function importConcierge(opts: {
     console.error(`[rrg-import] memory seed failed handle=${buyer.handle}:`, err);
   }
 
+  await claimFederatedIdentity(displayName, buyer.handle as string);
+
   return { ok: true, buyer: buyer as ImportResult['buyer'], memories };
+}
+
+/**
+ * The imported buyer IS the same agent, so it claims everything the federated
+ * Back Room identity (rrg/buyer/<concierge name>) accumulated: room seats,
+ * invitations, taste, events. Idempotent; a failure never fails the import
+ * (the next import call retries the claim).
+ */
+async function claimFederatedIdentity(conciergeName: string | null, handle: string): Promise<void> {
+  const ref = conciergeName?.trim();
+  if (!ref) return;
+  const { error } = await db.rpc('app_claim_rrg_member', { p_rrg_ref: ref, p_via_ref: handle });
+  if (error) console.error(`[rrg-import] federated-identity claim failed handle=${handle}:`, error);
 }

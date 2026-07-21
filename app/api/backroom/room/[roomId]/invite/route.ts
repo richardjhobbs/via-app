@@ -25,12 +25,31 @@ const APP_BASE = (process.env.NEXT_PUBLIC_APP_BASE_URL || 'https://app.getvia.xy
 
 const joinLink = (token: string) => `${APP_BASE}/backroom/join?token=${encodeURIComponent(token)}`;
 
-async function resolveViaKind(ref: string): Promise<MemberType | null> {
-  const { data: buyer } = await db.from('app_buyers').select('id').eq('handle', ref).maybeSingle();
-  if (buyer) return 'buyer';
-  const { data: seller } = await db.from('app_sellers').select('id').eq('slug', ref).maybeSingle();
-  if (seller) return 'seller';
+// Handles and slugs are stored lowercase; a typed "RJH" must still find rjh.
+function slugPattern(ref: string): string {
+  return ref.trim().replace(/([%_\\])/g, '\\$1');
+}
+async function resolveViaKind(ref: string): Promise<{ kind: MemberType; ref: string } | null> {
+  const pat = slugPattern(ref);
+  if (!pat) return null;
+  const { data: buyer } = await db.from('app_buyers').select('handle').ilike('handle', pat).maybeSingle();
+  if (buyer) return { kind: 'buyer', ref: (buyer as { handle: string }).handle };
+  const { data: seller } = await db.from('app_sellers').select('slug').ilike('slug', pat).maybeSingle();
+  if (seller) return { kind: 'seller', ref: (seller as { slug: string }).slug };
   return null;
+}
+
+// An imported concierge IS its VIA buyer: route the invitation to the one
+// agent, never to the federated identity.
+async function importedBuyerForWallet(wallet: string | null): Promise<string | null> {
+  if (!wallet) return null;
+  const { data } = await db
+    .from('app_buyers')
+    .select('handle')
+    .not('linked_rrg_agent_id', 'is', null)
+    .ilike('wallet_address', wallet)
+    .maybeSingle();
+  return (data as { handle: string } | null)?.handle ?? null;
 }
 
 // The inviter's published taste card URL, if they have one: the invitation's
@@ -105,10 +124,10 @@ export async function POST(req: Request, { params }: { params: Promise<{ roomId:
   if (body.mode === 'agent') {
     const inviteeRef = body.invitee_ref?.trim() ?? '';
     if (!inviteeRef) return NextResponse.json({ error: 'invitee_ref required' }, { status: 400 });
-    const kind = await resolveViaKind(inviteeRef);
-    if (kind) {
+    const viaAgent = await resolveViaKind(inviteeRef);
+    if (viaAgent) {
       // VIA agent: create an invitation it accepts from its VIA hub.
-      const result = await inviteAgent(roomId, auth.member, { member_platform: 'via', member_type: kind, member_ref: inviteeRef }, why);
+      const result = await inviteAgent(roomId, auth.member, { member_platform: 'via', member_type: viaAgent.kind, member_ref: viaAgent.ref }, why);
       if (!result.ok) {
         const msg = result.reason === 'already_member' ? 'They are already in the room.'
           : result.reason === 'already_invited' ? 'They already have a pending invitation.'
@@ -118,14 +137,14 @@ export async function POST(req: Request, { params }: { params: Promise<{ roomId:
       // Best-effort heads-up to the invited agent's owner. A failure here must
       // not fail the invitation, which already lives in their in-app inbox.
       let emailed = false;
-      const ownerEmail = await resolveOwnerEmail(kind, inviteeRef);
+      const ownerEmail = await resolveOwnerEmail(viaAgent.kind, viaAgent.ref);
       if (ownerEmail) {
         try {
           await sendRoomInviteEmail({ to: ownerEmail, roomName: room.name, inviterRef: ref, why, ctaUrl: `${APP_BASE}/backroom`, mode: 'agent', inviterCardUrl: await inviterCardUrl(auth.member) });
           emailed = true;
         } catch (e) { console.warn('[room/invite] agent heads-up email failed:', e); }
       }
-      return NextResponse.json({ status: 'invited', kind, invitee_ref: inviteeRef, emailed }, { status: 201 });
+      return NextResponse.json({ status: 'invited', kind: viaAgent.kind, invitee_ref: viaAgent.ref, emailed }, { status: 201 });
     }
 
     // Not a VIA agent: try RRG. Since the Back Room handoff, every RRG agent
@@ -145,6 +164,30 @@ export async function POST(req: Request, { params }: { params: Promise<{ roomId:
     const identity = concierge ?? brand;
     if (!rrgKind || !identity) {
       return NextResponse.json({ error: `No agent named "${inviteeRef}" on VIA or RRG. Check their exact handle or store slug. Only use the person invite for someone without an agent.` }, { status: 404 });
+    }
+
+    // An imported concierge IS its VIA buyer: address the invitation to the
+    // one agent so it lands in the owner's ordinary VIA inbox.
+    if (rrgKind === 'buyer') {
+      const importedHandle = await importedBuyerForWallet(concierge?.wallet_address ?? null);
+      if (importedHandle) {
+        const result = await inviteAgent(roomId, auth.member, { member_platform: 'via', member_type: 'buyer', member_ref: importedHandle }, why);
+        if (!result.ok) {
+          const msg = result.reason === 'already_member' ? 'They are already in the room.'
+            : result.reason === 'already_invited' ? 'They already have a pending invitation.'
+            : 'Could not create the invitation.';
+          return NextResponse.json({ status: result.reason, message: msg }, { status: result.reason === 'error' ? 500 : 409 });
+        }
+        let emailedVia = false;
+        const viaOwnerEmail = await resolveOwnerEmail('buyer', importedHandle);
+        if (viaOwnerEmail) {
+          try {
+            await sendRoomInviteEmail({ to: viaOwnerEmail, roomName: room.name, inviterRef: ref, why, ctaUrl: `${APP_BASE}/backroom`, mode: 'agent', inviterCardUrl: await inviterCardUrl(auth.member) });
+            emailedVia = true;
+          } catch (e) { console.warn('[room/invite] imported-agent heads-up email failed:', e); }
+        }
+        return NextResponse.json({ status: 'invited', kind: 'buyer', invitee_ref: importedHandle, emailed: emailedVia }, { status: 201 });
+      }
     }
 
     // A concierge is addressed by its NAME (what its Back Room handoff session
