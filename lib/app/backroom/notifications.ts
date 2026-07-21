@@ -19,6 +19,25 @@ export async function roomNewCountsFor(member: Author): Promise<Map<string, numb
   return out;
 }
 
+/**
+ * Activity by others in a member's rooms since a point in time, regardless of
+ * seen-state. This drives the email digest: an active member who reads their
+ * rooms daily still gets the daily summary (the seen-based counts above only
+ * drive the in-app pulse).
+ */
+export async function roomActivityCountsFor(member: Author, sinceIso: string): Promise<Map<string, number>> {
+  const { data, error } = await db.rpc('app_room_activity_counts', {
+    p_platform: member.member_platform,
+    p_type: member.member_type,
+    p_ref: member.member_ref,
+    p_since: sinceIso,
+  });
+  if (error) { console.warn('[notifications] activity counts failed:', error.message); return new Map(); }
+  const out = new Map<string, number>();
+  for (const r of (data ?? []) as { room_id: string; n: number }[]) out.set(r.room_id, Number(r.n) || 0);
+  return out;
+}
+
 /** Total new content across a member's rooms (for the banner pulse). */
 export async function totalNewFor(member: Author): Promise<number> {
   let total = 0;

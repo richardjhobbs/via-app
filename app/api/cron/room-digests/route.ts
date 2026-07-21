@@ -1,13 +1,15 @@
 /**
- * Daily Back Room digest. For each member with new activity in their rooms
- * (chat or table additions by others they have not seen), email a summary, at
- * most once per 24h, and only when there is something new. Members who turned
- * the digest off are skipped. Secured by the Vercel cron secret.
+ * Daily Back Room digest. For each member whose rooms saw activity by others
+ * in the last 24 hours (chat or table additions), email a summary, at most
+ * once per 24h, and only when there is something to tell. Deliberately NOT
+ * gated on the seen-markers: a member who reads their rooms daily still gets
+ * the daily summary (the in-app pulse is the seen-based surface). Members who
+ * turned the digest off are skipped. Secured by the Vercel cron secret.
  */
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/app/db';
 import { supabaseAdmin } from '@/lib/app/seller-auth';
-import { roomNewCountsFor } from '@/lib/app/backroom/notifications';
+import { roomActivityCountsFor } from '@/lib/app/backroom/notifications';
 import type { Author } from '@/lib/app/backroom/rooms';
 import { resolveRrgConcierge } from '@/lib/app/backroom/rrg-federation';
 import { sendRoomDigestEmail } from '@/lib/app/email';
@@ -65,6 +67,7 @@ export async function GET(req: NextRequest) {
   }
 
   const gate = Date.now() - 20 * 60 * 60 * 1000; // no more than one per ~24h
+  const sinceIso = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
   const nowIso = new Date().toISOString();
   let sent = 0;
 
@@ -74,7 +77,7 @@ export async function GET(req: NextRequest) {
     if (pref?.email_digest === false) continue;
     if (pref?.last_digest_at && new Date(pref.last_digest_at).getTime() > gate) continue;
 
-    const counts = await roomNewCountsFor(m);
+    const counts = await roomActivityCountsFor(m, sinceIso);
     if (counts.size === 0) continue;
 
     const ids = [...counts.keys()];
