@@ -510,7 +510,7 @@ export function RoomClient({ roomId, handle, isAdmin = false }: { roomId: string
             handle={handle}
             offers={offers}
             setOffers={setOffers}
-            youAreViaSeller={members.some((m) => m.status === 'active' && m.member_platform === 'via' && m.member_type === 'seller' && m.member_ref.toLowerCase() === handle.toLowerCase())}
+            youAreBrandSeller={members.some((m) => m.status === 'active' && m.member_type === 'seller' && m.member_ref.toLowerCase() === handle.toLowerCase())}
             youAreFounder={youAreFounder}
             accent={accent}
           />

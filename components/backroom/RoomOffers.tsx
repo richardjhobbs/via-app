@@ -3,11 +3,16 @@
 /**
  * In-room exclusive offers: the brand's card and the one-button buy.
  *
- * A VIA store member of the room posts one of its products at a room price
- * (usually preferential, ahead of the public listing). The card renders inside
- * the room and members buy it right here with the wallet their agent already
- * runs on: create the room order, sign the USDC permit, settle through
- * /api/x402/purchase. Nobody leaves the room.
+ * A brand member of the room posts one of its products at a room price
+ * (usually preferential, ahead of or below the public listing). The card
+ * renders inside the room and members buy it right here with the wallet their
+ * agent already runs on. Two brand kinds, one card:
+ *  - VIA store offers settle through /api/x402/purchase (order -> permit -> settle)
+ *  - RRG brand offers settle through the room settle route, which executes the
+ *    same gasless permit and then claims on RRG (mint + delivery + brand payout
+ *    at the room price). Buyer-side, both are one Buy press plus whatever
+ *    details the product genuinely needs (email, size, address).
+ * Nobody leaves the room.
  */
 import { useCallback, useEffect, useState } from 'react';
 import { useActiveAccount, useConnectModal } from 'thirdweb/react';
@@ -18,6 +23,7 @@ import { buildUsdcPermitXPayment } from '@/lib/app/sendUsdc';
 
 export interface RoomOffer {
   id: string;
+  platform: 'via' | 'rrg';
   product_id: string;
   seller_slug: string;
   seller_name: string;
@@ -28,6 +34,7 @@ export interface RoomOffer {
   price_usdc: number;
   list_price_usdc: number;
   terms: string | null;
+  sizes: string[];
   qty_cap: number | null;
   sold: number;
   remaining: number | null;
@@ -35,7 +42,10 @@ export interface RoomOffer {
   created_at: string;
 }
 
-interface SellerProductLite { id: string; title: string; kind: string; price_usdc: number; image_url: string | null; }
+interface SellerProductLite {
+  id: string; title: string; kind: string; price_usdc: number; image_url: string | null;
+  sizes?: string[]; remaining?: number | null;
+}
 
 interface Delivery {
   name: string; address_line1: string; address_line2: string;
@@ -60,13 +70,14 @@ const input: React.CSSProperties = {
 };
 
 export function RoomOffers({
-  roomId, handle, offers, setOffers, youAreViaSeller, youAreFounder, accent,
+  roomId, handle, offers, setOffers, youAreBrandSeller, youAreFounder, accent,
 }: {
   roomId: string;
   handle: string;
   offers: RoomOffer[];
   setOffers: (offers: RoomOffer[]) => void;
-  youAreViaSeller: boolean;
+  /** True when the member is a seller-kind identity (VIA store or RRG brand). */
+  youAreBrandSeller: boolean;
   youAreFounder: boolean;
   accent: string;
 }) {
@@ -77,7 +88,7 @@ export function RoomOffers({
     else { const j = await res.json().catch(() => ({})); alert((j as { error?: string }).error ?? 'could not withdraw that'); }
   }, [roomId, handle, setOffers]);
 
-  if (offers.length === 0 && !youAreViaSeller) return null;
+  if (offers.length === 0 && !youAreBrandSeller) return null;
 
   return (
     <section style={{ marginBottom: 24 }}>
@@ -97,7 +108,7 @@ export function RoomOffers({
           </div>
         </>
       )}
-      {youAreViaSeller && (
+      {youAreBrandSeller && (
         <OfferComposer roomId={roomId} handle={handle} accent={accent} onOffered={setOffers} hasOffers={offers.length > 0} />
       )}
     </section>
@@ -105,10 +116,9 @@ export function RoomOffers({
 }
 
 /**
- * One offer, one buy button. A connected wallet buying a digital item pays in a
- * single press; a physical item opens the address panel first, and a member
- * with no wallet connected is walked through connecting the one their agent
- * runs on (the thirdweb in-app wallet auto-reconnects on later visits).
+ * One offer, one buy button. A connected wallet buying a VIA digital item pays
+ * in a single press; anything needing details (email for an RRG item, a size,
+ * a delivery address) opens its panel first, then pays with the same permit.
  */
 function OfferCard({
   roomId, handle, offer, accent, canWithdraw, onWithdraw,
@@ -119,14 +129,21 @@ function OfferCard({
   const account = useActiveAccount();
   const { connect, isConnecting } = useConnectModal();
   const isPhysical = offer.kind === 'physical';
+  const isRrg = offer.platform === 'rrg';
+  const needsPanel = isPhysical || isRrg; // email / size / address before paying
 
   const [open, setOpen] = useState(false);
   const [delivery, setDelivery] = useState<Delivery>(EMPTY_DELIVERY);
+  const [email, setEmail] = useState('');
+  const [size, setSize] = useState('');
   const [status, setStatus] = useState<'idle' | 'working' | 'done' | 'error'>('idle');
   const [msg, setMsg] = useState('');
   const [orderRef, setOrderRef] = useState('');
   const [downloads, setDownloads] = useState<{ filename: string; url: string }[]>([]);
   const [balance, setBalance] = useState<number | null>(null);
+  // RRG settle retry: the paid-but-unclaimed order id, so a claim blip never
+  // strands the buyer's money behind a fresh charge.
+  const [retryOrderId, setRetryOrderId] = useState<string | null>(null);
 
   // Live USDC balance of the connected wallet, so a short balance is explained
   // before the permit fails cryptically.
@@ -148,19 +165,44 @@ function OfferCard({
 
   const openWallet = () => { void connect({ client: thirdwebClient, chain: base, wallets, size: 'compact' }); };
 
-  const deliveryMissing = useCallback((): string | null => {
-    if (!isPhysical) return null;
-    const req: Array<[keyof Delivery, string]> = [
-      ['name', 'name'], ['address_line1', 'address'], ['city', 'city'],
-      ['postcode', 'postcode'], ['country', 'country'], ['phone', 'phone'],
-    ];
-    const missing = req.filter(([k]) => !delivery[k].trim()).map(([, label]) => label);
+  const detailsMissing = useCallback((): string | null => {
+    const missing: string[] = [];
+    if (isRrg && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email.trim())) missing.push('a valid email');
+    if (isRrg && offer.sizes.length > 0 && !size) missing.push('a size');
+    if (isPhysical) {
+      const req: Array<[keyof Delivery, string]> = [
+        ['name', 'name'], ['address_line1', 'address'], ['city', 'city'],
+        ['postcode', 'postcode'], ['country', 'country'], ['phone', 'phone'],
+      ];
+      missing.push(...req.filter(([k]) => !delivery[k].trim()).map(([, label]) => label));
+    }
     return missing.length ? `Please add: ${missing.join(', ')}.` : null;
-  }, [isPhysical, delivery]);
+  }, [isRrg, isPhysical, email, size, offer.sizes, delivery]);
+
+  const applyDone = (ref: string, downloadUrl: string | null) => {
+    setDownloads(downloadUrl ? [{ filename: offer.title, url: downloadUrl }] : []);
+    setOrderRef(ref);
+    setRetryOrderId(null);
+    setStatus('done'); setMsg('');
+  };
+
+  // RRG settle call, shared by the fresh path and the retry path.
+  const settleRrg = useCallback(async (roomOrderId: string, xPayment: string | null) => {
+    const res = await fetch(`/api/backroom/room/${roomId}/offer/${offer.id}/settle`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ref: handle, room_order_id: roomOrderId, ...(xPayment ? { x_payment: xPayment } : {}) }),
+    });
+    const json = await res.json();
+    if (!res.ok || !json.settled) {
+      if (json.retryable) setRetryOrderId(roomOrderId);
+      throw new Error(json.error || 'Settlement failed');
+    }
+    applyDone(roomOrderId.slice(0, 8), typeof json.download_url === 'string' ? json.download_url : null);
+  }, [roomId, offer.id, handle]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const pay = useCallback(async () => {
     if (!account) { setOpen(true); setMsg(''); return; }
-    const dm = deliveryMissing();
+    const dm = detailsMissing();
     if (dm) { setOpen(true); setMsg(dm); return; }
     if (balance !== null && balance < offer.price_usdc) {
       setOpen(true);
@@ -169,12 +211,20 @@ function OfferCard({
     }
     setStatus('working'); setMsg('Creating your order…');
     try {
+      // Retry lane: money already captured on RRG path, just re-claim.
+      if (retryOrderId) {
+        setMsg('Retrying settlement…');
+        await settleRrg(retryOrderId, null);
+        return;
+      }
       const res = await fetch(`/api/backroom/room/${roomId}/offer/${offer.id}/order`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           ref: handle,
           buyer_wallet: account.address,
           qty: 1,
+          email: isRrg ? email.trim() : undefined,
+          selected_size: isRrg && size ? size : undefined,
           buyer_country: isPhysical ? delivery.country.trim().toUpperCase() : undefined,
           delivery: isPhysical ? delivery : undefined,
         }),
@@ -184,27 +234,28 @@ function OfferCard({
       setMsg('Approve the payment in your wallet…');
       const xPayment = await buildUsdcPermitXPayment(account, order.total_usdc);
       setMsg('Settling…');
-      const settle = await fetch('/api/x402/purchase', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ order_ref: order.order_ref, x_payment: xPayment }),
-      });
-      const settled = await settle.json();
-      if (!settle.ok || !settled.settled) throw new Error(settled.error || 'Settlement failed');
-      setDownloads(Array.isArray(settled.download)
-        ? settled.download.filter((d: unknown): d is { filename: string; url: string } =>
-            !!d && typeof (d as { url?: unknown }).url === 'string')
-        : []);
-      setOrderRef(order.order_ref as string);
-      setStatus('done'); setMsg('');
+      if (isRrg) {
+        await settleRrg(order.room_order_id as string, xPayment);
+      } else {
+        const settle = await fetch('/api/x402/purchase', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ order_ref: order.order_ref, x_payment: xPayment }),
+        });
+        const settled = await settle.json();
+        if (!settle.ok || !settled.settled) throw new Error(settled.error || 'Settlement failed');
+        const dl = Array.isArray(settled.download) && settled.download[0] && typeof settled.download[0].url === 'string'
+          ? settled.download[0].url as string : null;
+        applyDone(order.order_ref as string, dl);
+      }
     } catch (e) {
       setStatus('error'); setOpen(true);
       setMsg(e instanceof Error ? e.message : 'Payment failed');
     }
-  }, [account, balance, delivery, deliveryMissing, handle, isPhysical, offer.id, offer.price_usdc, roomId]);
+  }, [account, balance, delivery, detailsMissing, email, size, handle, isPhysical, isRrg, offer.id, offer.price_usdc, retryOrderId, roomId, settleRrg]);
 
   const onBuy = () => {
     if (status === 'working') return;
-    if (!account || isPhysical) { setOpen(true); return; }
+    if (!account || needsPanel) { setOpen(true); return; }
     void pay();
   };
 
@@ -243,14 +294,16 @@ function OfferCard({
           {downloads.length > 0 && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 8 }}>
               {downloads.map((d) => (
-                <a key={d.url} href={d.url} target="_blank" rel="noreferrer" download={d.filename} className="br-sans"
+                <a key={d.url} href={d.url} target="_blank" rel="noreferrer" className="br-sans"
                   style={{ fontSize: 14, color: accent }}>Download {d.filename}</a>
               ))}
             </div>
           )}
           {downloads.length === 0 && (
             <p className="br-sans" style={{ fontSize: 12, color: 'var(--ink-3)', margin: '6px 0 0' }}>
-              The seller has been notified to fulfil your order. Keep the reference.
+              {isRrg
+                ? 'Your order confirmation is on its way by email, and the brand fulfils from here.'
+                : 'The seller has been notified to fulfil your order. Keep the reference.'}
             </p>
           )}
         </div>
@@ -263,7 +316,7 @@ function OfferCard({
                 color: 'var(--bg)', fontSize: 14, cursor: soldOut ? 'default' : 'pointer',
                 opacity: status === 'working' || soldOut ? 0.6 : 1,
               }}>
-              {status === 'working' ? 'Working…' : soldOut ? 'Fully taken' : `Buy · ${offer.price_usdc.toFixed(2)} USDC`}
+              {status === 'working' ? 'Working…' : soldOut ? 'Fully taken' : retryOrderId ? 'Retry settlement' : `Buy · ${offer.price_usdc.toFixed(2)} USDC`}
             </button>
             {account ? (
               <span className="br-sans" style={{ fontSize: 12, color: 'var(--ink-3)' }}>
@@ -293,24 +346,39 @@ function OfferCard({
             </div>
           )}
 
-          {open && account && isPhysical && (
+          {open && account && needsPanel && !retryOrderId && (
             <div style={{ marginTop: 10 }}>
-              <p className="br-sans" style={{ fontSize: 11, letterSpacing: '0.14em', textTransform: 'uppercase', color: 'var(--ink-3)', margin: '0 0 8px' }}>Delivery address</p>
-              <div style={{ display: 'grid', gap: 6, gridTemplateColumns: '1fr 1fr' }}>
-                <input className="br-sans" style={{ ...input, gridColumn: '1 / -1' }} placeholder="Full name" value={delivery.name} onChange={(e) => setDelivery((d) => ({ ...d, name: e.target.value }))} />
-                <input className="br-sans" style={{ ...input, gridColumn: '1 / -1' }} placeholder="Address line 1" value={delivery.address_line1} onChange={(e) => setDelivery((d) => ({ ...d, address_line1: e.target.value }))} />
-                <input className="br-sans" style={{ ...input, gridColumn: '1 / -1' }} placeholder="Address line 2 (optional)" value={delivery.address_line2} onChange={(e) => setDelivery((d) => ({ ...d, address_line2: e.target.value }))} />
-                <input className="br-sans" style={input} placeholder="City" value={delivery.city} onChange={(e) => setDelivery((d) => ({ ...d, city: e.target.value }))} />
-                <input className="br-sans" style={input} placeholder="Region (optional)" value={delivery.region} onChange={(e) => setDelivery((d) => ({ ...d, region: e.target.value }))} />
-                <input className="br-sans" style={input} placeholder="Postcode" value={delivery.postcode} onChange={(e) => setDelivery((d) => ({ ...d, postcode: e.target.value }))} />
-                <input className="br-sans" style={input} maxLength={2} placeholder="Country (ISO-2, e.g. GB)" value={delivery.country} onChange={(e) => setDelivery((d) => ({ ...d, country: e.target.value.toUpperCase() }))} />
-                <input className="br-sans" style={{ ...input, gridColumn: '1 / -1' }} placeholder="Phone" value={delivery.phone} onChange={(e) => setDelivery((d) => ({ ...d, phone: e.target.value }))} />
-              </div>
+              {isRrg && (
+                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: isPhysical ? 8 : 0 }}>
+                  <input className="br-sans" style={{ ...input, flex: '2 1 200px' }} type="email" placeholder="you@example.com (receipt + delivery)"
+                    value={email} onChange={(e) => setEmail(e.target.value)} />
+                  {offer.sizes.length > 0 && (
+                    <select className="br-sans" value={size} onChange={(e) => setSize(e.target.value)} style={{ ...input, flex: '1 1 100px' }}>
+                      <option value="">Size…</option>
+                      {offer.sizes.map((s) => <option key={s} value={s}>{s}</option>)}
+                    </select>
+                  )}
+                </div>
+              )}
+              {isPhysical && (
+                <>
+                  <p className="br-sans" style={{ fontSize: 11, letterSpacing: '0.14em', textTransform: 'uppercase', color: 'var(--ink-3)', margin: '8px 0' }}>Delivery address</p>
+                  <div style={{ display: 'grid', gap: 6, gridTemplateColumns: '1fr 1fr' }}>
+                    <input className="br-sans" style={{ ...input, gridColumn: '1 / -1' }} placeholder="Full name" value={delivery.name} onChange={(e) => setDelivery((d) => ({ ...d, name: e.target.value }))} />
+                    <input className="br-sans" style={{ ...input, gridColumn: '1 / -1' }} placeholder="Address line 1" value={delivery.address_line1} onChange={(e) => setDelivery((d) => ({ ...d, address_line1: e.target.value }))} />
+                    <input className="br-sans" style={{ ...input, gridColumn: '1 / -1' }} placeholder="Address line 2 (optional)" value={delivery.address_line2} onChange={(e) => setDelivery((d) => ({ ...d, address_line2: e.target.value }))} />
+                    <input className="br-sans" style={input} placeholder="City" value={delivery.city} onChange={(e) => setDelivery((d) => ({ ...d, city: e.target.value }))} />
+                    <input className="br-sans" style={input} placeholder="Region (optional)" value={delivery.region} onChange={(e) => setDelivery((d) => ({ ...d, region: e.target.value }))} />
+                    <input className="br-sans" style={input} placeholder="Postcode" value={delivery.postcode} onChange={(e) => setDelivery((d) => ({ ...d, postcode: e.target.value }))} />
+                    <input className="br-sans" style={input} maxLength={2} placeholder="Country (ISO-2, e.g. GB)" value={delivery.country} onChange={(e) => setDelivery((d) => ({ ...d, country: e.target.value.toUpperCase() }))} />
+                    <input className="br-sans" style={{ ...input, gridColumn: '1 / -1' }} placeholder="Phone" value={delivery.phone} onChange={(e) => setDelivery((d) => ({ ...d, phone: e.target.value }))} />
+                  </div>
+                </>
+              )}
               <button type="button" onClick={() => void pay()} disabled={status === 'working'} className="br-sans"
                 style={{ marginTop: 8, padding: '9px 18px', borderRadius: 999, border: `1px solid ${accent}`, background: accent, color: 'var(--bg)', fontSize: 13, cursor: 'pointer', opacity: status === 'working' ? 0.6 : 1 }}>
                 {status === 'working' ? 'Working…' : `Pay ${offer.price_usdc.toFixed(2)} USDC`}
               </button>
-              <p className="br-sans" style={{ fontSize: 11, color: 'var(--ink-3)', margin: '6px 0 0' }}>Shipping, if the store charges it, is added at payment and shown in your wallet approval.</p>
             </div>
           )}
 
@@ -322,8 +390,9 @@ function OfferCard({
 }
 
 /**
- * The brand side: pick one of your store's products (the catalogue you keep
- * with your concierge), set the room price and terms, offer it to the room.
+ * The brand side: pick one of your products (a VIA store's catalogue, or an
+ * RRG brand's live drops fetched over the federation), set the room price and
+ * terms, offer it to the room.
  */
 function OfferComposer({
   roomId, handle, accent, onOffered, hasOffers,
@@ -333,6 +402,7 @@ function OfferComposer({
 }) {
   const [open, setOpen] = useState(false);
   const [products, setProducts] = useState<SellerProductLite[] | null>(null);
+  const [catalogueError, setCatalogueError] = useState<string | null>(null);
   const [productId, setProductId] = useState('');
   const [price, setPrice] = useState('');
   const [terms, setTerms] = useState('');
@@ -344,8 +414,11 @@ function OfferComposer({
     if (!open || products !== null) return;
     void (async () => {
       const res = await fetch(`/api/backroom/room/${roomId}/offer?ref=${encodeURIComponent(handle)}`);
-      if (res.ok) { const j = await res.json() as { your_products?: SellerProductLite[] }; setProducts(j.your_products ?? []); }
-      else setProducts([]);
+      if (res.ok) {
+        const j = await res.json() as { your_products?: SellerProductLite[]; catalogue_error?: string };
+        setProducts(j.your_products ?? []);
+        setCatalogueError(j.catalogue_error ?? null);
+      } else setProducts([]);
     })();
   }, [open, products, roomId, handle]);
 
@@ -394,16 +467,20 @@ function OfferComposer({
           </p>
           {products === null ? (
             <p className="br-sans" style={{ fontSize: 13, color: 'var(--ink-3)', margin: 0 }}>Loading your products…</p>
+          ) : catalogueError ? (
+            <p className="br-sans" style={{ fontSize: 13, color: 'var(--danger)', margin: 0 }}>{catalogueError}</p>
           ) : products.length === 0 ? (
             <p className="br-sans" style={{ fontSize: 13, color: 'var(--ink-3)', margin: 0 }}>
-              Your store has no offerable products yet. Add the product with your concierge first; it needs a USDC price, and a digital item needs its file attached.
+              Your catalogue has no offerable products yet. List the product with your concierge first; it needs a USDC price and stock.
             </p>
           ) : (
             <>
               <select className="br-sans" value={productId} onChange={(e) => pick(e.target.value)} style={{ ...input, marginBottom: 8 }}>
                 <option value="">Choose a product…</option>
                 {products.map((p) => (
-                  <option key={p.id} value={p.id}>{p.title} · {p.price_usdc.toFixed(2)} USDC ({p.kind})</option>
+                  <option key={p.id} value={p.id}>
+                    {p.title} · {p.price_usdc.toFixed(2)} USDC ({p.kind}{p.remaining != null ? `, ${p.remaining} in stock` : ''})
+                  </option>
                 ))}
               </select>
               <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', marginBottom: 8 }}>

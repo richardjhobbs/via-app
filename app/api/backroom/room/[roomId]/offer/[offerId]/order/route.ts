@@ -36,7 +36,7 @@ export async function POST(
 ) {
   const { roomId, offerId } = await params;
 
-  let body: { ref?: string; buyer_wallet?: unknown; qty?: unknown; buyer_country?: unknown; delivery?: DeliveryInput };
+  let body: { ref?: string; buyer_wallet?: unknown; qty?: unknown; buyer_country?: unknown; delivery?: DeliveryInput; email?: unknown; selected_size?: unknown };
   try { body = await req.json(); } catch { return NextResponse.json({ error: 'invalid JSON body' }, { status: 400 }); }
 
   const ref          = body.ref?.trim() ?? '';
@@ -44,6 +44,8 @@ export async function POST(
   const buyerWallet  = String(body.buyer_wallet ?? '').trim();
   const buyerCountry = body.buyer_country ? String(body.buyer_country).trim().toUpperCase() : '';
   const delivery     = body.delivery;
+  const email        = typeof body.email === 'string' ? body.email.trim() : '';
+  const selectedSize = typeof body.selected_size === 'string' ? body.selected_size.trim() : '';
 
   if (!ref) return NextResponse.json({ error: 'ref required' }, { status: 400 });
   if (!ethers.isAddress(buyerWallet)) {
@@ -65,6 +67,73 @@ export async function POST(
       { error: offer.remaining === 0 ? 'this offer is fully taken' : `only ${offer.remaining} left on this offer`, available: offer.remaining },
       { status: 409 },
     );
+  }
+
+  // ── RRG brand offer: local ledger order, settled on RRG after payment ──
+  // The product lives on RRG, so there is no app_purchases row; the order goes
+  // in app_room_offer_orders and settles at this offer's settle route (VIA
+  // executes the USDC permit, then RRG claims the same transaction).
+  if (offer.platform === 'rrg') {
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
+      return NextResponse.json({ error: 'a valid email address is required for delivery and your receipt', required_fields: ['email'] }, { status: 400 });
+    }
+    if (offer.sizes.length > 0 && !selectedSize) {
+      return NextResponse.json({ error: 'pick a size', required_fields: ['selected_size'], sizes: offer.sizes }, { status: 400 });
+    }
+    if (offer.sizes.length > 0 && !offer.sizes.includes(selectedSize)) {
+      return NextResponse.json({ error: `size ${selectedSize} is not available`, sizes: offer.sizes }, { status: 400 });
+    }
+    let rrgDelivery: Record<string, string | null> | null = null;
+    if (offer.kind === 'physical') {
+      const required: Array<keyof DeliveryInput> = ['name', 'address_line1', 'city', 'postcode', 'country', 'phone'];
+      const missing = !delivery ? required : required.filter((k) => !delivery[k] || String(delivery[k]).trim().length === 0);
+      if (missing.length > 0) {
+        return NextResponse.json({ error: 'delivery details required for physical items', required_fields: missing }, { status: 400 });
+      }
+      rrgDelivery = {
+        name:          delivery!.name!.trim(),
+        address_line1: delivery!.address_line1!.trim(),
+        address_line2: delivery!.address_line2?.trim() || null,
+        city:          delivery!.city!.trim(),
+        region:        delivery!.region?.trim() || null,
+        postcode:      delivery!.postcode!.trim(),
+        country:       String(delivery!.country).toUpperCase(),
+        phone:         delivery!.phone!.trim(),
+      };
+    }
+    // One unit per order: RRG's claim mints one edition per transaction.
+    const totalUsdc = offer.price_usdc;
+    const { data: order, error: orderErr } = await db
+      .from('app_room_offer_orders')
+      .insert({
+        offer_id:        offer.id,
+        room_id:         roomId,
+        buyer_wallet:    buyerWallet.toLowerCase(),
+        member_platform: auth.member.member_platform,
+        member_type:     auth.member.member_type,
+        member_ref:      auth.member.member_ref,
+        qty:             1,
+        total_usdc:      totalUsdc,
+        email,
+        delivery:        rrgDelivery,
+        selected_size:   selectedSize || null,
+      })
+      .select('id')
+      .single();
+    if (orderErr || !order) {
+      console.error('[backroom/offer/order] rrg order insert failed', orderErr);
+      return NextResponse.json({ error: 'could not create order' }, { status: 500 });
+    }
+    return NextResponse.json({
+      room_order_id:   order.id,
+      product_usdc:    totalUsdc,
+      shipping_usdc:   0,
+      total_usdc:      totalUsdc,
+      total_minor:     Math.round(totalUsdc * 1_000_000),
+      usdc_address:    USDC_ADDRESS,
+      platform_wallet: PLATFORM_WALLET,
+      settle_endpoint: `/api/backroom/room/${roomId}/offer/${offer.id}/settle`,
+    });
   }
 
   // ── Seller + product must still be purchasable (same rules as the public checkout) ──

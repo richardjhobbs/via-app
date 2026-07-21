@@ -11,7 +11,7 @@
 import { NextResponse, after } from 'next/server';
 import { loadRoom } from '@/lib/app/backroom/rooms';
 import { requireRoomMember } from '@/lib/app/backroom/ui-auth';
-import { createRoomOffer, listRoomOffers, listOfferableProducts } from '@/lib/app/backroom/offers';
+import { createRoomOffer, listRoomOffers, listOfferableProducts, listOfferableRrgProducts } from '@/lib/app/backroom/offers';
 import { pushToRoom } from '@/lib/app/backroom/push';
 
 export const dynamic = 'force-dynamic';
@@ -29,9 +29,20 @@ export async function GET(req: Request, { params }: { params: Promise<{ roomId: 
   if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
 
   const offers = await listRoomOffers(roomId);
-  const isViaSeller = auth.member.member_platform === 'via' && auth.member.member_type === 'seller';
-  const yourProducts = isViaSeller ? await listOfferableProducts(auth.member.member_ref) : [];
-  return NextResponse.json({ offers, your_products: yourProducts });
+  // The composer catalogue for a brand member: a VIA store's own products, or
+  // an RRG brand's live drops over the signed federation call.
+  let yourProducts: Awaited<ReturnType<typeof listOfferableProducts>> = [];
+  let catalogueError: string | null = null;
+  if (auth.member.member_type === 'seller') {
+    if (auth.member.member_platform === 'via') {
+      yourProducts = await listOfferableProducts(auth.member.member_ref);
+    } else {
+      const rrg = await listOfferableRrgProducts(auth.member.member_ref);
+      if (rrg === null) catalogueError = 'could not reach RRG for your catalogue; try again in a minute';
+      else yourProducts = rrg;
+    }
+  }
+  return NextResponse.json({ offers, your_products: yourProducts, ...(catalogueError ? { catalogue_error: catalogueError } : {}) });
 }
 
 export async function POST(req: Request, { params }: { params: Promise<{ roomId: string }> }) {
