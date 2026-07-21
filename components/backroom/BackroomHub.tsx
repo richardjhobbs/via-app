@@ -9,6 +9,9 @@ import { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
 import { HoldToSpeak } from './HoldToSpeak';
 import { PushToggle } from './PushToggle';
+import { VibePicker } from './VibePicker';
+
+type Vibe = 'paper' | 'slate' | 'midnight' | 'bloom';
 
 interface Invite { id: string; room_id: string; room_name: string; inviter_ref: string; why: string; }
 
@@ -28,7 +31,7 @@ interface VoiceResult {
   note?: string;
 }
 
-export function BackroomHub({ members, rooms, emailDigest = true }: { members: HubMember[]; rooms: HubRoom[]; emailDigest?: boolean }) {
+export function BackroomHub({ members, rooms, emailDigest = true, vibe = 'paper' }: { members: HubMember[]; rooms: HubRoom[]; emailDigest?: boolean; vibe?: Vibe }) {
   // The primary identity drives the single-identity surfaces (voice, prefs,
   // card, door, forming a room). Invitations and rooms aggregate over ALL of
   // them: a session holding a VIA agent and a federated concierge must see both
@@ -237,6 +240,9 @@ export function BackroomHub({ members, rooms, emailDigest = true }: { members: H
             </label>
             <PushToggle handle={handle} />
           </div>
+
+          {/* Appearance */}
+          <VibePicker handle={handle} current={vibe} />
         </div>
       )}
 

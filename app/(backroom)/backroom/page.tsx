@@ -1,7 +1,7 @@
 import { db } from '@/lib/app/db';
 import { refPattern } from '@/lib/app/backroom/rooms';
 import { sessionMembers, type SessionMember } from '@/lib/app/backroom/ui-auth';
-import { roomNewCountsFor, getEmailDigestPref } from '@/lib/app/backroom/notifications';
+import { roomNewCountsFor, getEmailDigestPref, getVibePref, type Vibe } from '@/lib/app/backroom/notifications';
 import { BackroomHub, type HubMember, type HubRoom } from '@/components/backroom/BackroomHub';
 
 export const dynamic = 'force-dynamic';
@@ -32,6 +32,7 @@ export default async function BackroomHubPage() {
 
   let rooms: HubRoom[] = [];
   let emailDigest = true;
+  let vibe: Vibe = 'paper';
   if (members.length > 0) {
     const perMember = await Promise.all(members.map(async (m) => {
       const author = { member_platform: m.platform, member_type: m.type, member_ref: m.ref };
@@ -42,9 +43,10 @@ export default async function BackroomHubPage() {
     for (const r of perMember.flat()) if (!seen.has(r.id)) seen.set(r.id, r);
     rooms = [...seen.values()];
     const first = members[0];
-    emailDigest = await getEmailDigestPref({ member_platform: first.platform, member_type: first.type, member_ref: first.ref });
+    const author = { member_platform: first.platform, member_type: first.type, member_ref: first.ref };
+    [emailDigest, vibe] = await Promise.all([getEmailDigestPref(author), getVibePref(author)]);
   }
 
   const hubMembers: HubMember[] = members.map((m) => ({ platform: m.platform, type: m.type, ref: m.ref, label: m.label }));
-  return <BackroomHub members={hubMembers} rooms={rooms} emailDigest={emailDigest} />;
+  return <BackroomHub members={hubMembers} rooms={rooms} emailDigest={emailDigest} vibe={vibe} />;
 }

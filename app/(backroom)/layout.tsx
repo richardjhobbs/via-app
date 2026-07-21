@@ -3,6 +3,7 @@ import Link from 'next/link';
 import { Newsreader, Source_Sans_3 } from 'next/font/google';
 import { InstallPrompt } from '@/components/backroom/InstallPrompt';
 import { sessionMembers } from '@/lib/app/backroom/ui-auth';
+import { getVibePref } from '@/lib/app/backroom/notifications';
 
 // The Back Room's own typography, deliberately away from the Maison/RRG
 // system. Editorial serif for names and objects, humanist sans for
@@ -49,6 +50,14 @@ export default async function BackRoomLayout({ children }: { children: ReactNode
   const members = await sessionMembers();
   const viaMember = members.find((m) => m.platform === 'via');
   const rrgMember = members.find((m) => m.platform === 'rrg');
+
+  // The member's chosen vibe follows them across every Back Room page. The
+  // primary identity drives it; set on the wrapper server-side so there is no
+  // flash of the default palette before it applies.
+  const primary = members[0];
+  const vibe = primary
+    ? await getVibePref({ member_platform: primary.platform, member_type: primary.type, member_ref: primary.ref })
+    : 'paper';
   const dashboardHref = viaMember
     ? (viaMember.type === 'buyer' ? `/buyer/${encodeURIComponent(viaMember.ref)}/admin` : `/seller/${encodeURIComponent(viaMember.ref)}/admin`)
     : rrgMember
@@ -58,6 +67,7 @@ export default async function BackRoomLayout({ children }: { children: ReactNode
   return (
     <div
       data-skin="backroom"
+      data-vibe={vibe}
       className={`${newsreader.variable} ${sourceSans.variable}`}
       style={{ minHeight: '100vh' }}
     >

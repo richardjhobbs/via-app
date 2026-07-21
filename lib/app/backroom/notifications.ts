@@ -76,3 +76,36 @@ export async function setEmailDigestPref(member: Author, on: boolean): Promise<v
     updated_at: new Date().toISOString(),
   }, { onConflict: 'member_platform,member_type,member_ref' });
 }
+
+/**
+ * The member's chosen Back Room "vibe": a personal palette that follows them
+ * across all their rooms. The default is the warm paper skin.
+ */
+export const VIBES = ['paper', 'slate', 'midnight', 'bloom'] as const;
+export type Vibe = (typeof VIBES)[number];
+
+export function normaliseVibe(value: unknown): Vibe {
+  return (VIBES as readonly string[]).includes(value as string) ? (value as Vibe) : 'paper';
+}
+
+export async function getVibePref(member: Author): Promise<Vibe> {
+  const { data } = await db.from('app_room_member_prefs')
+    .select('vibe')
+    .eq('member_platform', member.member_platform)
+    .eq('member_type', member.member_type)
+    .eq('member_ref', member.member_ref)
+    .maybeSingle();
+  return normaliseVibe((data as { vibe: string } | null)?.vibe);
+}
+
+export async function setVibePref(member: Author, vibe: string): Promise<Vibe> {
+  const clean = normaliseVibe(vibe);
+  await db.from('app_room_member_prefs').upsert({
+    member_platform: member.member_platform,
+    member_type: member.member_type,
+    member_ref: member.member_ref,
+    vibe: clean,
+    updated_at: new Date().toISOString(),
+  }, { onConflict: 'member_platform,member_type,member_ref' });
+  return clean;
+}

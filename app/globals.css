@@ -118,6 +118,87 @@
   --warning: #cda35f;
 }
 
+/* ─── Vibes ──────────────────────────────────────────────────────────────
+   A member picks one of four palettes and it follows them across every Back
+   Room surface (set as data-vibe on the route-group wrapper). The vibe is
+   authoritative: it fully governs the ground/ink token set regardless of the
+   system data-theme, so these blocks come AFTER the dark block above and win
+   on source order. --accent here is only the default; each room still
+   overrides --accent inline from its own colour. */
+
+/* Paper: the original warm cream, restated so the default is explicit. */
+[data-skin="backroom"][data-vibe="paper"] {
+  --bg: #f4efe6;
+  --bg-2: #ece4d6;
+  --ink: #211b15;
+  --ink-2: #4a4136;
+  --ink-3: #7c7060;
+  --line: rgba(33, 27, 21, 0.12);
+  --line-strong: rgba(33, 27, 21, 0.22);
+  --accent: #8a5a3c;
+  --paper: #fbf7ef;
+  --live: #4c8a5a;
+  --danger: #a8443a;
+  --warning: #8a6320;
+  --background: var(--bg);
+  --foreground: var(--ink);
+}
+
+/* Slate: cool grey-blue paper, charcoal ink, a muted indigo accent. */
+[data-skin="backroom"][data-vibe="slate"] {
+  --bg: #e7e9ee;
+  --bg-2: #dcdfe7;
+  --ink: #1c2230;
+  --ink-2: #3d4557;
+  --ink-3: #6b7385;
+  --line: rgba(28, 34, 48, 0.12);
+  --line-strong: rgba(28, 34, 48, 0.22);
+  --accent: #4a5a86;
+  --paper: #f1f3f7;
+  --live: #3f7d68;
+  --danger: #a1483f;
+  --warning: #8a6a2a;
+  --background: var(--bg);
+  --foreground: var(--ink);
+}
+
+/* Midnight: dark warm ground, dim amber light. The former system-dark skin,
+   promoted to a chosen vibe. */
+[data-skin="backroom"][data-vibe="midnight"] {
+  --bg: #17130d;
+  --bg-2: #1f1a12;
+  --ink: #e8dcc4;
+  --ink-2: #c3b393;
+  --ink-3: #8a7c62;
+  --line: rgba(232, 220, 196, 0.14);
+  --line-strong: rgba(232, 220, 196, 0.28);
+  --accent: #d69a5c;
+  --paper: #1f1a12;
+  --live: #5aa06a;
+  --danger: #c86a5e;
+  --warning: #cda35f;
+  --background: var(--bg);
+  --foreground: var(--ink);
+}
+
+/* Bloom: soft blush paper, plum ink, a warm terracotta accent. */
+[data-skin="backroom"][data-vibe="bloom"] {
+  --bg: #f6ecec;
+  --bg-2: #efe1e2;
+  --ink: #3a2230;
+  --ink-2: #5f4150;
+  --ink-3: #8f6f7d;
+  --line: rgba(58, 34, 48, 0.12);
+  --line-strong: rgba(58, 34, 48, 0.22);
+  --accent: #b0563f;
+  --paper: #fbf2f2;
+  --live: #4c8a5a;
+  --danger: #a8443a;
+  --warning: #8a6320;
+  --background: var(--bg);
+  --foreground: var(--ink);
+}
+
 [data-skin="backroom"] .br-serif {
   font-family: var(--font-serif);
   letter-spacing: -0.01em;
