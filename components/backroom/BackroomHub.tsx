@@ -35,7 +35,9 @@ export function BackroomHub({ members, rooms, emailDigest = true }: { members: H
   // inboxes, or an invite addressed to the other identity is invisible.
   const primary = members[0] ?? null;
   const handle = primary?.ref ?? null;
-  const label = members.length > 1 ? members.map((m) => m.label).join(', ') : (primary?.label ?? null);
+  // Show only the primary identity; rooms and invitations still aggregate
+  // across every identity the session holds.
+  const label = primary?.label ?? null;
   // Back to the member's own dashboard (VIA members only; an RRG brand arrived
   // over the handoff and has no VIA dashboard to return to).
   const dashboardHref = primary && primary.platform === 'via'
