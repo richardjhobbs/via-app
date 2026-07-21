@@ -4,7 +4,7 @@
  * POST { ref, accept: boolean }
  */
 import { NextResponse } from 'next/server';
-import { resolveOwnedMember } from '@/lib/app/backroom/ui-auth';
+import { resolveOwnedMember, ownedLinkedRrgWallet } from '@/lib/app/backroom/ui-auth';
 import { getBrandSession } from '@/lib/app/backroom/brand-session';
 import { getConciergeSession } from '@/lib/app/backroom/concierge-session';
 import { respondAgentInvite } from '@/lib/app/backroom/invitations';
@@ -22,7 +22,9 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   const auth = await resolveOwnedMember(ref);
   if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
 
-  const brandWallet = auth.member.member_platform === 'rrg' ? ((await getBrandSession())?.wallet ?? (await getConciergeSession())?.wallet ?? null) : null;
+  const brandWallet = auth.member.member_platform === 'rrg'
+    ? ((await getBrandSession())?.wallet ?? (await getConciergeSession())?.wallet ?? (await ownedLinkedRrgWallet(ref)))
+    : null;
   const result = await respondAgentInvite(id, auth.member, body.accept, brandWallet);
   const status = result.outcome === 'not_found' ? 404 : 200;
   return NextResponse.json(result, { status });

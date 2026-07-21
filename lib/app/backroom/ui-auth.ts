@@ -57,7 +57,37 @@ export async function resolveOwnedMember(ref: string): Promise<RoomMemberAuth> {
   if (concierge && concierge.ref === ref) {
     return { ok: true, member: { member_platform: 'rrg', member_type: 'buyer', member_ref: ref } };
   }
+  // Owning an RRG-imported buyer authorizes acting as its concierge identity
+  // (rrg/buyer/<name>): the import already proved control of that concierge.
+  if (buyerUser && (await ownedLinkedRrgBuyer(buyerUser.id, ref))) {
+    return { ok: true, member: { member_platform: 'rrg', member_type: 'buyer', member_ref: ref } };
+  }
   return { ok: false, status: 401, error: 'not authenticated for this member' };
+}
+
+async function ownedLinkedRrgBuyer(userId: string, ref: string): Promise<{ wallet_address: string | null } | null> {
+  const pat = ref.trim().replace(/([%_\\])/g, '\\$1');
+  if (!pat) return null;
+  const { data } = await db
+    .from('app_buyers')
+    .select('wallet_address')
+    .eq('owner_user_id', userId)
+    .not('linked_rrg_agent_id', 'is', null)
+    .ilike('display_name', pat)
+    .maybeSingle();
+  return (data as { wallet_address: string | null } | null) ?? null;
+}
+
+/**
+ * The wallet to cache when an rrg-linked owned identity joins a room: the
+ * imported buyer's funding wallet (same wallet the concierge runs on RRG).
+ * Null when the session does not own such a buyer for this ref.
+ */
+export async function ownedLinkedRrgWallet(ref: string): Promise<string | null> {
+  const buyerUser = await getBuyerUser();
+  if (!buyerUser) return null;
+  const row = await ownedLinkedRrgBuyer(buyerUser.id, ref);
+  return row?.wallet_address ?? null;
 }
 
 export interface SessionMember { platform: MemberPlatform; type: MemberType; ref: string; label: string; }
@@ -75,6 +105,21 @@ export async function sessionMembers(): Promise<SessionMember[]> {
     for (const b of await getUserBuyers(buyerUser.id)) {
       out.push({ platform: 'via', type: 'buyer', ref: b.handle, label: b.displayName || b.handle });
     }
+    // A buyer imported from RRG carries a second identity: the concierge
+    // itself (rrg/buyer/<name>), which is what its room memberships and taste
+    // cards hang off. Surface it so the owner's ordinary VIA session sees
+    // those rooms without re-entering through the RRG handoff.
+    const { data: linked } = await db
+      .from('app_buyers')
+      .select('display_name')
+      .eq('owner_user_id', buyerUser.id)
+      .not('linked_rrg_agent_id', 'is', null);
+    for (const r of (linked as { display_name: string | null }[]) ?? []) {
+      const ref = r.display_name?.trim();
+      if (ref && !out.some((m) => m.platform === 'rrg' && m.type === 'buyer' && m.ref.toLowerCase() === ref.toLowerCase())) {
+        out.push({ platform: 'rrg', type: 'buyer', ref, label: ref });
+      }
+    }
   }
   const sellerUser = await getSellerUser();
   if (sellerUser) {
@@ -87,7 +132,7 @@ export async function sessionMembers(): Promise<SessionMember[]> {
     out.push({ platform: 'rrg', type: 'seller', ref: brand.slug, label: brand.name || brand.slug });
   }
   const concierge = await getConciergeSession();
-  if (concierge) {
+  if (concierge && !out.some((m) => m.platform === 'rrg' && m.type === 'buyer' && m.ref.toLowerCase() === concierge.ref.toLowerCase())) {
     out.push({ platform: 'rrg', type: 'buyer', ref: concierge.ref, label: concierge.name || concierge.ref });
   }
   return out;

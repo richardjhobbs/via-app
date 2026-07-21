@@ -96,13 +96,15 @@ export async function getBuyerUser(): Promise<BuyerUser | null> {
  * the login flow uses the first.
  */
 export async function getUserBuyers(userId: string): Promise<BuyerMembership[]> {
-  // Oldest first so a user with more than one profile (e.g. their own plus a
-  // system profile like the NOSTR inbound buyer) lands on their PRIMARY profile
-  // at login, not whatever the DB happened to return first.
+  // An RRG-imported concierge is the owner's deliberate personal agent, so it
+  // outranks everything; after that, oldest first so a user with several
+  // profiles (their own plus system profiles like the NOSTR inbound buyer)
+  // lands on a stable primary at login.
   const { data, error } = await db
     .from('app_buyers')
     .select('id, handle, display_name')
     .eq('owner_user_id', userId)
+    .order('linked_rrg_agent_id', { ascending: true, nullsFirst: false })
     .order('created_at', { ascending: true });
 
   if (error || !data) return [];

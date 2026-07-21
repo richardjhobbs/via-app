@@ -2,7 +2,7 @@ import type { ReactNode } from 'react';
 import Link from 'next/link';
 import { Newsreader, Source_Sans_3 } from 'next/font/google';
 import { InstallPrompt } from '@/components/backroom/InstallPrompt';
-import { primarySessionMember } from '@/lib/app/backroom/ui-auth';
+import { sessionMembers } from '@/lib/app/backroom/ui-auth';
 
 // The Back Room's own typography, deliberately away from the Maison/RRG
 // system. Editorial serif for names and objects, humanist sans for
@@ -44,10 +44,16 @@ export default async function BackRoomLayout({ children }: { children: ReactNode
   // A way out on EVERY Back Room page, not just the hub. The installed PWA has
   // no browser chrome, so without this a member who lands straight in a room
   // (push notification deep link) has no path back to their agent dashboard.
-  const me = await primarySessionMember();
-  const dashboardHref = me && me.platform === 'via'
-    ? (me.type === 'buyer' ? `/buyer/${encodeURIComponent(me.ref)}/admin` : `/seller/${encodeURIComponent(me.ref)}/admin`)
-    : null;
+  // A VIA identity anywhere in the session wins; a session that is only a
+  // federated RRG member goes back to its dashboard on RRG.
+  const members = await sessionMembers();
+  const viaMember = members.find((m) => m.platform === 'via');
+  const rrgMember = members.find((m) => m.platform === 'rrg');
+  const dashboardHref = viaMember
+    ? (viaMember.type === 'buyer' ? `/buyer/${encodeURIComponent(viaMember.ref)}/admin` : `/seller/${encodeURIComponent(viaMember.ref)}/admin`)
+    : rrgMember
+      ? (rrgMember.type === 'buyer' ? 'https://realrealgenuine.com/agents/dashboard' : `https://realrealgenuine.com/brand/${encodeURIComponent(rrgMember.ref)}/admin`)
+      : null;
 
   return (
     <div
@@ -66,9 +72,9 @@ export default async function BackRoomLayout({ children }: { children: ReactNode
           The Back Room
         </Link>
         {dashboardHref && (
-          <Link href={dashboardHref} style={{ fontSize: 13, color: 'var(--ink-2)', textDecoration: 'none', border: '1px solid var(--line-strong)', borderRadius: 999, padding: '6px 14px' }}>
+          <a href={dashboardHref} style={{ fontSize: 13, color: 'var(--ink-2)', textDecoration: 'none', border: '1px solid var(--line-strong)', borderRadius: 999, padding: '6px 14px' }}>
             Your dashboard &rarr;
-          </Link>
+          </a>
         )}
       </header>
       {children}
