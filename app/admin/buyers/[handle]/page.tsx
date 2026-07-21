@@ -3,6 +3,7 @@ import Image from 'next/image';
 import { notFound, redirect } from 'next/navigation';
 import { db } from '@/lib/app/db';
 import { isAdminFromCookies } from '@/lib/app/auth';
+import { supabaseAdmin } from '@/lib/app/seller-auth';
 import ThemeToggle from '@/components/app/ThemeToggle';
 import { BuyerDetailClient } from './BuyerDetailClient';
 
@@ -22,12 +23,22 @@ export default async function AdminBuyerDetailPage({
 
   const { data: buyer, error } = await db
     .from('app_buyers')
-    .select('id, handle, display_name, wallet_address, erc8004_agent_id, public, delegation_caps, created_at, updated_at')
+    .select('id, handle, display_name, wallet_address, agent_wallet_address, erc8004_agent_id, public, delegation_caps, owner_user_id, created_at, updated_at')
     .eq('handle', handle)
     .maybeSingle();
   if (error || !buyer) return notFound();
 
   const buyerId = buyer.id as string;
+
+  // The owner's login email lives on the auth user, not the buyer row.
+  let ownerEmail: string | null = null;
+  const ownerId = buyer.owner_user_id as string | null;
+  if (ownerId) {
+    try {
+      const { data: u } = await supabaseAdmin.auth.admin.getUserById(ownerId);
+      ownerEmail = u?.user?.email ?? null;
+    } catch { /* leave null; the page shows (no account) */ }
+  }
 
   const [memoriesRes, intentsRes, interactionsRes] = await Promise.all([
     db.from('app_buyer_memories')
@@ -50,7 +61,7 @@ export default async function AdminBuyerDetailPage({
   const caps = (buyer.delegation_caps ?? {}) as Record<string, unknown>;
 
   return (
-    <main className="min-h-screen bg-neutral-50 text-neutral-900 flex flex-col">
+    <main className="min-h-screen bg-background text-ink flex flex-col">
       <header className="bg-neutral-900 text-neutral-100">
         <div className="max-w-6xl mx-auto px-6 py-5 flex items-center justify-between">
           <Link href="/admin" aria-label="Admin overview" className="inline-flex items-center gap-3">
@@ -72,23 +83,25 @@ export default async function AdminBuyerDetailPage({
 
       <section className="flex-1 px-6 py-12">
         <div className="max-w-6xl mx-auto">
-          <p className="text-xs font-mono tracking-widest text-neutral-500 mb-3 uppercase">Buyer</p>
+          <p className="text-xs font-mono tracking-widest text-ink-3 mb-3 uppercase">Buyer</p>
           <h1 className="font-serif text-4xl leading-[1.1] tracking-tight mb-2">
             {(buyer.display_name as string | null) ?? buyer.handle as string}
           </h1>
-          <p className="text-sm text-neutral-600 mb-8 font-mono">
+          <p className="text-sm text-ink-2 mb-8 font-mono">
             @{buyer.handle as string} · onboarded {new Date(buyer.created_at as string).toISOString().slice(0, 10)}
           </p>
 
           <BuyerDetailClient
             buyer={{
-              id:                buyerId,
-              handle:            buyer.handle as string,
-              display_name:      buyer.display_name as string | null,
-              wallet_address:    buyer.wallet_address as string,
-              erc8004_agent_id:  buyer.erc8004_agent_id as string | null,
-              public:            buyer.public as boolean,
-              delegation_caps:   caps,
+              id:                   buyerId,
+              handle:               buyer.handle as string,
+              display_name:         buyer.display_name as string | null,
+              wallet_address:       buyer.wallet_address as string,
+              agent_wallet_address: buyer.agent_wallet_address as string | null,
+              erc8004_agent_id:     buyer.erc8004_agent_id as string | null,
+              owner_email:          ownerEmail,
+              public:               buyer.public as boolean,
+              delegation_caps:      caps,
             }}
             memories={(memoriesRes.data ?? []) as Array<{
               id: string; type: string; title: string; body: string; tags: string[]; active: boolean; created_at: string;
