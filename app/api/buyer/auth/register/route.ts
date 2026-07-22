@@ -6,6 +6,7 @@ import { ethers } from 'ethers';
 import { mintBuyerIdentity } from '@/lib/app/buyer-identity';
 import { shouldSkipErc8004, syntheticTestAgentId } from '@/lib/app/test-mode';
 import { grantWelcomeCredits } from '@/lib/app/buyer-credits';
+import { claimAgentMemories } from '@/lib/app/agent-memory-claims';
 
 export const dynamic = 'force-dynamic';
 
@@ -150,8 +151,24 @@ export async function POST(req: NextRequest) {
     console.error(`[onboard/buyer/register] welcome-credit grant failed handle=${buyer.handle}:`, err);
   }
 
+  // Carry over a retired RRG agent's history, if this owner had one. Their
+  // memory/persona/chat was snapshotted before the RRG account was deleted and
+  // is keyed by email; claiming is one-shot and idempotent. Non-fatal.
+  let claimed: Awaited<ReturnType<typeof claimAgentMemories>> | null = null;
+  try {
+    claimed = await claimAgentMemories(buyer.id, email);
+    if (claimed.claims > 0) {
+      console.log(`[onboard/buyer/register] claimed ${claimed.claims} snapshot(s) for handle=${buyer.handle}: ${claimed.memoriesInserted} memories, ${claimed.messagesImported} messages`);
+    }
+  } catch (err) {
+    console.error(`[onboard/buyer/register] memory claim failed handle=${buyer.handle}:`, err);
+  }
+
   const response = NextResponse.json({
     buyer: { id: buyer.id, handle: buyer.handle, display_name: buyer.display_name },
+    carried_over: claimed && claimed.claims > 0
+      ? { memories: claimed.memoriesInserted, messages: claimed.messagesImported }
+      : null,
     redirect_to: `/buyer/${buyer.handle}/admin/buying-agent`,
   });
   setBrandAuthCookies(response, signIn.session.access_token, signIn.session.refresh_token);

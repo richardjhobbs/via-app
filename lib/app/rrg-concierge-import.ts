@@ -111,8 +111,9 @@ export function mapRrgMemory(m: RrgMemory): MappedMemory | null {
 }
 
 /** Turn the RRG persona fields into stable memory rows (deterministic ids so a
- *  later sync updates them in place rather than duplicating). */
-function personaMemories(agent: RrgAgent): MappedMemory[] {
+ *  later sync updates them in place rather than duplicating). Exported so the
+ *  memory-claim path (a re-registering owner) maps persona identically. */
+export function personaMemories(agent: RrgAgent): MappedMemory[] {
   const out: MappedMemory[] = [];
 
   const instr = (agent.free_instructions ?? '').trim();
@@ -173,7 +174,7 @@ function personaMemories(agent: RrgAgent): MappedMemory[] {
  * (buyer_id, external_source, external_id): an unchanged memory is left alone,
  * a changed body is updated, a new one is inserted. Returns counts.
  */
-async function upsertMemories(buyerId: string, mapped: MappedMemory[]): Promise<{ inserted: number; updated: number }> {
+export async function upsertMemories(buyerId: string, mapped: MappedMemory[]): Promise<{ inserted: number; updated: number }> {
   if (mapped.length === 0) return { inserted: 0, updated: 0 };
 
   const { data: existingRows } = await db
