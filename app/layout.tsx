@@ -75,10 +75,14 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <head>
         {/* Apply the saved theme before first paint so the page never flashes
             the wrong palette and the theme is correct even before the React
-            ThemeToggle hydrates (matters on heavy, force-dynamic routes). */}
+            ThemeToggle hydrates (matters on heavy, force-dynamic routes).
+            A ?theme= param wins and is persisted: localStorage is per-origin, so
+            a visitor arriving from another surface (e.g. realrealgenuine.com)
+            carries their light/dark choice across in the link instead of being
+            dumped into the default palette. */}
         <script
           dangerouslySetInnerHTML={{
-            __html: `(function(){try{var t=localStorage.getItem('rrg-theme');if(t==='dark'||t==='light'){document.documentElement.setAttribute('data-theme',t);}}catch(e){}})();`,
+            __html: `(function(){try{var t=null;var m=location.search.match(/[?&]theme=(dark|light)\\b/);if(m){t=m[1];localStorage.setItem('rrg-theme',t);}else{t=localStorage.getItem('rrg-theme');}if(t==='dark'||t==='light'){document.documentElement.setAttribute('data-theme',t);}}catch(e){}})();`,
           }}
         />
         <link rel="preconnect" href="https://gcxyoujubqclenrhhill.supabase.co" crossOrigin="" />

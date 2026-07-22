@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 import Link from 'next/link';
 import { Wordmark } from '@/components/app/Wordmark';
+import ThemeToggle from '@/components/app/ThemeToggle';
 
 export const metadata = {
   title: 'Onboard · VIA',
@@ -12,12 +13,15 @@ export default function OnboardLayout({ children }: { children: ReactNode }) {
       <header className="border-b border-line">
         <div className="max-w-3xl mx-auto px-6 py-5 flex items-center justify-between">
           <Link href="/" aria-label="VIA home"><Wordmark /></Link>
-          <a
-            href="https://getvia.xyz"
-            className="uc-mono text-ink-3 hover:text-ink transition-colors"
-          >
-            getvia.xyz ↗
-          </a>
+          <div className="flex items-center gap-4">
+            <a
+              href="https://getvia.xyz"
+              className="uc-mono text-ink-3 hover:text-ink transition-colors"
+            >
+              getvia.xyz ↗
+            </a>
+            <ThemeToggle />
+          </div>
         </div>
       </header>
       {children}
