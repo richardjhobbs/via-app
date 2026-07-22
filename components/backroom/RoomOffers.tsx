@@ -337,7 +337,7 @@ function OfferCard({
               </span>
             ) : (
               <span className="br-sans" style={{ fontSize: 12, color: 'var(--ink-3)' }}>
-                {buyerWallet ? 'Connecting your agent wallet…' : 'Pays with your agent’s wallet.'}
+                Connect a wallet to pay.
               </span>
             )}
             {canWithdraw && (
@@ -348,17 +348,22 @@ function OfferCard({
             )}
           </div>
 
-          {open && !account && (
+          {!account && (
             <div style={{ marginTop: 10 }}>
               <p className="br-sans" style={{ fontSize: 13, color: 'var(--ink-2)', margin: '0 0 8px' }}>
                 {buyerName
-                  ? `${buyerName}, sign in to your VIA wallet with the email or Google you joined with. It stays connected after the first time, then buying is a single tap.`
-                  : 'Sign in to your VIA wallet with the email or Google you joined with; it stays connected after the first time.'}
+                  ? `${buyerName}, connect the wallet you want to pay from. It stays connected after the first time, then buying is a single tap.`
+                  : 'Connect the wallet you want to pay from; it stays connected after the first time.'}
               </p>
               <button type="button" onClick={openWallet} disabled={isConnecting} className="br-sans"
                 style={{ padding: '9px 16px', borderRadius: 4, border: '1px solid var(--ink)', background: 'var(--ink)', color: 'var(--bg)', fontSize: 13, cursor: 'pointer', opacity: isConnecting ? 0.6 : 1 }}>
-                {isConnecting ? 'Opening…' : 'Sign in to your VIA wallet'}
+                {isConnecting ? 'Opening…' : 'Connect wallet'}
               </button>
+              {buyerWallet && (
+                <p className="br-sans" style={{ fontSize: 11, color: 'var(--ink-3)', margin: '8px 0 0' }}>
+                  Your agent&apos;s recorded wallet is <span style={{ fontFamily: 'monospace' }}>{buyerWallet.slice(0, 6)}…{buyerWallet.slice(-4)}</span>. Connect that wallet to pay from it; any other funded wallet on Base also works.
+                </p>
+              )}
             </div>
           )}
 
