@@ -1,25 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
-import { supabaseAdmin } from '@/lib/app/seller-auth';
 import { setBuyerAuthCookies, getBuyerUser } from '@/lib/app/buyer-auth';
 import { verifyHandoffToken } from '@/lib/app/rrg-handoff';
 import { importConcierge } from '@/lib/app/rrg-concierge-import';
 import { resolveRrgConcierge } from '@/lib/app/backroom/rrg-federation';
 import { mintPasswordlessSession } from '@/lib/app/passwordless';
-
-// Find-or-create the Supabase auth user for an email. Returns the user id.
-async function findOrCreateUser(email: string, walletAddress: string, source: string): Promise<string | null> {
-  const { data: created, error: createErr } = await supabaseAdmin.auth.admin.createUser({
-    email,
-    email_confirm: true,
-    user_metadata: { source, wallet_address: walletAddress.toLowerCase() },
-  });
-  if (!createErr) return created.user.id;
-  const { data: list } = await supabaseAdmin.auth.admin.listUsers({ page: 1, perPage: 500 });
-  const found = list?.users?.find((u: { email?: string | null; id: string }) => u.email?.toLowerCase() === email);
-  return found?.id ?? null;
-}
-
+import { findOrCreateUser } from '@/lib/app/rrg-owner';
 
 export const dynamic = 'force-dynamic';
 
