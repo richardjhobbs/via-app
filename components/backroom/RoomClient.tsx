@@ -62,6 +62,8 @@ export function RoomClient({ roomId, handle, isAdmin = false }: { roomId: string
   const [orderRef, setOrderRef] = useState('');
   const [members, setMembers] = useState<Member[]>([]);
   const [offers, setOffers] = useState<RoomOffer[]>([]);
+  const [youWallet, setYouWallet] = useState<string | null>(null);
+  const [youName, setYouName] = useState<string | null>(null);
   const [youAreFounder, setYouAreFounder] = useState(false);
   const [showMembers, setShowMembers] = useState(false);
   const [showInvite, setShowInvite] = useState(false);
@@ -87,9 +89,10 @@ export function RoomClient({ roomId, handle, isAdmin = false }: { roomId: string
     const q = handle ? `?handle=${encodeURIComponent(handle)}` : '';
     const res = await fetch(`/api/backroom/room/${roomId}${q}`);
     if (res.ok) {
-      const json = await res.json() as { room: RoomMeta; warmth: Warmth; objects: TableObject[]; members: Member[]; you_are_founder: boolean; chat: ChatMessage[]; offers?: RoomOffer[] };
+      const json = await res.json() as { room: RoomMeta; warmth: Warmth; objects: TableObject[]; members: Member[]; you_are_founder: boolean; chat: ChatMessage[]; offers?: RoomOffer[]; you_wallet?: string | null; you_name?: string | null };
       setMeta(json.room); setWarmth(json.warmth); setObjects(json.objects);
       setMembers(json.members ?? []); setYouAreFounder(!!json.you_are_founder);
+      setYouWallet(json.you_wallet ?? null); setYouName(json.you_name ?? null);
       if (Array.isArray(json.offers)) setOffers(json.offers);
       if (Array.isArray(json.chat)) setChat(json.chat);
     } else {
@@ -512,6 +515,8 @@ export function RoomClient({ roomId, handle, isAdmin = false }: { roomId: string
             setOffers={setOffers}
             youAreBrandSeller={members.some((m) => m.status === 'active' && m.member_type === 'seller' && m.member_ref.toLowerCase() === handle.toLowerCase())}
             youAreFounder={youAreFounder}
+            buyerWallet={youWallet}
+            buyerName={youName}
             accent={accent}
           />
         )}

@@ -49,6 +49,21 @@ export async function GET(req: Request, { params }: { params: Promise<{ roomId: 
 
   // Founder flag from the members already fetched , no extra query.
   const me = auth && auth.ok ? auth.member : null;
+
+  // The signed-in buyer's own agent wallet, so the offer card can silently
+  // auto-connect it (BuyerWalletAutoConnect) and present Buy as a confirm
+  // rather than a wallet-connect. Only for a VIA buyer acting as themselves.
+  let youWallet: string | null = null;
+  let youName: string | null = null;
+  if (me && me.member_platform === 'via' && me.member_type === 'buyer') {
+    const { data: b } = await db
+      .from('app_buyers')
+      .select('wallet_address, display_name')
+      .ilike('handle', me.member_ref)
+      .maybeSingle();
+    youWallet = (b as { wallet_address: string | null } | null)?.wallet_address ?? null;
+    youName = (b as { display_name: string | null } | null)?.display_name ?? null;
+  }
   const youAreFounder = !!(me && members.some(
     (m) => m.member_platform === me.member_platform && m.member_type === me.member_type
       && m.member_ref.toLowerCase() === me.member_ref.toLowerCase() && m.is_founder,
@@ -85,5 +100,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ roomId: 
     is_admin: !handle && isAdmin,
     chat,
     offers,
+    you_wallet: youWallet,
+    you_name: youName,
   });
 }

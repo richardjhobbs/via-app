@@ -20,6 +20,7 @@ import { inAppWallet, createWallet } from 'thirdweb/wallets';
 import { base } from 'thirdweb/chains';
 import { thirdwebClient } from '@/lib/app/thirdwebClient';
 import { buildUsdcPermitXPayment } from '@/lib/app/sendUsdc';
+import { BuyerWalletAutoConnect } from '@/components/app/BuyerWalletAutoConnect';
 
 export interface RoomOffer {
   id: string;
@@ -70,7 +71,7 @@ const input: React.CSSProperties = {
 };
 
 export function RoomOffers({
-  roomId, handle, offers, setOffers, youAreBrandSeller, youAreFounder, accent,
+  roomId, handle, offers, setOffers, youAreBrandSeller, youAreFounder, buyerWallet, buyerName, accent,
 }: {
   roomId: string;
   handle: string;
@@ -79,6 +80,10 @@ export function RoomOffers({
   /** True when the member is a seller-kind identity (VIA store or RRG brand). */
   youAreBrandSeller: boolean;
   youAreFounder: boolean;
+  /** The signed-in buyer's own agent wallet, if they are a VIA buyer. Enables
+   *  the silent auto-connect so Buy is a confirm, not a wallet connection. */
+  buyerWallet: string | null;
+  buyerName: string | null;
   accent: string;
 }) {
   const withdraw = useCallback(async (offer: RoomOffer) => {
@@ -92,6 +97,10 @@ export function RoomOffers({
 
   return (
     <section style={{ marginBottom: 24 }}>
+      {/* Silently connect a recognised buyer's own agent wallet, so buying an
+          offer is a single confirm rather than a wallet connection. Gated by the
+          same flag the product checkout uses; inert until it is on. */}
+      <BuyerWalletAutoConnect active={Boolean(buyerWallet)} />
       {offers.length > 0 && (
         <>
           <p className="br-sans" style={{ fontSize: 11, letterSpacing: '0.14em', textTransform: 'uppercase', color: 'var(--ink-3)', margin: '0 0 10px' }}>
@@ -101,6 +110,7 @@ export function RoomOffers({
             {offers.map((o) => (
               <OfferCard
                 key={o.id} roomId={roomId} handle={handle} offer={o} accent={accent}
+                buyerWallet={buyerWallet} buyerName={buyerName}
                 canWithdraw={youAreFounder || o.created_by_ref.toLowerCase() === handle.toLowerCase()}
                 onWithdraw={() => void withdraw(o)}
               />
@@ -121,13 +131,15 @@ export function RoomOffers({
  * a delivery address) opens its panel first, then pays with the same permit.
  */
 function OfferCard({
-  roomId, handle, offer, accent, canWithdraw, onWithdraw,
+  roomId, handle, offer, accent, buyerWallet, buyerName, canWithdraw, onWithdraw,
 }: {
   roomId: string; handle: string; offer: RoomOffer; accent: string;
+  buyerWallet: string | null; buyerName: string | null;
   canWithdraw: boolean; onWithdraw: () => void;
 }) {
   const account = useActiveAccount();
   const { connect, isConnecting } = useConnectModal();
+  const isViaWallet = Boolean(account && buyerWallet && account.address.toLowerCase() === buyerWallet.toLowerCase());
   const isPhysical = offer.kind === 'physical';
   const isRrg = offer.platform === 'rrg';
   const needsPanel = isPhysical || isRrg; // email / size / address before paying
@@ -319,12 +331,14 @@ function OfferCard({
               {status === 'working' ? 'Working…' : soldOut ? 'Fully taken' : retryOrderId ? 'Retry settlement' : `Buy · ${offer.price_usdc.toFixed(2)} USDC`}
             </button>
             {account ? (
-              <span className="br-sans" style={{ fontSize: 12, color: 'var(--ink-3)' }}>
-                Paying from <span style={{ fontFamily: 'monospace' }}>{account.address.slice(0, 6)}…{account.address.slice(-4)}</span>
+              <span className="br-sans" style={{ fontSize: 12, color: isViaWallet ? 'var(--live)' : 'var(--ink-3)' }}>
+                {isViaWallet ? 'Your agent wallet' : 'Paying from'} <span style={{ fontFamily: 'monospace' }}>{account.address.slice(0, 6)}…{account.address.slice(-4)}</span>
                 {balance !== null && <> · {balance.toFixed(2)} USDC</>}
               </span>
             ) : (
-              <span className="br-sans" style={{ fontSize: 12, color: 'var(--ink-3)' }}>Pays with your agent&apos;s wallet.</span>
+              <span className="br-sans" style={{ fontSize: 12, color: 'var(--ink-3)' }}>
+                {buyerWallet ? 'Connecting your agent wallet…' : 'Pays with your agent’s wallet.'}
+              </span>
             )}
             {canWithdraw && (
               <button type="button" onClick={onWithdraw} className="br-sans"
@@ -337,11 +351,13 @@ function OfferCard({
           {open && !account && (
             <div style={{ marginTop: 10 }}>
               <p className="br-sans" style={{ fontSize: 13, color: 'var(--ink-2)', margin: '0 0 8px' }}>
-                Sign in to your VIA wallet with the email or Google you joined with; it stays connected after the first time.
+                {buyerName
+                  ? `${buyerName}, sign in to your VIA wallet with the email or Google you joined with. It stays connected after the first time, then buying is a single tap.`
+                  : 'Sign in to your VIA wallet with the email or Google you joined with; it stays connected after the first time.'}
               </p>
               <button type="button" onClick={openWallet} disabled={isConnecting} className="br-sans"
                 style={{ padding: '9px 16px', borderRadius: 4, border: '1px solid var(--ink)', background: 'var(--ink)', color: 'var(--bg)', fontSize: 13, cursor: 'pointer', opacity: isConnecting ? 0.6 : 1 }}>
-                {isConnecting ? 'Opening…' : 'Connect your wallet'}
+                {isConnecting ? 'Opening…' : 'Sign in to your VIA wallet'}
               </button>
             </div>
           )}
