@@ -17,7 +17,7 @@
 import { db } from './db';
 import { mintBuyerIdentity } from './buyer-identity';
 import { deriveAgentWallet, platformAgentWalletsEnabled } from './agent-wallet';
-import { grantWelcomeCredits } from './buyer-credits';
+import { grantWelcomeCredits, transferRrgCredits } from './buyer-credits';
 import { syntheticTestAgentId } from './test-mode';
 import type { BuyerMemoryType } from './buying-agent';
 
@@ -296,6 +296,9 @@ export async function importConcierge(opts: {
   if (priorLink) {
     const memories = await syncConciergeMemories(priorLink.id as string, rrgAgentId).catch(() => null);
     await claimFederatedIdentity(priorLink.display_name as string | null, priorLink.handle as string);
+    // Complete a credit transfer that a prior import may have missed (idempotent).
+    try { await transferRrgCredits(priorLink.id as string, rrgAgentId); }
+    catch (err) { console.error(`[rrg-import] credit transfer (relink) failed handle=${priorLink.handle}:`, err); }
     return {
       ok: true,
       buyer: priorLink as ImportResult['buyer'],
@@ -352,9 +355,14 @@ export async function importConcierge(opts: {
     }
   }
 
-  // Welcome credits (idempotent; RRG credits are a separate ledger, not transferred).
+  // Welcome grant (idempotent, one-time) PLUS transfer of any prepaid RRG
+  // balance into VIA (buyer-unification: VIA is now the credit system of
+  // record; the RRG balance is drained to zero in the same call). Both are
+  // idempotent and independent, so a re-run never double-credits.
   try { await grantWelcomeCredits(buyer.id as string); }
   catch (err) { console.error(`[rrg-import] welcome-credit grant failed handle=${buyer.handle}:`, err); }
+  try { await transferRrgCredits(buyer.id as string, rrgAgentId); }
+  catch (err) { console.error(`[rrg-import] RRG credit transfer failed handle=${buyer.handle}:`, err); }
 
   // Seed persona + memories.
   let memories: { inserted: number; updated: number } | undefined;

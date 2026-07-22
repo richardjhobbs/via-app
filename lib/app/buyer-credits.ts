@@ -73,6 +73,31 @@ export async function deductCredits(buyerId: string, tokensUsed: number, context
 }
 
 /**
+ * Deduct an already-computed USD cost (atomic via the same RPC + ledger row).
+ * Used when the caller has priced the charge itself, e.g. RRG's concierge chat
+ * for a migrated buyer sends the exact cost it computed for its own provider so
+ * VIA does not re-price it against its DeepSeek rate. `description` tags the
+ * ledger line.
+ */
+export async function deductCreditsUsd(buyerId: string, costUsd: number, description: string): Promise<number> {
+  const cost = Math.max(Number(costUsd) || 0, 0);
+  const { data: newBalance, error } = await db.rpc('app_buyer_credits_deduct', {
+    p_buyer_id: buyerId,
+    p_cost:     cost,
+  });
+  if (error) throw new Error(`deductCreditsUsd failed: ${error.message}`);
+
+  await db.from('app_buyer_credit_transactions').insert({
+    buyer_id:      buyerId,
+    type:          'deduction',
+    amount_usdc:   -cost,
+    balance_after: newBalance,
+    description,
+  });
+  return newBalance as number;
+}
+
+/**
  * Top up the balance by a USD amount. Atomic via RPC + ledger row. `reference`
  * is the on-chain tx hash for USDC top-ups (null for the signup grant).
  */
@@ -109,6 +134,57 @@ export async function grantWelcomeCredits(buyerId: string): Promise<number> {
   if (prior) return getBalance(buyerId);
 
   return topUpCredits(buyerId, WELCOME_CREDIT_USDC, undefined, 'Signup grant (1000 credits, welcome)');
+}
+
+const RRG_BASE = (process.env.RRG_BASE_URL || 'https://realrealgenuine.com').replace(/\/$/, '');
+
+/**
+ * Transfer a migrated buyer's prepaid RRG credit balance into VIA, exactly once.
+ *
+ * VIA's own ledger is the idempotency guard: a transfer row is tagged
+ * `tx_hash = rrg:<rrgAgentId>`. If it exists we never call RRG again. Otherwise
+ * we call RRG's atomic drain (which zeroes the RRG balance once) and credit the
+ * TOTAL amount it reports migrated. Because the RRG drain reports the migrated
+ * total even on a repeat, a prior drain whose VIA credit failed is recovered on
+ * the next run without any double-credit (this ledger check blocks that) or
+ * double-drain (the RRG side blocks that).
+ */
+export async function transferRrgCredits(
+  buyerId: string,
+  rrgAgentId: string,
+): Promise<{ transferred: number; alreadyTransferred: boolean }> {
+  const marker = `rrg:${rrgAgentId}`;
+  const { data: prior } = await db
+    .from('app_buyer_credit_transactions')
+    .select('id')
+    .eq('buyer_id', buyerId)
+    .eq('tx_hash', marker)
+    .eq('description', 'RRG migration credit transfer')
+    .maybeSingle();
+  if (prior) return { transferred: 0, alreadyTransferred: true };
+
+  const secret = process.env.VIA_PLATFORM_SECRET;
+  if (!secret) { console.warn('[buyer-credits] VIA_PLATFORM_SECRET unset; cannot drain RRG credits'); return { transferred: 0, alreadyTransferred: false }; }
+
+  let migrated = 0;
+  try {
+    const res = await fetch(`${RRG_BASE}/api/via/credit-drain`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-via-platform-secret': secret },
+      body: JSON.stringify({ ref: rrgAgentId }),
+      signal: AbortSignal.timeout(15000),
+    });
+    if (!res.ok) { console.warn(`[buyer-credits] RRG drain HTTP ${res.status} for ${rrgAgentId}`); return { transferred: 0, alreadyTransferred: false }; }
+    const j = await res.json() as { migrated_amount?: number };
+    migrated = Math.max(Number(j.migrated_amount ?? 0), 0);
+  } catch (e) {
+    console.warn('[buyer-credits] RRG drain unreachable:', e);
+    return { transferred: 0, alreadyTransferred: false };
+  }
+
+  if (migrated <= 0) return { transferred: 0, alreadyTransferred: false };
+  await topUpCredits(buyerId, migrated, marker, 'RRG migration credit transfer');
+  return { transferred: migrated, alreadyTransferred: false };
 }
 
 /** Credit transaction history, newest first. */
