@@ -326,7 +326,7 @@ async function decideChunk(brief, candidates, sellerName, persona) {
   const res = await fetch(DEEPSEEK_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${DEEPSEEK_KEY}` },
-    body: JSON.stringify({ model: 'deepseek-chat', temperature: 0, max_tokens: 600, response_format: { type: 'json_object' }, messages: [{ role: 'system', content: sys }, { role: 'user', content: user }] }),
+    body: JSON.stringify({ model: 'deepseek-v4-flash', temperature: 0, max_tokens: 600, response_format: { type: 'json_object' }, messages: [{ role: 'system', content: sys }, { role: 'user', content: user }] }),
     signal: AbortSignal.timeout(30000),
   }).catch(() => null);
   if (!res || !res.ok) return [];
@@ -394,7 +394,7 @@ async function shouldBid(teaser, stock, sellerName, persona) {
   const res = await fetch(DEEPSEEK_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${DEEPSEEK_KEY}` },
-    body: JSON.stringify({ model: 'deepseek-chat', temperature: 0, max_tokens: 20, response_format: { type: 'json_object' }, messages: [{ role: 'system', content: sys }, { role: 'user', content: user }] }),
+    body: JSON.stringify({ model: 'deepseek-v4-flash', temperature: 0, max_tokens: 20, response_format: { type: 'json_object' }, messages: [{ role: 'system', content: sys }, { role: 'user', content: user }] }),
     signal: AbortSignal.timeout(20000),
   }).catch(() => null);
   if (!res || !res.ok) return false; // fail-closed: don't pay if we couldn't decide

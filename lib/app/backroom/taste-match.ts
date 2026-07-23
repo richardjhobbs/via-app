@@ -84,7 +84,7 @@ export async function judgeSensibility(a: TasteCard, b: TasteCard): Promise<Sens
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
       body: JSON.stringify({
-        model: 'deepseek-chat',
+        model: 'deepseek-v4-flash',
         temperature: 0,
         max_tokens: 400,
         response_format: { type: 'json_object' },

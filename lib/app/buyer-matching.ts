@@ -138,7 +138,7 @@ export async function extractIntent(briefText: string, meter?: TokenMeter): Prom
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
       body: JSON.stringify({
-        model: 'deepseek-chat',
+        model: 'deepseek-v4-flash',
         messages: [
           { role: 'system', content: systemPrompt },
           { role: 'user',   content: raw },
@@ -226,7 +226,7 @@ async function judgeCandidates(
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
       body: JSON.stringify({
-        model: 'deepseek-chat',
+        model: 'deepseek-v4-flash',
         messages: [{ role: 'system', content: sys }, { role: 'user', content: user }],
         temperature: 0,
         max_tokens: 800,
@@ -584,7 +584,7 @@ export async function judgeProductAgainstBrief(
     const res = await fetch(DEEPSEEK_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
-      body: JSON.stringify({ model: 'deepseek-chat', temperature: 0, max_tokens: 320,
+      body: JSON.stringify({ model: 'deepseek-v4-flash', temperature: 0, max_tokens: 320,
         response_format: { type: 'json_object' }, messages: [{ role: 'system', content: sys }, { role: 'user', content: user }] }),
     });
     if (!res.ok) throw new Error(`judge ${res.status}`);

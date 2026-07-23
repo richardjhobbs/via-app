@@ -67,7 +67,7 @@ async function evaluateWithDeepSeek(
   });
 
   const response = await client.chat.completions.create({
-    model: 'deepseek-chat',
+    model: 'deepseek-v4-flash',
     max_tokens: 1024,
     messages: [
       { role: 'system', content: systemPrompt },
@@ -307,7 +307,7 @@ async function streamDeepSeekWithTools(
           const iterationStartTokens = tokensUsed;
 
           const response = await client.chat.completions.create({
-            model: 'deepseek-chat',
+            model: 'deepseek-v4-flash',
             max_tokens: 1024,
             stream: true,
             stream_options: { include_usage: true },
@@ -458,7 +458,7 @@ async function streamDeepSeek(
   let tokensUsed = 0;
 
   const response = await client.chat.completions.create({
-    model: 'deepseek-chat',
+    model: 'deepseek-v4-flash',
     max_tokens: 1024,
     stream: true,
     stream_options: { include_usage: true },

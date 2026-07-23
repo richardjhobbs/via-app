@@ -27,7 +27,7 @@ export interface BuyerLlmFields {
 const PLATFORM: ResolvedLlm = {
   apiKey:  process.env.DEEPSEEK_API_KEY ?? '',
   baseURL: 'https://api.deepseek.com',
-  model:   'deepseek-chat',
+  model:   'deepseek-v4-flash',
   isByo:   false,
   label:   'DeepSeek (platform)',
 };

@@ -31,7 +31,7 @@ export type ChatMessage =
 
 // ── Provider config ──────────────────────────────────────────────────
 
-const MODEL = 'deepseek-chat';
+const MODEL = 'deepseek-v4-flash';
 const BASE_URL = 'https://api.deepseek.com';
 
 // ── System prompt ─────────────────────────────────────────────────────

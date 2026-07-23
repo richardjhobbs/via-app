@@ -28,7 +28,7 @@ export const LLM_PROVIDERS: Record<LlmProvider, ProviderInfo> = {
   deepseek: {
     key: 'deepseek',
     label: 'DeepSeek',
-    model: 'deepseek-chat',
+    model: 'deepseek-v4-flash',
     envKey: 'DEEPSEEK_API_KEY',
     costPerEval: LLM_COST_PER_EVAL.deepseek,
     chatCostEstimate: CHAT_COST_ESTIMATE.deepseek,
