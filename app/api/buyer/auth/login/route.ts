@@ -50,21 +50,25 @@ export async function POST(req: NextRequest) {
     const primary = buyers[0];
     try {
       const claimed = await claimAgentMemories(primary.buyerId, userEmail);
-      const { data: b } = await db
-        .from('app_buyers')
-        .select('display_name, wallet_address, erc8004_agent_id')
-        .eq('id', primary.buyerId)
-        .maybeSingle();
-      if (b?.wallet_address) {
-        await attachRrgShell({
-          email: userEmail,
-          name: (b.display_name as string) ?? primary.handle,
-          handle: primary.handle,
-          walletAddress: b.wallet_address as string,
-          erc8004AgentId: (b.erc8004_agent_id as string | null) ?? null,
-        });
-      }
+      // Only stand up the RRG chat shell when this login actually absorbed a
+      // migrated agent, so an ordinary or system-buyer login is a cheap no-op
+      // and never gains an unwanted RRG presence.
       if (claimed.claims > 0) {
+        const { data: b } = await db
+          .from('app_buyers')
+          .select('display_name, wallet_address, erc8004_agent_id')
+          .eq('id', primary.buyerId)
+          .maybeSingle();
+        if (b?.wallet_address) {
+          await attachRrgShell({
+            buyerId: primary.buyerId,
+            email: userEmail,
+            name: (b.display_name as string) ?? primary.handle,
+            handle: primary.handle,
+            walletAddress: b.wallet_address as string,
+            erc8004AgentId: (b.erc8004_agent_id as string | null) ?? null,
+          });
+        }
         console.log(`[buyer/login] attached ${claimed.claims} snapshot(s) to handle=${primary.handle} on login`);
       }
     } catch (err) {

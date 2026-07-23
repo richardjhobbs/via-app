@@ -171,6 +171,7 @@ export async function POST(req: NextRequest) {
   try {
     const { data: b } = await db.from('app_buyers').select('wallet_address, erc8004_agent_id').eq('id', buyer.id).maybeSingle();
     await attachRrgShell({
+      buyerId: buyer.id,
       email,
       name: buyer.display_name ?? handle,
       handle: buyer.handle,
