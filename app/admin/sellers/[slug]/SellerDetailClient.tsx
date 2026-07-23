@@ -446,7 +446,6 @@ export function SellerDetailClient({ seller, memories, interactions, purchases, 
             <Stat label="Kind"              value={seller.kind} />
             <Stat label="Payout wallet"     value={seller.wallet_address} mono />
             <Stat label="Agent wallet"      value={seller.agent_wallet_address ?? '—'} mono />
-            <Stat label="ERC-8004 seller"   value={seller.erc8004_seller_id ?? '—'} mono />
             <Stat label="ERC-8004 agent"    value={seller.erc8004_agent_id ?? '—'} mono />
             <Stat label="Shopify domain"    value={seller.shopify_domain ?? '—'} mono />
             <div className="md:col-span-2">
