@@ -74,7 +74,9 @@ function AccountInner() {
               onChange={(e) => setPassword(e.target.value)}
               className="w-full bg-paper border border-line-strong px-4 py-3 text-base outline-none focus:border-ink transition-colors"
             />
-            <span className="text-xs text-ink-3 mt-2 block">Minimum 8 characters.</span>
+            <span className="text-xs text-ink-3 mt-2 block">
+              Minimum 8 characters. Already have a VIA account (for example if you run a store)? Use that password.
+            </span>
           </label>
 
           {err && <p className="text-sm text-[color:var(--danger)]">{err}</p>}
