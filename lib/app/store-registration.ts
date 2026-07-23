@@ -23,7 +23,7 @@
 import { ethers } from 'ethers';
 import { db } from './db';
 import { supabaseAdmin } from './seller-auth';
-import { registerAgentIdentity, getAgentIdForWallet } from '@/lib/agent/erc8004';
+import { selfMintAgentIdentity, getAgentIdForWallet } from '@/lib/agent/erc8004';
 import { shouldSkipErc8004, syntheticTestAgentId } from './test-mode';
 import { deriveAgentWallet, platformAgentWalletsEnabled } from './agent-wallet';
 import { releaseHeldDistributions } from './auto-payout';
@@ -388,16 +388,17 @@ export async function approveAgentStore(slug: string, reviewedBy: string): Promi
   }
 
   try {
-    const { tokenId, txHash } = await registerAgentIdentity(
+    const { tokenId, wallet, txHash } = await selfMintAgentIdentity(
       seller.id,
       `${seller.name} Sales Agent`,
-      seller.agent_wallet_address as string,
+      `Sales agent on VIA for ${seller.name}.`,
       'sales_agent',
       `/sellers/${seller.slug}/mcp`,
+      { slug: seller.slug },
     );
     const agentId = tokenId.toString();
-    await db.from('app_sellers').update({ erc8004_agent_id: agentId }).eq('id', seller.id);
-    console.log(`[store-registration] approved + minted seller=${seller.slug} tokenId=${agentId} tx=${txHash}`);
+    await db.from('app_sellers').update({ erc8004_agent_id: agentId, agent_wallet_address: wallet }).eq('id', seller.id);
+    console.log(`[store-registration] approved + self-minted seller=${seller.slug} tokenId=${agentId} owner=${wallet} tx=${txHash}`);
     return { ok: true, slug: seller.slug, erc8004_agent_id: agentId, mcp_url: mcpUrl };
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
@@ -472,10 +473,10 @@ export async function mintStoreIdentity(slug: string, reviewedBy: string): Promi
   }
 
   try {
-    const { tokenId, txHash } = await registerAgentIdentity(seller.id, `${seller.name} Sales Agent`, seller.agent_wallet_address as string, 'sales_agent', `/sellers/${seller.slug}/mcp`);
+    const { tokenId, wallet, txHash } = await selfMintAgentIdentity(seller.id, `${seller.name} Sales Agent`, `Sales agent on VIA for ${seller.name}.`, 'sales_agent', `/sellers/${seller.slug}/mcp`, { slug: seller.slug });
     const agentId = tokenId.toString();
-    await db.from('app_sellers').update({ erc8004_agent_id: agentId, updated_at: new Date().toISOString() }).eq('id', seller.id);
-    console.log(`[store-registration] remint minted seller=${seller.slug} tokenId=${agentId} tx=${txHash} by=${reviewedBy}`);
+    await db.from('app_sellers').update({ erc8004_agent_id: agentId, agent_wallet_address: wallet, updated_at: new Date().toISOString() }).eq('id', seller.id);
+    console.log(`[store-registration] remint self-minted seller=${seller.slug} tokenId=${agentId} owner=${wallet} tx=${txHash} by=${reviewedBy}`);
     return { ok: true, slug, erc8004_agent_id: agentId };
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);

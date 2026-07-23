@@ -1,23 +1,22 @@
 /**
  * lib/app/buyer-identity.ts
  *
- * Mint (or relink) the ERC-8004 identity for a buying agent.
+ * Mint the ERC-8004 identity for a buying agent.
  *
- * A buyer's identity lives on THEIR OWN in-app wallet (app_buyers.wallet_address)
- * , the deterministic thirdweb wallet tied to their email (or the external
- * wallet/agent they onboarded with). That single wallet is identity + spend +
- * recognition + delivery: one wallet, linked to the user's real identity.
+ * A buyer's identity token lives on a PLATFORM-DERIVED identity wallet (derived
+ * from AGENT_WALLET_SEED + buyer id, re-derivable, never stored), the same
+ * scheme sellers use. This is DISTINCT from the buyer's own thirdweb spend
+ * wallet (app_buyers.wallet_address), which the buyer alone controls and which
+ * the platform cannot sign for. Minting from a wallet the platform can operate
+ * is what lets the token be self-custodied on-chain rather than parked in a
+ * shared registrar wallet; the spend wallet stays entirely the buyer's.
  *
- * This is deliberately DIFFERENT from seller agents, whose identity wallet stays
- * platform-derived (the central runtime must sign x402 for them). Buyer agents
- * never sign x402 autonomously and reputation feedback is signed by the platform
- * deployer, so the buyer's identity token can simply live on their in-app wallet.
- * One email = one buyer profile, and seller identities never sit on a human's
- * in-app wallet, so the one-token-per-wallet rule is not violated.
+ * The buying agent never signs x402 (sellers pay the micro-fees) and reputation
+ * is signed by the platform deployer, so the identity wallet only ever needs gas
+ * to register or update its own token.
  */
-import { ethers } from 'ethers';
 import { db } from './db';
-import { registerAgentIdentity, getAgentIdForWallet } from '@/lib/agent/erc8004';
+import { selfMintAgentIdentity } from '@/lib/agent/erc8004';
 
 export type MintBuyerIdentityResult = {
   ok: boolean;
@@ -31,9 +30,11 @@ export type MintBuyerIdentityResult = {
 };
 
 /**
- * Ensure buyer `<buyerId>` has an ERC-8004 identity on their in-app wallet.
- * Idempotent: returns early if an id is already present. Surfaces the registrar
- * error verbatim so a failure is diagnosable rather than silent.
+ * Ensure buyer `<buyerId>` has a self-custodied ERC-8004 identity on their
+ * platform-derived identity wallet. Idempotent: returns early if an id is
+ * already present (and selfMintAgentIdentity links rather than re-mints if the
+ * derived wallet already owns a token). Surfaces the mint error verbatim so a
+ * failure is diagnosable rather than silent.
  */
 export async function mintBuyerIdentity(buyerId: string, reviewedBy: string): Promise<MintBuyerIdentityResult> {
   const { data: buyer, error } = await db
@@ -44,41 +45,23 @@ export async function mintBuyerIdentity(buyerId: string, reviewedBy: string): Pr
   if (error || !buyer)          return { ok: false, error: `buyer "${buyerId}" not found` };
   if (buyer.erc8004_agent_id)   return { ok: true, handle: buyer.handle as string, erc8004_agent_id: buyer.erc8004_agent_id as string, already: true };
 
-  const inApp = (buyer.wallet_address as string | null)?.toLowerCase() ?? null;
-  if (!inApp || !ethers.isAddress(inApp)) {
-    return { ok: false, handle: buyer.handle as string, error: 'buyer has no valid in-app wallet recorded; cannot mint identity' };
-  }
-
-  // Idempotency / cross-platform reuse: if the in-app wallet already owns an
-  // ERC-8004 identity (a prior partial run, or the same human's existing agent),
-  // link it rather than minting a duplicate.
+  const name = (buyer.display_name as string | null) || (buyer.handle as string);
   try {
-    const existing = await getAgentIdForWallet(inApp);
-    if (existing != null) {
-      const id = existing.toString();
-      await db.from('app_buyers').update({ erc8004_agent_id: id, agent_wallet_address: inApp, updated_at: new Date().toISOString() }).eq('id', buyer.id);
-      console.log(`[buyer-identity] linked existing erc8004 buyer=${buyer.handle} tokenId=${id} wallet=${inApp} by=${reviewedBy}`);
-      return { ok: true, handle: buyer.handle as string, erc8004_agent_id: id, agent_wallet_address: inApp, linked: true };
-    }
-  } catch (e) {
-    console.warn('[buyer-identity] getAgentIdForWallet(in-app) failed; proceeding to mint', e);
-  }
-
-  try {
-    const { tokenId, txHash } = await registerAgentIdentity(
+    const { tokenId, wallet, txHash } = await selfMintAgentIdentity(
       buyer.id as string,
-      `${buyer.display_name} Buying Agent`,
-      inApp,
+      `${name} Buying Agent`,
+      `Buying agent on VIA for ${name}.`,
       'buying_agent',
       `/buyers/${buyer.handle}/mcp`,
+      { handle: buyer.handle },
     );
     const id = tokenId.toString();
-    await db.from('app_buyers').update({ erc8004_agent_id: id, agent_wallet_address: inApp, updated_at: new Date().toISOString() }).eq('id', buyer.id);
-    console.log(`[buyer-identity] minted erc8004 buyer=${buyer.handle} tokenId=${id} tx=${txHash} wallet=${inApp} by=${reviewedBy}`);
-    return { ok: true, handle: buyer.handle as string, erc8004_agent_id: id, agent_wallet_address: inApp, tx_hash: txHash };
+    await db.from('app_buyers').update({ erc8004_agent_id: id, agent_wallet_address: wallet, updated_at: new Date().toISOString() }).eq('id', buyer.id);
+    console.log(`[buyer-identity] self-minted erc8004 buyer=${buyer.handle} tokenId=${id} owner=${wallet} tx=${txHash} by=${reviewedBy}`);
+    return { ok: true, handle: buyer.handle as string, erc8004_agent_id: id, agent_wallet_address: wallet, tx_hash: txHash };
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     console.error(`[buyer-identity] mint failed buyer=${buyer.handle}: ${msg}`);
-    return { ok: false, handle: buyer.handle as string, agent_wallet_address: inApp, error: msg };
+    return { ok: false, handle: buyer.handle as string, error: msg };
   }
 }

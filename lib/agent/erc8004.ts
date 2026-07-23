@@ -7,6 +7,7 @@
 
 import { ethers } from 'ethers';
 import { getBaseProvider, getPlatformSigner } from './contract';
+import { deriveAgentWallet } from '@/lib/app/agent-wallet';
 
 // ── Constants ────────────────────────────────────────────────────────
 
@@ -261,6 +262,75 @@ export async function registerAgentIdentity(
     tokenId: BigInt(viaAgentId),
     txHash,
   };
+}
+
+// Gas seeded onto a fresh identity wallet so it can pay for its own register().
+// Base register() costs a small fraction of this; the remainder stays in the
+// wallet for future setAgentURI updates. Identity wallets never hold USDC.
+const IDENTITY_GAS_ETH = '0.00005';
+
+/**
+ * Mint an ERC-8004 identity directly from the agent's OWN platform-derived
+ * wallet, so the identity token is owned by that wallet rather than a shared
+ * registrar. This is the mint path onboarding uses: register() awards the token
+ * to msg.sender, so signing from the derived wallet makes it self-custodied.
+ *
+ * The derived wallet is re-derivable from AGENT_WALLET_SEED + id (never stored),
+ * so the platform can always operate it. The platform signer seeds it a little
+ * Base ETH for gas first (skipped if already funded). Returns the new token id
+ * plus the wallet that owns it, so the caller can persist agent_wallet_address.
+ */
+export async function selfMintAgentIdentity(
+  id: string,
+  name: string,
+  description: string,
+  tier: string,
+  mcpPath: string,
+  extra: Record<string, unknown> = {},
+): Promise<{ tokenId: bigint; wallet: string; txHash: string }> {
+  const identityWallet = deriveAgentWallet(id);
+  if (!identityWallet) throw new Error('AGENT_WALLET_SEED not set; cannot derive identity wallet');
+
+  const provider = getBaseProvider();
+  const wallet = identityWallet.connect(provider);
+
+  // Seed gas from the platform signer unless the wallet already has enough.
+  const fundWei = ethers.parseEther(IDENTITY_GAS_ETH);
+  const bal = await provider.getBalance(wallet.address);
+  if (bal < fundWei / 2n) {
+    const signer = getPlatformSigner();
+    const fundTx = await signer.sendTransaction({ to: wallet.address, value: fundWei });
+    await fundTx.wait(1);
+  }
+
+  const endpoint = `${SITE_URL}${mcpPath.startsWith('/') ? mcpPath : `/${mcpPath}`}`;
+  const agentUri = JSON.stringify({
+    name,
+    description,
+    agentWallet: wallet.address.toLowerCase(),
+    endpoint,
+    protocols: ['mcp', 'erc8004', 'x402'],
+    platform: 'VIA',
+    tier,
+    ...extra,
+  });
+
+  const identity = new ethers.Contract(IDENTITY_REGISTRY, IDENTITY_ABI, wallet);
+
+  // Idempotent: if this wallet already owns a token, link it instead of minting.
+  const owned: bigint = await identity.balanceOf(wallet.address);
+  if (owned > 0n) {
+    const existing = await getAgentIdForWallet(wallet.address);
+    if (existing != null) return { tokenId: existing, wallet: wallet.address.toLowerCase(), txHash: '' };
+  }
+
+  const tx = await (identity.register as (uri: string) => Promise<ethers.ContractTransactionResponse>)(agentUri);
+  const receipt = await tx.wait(1);
+  if (!receipt) throw new Error('register() produced no receipt');
+  const transfer = receipt.logs.find((l) => l.topics[0] === TRANSFER_TOPIC);
+  if (!transfer?.topics[3]) throw new Error('register() emitted no Transfer log; cannot read token id');
+  const tokenId = BigInt(transfer.topics[3]);
+  return { tokenId, wallet: wallet.address.toLowerCase(), txHash: receipt.hash };
 }
 
 /** Post a reputation feedback signal for an agent. */
