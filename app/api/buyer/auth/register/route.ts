@@ -7,6 +7,7 @@ import { mintBuyerIdentity } from '@/lib/app/buyer-identity';
 import { shouldSkipErc8004, syntheticTestAgentId } from '@/lib/app/test-mode';
 import { grantWelcomeCredits } from '@/lib/app/buyer-credits';
 import { claimAgentMemories } from '@/lib/app/agent-memory-claims';
+import { attachRrgShell } from '@/lib/app/rrg-shell';
 
 export const dynamic = 'force-dynamic';
 
@@ -162,6 +163,22 @@ export async function POST(req: NextRequest) {
     }
   } catch (err) {
     console.error(`[onboard/buyer/register] memory claim failed handle=${buyer.handle}:`, err);
+  }
+
+  // Create the linked RRG chat shell so the owner can still sign in and chat on
+  // Real Real Genuine (its runtime reads this buyer's credits + memory from
+  // VIA). Best-effort; a miss can be re-attached on next sign-in.
+  try {
+    const { data: b } = await db.from('app_buyers').select('wallet_address, erc8004_agent_id').eq('id', buyer.id).maybeSingle();
+    await attachRrgShell({
+      email,
+      name: buyer.display_name ?? handle,
+      handle: buyer.handle,
+      walletAddress: (b?.wallet_address as string) ?? inAppWallet,
+      erc8004AgentId: (b?.erc8004_agent_id as string | null) ?? null,
+    });
+  } catch (err) {
+    console.error(`[onboard/buyer/register] RRG chat-shell attach failed handle=${buyer.handle}:`, err);
   }
 
   const response = NextResponse.json({

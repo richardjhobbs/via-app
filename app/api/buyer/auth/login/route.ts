@@ -2,6 +2,9 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { setBuyerAuthCookies, getUserBuyers } from '@/lib/app/buyer-auth';
 import { clientIp, isRateLimited } from '@/lib/app/rate-limit';
+import { db } from '@/lib/app/db';
+import { claimAgentMemories } from '@/lib/app/agent-memory-claims';
+import { attachRrgShell } from '@/lib/app/rrg-shell';
 
 export const dynamic = 'force-dynamic';
 
@@ -34,6 +37,38 @@ export async function POST(req: NextRequest) {
     const buyers = await getUserBuyers(data.user.id);
     if (buyers.length === 0) {
       return NextResponse.json({ error: 'Invalid email or password' }, { status: 401 });
+    }
+
+    // Migration safety net: an owner who already has a VIA account (e.g. a
+    // seller, or a buyer created before) attaches their upgraded agent by
+    // logging in, rather than being forced to make a second account. Claim any
+    // unclaimed RRG snapshot for this email onto their primary buyer (memory +
+    // room seats), and (re)create the linked RRG chat shell. Both are
+    // idempotent and best-effort, so a normal login with nothing to claim is a
+    // cheap no-op.
+    const userEmail = String(data.user.email ?? '').toLowerCase();
+    const primary = buyers[0];
+    try {
+      const claimed = await claimAgentMemories(primary.buyerId, userEmail);
+      const { data: b } = await db
+        .from('app_buyers')
+        .select('display_name, wallet_address, erc8004_agent_id')
+        .eq('id', primary.buyerId)
+        .maybeSingle();
+      if (b?.wallet_address) {
+        await attachRrgShell({
+          email: userEmail,
+          name: (b.display_name as string) ?? primary.handle,
+          handle: primary.handle,
+          walletAddress: b.wallet_address as string,
+          erc8004AgentId: (b.erc8004_agent_id as string | null) ?? null,
+        });
+      }
+      if (claimed.claims > 0) {
+        console.log(`[buyer/login] attached ${claimed.claims} snapshot(s) to handle=${primary.handle} on login`);
+      }
+    } catch (err) {
+      console.error('[buyer/login] claim/attach on login failed:', err);
     }
 
     const response = NextResponse.json({
