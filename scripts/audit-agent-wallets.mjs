@@ -68,18 +68,20 @@ function row(label, id, onRecord, derived) {
     out.push({ ...r, erc8004: s.erc8004_agent_id ?? null, active: s.active, approval: s.approval_status });
   }
 
-  // Buyers are DIFFERENT from sellers: a buyer's identity wallet is their own
-  // in-app wallet (wallet_address), NOT a platform-derived one. So a buyer is
-  // healthy when agent_wallet_address == wallet_address. (Seller identities stay
-  // platform-derived because the central runtime must sign x402 for them.)
+  // Buyers are like sellers: the identity wallet (agent_wallet_address) is
+  // PLATFORM-DERIVED from the buyer id, so the token is self-custodied on a
+  // wallet the platform can operate. It is DISTINCT from the buyer's own
+  // thirdweb spend wallet (wallet_address), which is not audited here. Healthy
+  // when agent_wallet_address == deriveAgentWallet(buyer id).
   const { data: buyers, error: be } = await db
     .from('app_buyers')
-    .select('id, handle, agent_wallet_address, wallet_address')
+    .select('id, handle, agent_wallet_address, erc8004_agent_id')
     .order('handle');
   if (be) { console.error('buyers query failed:', be.message); process.exit(1); }
 
   for (const b of buyers ?? []) {
-    out.push(row(`buyer:${b.handle}`, b.id, b.agent_wallet_address, b.wallet_address));
+    const d = deriveAgentWallet(b.id);
+    out.push({ ...row(`buyer:${b.handle}`, b.id, b.agent_wallet_address, d?.address), erc8004: b.erc8004_agent_id ?? null });
   }
 
   // Rooms are like sellers: MCP-autonomous, so their identity/settlement wallet
