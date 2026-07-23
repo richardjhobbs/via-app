@@ -33,6 +33,7 @@ export interface ClaimResult {
   memoriesInserted: number;
   memoriesUpdated: number;
   messagesImported: number;
+  roomsReclaimed: number;
 }
 
 /**
@@ -40,7 +41,7 @@ export interface ClaimResult {
  * Returns what was carried over; zeroes if there was nothing to claim.
  */
 export async function claimAgentMemories(buyerId: string, email: string): Promise<ClaimResult> {
-  const result: ClaimResult = { claims: 0, memoriesInserted: 0, memoriesUpdated: 0, messagesImported: 0 };
+  const result: ClaimResult = { claims: 0, memoriesInserted: 0, memoriesUpdated: 0, messagesImported: 0, roomsReclaimed: 0 };
   const addr = (email ?? '').trim().toLowerCase();
   if (!buyerId || !addr) return result;
 
@@ -55,6 +56,10 @@ export async function claimAgentMemories(buyerId: string, email: string): Promis
   }
   const claims = (data ?? []) as unknown as ClaimRow[];
   if (claims.length === 0) return result;
+
+  // The new buyer's handle is the VIA member ref that room seats re-key onto.
+  const { data: buyerRow } = await db.from('app_buyers').select('handle').eq('id', buyerId).maybeSingle();
+  const handle = (buyerRow as { handle?: string } | null)?.handle ?? null;
 
   for (const c of claims) {
     try {
@@ -89,6 +94,16 @@ export async function claimAgentMemories(buyerId: string, email: string): Promis
           const { error: msgErr } = await db.from('app_buyer_messages').insert(rows);
           if (!msgErr) result.messagesImported += rows.length;
         }
+      }
+
+      // Re-key any Back Room seats the retired agent held under its federated
+      // RRG identity (rrg/buyer/<name>) onto the new VIA handle, so it keeps
+      // access to the same rooms (plus taste/introductions/invites). Same
+      // primitive the importer uses; keyed by the snapshot's agent name.
+      if (handle && c.agent_name) {
+        const { error: claimErr } = await db.rpc('app_claim_rrg_member', { p_rrg_ref: c.agent_name, p_via_ref: handle });
+        if (claimErr) console.error(`[memory-claims] room re-key failed for ${c.agent_name}:`, claimErr.message);
+        else result.roomsReclaimed++;
       }
 
       await db
