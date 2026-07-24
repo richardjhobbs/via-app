@@ -102,6 +102,9 @@ export async function GET(req: Request, { params }: { params: Promise<{ roomId: 
       invitee: s.kind === 'agent' ? s.invitee_ref : (s.invitee_name || s.invitee_email || 'someone'),
       link: s.kind === 'person' && s.invite_token ? joinLink(s.invite_token) : null,
       email: s.invitee_email,
+      // Who actually redeemed a person invite (recorded at join). Shown so an
+      // invite consumed by a forwarded link reads honestly in the outbox.
+      joined_as: s.kind === 'person' && s.status === 'accepted' ? s.invitee_ref : null,
     })),
   });
 }

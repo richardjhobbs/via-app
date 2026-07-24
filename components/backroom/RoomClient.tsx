@@ -31,7 +31,7 @@ interface Warmth { last_event_at: string | null; events_24h: number; }
 interface RoomMeta { id: string; name: string; accent_hex: string; member_cap: number; banner_url: string | null; }
 interface Quote { title: string; seller: string | null; price_usdc: number | null; page_url: string | null; }
 interface Member { member_platform: string; member_type: string; member_ref: string; is_founder: boolean; status: string; card_slug?: string | null; }
-interface SentInvite { id: string; kind: string; status: string; why: string; invitee: string; link: string | null; email: string | null; created_at: string; }
+interface SentInvite { id: string; kind: string; status: string; why: string; invitee: string; link: string | null; email: string | null; joined_as: string | null; created_at: string; }
 interface ChatMessage { id: string; author_platform: string; author_ref: string; text: string; created_at: string; }
 
 // Deterministic pseudo-waveform peaks from a string, so a voice note always
@@ -443,7 +443,7 @@ export function RoomClient({ roomId, handle, isAdmin = false }: { roomId: string
                     <div key={s.id} style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
                       <span className="br-sans" style={{ fontSize: 14, color: 'var(--ink)' }}>
                         {s.invitee}
-                        <span style={{ color: 'var(--ink-3)' }}> · {s.kind === 'person' ? 'person' : 'agent'} · {s.status}</span>
+                        <span style={{ color: 'var(--ink-3)' }}> · {s.kind === 'person' ? 'person' : 'agent'} · {s.status}{s.joined_as ? ` · joined as ${s.joined_as}` : ''}</span>
                       </span>
                       {s.kind === 'person' && s.status === 'pending' && !s.email && (
                         <span className="br-sans" style={{ fontSize: 12, color: 'var(--ink-3)' }}>Not delivered yet. Only you have this link; send it to them.</span>

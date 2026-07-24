@@ -5,6 +5,7 @@
  */
 import crypto from 'crypto';
 import { db } from '../db';
+import { supabaseAdmin } from '../seller-auth';
 import { joinRoom, refPattern, type Author, type MemberPlatform, type MemberType } from './rooms';
 import { getPublishedCardForMember } from './taste-cards';
 
@@ -206,14 +207,62 @@ export async function invitationByToken(token: string): Promise<TokenInvite | nu
   };
 }
 
-/** Redeem a person invitation for a now-registered member: join and mark accepted. */
+// The redeemer's account email (person invites always produce VIA buyers), so
+// a redemption can be credited to the invite actually meant for them.
+async function memberOwnerEmail(member: Author): Promise<string | null> {
+  if (member.member_platform !== 'via' || member.member_type !== 'buyer') return null;
+  try {
+    const { data } = await db.from('app_buyers').select('owner_user_id').eq('handle', member.member_ref).maybeSingle();
+    const id = (data as { owner_user_id: string | null } | null)?.owner_user_id;
+    if (!id) return null;
+    const { data: u } = await supabaseAdmin.auth.admin.getUserById(id);
+    return u?.user?.email?.toLowerCase() ?? null;
+  } catch { return null; }
+}
+
+/**
+ * Redeem a person invitation for a now-registered member: join and mark
+ * accepted, recording WHO joined on the invite. The token is a bearer
+ * credential, so it can be opened by someone it was not addressed to (a
+ * forwarded email); when the joiner's account email matches a DIFFERENT
+ * pending person invite in the same room, that invite is credited instead and
+ * this token stays live for its intended recipient.
+ */
 export async function redeemPersonInvite(token: string, member: Author, memberWallet?: string | null): Promise<RespondResult> {
   const inv = await invitationByToken(token);
   if (!inv) return { outcome: 'not_found' };
   const res = await joinRoom(inv.room_id, member, inv.inviter_ref, false, memberWallet);
-  if (res.outcome === 'joined' || res.outcome === 'already') {
-    await db.from('app_room_invitations').update({ status: 'accepted', responded_at: new Date().toISOString() }).eq('invite_token', token);
-    return { outcome: 'joined' };
+  if (res.outcome !== 'joined' && res.outcome !== 'already') {
+    return { outcome: res.outcome as 'full' | 'blocked' };
   }
-  return { outcome: res.outcome as 'full' | 'blocked' };
+
+  const { data: tokRow } = await db.from('app_room_invitations')
+    .select('id, invitee_email').eq('invite_token', token).maybeSingle();
+  let creditedId = (tokRow as { id: string } | null)?.id ?? null;
+
+  const joinerEmail = await memberOwnerEmail(member);
+  const tokenEmail = (tokRow as { invitee_email: string | null } | null)?.invitee_email?.toLowerCase() ?? null;
+  if (creditedId && joinerEmail && tokenEmail !== joinerEmail) {
+    const pat = joinerEmail.replace(/([%_\\])/g, '\\$1');
+    const { data: match } = await db.from('app_room_invitations')
+      .select('id')
+      .eq('room_id', inv.room_id)
+      .eq('kind', 'person')
+      .eq('status', 'pending')
+      .neq('id', creditedId)
+      .ilike('invitee_email', pat)
+      .maybeSingle();
+    if (match) creditedId = (match as { id: string }).id;
+  }
+
+  if (creditedId) {
+    await db.from('app_room_invitations').update({
+      status: 'accepted',
+      responded_at: new Date().toISOString(),
+      invitee_platform: member.member_platform,
+      invitee_type: member.member_type,
+      invitee_ref: member.member_ref,
+    }).eq('id', creditedId);
+  }
+  return { outcome: 'joined' };
 }
