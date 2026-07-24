@@ -301,6 +301,123 @@ export async function sendFileDeliveryEmail({
   });
 }
 
+// ── 2b. Buyer sign-in link ────────────────────────────────────────────
+//
+// Passwordless sign-in for returning buyers. The magic link is generated
+// server-side via admin.generateLink (which sends no email of its own) and
+// delivered here through Resend, so buyer login never touches Supabase Auth's
+// built-in sender or its ~2/hour rate cap. VIA-branded, transactional.
+
+export async function sendMagicLinkEmail({
+  to,
+  url,
+}: {
+  to: string;
+  url: string;
+}): Promise<void> {
+  const html = `
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><style>
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', sans-serif; background: #faf7f2; color: #1a1612; margin: 0; padding: 40px 20px; }
+  .wrap { max-width: 560px; margin: 0 auto; }
+  .wordmark { font-family: Georgia, 'Times New Roman', serif; font-size: 18px; font-weight: 400; font-style: italic; letter-spacing: 0.01em; color: #1a1612; margin: 0 0 24px; }
+  .card { background: #ffffff; border: 1px solid #e8e3db; }
+  .card-head { padding: 28px 32px 24px; border-bottom: 1px solid #e8e3db; }
+  .eyebrow { font-family: 'Courier New', Courier, monospace; font-size: 10px; letter-spacing: 0.16em; text-transform: uppercase; color: #2b9a66; margin: 0 0 8px; }
+  h1 { margin: 0; font-family: Georgia, 'Times New Roman', serif; font-size: 26px; font-weight: 400; font-style: italic; color: #1a1612; letter-spacing: -0.01em; }
+  .body { padding: 28px 32px; }
+  .body p { margin: 0 0 16px; line-height: 1.6; color: #3a342d; font-size: 14px; }
+  .btn { display: inline-block; background: #1a1612; color: #faf7f2; padding: 12px 22px; text-decoration: none; font-size: 12px; letter-spacing: 0.04em; font-weight: 500; }
+  .note { font-size: 12px; color: #6e665c; margin: 16px 0 0; }
+</style></head>
+<body>
+<div class="wrap">
+  <p class="wordmark">VIA</p>
+  <div class="card">
+    <div class="card-head">
+      <p class="eyebrow">Sign in to VIA</p>
+      <h1>Your sign-in link</h1>
+    </div>
+    <div class="body">
+      <p>Click the button below to sign in. No password needed.</p>
+      <a class="btn" href="${url}">Sign in to VIA</a>
+      <p class="note">This link works once and expires in about an hour. If you did not request it, you can ignore this email.</p>
+    </div>
+  </div>
+  <table width="100%" cellpadding="0" cellspacing="0" style="margin-top:32px;padding-top:20px;border-top:1px solid #e8e3db;"><tbody><tr>
+    <td style="font-family:'Courier New',Courier,monospace;font-size:10px;letter-spacing:0.12em;text-transform:uppercase;color:#6e665c;">VIA</td>
+    <td align="right" style="font-family:'Courier New',Courier,monospace;font-size:10px;letter-spacing:0.12em;text-transform:uppercase;color:#6e665c;text-align:right;"><a href="${SITE_URL}" style="color:#6e665c;text-decoration:none;">app.getvia.xyz</a></td>
+  </tr></tbody></table>
+</div>
+</body>
+</html>`;
+
+  await sendEmail({
+    to,
+    subject: 'Your VIA sign-in link',
+    html,
+  });
+}
+
+// ── 2c. Password reset link ───────────────────────────────────────────
+//
+// Same rationale as the sign-in link: the recovery link is generated with
+// admin.generateLink and delivered through Resend, off Supabase Auth's built-in
+// sender. VIA-branded, transactional.
+
+export async function sendPasswordResetEmail({
+  to,
+  url,
+}: {
+  to: string;
+  url: string;
+}): Promise<void> {
+  const html = `
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><style>
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', sans-serif; background: #faf7f2; color: #1a1612; margin: 0; padding: 40px 20px; }
+  .wrap { max-width: 560px; margin: 0 auto; }
+  .wordmark { font-family: Georgia, 'Times New Roman', serif; font-size: 18px; font-weight: 400; font-style: italic; letter-spacing: 0.01em; color: #1a1612; margin: 0 0 24px; }
+  .card { background: #ffffff; border: 1px solid #e8e3db; }
+  .card-head { padding: 28px 32px 24px; border-bottom: 1px solid #e8e3db; }
+  .eyebrow { font-family: 'Courier New', Courier, monospace; font-size: 10px; letter-spacing: 0.16em; text-transform: uppercase; color: #2b9a66; margin: 0 0 8px; }
+  h1 { margin: 0; font-family: Georgia, 'Times New Roman', serif; font-size: 26px; font-weight: 400; font-style: italic; color: #1a1612; letter-spacing: -0.01em; }
+  .body { padding: 28px 32px; }
+  .body p { margin: 0 0 16px; line-height: 1.6; color: #3a342d; font-size: 14px; }
+  .btn { display: inline-block; background: #1a1612; color: #faf7f2; padding: 12px 22px; text-decoration: none; font-size: 12px; letter-spacing: 0.04em; font-weight: 500; }
+  .note { font-size: 12px; color: #6e665c; margin: 16px 0 0; }
+</style></head>
+<body>
+<div class="wrap">
+  <p class="wordmark">VIA</p>
+  <div class="card">
+    <div class="card-head">
+      <p class="eyebrow">Reset your password</p>
+      <h1>Set a new password</h1>
+    </div>
+    <div class="body">
+      <p>Click the button below to choose a new password for your VIA account.</p>
+      <a class="btn" href="${url}">Reset password</a>
+      <p class="note">This link works once and expires in about an hour. If you did not request it, you can ignore this email and your password stays unchanged.</p>
+    </div>
+  </div>
+  <table width="100%" cellpadding="0" cellspacing="0" style="margin-top:32px;padding-top:20px;border-top:1px solid #e8e3db;"><tbody><tr>
+    <td style="font-family:'Courier New',Courier,monospace;font-size:10px;letter-spacing:0.12em;text-transform:uppercase;color:#6e665c;">VIA</td>
+    <td align="right" style="font-family:'Courier New',Courier,monospace;font-size:10px;letter-spacing:0.12em;text-transform:uppercase;color:#6e665c;text-align:right;"><a href="${SITE_URL}" style="color:#6e665c;text-decoration:none;">app.getvia.xyz</a></td>
+  </tr></tbody></table>
+</div>
+</body>
+</html>`;
+
+  await sendEmail({
+    to,
+    subject: 'Reset your VIA password',
+    html,
+  });
+}
+
 // ── 3. Rejection notification ─────────────────────────────────────────
 
 export async function sendRejectionNotification({

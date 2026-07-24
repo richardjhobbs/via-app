@@ -1,13 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@supabase/supabase-js';
+import { supabaseAdmin } from '@/lib/app/seller-auth';
+import { sendPasswordResetEmail } from '@/lib/app/email';
 import { clientIp, isRateLimited } from '@/lib/app/rate-limit';
 
 export const dynamic = 'force-dynamic';
-
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL ?? '',
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? '',
-);
 
 // POST /api/buyer/auth/forgot-password : send password reset email
 export async function POST(req: NextRequest) {
@@ -24,12 +20,24 @@ export async function POST(req: NextRequest) {
 
     const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://app.getvia.xyz';
 
-    const { error } = await supabase.auth.resetPasswordForEmail(email, {
-      redirectTo: `${siteUrl}/buyer/login?reset=true`,
+    // Generate the recovery link server-side (no email sent by Supabase) and
+    // deliver via Resend, off Supabase Auth's built-in sender and its rate cap.
+    // generateLink errors for unknown addresses; swallow it so the response
+    // never reveals whether the email is registered.
+    const { data: link, error } = await supabaseAdmin.auth.admin.generateLink({
+      type: 'recovery',
+      email,
+      options: { redirectTo: `${siteUrl}/buyer/login?reset=true` },
     });
-
-    if (error) {
-      console.error('[buyer/forgot-password]', error);
+    const actionLink = link?.properties?.action_link;
+    if (error || !actionLink) {
+      console.error('[buyer/forgot-password] generateLink', error);
+    } else {
+      try {
+        await sendPasswordResetEmail({ to: email, url: actionLink });
+      } catch (sendErr) {
+        console.error('[buyer/forgot-password] send', sendErr);
+      }
     }
 
     // Always return success to prevent email enumeration.

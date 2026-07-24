@@ -1,14 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@supabase/supabase-js';
 import { supabaseAdmin } from '@/lib/app/seller-auth';
+import { sendMagicLinkEmail } from '@/lib/app/email';
 import { clientIp, isRateLimited } from '@/lib/app/rate-limit';
 
 export const dynamic = 'force-dynamic';
-
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL ?? '',
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? '',
-);
 
 /**
  * POST /api/buyer/auth/magic-link : passwordless sign-in for returning users.
@@ -41,12 +36,23 @@ export async function POST(req: NextRequest) {
     // Same-origin relative next only; it rides the redirect back to the login
     // page so the signed-in user lands where they were headed.
     const dest = /^\/(?!\/)/.test(next) ? `?next=${encodeURIComponent(next)}` : '';
-    const { error } = await supabase.auth.signInWithOtp({
+    // Generate the link server-side (this sends no email of its own) and deliver
+    // it through Resend, so buyer sign-in never hits Supabase Auth's built-in
+    // email sender or its ~2/hour rate cap.
+    const { data: link, error } = await supabaseAdmin.auth.admin.generateLink({
+      type: 'magiclink',
       email,
-      options: { emailRedirectTo: `${siteUrl}/buyer/login${dest}`, shouldCreateUser: false },
+      options: { redirectTo: `${siteUrl}/buyer/login${dest}` },
     });
-    if (error) {
-      console.error('[buyer/magic-link]', error);
+    const actionLink = link?.properties?.action_link;
+    if (error || !actionLink) {
+      console.error('[buyer/magic-link] generateLink', error);
+      return NextResponse.json({ error: 'Could not send the sign-in link. Try again in a minute.' }, { status: 500 });
+    }
+    try {
+      await sendMagicLinkEmail({ to: email, url: actionLink });
+    } catch (sendErr) {
+      console.error('[buyer/magic-link] send', sendErr);
       return NextResponse.json({ error: 'Could not send the sign-in link. Try again in a minute.' }, { status: 500 });
     }
     return NextResponse.json({ known: true, sent: true });
